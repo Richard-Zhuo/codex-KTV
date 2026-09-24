@@ -1,0 +1,34 @@
+# 依赖与包管理缓存
+node_modules/
+.pnpm-store/
+
+# 本机运行日志
+*.log
+npm-debug.log*
+pnpm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+*.pid
+
+# 环境变量与本机配置
+.env
+.env.*
+!.env.example
+*.local
+.agents/
+.codex/
+
+# 测试、构建与临时产物
+coverage/
+.nyc_output/
+dist/
+tmp/
+temp/
+*.tmp
+
+# 编辑器与系统文件
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+desktop.ini
