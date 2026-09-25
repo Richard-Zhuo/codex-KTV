@@ -74,7 +74,8 @@ VALUES
   ('room.open', '开房', '房间与订单'),
   ('room.reserve', '预订与取消预订', '房间与订单'),
   ('room.clean', '完成清洁', '房间与订单'),
-  ('room.issue', '设置房间故障／维护状态', '房间与订单'),
+  ('room.issue', '提交房间故障／维护状态变更', '房间与订单'),
+  ('room.issue.approve', '审核房间故障／维护状态变更', '审核与后台'),
   ('order.sale', '加酒水／其他消费', '房间与订单'),
   ('order.exchange', '换酒水', '房间与订单'),
   ('order.gift', '登记赠酒水', '房间与订单'),
@@ -111,14 +112,14 @@ ON CONFLICT DO NOTHING;
 
 INSERT INTO role_permissions(role_code, permission_code)
 VALUES
-  ('owner','staff.record'), ('owner','room.open'), ('owner','room.reserve'), ('owner','room.clean'), ('owner','room.issue'),
+  ('owner','staff.record'), ('owner','room.open'), ('owner','room.reserve'), ('owner','room.clean'), ('owner','room.issue'), ('owner','room.issue.approve'),
   ('owner','order.sale'), ('owner','order.exchange'), ('owner','order.gift'), ('owner','order.serveExtra'),
   ('owner','payment.collect'), ('owner','payment.settle'), ('owner','credit.apply'), ('owner','credit.approve'), ('owner','credit.repay'),
   ('owner','gift.approve'), ('owner','inventory.opening'), ('owner','inventory.adjust'), ('owner','deposit.manage'), ('owner','handover'),
   ('owner','expense.view'), ('owner','expense.create'), ('owner','expense.viewAll'), ('owner','expense.approve'),
   ('owner','procurement.create'), ('owner','procurement.viewAll'), ('owner','incident.create'), ('owner','incident.viewAll'), ('owner','incident.resolve'),
   ('owner','report.view'), ('owner','backend.view'),
-  ('manager','staff.record'), ('manager','room.clean'), ('manager','room.issue'), ('manager','credit.apply'), ('manager','credit.approve'),
+  ('manager','staff.record'), ('manager','room.clean'), ('manager','room.issue'), ('manager','room.issue.approve'), ('manager','credit.apply'), ('manager','credit.approve'),
   ('manager','gift.approve'), ('manager','rounding.approve'), ('manager','inventory.opening'), ('manager','inventory.adjust'), ('manager','handover'),
   ('manager','expense.view'), ('manager','expense.create'), ('manager','expense.viewAll'), ('manager','procurement.create'), ('manager','procurement.viewAll'),
   ('manager','incident.create'), ('manager','incident.viewAll'), ('manager','incident.resolve'), ('manager','report.view'), ('manager','backend.view'),

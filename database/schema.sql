@@ -115,6 +115,33 @@ CREATE TABLE room_issues (
   CHECK ((status = '处理中' AND resolved_at IS NULL) OR status = '已恢复')
 );
 
+CREATE TABLE room_issue_change_requests (
+  id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  room_id bigint NOT NULL REFERENCES rooms(id),
+  room_issue_id bigint REFERENCES room_issues(id) ON DELETE RESTRICT,
+  change_type varchar(20) NOT NULL CHECK (change_type IN ('标记异常', '恢复空房')),
+  from_status varchar(30) NOT NULL,
+  requested_status varchar(30) NOT NULL CHECK (requested_status IN ('故障/维护中', '空闲')),
+  issue_type varchar(20) CHECK (issue_type IS NULL OR issue_type IN ('故障', '维护中')),
+  evidence_text varchar(500) NOT NULL DEFAULT '',
+  evidence_image_ref text NOT NULL DEFAULT '',
+  evidence_image_name varchar(120) NOT NULL DEFAULT '',
+  status varchar(20) NOT NULL DEFAULT '待审核'
+    CHECK (status IN ('待审核', '已批准', '已驳回', '已失效')),
+  requested_by varchar(40) NOT NULL REFERENCES employees(id),
+  requested_at timestamptz NOT NULL,
+  decided_by varchar(40) REFERENCES employees(id),
+  decided_at timestamptz,
+  decision_note varchar(500) NOT NULL DEFAULT '',
+  CHECK (evidence_text <> '' OR evidence_image_ref <> ''),
+  CHECK (decided_by IS NULL OR decided_by <> requested_by),
+  CHECK ((status = '待审核' AND decided_at IS NULL) OR status <> '待审核')
+);
+
+CREATE UNIQUE INDEX room_issue_change_requests_one_pending_per_room
+  ON room_issue_change_requests(room_id)
+  WHERE status = '待审核';
+
 CREATE TABLE products (
   code varchar(40) PRIMARY KEY,
   name varchar(100) NOT NULL UNIQUE,

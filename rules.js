@@ -38,7 +38,8 @@ export const PERMISSION_DEFINITIONS = [
   { id: 'room.open', label: '开房', group: '房间与订单', roles: ['开单员', '老板'] },
   { id: 'room.reserve', label: '预订与取消预订', group: '房间与订单', roles: ['开单员', '老板'] },
   { id: 'room.clean', label: '完成清洁', group: '房间与订单', roles: ['服务员', '老板'] },
-  { id: 'room.issue', label: '设置房间故障／维护状态', group: '房间与订单', roles: ['管理员', '老板', '店长'] },
+  { id: 'room.issue', label: '提交房间故障／维护状态变更', group: '房间与订单', roles: ['管理员', '老板', '店长'] },
+  { id: 'room.issue.approve', label: '审核房间故障／维护状态变更', group: '审核与后台', roles: ['管理员', '老板', '店长'] },
   { id: 'order.sale', label: '加酒水／其他消费', group: '房间与订单', roles: ['开单员', '服务员', '老板'] },
   { id: 'order.exchange', label: '换酒水', group: '房间与订单', roles: ['开单员', '服务员', '老板'] },
   { id: 'order.gift', label: '登记赠酒水', group: '房间与订单', roles: ['开单员', '服务员', '店长', '老板'] },
@@ -164,7 +165,7 @@ export function bonusAllowance(order, productId) {
 export function initialState() {
   const today = new Date(); today.setHours(20,0,0,0);
   const roomType = id => id === '888' ? 'VIP房' : ['V05', 'V06'].includes(id) ? '中房' : id.startsWith('V') ? '小房' : '大房';
-  return { version: 1, clock: today.toISOString(), user: 'staff', permissions: defaultPermissions(), capabilities: defaultCapabilities(), rooms: ['V01','V02','V03','V05','V06','333','666','999','888'].map(id => ({ id, type: roomType(id), status: '空闲', order: null, issueType: '', issueNote: '', issueAt: '', issueBy: '' })), orders: [], reservations: [], deposits: [], withdrawals: [], expenses: [], procurements: [], incidents: [], inventory: Object.fromEntries(PRODUCTS.filter(p => p.managed !== false).map(p => [p.id, { count: null, threshold: p.dozen ? 250 : 10 }])), consumables: Object.fromEntries(CONSUMABLES.map(item => [item.id, { count: null, opened: 0, unit: item.unit, threshold: item.threshold }])), ledger: [], notices: [], handovers: [], processed: [], serial: 0 };
+  return { version: 1, clock: today.toISOString(), user: 'staff', permissions: defaultPermissions(), capabilities: defaultCapabilities(), rooms: ['V01','V02','V03','V05','V06','333','666','999','888'].map(id => ({ id, type: roomType(id), status: '空闲', order: null, issueType: '', issueNote: '', issueAt: '', issueBy: '', issueApprovedBy: '', issueEvidencePhoto: '', issueEvidencePhotoName: '' })), orders: [], reservations: [], deposits: [], withdrawals: [], expenses: [], procurements: [], incidents: [], roomIssueReviews: [], inventory: Object.fromEntries(PRODUCTS.filter(p => p.managed !== false).map(p => [p.id, { count: null, threshold: p.dozen ? 250 : 10 }])), consumables: Object.fromEntries(CONSUMABLES.map(item => [item.id, { count: null, opened: 0, unit: item.unit, threshold: item.threshold }])), ledger: [], notices: [], handovers: [], processed: [], serial: 0 };
 }
 export const total = order => order.base + order.gift + (order.sales || []).reduce((sum, line) => sum + line.amount, 0) + (order.otherCharges || []).reduce((sum, line) => sum + line.amount, 0);
 export const outstanding = order => Math.max(0, total(order) - (order.payments || []).reduce((sum, payment) => sum + payment.amount, 0));
@@ -270,6 +271,15 @@ export function transact(original, action, data = {}, key) {
   const room = s.rooms.find(r => r.id === data.room);
   const order = s.orders.find(o => o.id === data.order);
   const active = () => { if (!order || order.status !== '营业中') throw Error('账单已变化，请返回房间重新查看'); };
+  const roomIssueEvidence = () => {
+    const evidenceText = String(data.evidenceText ?? data.issueNote ?? '').trim().slice(0, 500);
+    const evidencePhoto = String(data.evidencePhoto || '').trim();
+    const evidencePhotoName = String(data.evidencePhotoName || '').trim().slice(0, 120);
+    if (!evidenceText && !evidencePhoto) throw Error('请提交照片或文字说明供审核');
+    if (evidencePhoto && (!evidencePhoto.startsWith('data:image/') || evidencePhoto.length > 700000)) throw Error('审核照片格式无效或超过500KB');
+    return { evidenceText, evidencePhoto, evidencePhotoName };
+  };
+  const pendingRoomIssueReview = roomId => (s.roomIssueReviews ||= []).find(request => request.room === roomId && request.status === '待审核');
   if (action === 'setPermissions') {
     need(s, ['管理员']);
     const target = String(data.user || '');
@@ -289,27 +299,63 @@ export function transact(original, action, data = {}, key) {
     need(s, [], 'room.issue');
     if (!room) throw Error('请选择有效房间');
     if (!['空闲', '待清洁'].includes(room.status)) throw Error('营业中的房间不能直接标记为故障或维护中');
+    if (pendingRoomIssueReview(room.id)) throw Error('该房间已有状态变更待审核');
     const issueType = String(data.issueType || '').trim();
     if (!ROOM_ISSUE_TYPES.includes(issueType)) throw Error('请选择故障或维护中状态');
-    const issueNote = String(data.issueNote || '').trim().slice(0, 200);
-    if (!issueNote) throw Error('请填写故障或维护说明');
-    room.status = '故障/维护中';
-    room.issueType = issueType;
-    room.issueNote = issueNote;
-    room.issueAt = time;
-    room.issueBy = person;
+    const evidence = roomIssueEvidence();
+    s.roomIssueReviews.push({ id: ++s.serial, room: room.id, change: '标记异常', fromStatus: room.status, requestedStatus: '故障/维护中', issueType, ...evidence, status: '待审核', submittedBy: person, submittedById: s.user, submittedAt: time, decidedBy: '', decidedAt: '', decisionNote: '' });
   } else if (action === 'clearRoomIssue') {
     need(s, [], 'room.issue');
     if (!room || room.status !== '故障/维护中') throw Error('房间异常状态已经变化');
-    room.status = '空闲';
-    room.issueType = '';
-    room.issueNote = '';
-    room.issueAt = '';
-    room.issueBy = '';
+    if (pendingRoomIssueReview(room.id)) throw Error('该房间已有状态变更待审核');
+    const evidence = roomIssueEvidence();
+    s.roomIssueReviews.push({ id: ++s.serial, room: room.id, change: '恢复空房', fromStatus: room.status, requestedStatus: '空闲', issueType: room.issueType || '故障', ...evidence, status: '待审核', submittedBy: person, submittedById: s.user, submittedAt: time, decidedBy: '', decidedAt: '', decisionNote: '' });
+  } else if (action === 'approveRoomIssue') {
+    need(s, [], 'room.issue.approve');
+    const request = (s.roomIssueReviews || []).find(item => item.id === Number(data.request));
+    if (!request || request.status !== '待审核') throw Error('该房间状态申请已经处理');
+    if (request.submittedById === s.user) throw Error('提交人不能审核本人申请，请切换其他有审核权限的身份');
+    const targetRoom = s.rooms.find(item => item.id === request.room);
+    if (!targetRoom || targetRoom.status !== request.fromStatus) throw Error('房间状态已经变化，请驳回后重新提交');
+    if (request.requestedStatus === '故障/维护中') {
+      targetRoom.status = '故障/维护中';
+      targetRoom.issueType = request.issueType;
+      targetRoom.issueNote = request.evidenceText || '已提交照片凭证';
+      targetRoom.issueAt = time;
+      targetRoom.issueBy = request.submittedBy;
+      targetRoom.issueApprovedBy = person;
+      targetRoom.issueEvidencePhoto = request.evidencePhoto;
+      targetRoom.issueEvidencePhotoName = request.evidencePhotoName;
+    } else if (request.requestedStatus === '空闲') {
+      targetRoom.status = '空闲';
+      targetRoom.issueType = '';
+      targetRoom.issueNote = '';
+      targetRoom.issueAt = '';
+      targetRoom.issueBy = '';
+      targetRoom.issueApprovedBy = '';
+      targetRoom.issueEvidencePhoto = '';
+      targetRoom.issueEvidencePhotoName = '';
+    } else throw Error('房间状态申请内容无效');
+    request.status = '已批准';
+    request.decidedBy = person;
+    request.decidedAt = time;
+    request.decisionNote = String(data.decisionNote || '').trim().slice(0, 300);
+  } else if (action === 'rejectRoomIssue') {
+    need(s, [], 'room.issue.approve');
+    const request = (s.roomIssueReviews || []).find(item => item.id === Number(data.request));
+    if (!request || request.status !== '待审核') throw Error('该房间状态申请已经处理');
+    if (request.submittedById === s.user) throw Error('提交人不能审核本人申请，请切换其他有审核权限的身份');
+    const decisionNote = String(data.decisionNote || '').trim().slice(0, 300);
+    if (!decisionNote) throw Error('请填写驳回原因');
+    request.status = '已驳回';
+    request.decidedBy = person;
+    request.decidedAt = time;
+    request.decisionNote = decisionNote;
   } else if (action === 'open') {
     const delegated = delegatedEmployee(s, data);
     if (delegated) person = delegated.name; else need(s, ['开单员','老板'], 'room.open');
     if (!room || !['空闲','待清洁','已预订'].includes(room.status)) throw Error('房间已在使用');
+    if (pendingRoomIssueReview(room.id)) throw Error('房间状态变更正在审核，暂不能开房');
     if (room.status === '待清洁' && !data.acceptDirty) throw Error('请先确认房间可以接待客人');
     const openSource = String(data.openSource ?? '').trim();
     if (!OPENING_SOURCES.includes(openSource)) throw Error('请选择有效的开房渠道');
@@ -339,6 +385,7 @@ export function transact(original, action, data = {}, key) {
     const delegated = delegatedEmployee(s, data);
     if (delegated) person = delegated.name; else need(s, ['开单员','老板'], 'room.reserve');
     if (!room || !['空闲','营业中','待清洁','已预订'].includes(room.status)) throw Error('当前房间状态不能预订');
+    if (pendingRoomIssueReview(room.id)) throw Error('房间状态变更正在审核，暂不能预订');
     if (!RESERVATION_SOURCES.includes(data.source)) throw Error('请选择预订方式');
     const at = reservationTarget(time, data.dayOffset, data.session);
     if (s.reservations.some(r => r.room === room.id && r.status === '已预订' && Date.parse(r.at) === Date.parse(at))) throw Error('该房间该场次已经有预订');

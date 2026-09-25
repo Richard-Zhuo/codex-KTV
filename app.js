@@ -59,7 +59,7 @@ function migrateDemoState(next) {
     const fallback = Array.isArray(legacyRoles) ? permissionsForRoles(legacyRoles) : permissions;
     if (id === 'administrator') return [id, [...PERMISSION_IDS]];
     const normalized = Array.isArray(configured) ? [...new Set(configured.filter(permission => PERMISSION_IDS.includes(permission)))] : [...fallback];
-    const added = ['expense.view', 'expense.create', 'expense.viewAll', 'expense.approve', 'identity.manage', 'staff.record', 'procurement.create', 'procurement.viewAll', 'incident.create', 'incident.viewAll', 'incident.resolve', 'room.issue'];
+    const added = ['expense.view', 'expense.create', 'expense.viewAll', 'expense.approve', 'identity.manage', 'staff.record', 'procurement.create', 'procurement.viewAll', 'incident.create', 'incident.viewAll', 'incident.resolve', 'room.issue', 'room.issue.approve'];
     const configuredBase = normalized.filter(permission => !added.includes(permission));
     const fallbackBase = fallback.filter(permission => !added.includes(permission));
     const matchesRoleDefaults = configuredBase.length === fallbackBase.length && fallbackBase.every(permission => configuredBase.includes(permission));
@@ -83,6 +83,7 @@ function migrateDemoState(next) {
   for (const [id, item] of Object.entries(fresh.consumables)) next.consumables[id] ??= item;
   next.procurements = Array.isArray(next.procurements) ? next.procurements : [];
   next.incidents = Array.isArray(next.incidents) ? next.incidents : [];
+  next.roomIssueReviews = Array.isArray(next.roomIssueReviews) ? next.roomIssueReviews : [];
   for (const incident of next.incidents) {
     incident.status ??= incident.result ? '已完成' : '待处理';
     incident.result ??= '';
@@ -95,6 +96,9 @@ function migrateDemoState(next) {
     room.issueNote ??= '';
     room.issueAt ??= '';
     room.issueBy ??= '';
+    room.issueApprovedBy ??= '';
+    room.issueEvidencePhoto ??= '';
+    room.issueEvidencePhotoName ??= '';
   }
   return next;
 }
@@ -124,10 +128,11 @@ const contactText = record => [record?.name, record?.phone].filter(Boolean).join
 const permissionDefinition = id => PERMISSION_DEFINITIONS.find(permission => permission.id === id);
 const permissionSummary = user => (user.permissions || []).map(id => permissionDefinition(id)?.label).filter(Boolean);
 function pendingReservations(roomId) { return state.reservations.filter(reservation => reservation.room === roomId && reservation.status === '已预订').sort((a,b)=>Date.parse(a.at)-Date.parse(b.at)); }
+function pendingRoomIssueReview(roomId) { return (state.roomIssueReviews || []).find(request => request.room === roomId && request.status === '待审核'); }
 function reservationDate(time) { return new Date(time).toLocaleDateString('zh-CN',{month:'numeric',day:'numeric'}); }
 function reservationSessionName(reservation) { return reservation.session === 'afternoon' ? '下午场' : reservation.session === 'night' ? '夜间场' : String(reservation.sessionLabel || '').split('（')[0]; }
 function displayRoomStatus(room) { return room.status === '空闲' && pendingReservations(room.id).length ? '已预订' : room.status; }
-function roomMatchesFilter(room) { return filter === '全部' ? true : filter === '已预订' ? room.status === '已预订' || pendingReservations(room.id).length > 0 : filter === '异常' ? room.status === '故障/维护中' : displayRoomStatus(room) === filter; }
+function roomMatchesFilter(room) { return filter === '全部' ? true : filter === '已预订' ? room.status === '已预订' || pendingReservations(room.id).length > 0 : filter === '异常' ? room.status === '故障/维护中' || Boolean(pendingRoomIssueReview(room.id)) : filter === '空闲' ? displayRoomStatus(room) === '空闲' && !pendingRoomIssueReview(room.id) : displayRoomStatus(room) === filter; }
 const reportMoney = centsValue => money(Number(centsValue || 0));
 const reportQuantity = value => Number(value || 0).toFixed(2).replace(/\.00$/,'').replace(/(\.\d)0$/,'$1');
 const reportDateKey = value => { const d = new Date(value); return `${d.getFullYear()}-${d.getMonth()+1}-${d.getDate()}`; };
@@ -250,6 +255,12 @@ function openDialog(title, content, submitLabel, action, hidden={}) {
   modal.showModal();
 }
 function commit(action, data, key) { const next=transact(state,action,data,key); persist(next); modal.close(); render(); toast('已保存 · 仅为演示记录'); }
+function roomIssueEvidenceFields() {
+  return `<label>文字说明（与照片至少提交一项）<textarea name="evidenceText" maxlength="500" rows="3" placeholder="例如：空调无法制冷；维修完成并试机正常"></textarea></label><label>现场照片（与文字至少提交一项）<input id="room-issue-photo" type="file" accept="image/*"><input id="room-issue-photo-data" type="hidden" name="evidencePhoto"><input id="room-issue-photo-name" type="hidden" name="evidencePhotoName"></label><p id="room-issue-photo-status" class="muted">支持单张图片，不超过 500KB；照片仅保存在本机演示数据中。</p>`;
+}
+function roomIssueEvidenceMarkup(request) {
+  return `${request.evidenceText?`<p class="notice">${esc(request.evidenceText)}</p>`:''}${request.evidencePhoto?`<a class="issue-proof" href="${esc(request.evidencePhoto)}" target="_blank" rel="noreferrer"><img src="${esc(request.evidencePhoto)}" alt="房间状态审核照片"><span>${esc(request.evidencePhotoName || '查看现场照片')}</span></a>`:''}`;
+}
 const extraLabels = { nuts: '小吃', fruit: '果盘' };
 function roomExtraActions(order) {
   if (!allowedPermission('order.serveExtra')) return '';
@@ -261,12 +272,12 @@ function roomExtraActions(order) {
   }).join('')}</div>`;
 }
 function roomCard(r) {
-  const o = state.orders.find(o=>o.id===r.order), bookings=pendingReservations(r.id);
-  const status=displayRoomStatus(r), css = {'空闲':'free','营业中':'active','待清洁':'dirty','已预订':'reserved'}[status];
+  const o = state.orders.find(o=>o.id===r.order), bookings=pendingReservations(r.id), review=pendingRoomIssueReview(r.id);
+  const status=displayRoomStatus(r), cardStatus=review?'状态审核中':status, css = review?'issue-review':{'空闲':'free','营业中':'active','待清洁':'dirty','已预订':'reserved'}[status];
   const bookingText=bookings.length?`<small class="room-booking">未来预订：${reservationDate(bookings[0].at)} · ${esc(reservationSessionName(bookings[0]))}${bookings.length>1?`（还有${bookings.length-1}场）`:''}</small>`:'';
-  const issueText=r.status==='故障/维护中'?`<small class="room-issue">${esc(r.issueType || '故障/维护中')}${r.issueNote?` · ${esc(r.issueNote)}`:''}</small>`:'';
-  const bottom=r.status==='故障/维护中'?'<span>查看异常</span><span>→</span>':o?`<b>${money(total(o))}</b><span>查看账单 →</span>`:r.status==='空闲'?'<span>点这里开房</span><span>＋</span>':r.status==='待清洁'?'<span>打扫后恢复空房</span><span>→</span>':'<span>查看预订</span><span>→</span>';
-  return `<article class="room-card ${css || 'issue'}" data-action="room" data-id="${r.id}"><span class="room-top"><span>${r.type}</span><span class="status"><i></i>${status}</span></span><strong class="room-number">${r.id}</strong><span class="room-bottom">${bottom}</span>${o && r.status==='营业中'?roomExtraActions(o):''}${issueText}${bookingText}</article>`;
+  const issueText=`${r.status==='故障/维护中'?`<small class="room-issue">${esc(r.issueType || '故障/维护中')}${r.issueNote?` · ${esc(r.issueNote)}`:''}</small>`:''}${review?`<small class="room-review-pending">${esc(review.change)}申请待审核</small>`:''}`;
+  const bottom=review?'<span>状态变更待审核</span><span>→</span>':r.status==='故障/维护中'?'<span>查看异常</span><span>→</span>':o?`<b>${money(total(o))}</b><span>查看账单 →</span>`:r.status==='空闲'?'<span>点这里开房</span><span>＋</span>':r.status==='待清洁'?'<span>打扫后恢复空房</span><span>→</span>':'<span>查看预订</span><span>→</span>';
+  return `<article class="room-card ${css || 'issue'}" data-action="room" data-id="${r.id}"><span class="room-top"><span>${r.type}</span><span class="status"><i></i>${cardStatus}</span></span><strong class="room-number">${r.id}</strong><span class="room-bottom">${bottom}</span>${o && r.status==='营业中'?roomExtraActions(o):''}${issueText}${bookingText}</article>`;
 }
 function appearanceSettings() {
   const preference = window.ktvAppearance.preference;
@@ -287,8 +298,8 @@ function render() {
 function roomsPage() {
   const active = state.rooms.filter(r=>r.status==='营业中').length;
   const reminders = state.reservations.map(r => reservationReminder(r, state.clock)).filter(Boolean);
-  const issueButton = allowedPermission('room.issue') ? btn('标记故障/维护','markRoomIssueMenu','','secondary') : '';
-  return `<section class="welcome"><div><p class="eyebrow">今晚，也从容一点</p><h1>房间一眼看清</h1><p>先选房间，再开房、加单或收钱。</p></div><div class="welcome-icon" aria-hidden="true">♫</div></section>${reminders.map(r=>`<div class="reservation-alert"><b>预订提醒 · ${r.room}</b><p>${esc(r.sessionLabel)}已到时，仍未开房；这是第 ${r.number} 次整点提醒，请通知预订人员 ${esc(r.person)}。</p></div>`).join('')}<section class="summary"><div><strong>${state.rooms.filter(r=>displayRoomStatus(r)==='空闲').length}<small> / 9</small></strong><span>空闲房间</span></div><div><strong>${active}</strong><span>正在营业</span></div><div><strong>${money(collected(state))}</strong><span>练习累计实收</span></div></section><div class="section-title"><h2>全部包间</h2><div class="room-section-actions"><span>点击卡片操作</span>${issueButton}</div></div><div class="tabs" role="group" aria-label="房态筛选">${['全部','空闲','营业中','待清洁','已预订','异常'].map(f=>btn(f,'filter',`data-value="${f}"`,filter===f?'chip chosen':'chip')).join('')}</div><div class="rooms-grid">${state.rooms.filter(roomMatchesFilter).map(roomCard).join('') || '<p class="empty">目前没有这类房间。</p>'}</div><div class="tip"><span>✦</span><div><b>价格自动算，不用记表格</b><p>夜间房价已含赠饮，换酒不会加收差价。</p></div></div>${state.orders.filter(o=>o.status==='营业中'&&!state.rooms.some(r=>r.order===o.id)).map(o=>`<div class="panel"><b>${o.room} · 挂账被驳回，待收款</b>${btn('处理账单','order',`data-id="${o.id}"`)}</div>`).join('')}`;
+  const issueButton = allowedPermission('room.issue') ? btn('申请故障/维护','markRoomIssueMenu','','secondary') : '';
+  return `<section class="welcome"><div><p class="eyebrow">今晚，也从容一点</p><h1>房间一眼看清</h1><p>先选房间，再开房、加单或收钱。</p></div><div class="welcome-icon" aria-hidden="true">♫</div></section>${reminders.map(r=>`<div class="reservation-alert"><b>预订提醒 · ${r.room}</b><p>${esc(r.sessionLabel)}已到时，仍未开房；这是第 ${r.number} 次整点提醒，请通知预订人员 ${esc(r.person)}。</p></div>`).join('')}<section class="summary"><div><strong>${state.rooms.filter(r=>displayRoomStatus(r)==='空闲'&&!pendingRoomIssueReview(r.id)).length}<small> / 9</small></strong><span>空闲房间</span></div><div><strong>${active}</strong><span>正在营业</span></div><div><strong>${money(collected(state))}</strong><span>练习累计实收</span></div></section><div class="section-title"><h2>全部包间</h2><div class="room-section-actions"><span>点击卡片操作</span>${issueButton}</div></div><div class="tabs" role="group" aria-label="房态筛选">${['全部','空闲','营业中','待清洁','已预订','异常'].map(f=>btn(f,'filter',`data-value="${f}"`,filter===f?'chip chosen':'chip')).join('')}</div><div class="rooms-grid">${state.rooms.filter(roomMatchesFilter).map(roomCard).join('') || '<p class="empty">目前没有这类房间。</p>'}</div><div class="tip"><span>✦</span><div><b>价格自动算，不用记表格</b><p>夜间房价已含赠饮，换酒不会加收差价。</p></div></div>${state.orders.filter(o=>o.status==='营业中'&&!state.rooms.some(r=>r.order===o.id)).map(o=>`<div class="panel"><b>${o.room} · 挂账被驳回，待收款</b>${btn('处理账单','order',`data-id="${o.id}"`)}</div>`).join('')}`;
 }
 function depositPage() {
   const rows = searchDeposits(state.deposits, searchTerm);
@@ -316,6 +327,17 @@ function roundingReviewCards() {
   const rows=state.orders.filter(order=>order.roundingReview?.status==='待审核');
   return rows.map(order=>`<article class="panel"><div class="split"><h3>${esc(order.room)} · 特殊情况 ${money(order.roundingReview.amount)}</h3><span class="badge">待店长审核</span></div><p>${esc(order.roundingReview.note)} · 提交人 ${esc(order.roundingReview.submittedBy)}</p><p class="muted">${date(order.roundingReview.submittedAt)}</p>${allowedPermission('rounding.approve')?btn('查看并审核','reviewRounding',`data-id="${order.id}"`):'<span class="badge">请店长处理</span>'}</article>`).join('') || '<p class="muted">暂无特殊差额待审核。</p>';
 }
+function roomIssueReviewCards() {
+  const all=[...(state.roomIssueReviews || [])].sort((a,b)=>Date.parse(b.submittedAt)-Date.parse(a.submittedAt)||Number(b.id||0)-Number(a.id||0));
+  const rows=all.filter(request=>request.status==='待审核');
+  const pending=rows.map(request=>{
+    const canReview=allowedPermission('room.issue.approve') && request.submittedById!==state.user;
+    return `<article class="panel room-issue-review"><div class="split"><h3>${esc(request.room)} · ${esc(request.change)}</h3><span class="badge">待审核</span></div><p>${esc(request.fromStatus)} → ${esc(request.requestedStatus)}${request.issueType?` · ${esc(request.issueType)}`:''}</p><p class="muted">提交：${esc(request.submittedBy)} · ${date(request.submittedAt)}</p>${roomIssueEvidenceMarkup(request)}${canReview?btn('查看并审核','reviewRoomIssue',`data-id="${request.id}"`,'primary full'):request.submittedById===state.user?'<span class="badge">不能审核本人申请</span>':'<span class="badge">需要房间状态审核权限</span>'}</article>`;
+  }).join('');
+  const history=all.filter(request=>request.status!=='待审核').slice(0,6);
+  const historyMarkup=history.length?`<details class="panel room-issue-history"><summary>最近审核记录（${history.length}）</summary>${history.map(request=>`<div class="room-issue-history-row"><div class="split"><b>${esc(request.room)} · ${esc(request.change)}</b><span class="badge">${esc(request.status)}</span></div><p>${esc(request.fromStatus)} → ${esc(request.requestedStatus)} · 提交 ${esc(request.submittedBy)} · 审核 ${esc(request.decidedBy || '未记录')}</p>${roomIssueEvidenceMarkup(request)}${request.decisionNote?`<p class="muted">审核备注：${esc(request.decisionNote)}</p>`:''}</div>`).join('')}</details>`:'';
+  return `${pending || '<p class="muted">暂无房间状态变更待审核。</p>'}${historyMarkup}`;
+}
 function permissionCards() {
   if (!allowedPermission('identity.manage')) return '';
   const users = Object.entries(USERS).filter(([id, user]) => !user.legacy && id !== 'administrator');
@@ -332,8 +354,9 @@ function managePage() {
   if (!allowedPermission('backend.view')) return '<p>当前身份没有管理后台权限，请切换管理员或由管理员分配“进入管理后台”权限。</p>';
   const pendingGifts=state.orders.reduce((sum,o)=>sum+(o.giftRequests||[]).filter(r=>r.status==='待确认').length,0);
   const pendingRounding=state.orders.filter(order=>order.roundingReview?.status==='待审核').length;
+  const pendingRoomIssues=(state.roomIssueReviews || []).filter(request=>request.status==='待审核').length;
   const title = allowedPermission('identity.manage') ? '后台总管理' : '门店管理台';
-  return `<p class="eyebrow">${title}</p><h1>今天，心里有数</h1><section class="summary"><div><strong>${money(collected(state))}</strong><span>练习累计实收</span></div><div><strong>${state.orders.filter(o=>o.status==='待审批挂账').length+pendingGifts+pendingRounding}</strong><span>待处理</span></div><div><strong>${money(state.orders.filter(o=>o.status==='已挂账').reduce((n,o)=>n+o.credit.remaining,0))}</strong><span>未回款</span></div></section>${staffRecordingPanel()}${allowedPermission('identity.manage')?`<div class="section-title"><h2>身份权限</h2><span>仅管理员可调整</span></div>${permissionCards()}`:''}<div class="section-title"><h2>特殊差额审核</h2></div>${roundingReviewCards()}<div class="section-title"><h2>赠酒水确认</h2></div>${giftRequestCards()}<div class="section-title"><h2>挂账与回款</h2></div>${creditCards()}${allowedPermission('inventory.adjust')||allowedPermission('inventory.opening')?`<div class="section-title"><h2>库存与提醒</h2>${btn('管理库存','inventory')}</div>${stockNotices()}`:''}${allowedPermission('handover')?`<div class="section-title"><h2>交班核对</h2>${btn('核对收款','handover')}</div>${handoverHistory()}`:''}`;
+  return `<p class="eyebrow">${title}</p><h1>今天，心里有数</h1><section class="summary"><div><strong>${money(collected(state))}</strong><span>练习累计实收</span></div><div><strong>${state.orders.filter(o=>o.status==='待审批挂账').length+pendingGifts+pendingRounding+pendingRoomIssues}</strong><span>待处理</span></div><div><strong>${money(state.orders.filter(o=>o.status==='已挂账').reduce((n,o)=>n+o.credit.remaining,0))}</strong><span>未回款</span></div></section>${staffRecordingPanel()}${allowedPermission('identity.manage')?`<div class="section-title"><h2>身份权限</h2><span>仅管理员可调整</span></div>${permissionCards()}`:''}<div class="section-title"><h2>房间状态审核</h2><span>照片或文字留档</span></div>${roomIssueReviewCards()}<div class="section-title"><h2>特殊差额审核</h2></div>${roundingReviewCards()}<div class="section-title"><h2>赠酒水确认</h2></div>${giftRequestCards()}<div class="section-title"><h2>挂账与回款</h2></div>${creditCards()}${allowedPermission('inventory.adjust')||allowedPermission('inventory.opening')?`<div class="section-title"><h2>库存与提醒</h2>${btn('管理库存','inventory')}</div>${stockNotices()}`:''}${allowedPermission('handover')?`<div class="section-title"><h2>交班核对</h2>${btn('核对收款','handover')}</div>${handoverHistory()}`:''}`;
 }
 function stockNotices() {
   const low=Object.entries(state.inventory).filter(([,v])=>v.count!==null&&v.count<=v.threshold);
@@ -404,8 +427,13 @@ function staffBookingDialog() {
 }
 function showRoom(id) {
   const r=state.rooms.find(r=>r.id===id);
+  const review=pendingRoomIssueReview(id);
+  if (review) {
+    openDialog(`${id} · 状态变更待审核`, `<p><b>${esc(review.change)}</b>：${esc(review.fromStatus)} → ${esc(review.requestedStatus)}</p><p class="muted">提交：${esc(review.submittedBy)} · ${date(review.submittedAt)}</p>${roomIssueEvidenceMarkup(review)}${allowedPermission('room.issue.approve')?btn('到管理页审核','goRoomIssueReviews','','secondary full'):'<p class="muted">请等待有房间状态审核权限的人员处理。</p>'}`);
+    return;
+  }
   if (r.status==='故障/维护中') {
-    openDialog(`${id} · 故障/维护中`, `<p>${esc(r.issueType || '故障/维护中')}：${esc(r.issueNote || '未填写')}</p><p class="muted">登记：${esc(r.issueBy || '未记录')} · ${r.issueAt?date(r.issueAt):'时间未记录'}</p>`, allowedPermission('room.issue')?'恢复为空房':'', 'clearRoomIssue', {room:id});
+    openDialog(`${id} · 故障/维护中`, `<p>${esc(r.issueType || '故障/维护中')}：${esc(r.issueNote || '已提交照片凭证')}</p><p class="muted">提交：${esc(r.issueBy || '未记录')} · 审核：${esc(r.issueApprovedBy || '未记录')} · ${r.issueAt?date(r.issueAt):'时间未记录'}</p>${r.issueEvidencePhoto?`<a class="issue-proof" href="${esc(r.issueEvidencePhoto)}" target="_blank" rel="noreferrer"><img src="${esc(r.issueEvidencePhoto)}" alt="异常状态现场照片"><span>${esc(r.issueEvidencePhotoName || '查看现场照片')}</span></a>`:''}${allowedPermission('room.issue')?btn('申请恢复为空房','requestRoomRecovery',`data-id="${id}"`,'primary full'):'<p class="muted">当前身份没有提交恢复申请的权限。</p>'}`);
     return;
   }
   if (r.order) { showOrder(r.order); return; }
@@ -615,6 +643,16 @@ document.addEventListener('change',e=>{
     reader.onload=()=>{ if(dataInput)dataInput.value=String(reader.result || ''); if(nameInput)nameInput.value=file.name; if(status)status.textContent=`已选择图片：${file.name}`; };
     reader.onerror=()=>{ input.value=''; if(dataInput)dataInput.value=''; if(nameInput)nameInput.value=''; if(status)status.textContent=''; toast('图片读取失败，请重新选择'); };
     reader.readAsDataURL(file);
+    return;
+  }
+  if(e.target.id==='room-issue-photo'){
+    const input=e.target, file=input.files?.[0], dataInput=document.querySelector('#room-issue-photo-data'), nameInput=document.querySelector('#room-issue-photo-name'), status=document.querySelector('#room-issue-photo-status');
+    if(!file){ if(dataInput)dataInput.value=''; if(nameInput)nameInput.value=''; if(status)status.textContent='支持单张图片，不超过 500KB；照片仅保存在本机演示数据中。'; return; }
+    if(!file.type.startsWith('image/') || file.size>500*1024){ input.value=''; if(dataInput)dataInput.value=''; if(nameInput)nameInput.value=''; if(status)status.textContent=''; toast('图片需为有效图片且不超过 500KB'); return; }
+    const reader=new FileReader();
+    reader.onload=()=>{ if(dataInput)dataInput.value=String(reader.result || ''); if(nameInput)nameInput.value=file.name; if(status)status.textContent=`已选择现场照片：${file.name}`; };
+    reader.onerror=()=>{ input.value=''; if(dataInput)dataInput.value=''; if(nameInput)nameInput.value=''; if(status)status.textContent=''; toast('图片读取失败，请重新选择'); };
+    reader.readAsDataURL(file);
   }
 });
 document.addEventListener('click',e=>{
@@ -629,6 +667,7 @@ document.addEventListener('click',e=>{
       return;
     }
     if(a==='nav'||a==='home'){page=a==='home'?'rooms':target.dataset.page;render();window.scrollTo(0,0);return;}
+    if(a==='goRoomIssueReviews'){modal.close();page='manage';render();window.scrollTo(0,0);return;}
     if(a==='expenses'){if(!allowedPermission('expense.view'))throw Error('当前身份没有查看支出与报销的权限');page='expenses';render();window.scrollTo(0,0);return;}
     if(a==='procurement'){if(!allowedPermission('procurement.create')&&!state.procurements?.length)throw Error('当前身份没有查看采购记录的权限');page='procurement';render();window.scrollTo(0,0);return;}
     if(a==='incidents'){if(!allowedPermission('incident.create')&&!state.incidents?.length)throw Error('当前身份没有查看客诉与异常的权限');page='incidents';render();window.scrollTo(0,0);return;}
@@ -643,13 +682,33 @@ document.addEventListener('click',e=>{
       openDialog(`${actionLabel}大额报销`,`<p>${esc(expense.date||'')} · ${money(Number(expense.amount||0))} · ${esc(expense.person||'未记录')}</p><p>${esc(expense.description||'无说明')}</p><p class="notice">${a==='approveExpense'?'批准后将记录老板审批结果。':'驳回后经办人需要重新提交报销。'}</p>`,`${actionLabel}报销`,a,{id:expense.id});
       return;
     }
+    if(a==='reviewRoomIssue'){
+      const request=(state.roomIssueReviews || []).find(item=>item.id===Number(id));
+      if(!request||request.status!=='待审核')throw Error('该房间状态申请已经处理');
+      if(!allowedPermission('room.issue.approve'))throw Error('当前身份没有房间状态审核权限');
+      if(request.submittedById===state.user)throw Error('提交人不能审核本人申请，请切换其他有审核权限的身份');
+      openDialog(`审核房间状态 · ${esc(request.room)}`,`<div class="quote"><span>${esc(request.change)}</span><strong>${esc(request.requestedStatus)}</strong></div><p>${esc(request.fromStatus)} → ${esc(request.requestedStatus)}${request.issueType?` · ${esc(request.issueType)}`:''}</p><p class="muted">提交：${esc(request.submittedBy)} · ${date(request.submittedAt)}</p>${roomIssueEvidenceMarkup(request)}<label>审核备注（选填）<textarea name="decisionNote" maxlength="300" rows="2" placeholder="记录现场核对情况"></textarea></label>${btn('驳回申请','rejectRoomIssueDialog',`data-id="${request.id}"`,'danger full')}`,'批准并应用状态','approveRoomIssue',{request:request.id});
+      return;
+    }
+    if(a==='rejectRoomIssueDialog'){
+      const request=(state.roomIssueReviews || []).find(item=>item.id===Number(id));
+      if(!request||request.status!=='待审核')throw Error('该房间状态申请已经处理');
+      openDialog(`驳回房间状态申请 · ${esc(request.room)}`,`<p>${esc(request.change)}：${esc(request.fromStatus)} → ${esc(request.requestedStatus)}</p><label>驳回原因<textarea name="decisionNote" maxlength="300" rows="3" required placeholder="请说明需要补充或更正的内容"></textarea></label>`,'确认驳回','rejectRoomIssue',{request:request.id});
+      return;
+    }
     if(a==='filter'){filter=target.dataset.value;render();return;}
     if(a==='room')showRoom(id);
     else if(a==='markRoomIssueMenu'){
       if(!allowedPermission('room.issue'))throw Error('当前身份没有标记房间异常的权限');
-      const availableRooms=state.rooms.filter(room=>['空闲','待清洁'].includes(room.status));
+      const availableRooms=state.rooms.filter(room=>['空闲','待清洁'].includes(room.status)&&!pendingRoomIssueReview(room.id));
       if(!availableRooms.length){toast('当前没有可标记异常的房间');return;}
-      openDialog('标记房间异常',`<p class="notice">故障或维护中的房间会归类到“异常”筛选，并暂时不能开房或预订。</p><label>房号<select name="room">${options(availableRooms.map(room=>[room.id,`${room.id} · ${room.type}${room.status==='待清洁'?' · 待清洁':''}`]),availableRooms[0].id)}</select></label><label>异常状态<select name="issueType">${options(ROOM_ISSUE_TYPES.map(type=>[type,type]),ROOM_ISSUE_TYPES[0])}</select></label><label>故障／维护说明<textarea name="issueNote" maxlength="200" rows="3" placeholder="例如：空调故障，等待维修" required></textarea></label>`,'保存异常状态','markRoomIssue');
+      openDialog('申请标记房间异常',`<p class="notice">提交后房间暂停开房和预订；由另一名具备审核权限的人员批准后，才正式变为故障／维护中。</p><label>房号<select name="room">${options(availableRooms.map(room=>[room.id,`${room.id} · ${room.type}${room.status==='待清洁'?' · 待清洁':''}`]),availableRooms[0].id)}</select></label><label>异常状态<select name="issueType">${options(ROOM_ISSUE_TYPES.map(type=>[type,type]),ROOM_ISSUE_TYPES[0])}</select></label>${roomIssueEvidenceFields()}`,'提交异常审核','markRoomIssue');
+    }
+    else if(a==='requestRoomRecovery'){
+      const room=state.rooms.find(item=>item.id===id);
+      if(!room||room.status!=='故障/维护中')throw Error('房间异常状态已经变化');
+      if(!allowedPermission('room.issue'))throw Error('当前身份没有提交恢复申请的权限');
+      openDialog(`${id} · 申请恢复为空房`,`<p class="notice">恢复不会立即生效；请提交维修完成的照片或文字说明，由另一名有审核权限的人员批准。</p>${roomIssueEvidenceFields()}`,'提交恢复审核','clearRoomIssue',{room:id});
     }
     else if(a==='open'||a==='openDirty')openRoom(id,a==='openDirty');
     else if(a==='reserve'||a==='reserveFuture')openBookingDialog(id);
@@ -757,6 +816,7 @@ document.addEventListener('submit',e=>{
       if(a==='credit'){const canvas=document.querySelector('#signature');if(!canvas.dataset.signed)throw Error('请由经办员工本人在框内手写签字');d.signature=canvas.toDataURL('image/png');}
       if(a==='repay')d.amount=cents(d.amount);if(a==='handover'){d.actual=cents(d.actual);d.drawerCash=cents(d.drawerCash);}
       if(a==='expense'){const proofFile=f.querySelector('#expense-proof')?.files?.[0], proofInput=f.querySelector('#expense-proof-data');if(proofFile&&!proofInput?.value)throw Error('图片正在读取，请稍后再保存');d.amount=cents(d.amount);}
+      if(['markRoomIssue','clearRoomIssue'].includes(a)){const proofFile=f.querySelector('#room-issue-photo')?.files?.[0], proofInput=f.querySelector('#room-issue-photo-data');if(proofFile&&!proofInput?.value)throw Error('现场照片正在读取，请稍后再提交');}
       if(a==='deposit'){
         const data = new FormData(f), products=data.getAll('depositProduct'), counts=data.getAll('depositCount');
         d.items=products.map((product,index)=>({product,count:Number(counts[index])}));

@@ -12,7 +12,7 @@ test('关系型基线覆盖当前核心业务实体', () => {
   const tables = [...schema.matchAll(/CREATE TABLE\s+([a-z_]+)/g)].map(match => match[1]);
   assert.equal(new Set(tables).size, tables.length, '表名不应重复');
   for (const table of [
-    'employees', 'employee_permissions', 'rooms', 'room_issues', 'reservations',
+    'employees', 'employee_permissions', 'rooms', 'room_issues', 'room_issue_change_requests', 'reservations',
     'room_orders', 'order_items', 'payments', 'credits', 'stored_wine_lots',
     'inventory_balances', 'inventory_movements', 'expense_records',
     'procurement_records', 'incidents', 'handovers'
@@ -20,6 +20,9 @@ test('关系型基线覆盖当前核心业务实体', () => {
     assert.ok(tables.includes(table), `缺少业务表 ${table}`);
   }
   assert.ok(tables.length >= 35, '数据库应覆盖业务表、审计表和导入暂存表');
+  assert.match(schema, /CHECK \(evidence_text <> '' OR evidence_image_ref <> ''\)/);
+  assert.match(schema, /CHECK \(decided_by IS NULL OR decided_by <> requested_by\)/);
+  assert.match(schema, /CREATE UNIQUE INDEX room_issue_change_requests_one_pending_per_room/);
 });
 
 test('金额、营业日、房间并发和幂等约束已写入数据库', () => {
@@ -61,6 +64,7 @@ test('种子数据与当前房间、员工说明和历史商品别名一致', ()
   assert.match(seed, /legacy_yanjing/);
   assert.match(seed, /legacy_new_heineken/);
   assert.match(seed, /INSERT INTO employee_permissions/);
+  assert.match(seed, /room\.issue\.approve/);
 });
 
 test('CSV 模板固定金山日报与支出表字段顺序', () => {
