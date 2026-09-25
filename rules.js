@@ -33,6 +33,8 @@ export const USER_ALIASES = { staff: 'shaoBoss', keeper: 'wife', boss: 'zhuBoss'
 // 管理员可为其他演示身份分配的具体操作权限。管理员本身固定保留总管理权限。
 export const PERMISSION_ROLES = ['老板', '店长', '财务', '采购', '开单员', '服务员', '收银员', '库管'];
 export const PERMISSION_DEFINITIONS = [
+  { id: 'identity.manage', label: '调整身份权限', group: '身份与员工', roles: ['管理员'] },
+  { id: 'staff.record', label: '代员工登记订房与增购', group: '身份与员工', roles: ['管理员', '老板', '店长', '财务'] },
   { id: 'room.open', label: '开房', group: '房间与订单', roles: ['开单员', '老板'] },
   { id: 'room.reserve', label: '预订与取消预订', group: '房间与订单', roles: ['开单员', '老板'] },
   { id: 'room.clean', label: '完成清洁', group: '房间与订单', roles: ['服务员', '老板'] },
@@ -55,6 +57,11 @@ export const PERMISSION_DEFINITIONS = [
   { id: 'expense.create', label: '新增支出与报销', group: '经营后台', roles: ['管理员', '老板', '店长', '财务', '采购', '开单员', '服务员', '收银员', '库管'] },
   { id: 'expense.viewAll', label: '查看他人支出与报销', group: '经营后台', roles: ['老板', '店长', '财务'] },
   { id: 'expense.approve', label: '审批大额报销', group: '经营后台', roles: ['老板'] },
+  { id: 'procurement.create', label: '登记采购并关联支出／报销', group: '采购与库存', roles: ['管理员', '老板', '店长', '财务', '采购'] },
+  { id: 'procurement.viewAll', label: '查看全部采购记录', group: '采购与库存', roles: ['管理员', '老板', '店长', '财务'] },
+  { id: 'incident.create', label: '登记客诉／异常', group: '现场管理', roles: ['管理员', '老板', '店长', '财务', '采购', '开单员', '服务员', '收银员', '库管'] },
+  { id: 'incident.viewAll', label: '查看全部客诉／异常', group: '现场管理', roles: ['管理员', '老板', '店长', '财务'] },
+  { id: 'incident.resolve', label: '填写客诉／异常处理结果', group: '现场管理', roles: ['管理员', '老板', '店长', '财务', '采购', '开单员', '服务员', '收银员', '库管'] },
   { id: 'report.view', label: '查看经营报表', group: '审核与后台', roles: ['管理员', '老板', '财务', '店长', '收银员'] },
   { id: 'backend.view', label: '进入管理后台', group: '审核与后台', roles: ['管理员', '老板', '店长', '财务', '采购', '库管'] }
 ];
@@ -86,6 +93,13 @@ export const PAYMENT_METHODS = ['微信', '支付宝', '现金', '美团', '抖�
 export const EXPENSE_NATURES = ['一次性支出', '固定支出', '资金周转'];
 export const EXPENSE_TYPES = ['支出', '报销'];
 export const EXPENSE_APPROVAL_THRESHOLD = 50000;
+export const CONSUMABLES = [
+  { id: 'nuts', name: '瓜子', unit: '包', threshold: 2 },
+  { id: 'ice', name: '冰块', unit: '袋', threshold: 2 },
+  { id: 'tissue', name: '纸巾', unit: '包', threshold: 5 },
+  { id: 'straw', name: '吸管', unit: '包', threshold: 2 }
+];
+export const INCIDENT_TYPES = ['客诉', '设备异常', '卫生异常', '库存异常', '员工交接', '其他'];
 export const money = cents => `¥${(cents / 100).toFixed(2).replace(/\.00$/, '')}`;
 export const product = id => { const p = PRODUCTS.find(p => p.id === id); if (!p) throw Error('商品不存在'); return p; };
 export function slot(time) { const h = new Date(time).getHours(); return h >= 14 && h < 18 ? 'day' : h >= 18 || h < 2 ? 'night' : 'closed'; }
@@ -148,7 +162,7 @@ export function bonusAllowance(order, productId) {
 export function initialState() {
   const today = new Date(); today.setHours(20,0,0,0);
   const roomType = id => id === '888' ? 'VIP房' : ['V05', 'V06'].includes(id) ? '中房' : id.startsWith('V') ? '小房' : '大房';
-  return { version: 1, clock: today.toISOString(), user: 'staff', permissions: defaultPermissions(), capabilities: defaultCapabilities(), rooms: ['V01','V02','V03','V05','V06','333','666','999','888'].map(id => ({ id, type: roomType(id), status: '空闲', order: null })), orders: [], reservations: [], deposits: [], withdrawals: [], expenses: [], inventory: Object.fromEntries(PRODUCTS.filter(p => p.managed !== false).map(p => [p.id, { count: null, threshold: p.dozen ? 250 : 10 }])), ledger: [], notices: [], handovers: [], processed: [], serial: 0 };
+  return { version: 1, clock: today.toISOString(), user: 'staff', permissions: defaultPermissions(), capabilities: defaultCapabilities(), rooms: ['V01','V02','V03','V05','V06','333','666','999','888'].map(id => ({ id, type: roomType(id), status: '空闲', order: null })), orders: [], reservations: [], deposits: [], withdrawals: [], expenses: [], procurements: [], incidents: [], inventory: Object.fromEntries(PRODUCTS.filter(p => p.managed !== false).map(p => [p.id, { count: null, threshold: p.dozen ? 250 : 10 }])), consumables: Object.fromEntries(CONSUMABLES.map(item => [item.id, { count: null, opened: 0, unit: item.unit, threshold: item.threshold }])), ledger: [], notices: [], handovers: [], processed: [], serial: 0 };
 }
 export const total = order => order.base + order.gift + (order.sales || []).reduce((sum, line) => sum + line.amount, 0) + (order.otherCharges || []).reduce((sum, line) => sum + line.amount, 0);
 export const outstanding = order => Math.max(0, total(order) - (order.payments || []).reduce((sum, payment) => sum + payment.amount, 0));
@@ -185,7 +199,31 @@ export function visibleExpenses(state, user = effectiveUser(state)) {
   const rows = Array.isArray(state?.expenses) ? state.expenses : [];
   return hasPermission(user, 'expense.viewAll') ? rows : rows.filter(row => row.person === user?.name);
 }
+export function visibleProcurements(state, user = effectiveUser(state)) {
+  const rows = Array.isArray(state?.procurements) ? state.procurements : [];
+  return hasPermission(user, 'procurement.viewAll') ? rows : rows.filter(row => row.person === user?.name);
+}
+export function visibleIncidents(state, user = effectiveUser(state)) {
+  const rows = Array.isArray(state?.incidents) ? state.incidents : [];
+  if (hasPermission(user, 'incident.viewAll')) return rows;
+  return rows.filter(row => row.person === user?.name || row.assignee === user?.name);
+}
+export function pendingIncidentReminders(stateOrRows, now = new Date().toISOString()) {
+  const rows = Array.isArray(stateOrRows) ? stateOrRows : (stateOrRows?.incidents || []);
+  const current = new Date(now), hour = current.getHours();
+  if (!Number.isFinite(current.getTime()) || hour < 14) return [];
+  const today = `${current.getFullYear()}-${String(current.getMonth()+1).padStart(2,'0')}-${String(current.getDate()).padStart(2,'0')}`;
+  return rows.filter(row => row?.status !== '已完成' && row?.date && row.date <= today && row?.lastReminderDate !== today);
+}
 function need(state, roles, permission = '') { const user = effectiveUser(state); if (permission ? !hasPermission(user, permission) : !hasRole(user, roles)) throw Error('当前身份没有操作权限，请切换到对应演示身份'); }
+function delegatedEmployee(state, data) {
+  const id = String(data.employee || '').trim();
+  if (!id) return null;
+  need(state, [], 'staff.record');
+  const employee = USERS[id];
+  if (!employee || employee.legacy || id === 'administrator') throw Error('请选择有效的演示员工');
+  return { id, name: employee.name, recordedBy: effectiveUser(state).name };
+}
 function inventory(state, id, delta, source, time) {
   if (product(id).managed === false) return;
   const item = state.inventory[id];
@@ -225,7 +263,8 @@ function validateSettlementPayments(payments, amount, differenceType = '免零',
 export function transact(original, action, data = {}, key) {
   if (!key) throw Error('缺少操作编号');
   if (original.processed.includes(key)) return original;
-  const s = structuredClone(original), time = s.clock, person = effectiveUser(s).name;
+  const s = structuredClone(original), time = s.clock, operator = effectiveUser(s).name;
+  let person = operator;
   const room = s.rooms.find(r => r.id === data.room);
   const order = s.orders.find(o => o.id === data.order);
   const active = () => { if (!order || order.status !== '营业中') throw Error('账单已变化，请返回房间重新查看'); };
@@ -245,7 +284,8 @@ export function transact(original, action, data = {}, key) {
       s.capabilities[target] = permissionsForRoles(s.permissions[target]);
     }
   } else if (action === 'open') {
-    need(s, ['开单员','老板'], 'room.open');
+    const delegated = delegatedEmployee(s, data);
+    if (delegated) person = delegated.name; else need(s, ['开单员','老板'], 'room.open');
     if (!room || !['空闲','待清洁','已预订'].includes(room.status)) throw Error('房间已在使用');
     if (room.status === '待清洁' && !data.acceptDirty) throw Error('请先确认房间可以接待客人');
     const openSource = String(data.openSource ?? '').trim();
@@ -269,17 +309,18 @@ export function transact(original, action, data = {}, key) {
       drinks = [{ id: ++s.serial, product: data.beer, count: q.bottles }];
       inventory(s, data.beer, -q.bottles, '开房赠饮', time);
     }
-    s.orders.push({ id, room: room.id, time, person, openedBy: person, openSource: openSource || '线下', voucher: q.voucher, reservedBy: booking?.person || '', reservationSource: booking?.source || '', status: '营业中', base: q.base, gift: q.gift, period: q.period, drinks, extras: q.extras.map(extra => ({ ...extra, served: false })), sales: [], otherCharges: [], bonusGifts: [], giftRequests: [], payments: [], rounding: 0, roundingType: '', roundingNote: '', roundingReview: null, credit: null, exchanges: [] });
+    s.orders.push({ id, room: room.id, time, person, recordedBy: operator, employeeId: delegated?.id || '', openedBy: person, openSource: openSource || '线下', voucher: q.voucher, reservedBy: booking?.person || '', reservationSource: booking?.source || '', status: '营业中', base: q.base, gift: q.gift, period: q.period, drinks, extras: q.extras.map(extra => ({ ...extra, served: false })), sales: [], otherCharges: [], bonusGifts: [], giftRequests: [], payments: [], rounding: 0, roundingType: '', roundingNote: '', roundingReview: null, credit: null, exchanges: [] });
     room.status = '营业中'; room.order = id;
     if (booking) booking.status = '已到店';
   } else if (action === 'reserve') {
-    need(s, ['开单员','老板'], 'room.reserve');
+    const delegated = delegatedEmployee(s, data);
+    if (delegated) person = delegated.name; else need(s, ['开单员','老板'], 'room.reserve');
     if (!room || !['空闲','营业中','待清洁','已预订'].includes(room.status)) throw Error('当前房间状态不能预订');
     if (!RESERVATION_SOURCES.includes(data.source)) throw Error('请选择预订方式');
     const at = reservationTarget(time, data.dayOffset, data.session);
     if (s.reservations.some(r => r.room === room.id && r.status === '已预订' && Date.parse(r.at) === Date.parse(at))) throw Error('该房间该场次已经有预订');
     const sessionLabel = data.session === 'afternoon' ? '下午场（14:00—18:00）' : '夜间场（20:00—次日02:00）';
-    s.reservations.push({ id: ++s.serial, room: room.id, at, dayOffset: Number(data.dayOffset), session: data.session, sessionLabel, source: data.source, note: String(data.note || '').slice(0,100), status: '已预订', person });
+    s.reservations.push({ id: ++s.serial, room: room.id, at, dayOffset: Number(data.dayOffset), session: data.session, sessionLabel, source: data.source, note: String(data.note || '').slice(0,100), status: '已预订', person, employeeId: delegated?.id || '', recordedBy: operator });
   } else if (action === 'cancelReservation') {
     need(s, ['开单员','老板'], 'room.reserve'); if (!room) throw Error('房间状态已变化');
     const pending = s.reservations.filter(r => r.room === room.id && r.status === '已预订');
@@ -289,7 +330,9 @@ export function transact(original, action, data = {}, key) {
     booking.status = '已取消';
     if (room.status === '已预订' && !pending.some(r => r.id !== booking.id && reservationActiveAt(r, time))) room.status = '空闲';
   } else if (action === 'sale') {
-    need(s, ['开单员','服务员','老板'], 'order.sale'); active();
+    const delegated = delegatedEmployee(s, data);
+    if (delegated) person = delegated.name; else need(s, ['开单员','服务员','老板'], 'order.sale');
+    active();
     const items = Array.isArray(data.items) ? data.items : [{ product: data.product, spec: data.spec, count: data.count }];
     if (!items.length) throw Error('请至少添加一种酒水');
     const prepared = items.map(item => {
@@ -304,7 +347,7 @@ export function transact(original, action, data = {}, key) {
     const batch = ++s.serial;
     prepared.forEach(row => {
       const saleId = ++s.serial;
-      order.sales.push({ id: saleId, batch, product: row.p.id, count: row.item.count, spec: row.item.spec, bottles: row.bottles, amount: row.amount, drinks: [{ id: ++s.serial, product: row.p.id, count: row.bottles }] });
+      order.sales.push({ id: saleId, batch, product: row.p.id, count: row.item.count, spec: row.item.spec, bottles: row.bottles, amount: row.amount, drinks: [{ id: ++s.serial, product: row.p.id, count: row.bottles }], person, recordedBy: operator, employeeId: delegated?.id || '' });
     });
   } else if (action === 'otherCharge') {
     need(s, ['开单员','服务员','老板'], 'order.sale'); active();
@@ -444,10 +487,20 @@ export function transact(original, action, data = {}, key) {
     s.ledger.push({ id: ++s.serial, product: data.product, delta: data.count-(before ?? 0), before, after: data.count, reason: data.reason, source: before === null ? '期初建账' : '盘点调整', counted: true, person, time });
     item.count = data.count; if (before === null) item.openedAt = time;
     if (hasRole(effectiveUser(s), ['库管'])) s.notices.push({ id: ++s.serial, product: data.product, before, after: data.count, reason: data.reason, person, time });
+  } else if (action === 'consumableStock') {
+    const item = s.consumables?.[data.product]; if (!item) throw Error('该消耗品不在库存管理中');
+    const permission = item.count === null ? 'inventory.opening' : 'inventory.adjust';
+    need(s, [], permission);
+    if (!Number.isSafeInteger(data.count) || data.count < 0 || !Number.isSafeInteger(data.opened) || data.opened < 0) throw Error('消耗品数量应为非负整数');
+    if (!String(data.reason || '').trim()) throw Error('请填写调整原因');
+    const before = item.count, beforeOpened = item.opened || 0;
+    s.ledger.push({ id: ++s.serial, kind: 'consumable', product: data.product, delta: data.count-(before ?? 0), before, after: data.count, openedBefore: beforeOpened, openedAfter: data.opened, reason: data.reason, source: before === null ? '消耗品期初建账' : '消耗品盘点调整', counted: true, person, time });
+    item.count = data.count; item.opened = data.opened; if (before === null) item.openedAt = time;
+    if (hasRole(effectiveUser(s), ['库管'])) s.notices.push({ id: ++s.serial, kind: 'consumable', product: data.product, before, after: data.count, openedBefore: beforeOpened, openedAfter: data.opened, reason: data.reason, person, time });
   } else if (action === 'handover') {
     need(s, ['收银员','财务','店长','老板'], 'handover');
     if (!Number.isSafeInteger(data.actual) || data.actual < 0) throw Error('请输入有效实点金额');
-    if (!Number.isSafeInteger(data.drawerCash) || data.drawerCash < 0) throw Error('请输入有效的前台抽屉剩余现金');
+    if (!Number.isSafeInteger(data.drawerCash) || data.drawerCash < 0) throw Error('请输入有效的前台现金');
     const expected = collected(s); s.handovers.push({ id: ++s.serial, expected, actual: data.actual, drawerCash: data.drawerCash, difference: data.actual-expected, person, time });
   } else if (action === 'expense') {
     need(s, ['管理员','老板','店长','财务','采购','开单员','服务员','收银员','库管'], 'expense.create');
@@ -466,6 +519,43 @@ export function transact(original, action, data = {}, key) {
     s.expenses ??= [];
     const needsApproval = type === '报销' && data.amount > EXPENSE_APPROVAL_THRESHOLD;
     s.expenses.push({ id: ++s.serial, date: expenseDate, type, amount: data.amount, method: data.method, nature: data.nature, description, proof, proofName: String(data.proofName || '').trim().slice(0, 120), status: needsApproval ? '待老板审批' : '已记录', approver: '', approvedAt: '', person, time });
+  } else if (action === 'procurement') {
+    need(s, [], 'procurement.create');
+    const procurementDate = String(data.date || '').trim();
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(procurementDate) || !Number.isFinite(Date.parse(`${procurementDate}T00:00:00`))) throw Error('请选择有效采购日期');
+    const item = String(data.item || '').trim().slice(0, 80); if (!item) throw Error('请填写采购项目');
+    if (!Number.isSafeInteger(data.quantity) || data.quantity <= 0) throw Error('采购数量应为大于零的整数');
+    const unit = String(data.unit || '').trim().slice(0, 20); if (!unit) throw Error('请填写采购单位');
+    if (!Number.isSafeInteger(data.amount) || data.amount <= 0) throw Error('采购金额应为大于零的金额');
+    if (!PAYMENT_METHODS.includes(data.method)) throw Error('请选择付款方式');
+    const type = String(data.type || '支出').trim(); if (!EXPENSE_TYPES.includes(type)) throw Error('请选择记录类型');
+    if (!EXPENSE_NATURES.includes(data.nature)) throw Error('请选择支出性质');
+    const description = String(data.description || '').trim().slice(0, 200) || `采购${item}`;
+    s.expenses ??= [];
+    const needsApproval = type === '报销' && data.amount > EXPENSE_APPROVAL_THRESHOLD;
+    const expenseId = ++s.serial;
+    s.expenses.push({ id: expenseId, date: procurementDate, type, amount: data.amount, method: data.method, nature: data.nature, description, proof: '', proofName: '', status: needsApproval ? '待老板审批' : '已记录', approver: '', approvedAt: '', person, time, source: '采购' });
+    s.procurements ??= [];
+    s.procurements.push({ id: ++s.serial, date: procurementDate, item, quantity: data.quantity, unit, amount: data.amount, method: data.method, type, nature: data.nature, description, expenseId, status: needsApproval ? '报销待老板审批' : '已关联支出', person, time });
+  } else if (action === 'incident') {
+    need(s, [], 'incident.create');
+    const incidentDate = String(data.date || '').trim();
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(incidentDate) || !Number.isFinite(Date.parse(`${incidentDate}T00:00:00`))) throw Error('请选择有效异常日期');
+    if (!s.rooms.some(item => item.id === data.room)) throw Error('请选择房号');
+    const type = String(data.type || '').trim(); if (!INCIDENT_TYPES.includes(type)) throw Error('请选择问题类型');
+    const description = String(data.description || '').trim().slice(0, 300); if (!description) throw Error('请填写问题描述');
+    const assigneeId = String(data.assignee || '').trim(); const assignee = USERS[assigneeId];
+    if (!assignee || assignee.legacy || assigneeId === 'administrator') throw Error('请选择处理负责人');
+    s.incidents ??= [];
+    s.incidents.push({ id: ++s.serial, date: incidentDate, room: data.room, type, description, assigneeId, assignee: assignee.name, result: '', note: '', status: '待处理', person, createdAt: time, lastReminderDate: '' });
+  } else if (action === 'resolveIncident') {
+    need(s, [], 'incident.resolve');
+    const incident = (s.incidents || []).find(item => item.id === Number(data.id));
+    if (!incident || incident.status === '已完成') throw Error('该客诉／异常已经处理');
+    if (incident.assignee !== person && !hasPermission(effectiveUser(s), 'incident.viewAll')) throw Error('只有负责人或管理人员可以填写处理结果');
+    const result = String(data.result || '').trim().slice(0, 300); if (!result) throw Error('请填写处理结果');
+    const note = String(data.note || '').trim().slice(0, 300); if (!note) throw Error('请填写处理备注');
+    incident.result = result; incident.note = note; incident.status = '已完成'; incident.resolvedBy = person; incident.resolvedAt = time; incident.lastReminderDate = '';
   } else if (action === 'approveExpense' || action === 'rejectExpense') {
     need(s, ['老板'], 'expense.approve');
     const expense = (s.expenses || []).find(item => item.id === Number(data.id));

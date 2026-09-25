@@ -41,17 +41,17 @@ function page({ time = localTime(20), saved, storageBlocked = false } = {}) {
   };
 }
 
-test('自动配色只在设备时间14:00至18:00使用日间，跨边界立即更新', () => {
+test('自动配色按日出至19:00使用日间，跨边界立即更新', () => {
   for (const [hour, minute, second, expected] of [
-    [0, 0, 0, 'dark'], [6, 0, 0, 'dark'], [13, 59, 59, 'dark'],
-    [14, 0, 0, 'light'], [17, 59, 59, 'light'], [18, 0, 0, 'dark'], [23, 59, 59, 'dark']
+    [0, 0, 0, 'dark'], [5, 59, 59, 'dark'],
+    [6, 0, 0, 'light'], [18, 59, 59, 'light'], [19, 0, 0, 'dark'], [23, 59, 59, 'dark']
   ]) {
     const current = page({ time: localTime(hour, minute, second) });
     assert.equal(current.controller.theme, expected);
     assert.equal(current.controller.preference, 'auto');
     assert.equal(current.themeColor.content, expected === 'dark' ? '#141210' : '#f6f7f3');
   }
-  for (const [hour, expected] of [[14, 'light'], [18, 'dark']]) {
+  for (const [hour, expected] of [[6, 'light'], [19, 'dark']]) {
     const current = page({ time: localTime(hour - 1, 59, 59) });
     assert.equal([...current.timers.values()][0].delay, 1000);
     current.at(localTime(hour));
@@ -83,7 +83,7 @@ test('手动配色跨时段和刷新保持，恢复自动按当前设备时间�
 });
 
 test('页面恢复前台和其他标签页修改偏好时同步，业务数据变化不影响主题', () => {
-  const current = page({ time: localTime(17) });
+  const current = page({ time: localTime(18) });
   current.at(localTime(19));
   current.visibility(true);
   assert.equal(current.controller.theme, 'light');

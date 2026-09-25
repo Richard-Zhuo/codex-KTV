@@ -7,22 +7,23 @@
   let preference = 'auto', timer;
   try { preference = normalize(localStorage.getItem(key)); } catch { /* 存储不可用时仍可在本页切换。 */ }
 
+  const sunriseHour = 6, dayEndHour = 19;
   function refresh() {
     const now = new Date();
     const hour = now.getHours();
-    const theme = preference === 'auto' ? (hour >= 14 && hour < 18 ? 'light' : 'dark') : preference;
+    const theme = preference === 'auto' ? (hour >= sunriseHour && hour < dayEndHour ? 'light' : 'dark') : preference;
     const changed = root.dataset.theme !== theme || root.dataset.themePreference !== preference;
     root.dataset.theme = theme;
     root.dataset.themePreference = preference;
     document.querySelector('meta[name="theme-color"]')?.setAttribute('content', theme === 'dark' ? '#141210' : '#f6f7f3');
     if (changed) window.dispatchEvent(new CustomEvent('appearancechange'));
 
-    // 到14:00或18:00立即切换；每分钟复核设备时间，并在回到页面时重新核对。
+    // 到日出或19:00立即切换；每分钟复核设备时间，并在回到页面时重新核对。
     clearTimeout(timer);
     if (preference === 'auto') {
       const boundary = new Date(now);
-      if (hour >= 18) boundary.setDate(boundary.getDate() + 1);
-      boundary.setHours(hour >= 14 && hour < 18 ? 18 : 14, 0, 0, 0);
+      if (hour >= dayEndHour) boundary.setDate(boundary.getDate() + 1);
+      boundary.setHours(hour >= sunriseHour && hour < dayEndHour ? dayEndHour : sunriseHour, 0, 0, 0);
       timer = setTimeout(refresh, Math.max(1, Math.min(60000, boundary - now)));
     }
   }

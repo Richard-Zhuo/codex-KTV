@@ -1,4 +1,4 @@
-import { PRODUCTS, OTHER_CHARGE_CATEGORIES, USERS, USER_ALIASES, PERMISSION_ROLES, PERMISSION_DEFINITIONS, PERMISSION_IDS, defaultPermissions, defaultCapabilities, permissionsForRoles, effectiveUser, hasPermission, RESERVATION_SOURCES, OPENING_SOURCES, PAYMENT_METHODS, EXPENSE_NATURES, EXPENSE_TYPES, EXPENSE_APPROVAL_THRESHOLD, visibleExpenses, money, product, slot, cents, quote, initialState, total, outstanding, collected, collectableCharges, nextCollectCharge, transact, canExchange, bonusAllowance, reservationReminder, reservationActiveAt, searchDeposits, hasRole } from './rules.js';
+import { PRODUCTS, OTHER_CHARGE_CATEGORIES, USERS, USER_ALIASES, PERMISSION_ROLES, PERMISSION_DEFINITIONS, PERMISSION_IDS, defaultPermissions, defaultCapabilities, permissionsForRoles, effectiveUser, hasPermission, RESERVATION_SOURCES, OPENING_SOURCES, PAYMENT_METHODS, EXPENSE_NATURES, EXPENSE_TYPES, EXPENSE_APPROVAL_THRESHOLD, CONSUMABLES, INCIDENT_TYPES, visibleExpenses, visibleProcurements, visibleIncidents, pendingIncidentReminders, money, product, slot, cents, quote, initialState, total, outstanding, collected, collectableCharges, nextCollectCharge, transact, canExchange, bonusAllowance, reservationReminder, reservationActiveAt, searchDeposits, hasRole } from './rules.js';
 const KEY = 'jbhh-demo-v1';
 let state, storageProblem = '';
 try {
@@ -7,6 +7,8 @@ try {
   if (state.version !== 1 || !Array.isArray(state.rooms) || !state.inventory) throw Error();
   const fresh = initialState();
   for (const [id, item] of Object.entries(fresh.inventory)) state.inventory[id] ??= item;
+  state.consumables ??= structuredClone(fresh.consumables);
+  for (const [id, item] of Object.entries(fresh.consumables)) state.consumables[id] ??= item;
   for (const order of state.orders) {
     order.sales ??= [];
     order.otherCharges ??= [];
@@ -15,6 +17,8 @@ try {
     order.bonusGifts ??= [];
     order.giftRequests ??= [];
     order.openedBy ??= order.person || '';
+    order.recordedBy ??= order.person || '';
+    order.employeeId ??= '';
     order.openSource ??= '线下';
     order.reservedBy ??= '';
     order.reservationSource ??= '';
@@ -55,7 +59,7 @@ function migrateDemoState(next) {
     const fallback = Array.isArray(legacyRoles) ? permissionsForRoles(legacyRoles) : permissions;
     if (id === 'administrator') return [id, [...PERMISSION_IDS]];
     const normalized = Array.isArray(configured) ? [...new Set(configured.filter(permission => PERMISSION_IDS.includes(permission)))] : [...fallback];
-    const added = ['expense.view', 'expense.create', 'expense.viewAll', 'expense.approve'];
+    const added = ['expense.view', 'expense.create', 'expense.viewAll', 'expense.approve', 'identity.manage', 'staff.record', 'procurement.create', 'procurement.viewAll', 'incident.create', 'incident.viewAll', 'incident.resolve'];
     const configuredBase = normalized.filter(permission => !added.includes(permission));
     const fallbackBase = fallback.filter(permission => !added.includes(permission));
     const matchesRoleDefaults = configuredBase.length === fallbackBase.length && fallbackBase.every(permission => configuredBase.includes(permission));
@@ -73,6 +77,17 @@ function migrateDemoState(next) {
     expense.status ??= '已记录';
     expense.approver ??= '';
     expense.approvedAt ??= '';
+  }
+  const fresh = initialState();
+  next.consumables = next.consumables && typeof next.consumables === 'object' ? next.consumables : structuredClone(fresh.consumables);
+  for (const [id, item] of Object.entries(fresh.consumables)) next.consumables[id] ??= item;
+  next.procurements = Array.isArray(next.procurements) ? next.procurements : [];
+  next.incidents = Array.isArray(next.incidents) ? next.incidents : [];
+  for (const incident of next.incidents) {
+    incident.status ??= incident.result ? '已完成' : '待处理';
+    incident.result ??= '';
+    incident.note ??= '';
+    incident.lastReminderDate ??= '';
   }
   for (const room of next.rooms || []) if (['V05', 'V06'].includes(room.id)) room.type = '中房';
   return next;
@@ -97,6 +112,8 @@ const creditRoles = ['开单员','收银员','服务员','库管','店长','老�
 const managementRoles = ['管理员','老板','店长','财务','采购','库管'];
 const reportRoles = ['管理员','老板','财务','店长','收银员'];
 const roomOptions = () => options(state.rooms.map(r=>[r.id,`${r.id} · ${r.type}`]));
+const employeeOptions = (selected = '') => options(Object.entries(USERS).filter(([id, user]) => !user.legacy && id !== 'administrator').map(([id, user]) => [id, user.name]), selected);
+const consumableOptions = (selected = '') => options(CONSUMABLES.map(item => [item.id, `${item.name} · 按${item.unit}统计`]), selected);
 const contactText = record => [record?.name, record?.phone].filter(Boolean).join(' · ') || '未留联系人';
 const permissionDefinition = id => PERMISSION_DEFINITIONS.find(permission => permission.id === id);
 const permissionSummary = user => (user.permissions || []).map(id => permissionDefinition(id)?.label).filter(Boolean);
@@ -243,21 +260,21 @@ function roomCard(r) {
   const bookingText=bookings.length?`<small class="room-booking">未来预订：${reservationDate(bookings[0].at)} · ${esc(reservationSessionName(bookings[0]))}${bookings.length>1?`（还有${bookings.length-1}场）`:''}</small>`:'';
   return `<article class="room-card ${css}" data-action="room" data-id="${r.id}"><span class="room-top"><span>${r.type}</span><span class="status"><i></i>${status}</span></span><strong class="room-number">${r.id}</strong><span class="room-bottom">${o?`<b>${money(total(o))}</b><span>查看账单 →</span>`:r.status==='空闲'?'<span>点这里开房</span><span>＋</span>':r.status==='待清洁'?'<span>打扫后恢复空房</span><span>→</span>':'<span>查看预订</span><span>→</span>'}</span>${o && r.status==='营业中'?roomExtraActions(o):''}${bookingText}</article>`;
 }
-function appearanceControls() {
-  const dark = window.ktvAppearance.theme === 'dark', automatic = window.ktvAppearance.preference === 'auto';
-  return `<div class="theme-tools" role="group" aria-label="页面配色"><button class="theme-toggle" type="button" role="switch" aria-label="夜间模式" aria-checked="${dark}" data-action="toggleTheme"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="M20.9 13A9 9 0 0 1 11 3.1 9 9 0 1 0 20.9 13Z"/></svg><span>夜间模式</span><span class="theme-track" aria-hidden="true"></span></button><button class="theme-auto" type="button" data-action="autoTheme" aria-pressed="${automatic}" title="按设备当前时间，14:00–18:00日间，其余时间夜间">${automatic?'自动 ✓':'恢复自动'}</button></div>`;
+function appearanceSettings() {
+  const preference = window.ktvAppearance.preference;
+  return `<section class="panel appearance-panel"><div class="split"><div><h3>页面配色</h3><p class="muted">选择日间、夜间或按设备时间自动切换。</p></div><span class="badge">当前${preference==='auto'?'自动':preference==='dark'?'夜间':'日间'}</span></div><label>模式<select id="appearance-preference" aria-label="页面配色模式">${options([['light','日间'],['dark','夜间'],['auto','自动（日出至19:00日间）']],preference)}</select></label><p class="muted">自动模式按本机时间在日出（演示按 06:00）至19:00使用日间，其余时间使用夜间。</p></section>`;
 }
 function syncAppearanceControls() {
-  const dark = window.ktvAppearance.theme === 'dark', automatic = window.ktvAppearance.preference === 'auto';
-  document.querySelector('[data-action="toggleTheme"]')?.setAttribute('aria-checked', String(dark));
-  const autoButton = document.querySelector('[data-action="autoTheme"]');
-  if (autoButton) { autoButton.setAttribute('aria-pressed', String(automatic)); autoButton.textContent = automatic ? '自动 ✓' : '恢复自动'; }
+  const select = document.querySelector('#appearance-preference');
+  if (select) select.value = window.ktvAppearance.preference;
+  const badge = document.querySelector('.appearance-panel .badge');
+  if (badge) badge.textContent = `当前${window.ktvAppearance.preference==='auto'?'自动':window.ktvAppearance.preference==='dark'?'夜间':'日间'}`;
 }
 window.addEventListener('appearancechange', syncAppearanceControls);
 function render() {
   const canManage = allowedPermission('backend.view');
   const user = currentUser();
-  app.innerHTML = `<header class="topbar"><a class="brand" href="#" data-action="home"><span class="brand-mark">金</span><span>金碧辉煌<small>KTV · 门店助手</small></span></a><div class="header-actions">${appearanceControls()}<button class="identity" data-action="identity"><span class="avatar">${esc(currentUser().name[0])}</span>${esc(currentUser().name)} <span>⌄</span></button></div></header><main id="main"><div class="connection"><span class="online-dot"></span>本机练习${navigator.onLine?'':' · 当前设备离线'}<span>${date(state.clock)} · ${slot(state.clock)==='day'?'白天场':slot(state.clock)==='night'?'夜间场':'非营业时段'}</span></div>${storageProblem?`<p class="notice">${storageProblem}</p>`:''}${page==='rooms'?roomsPage():page==='deposits'?depositPage():page==='manage'?managePage():page==='expenses'?expensesPage():page==='report'?reportPage():minePage()}</main><nav class="bottom-nav" aria-label="主导航">${[['rooms','▦','房间'],['deposits','▤','存取酒'],...(allowedPermission('report.view')?[['report','▤','报表']]:[]),['mine','○','我的'],...(canManage?[['manage','▧','管理']]:[])].map(([id,icon,label])=>`<button data-action="nav" data-page="${id}" class="${page===id?'selected':''}" ${page===id?'aria-current="page"':''}><span aria-hidden="true">${icon}</span>${label}</button>`).join('')}</nav>`;
+  app.innerHTML = `<header class="topbar"><a class="brand" href="#" data-action="home"><span class="brand-mark">金</span><span>金碧辉煌<small>KTV · 门店助手</small></span></a><div class="header-actions"><button class="identity" data-action="identity"><span class="avatar">${esc(currentUser().name[0])}</span>${esc(currentUser().name)} <span>⌄</span></button></div></header><main id="main"><div class="connection"><span class="online-dot"></span>本机练习${navigator.onLine?'':' · 当前设备离线'}<span>${date(state.clock)} · ${slot(state.clock)==='day'?'白天场':slot(state.clock)==='night'?'夜间场':'非营业时段'}</span></div>${storageProblem?`<p class="notice">${storageProblem}</p>`:''}${page==='rooms'?roomsPage():page==='deposits'?depositPage():page==='manage'?managePage():page==='expenses'?expensesPage():page==='procurement'?procurementPage():page==='incidents'?incidentPage():page==='report'?reportPage():minePage()}</main><nav class="bottom-nav" aria-label="主导航">${[['rooms','▦','房间'],['deposits','▤','存取酒'],...(allowedPermission('report.view')?[['report','▤','报表']]:[]),['mine','○','我的'],...(canManage?[['manage','▧','管理']]:[])].map(([id,icon,label])=>`<button data-action="nav" data-page="${id}" class="${page===id?'selected':''}" ${page===id?'aria-current="page"':''}><span aria-hidden="true">${icon}</span>${label}</button>`).join('')}</nav>`;
 }
 function roomsPage() {
   const active = state.rooms.filter(r=>r.status==='营业中').length;
@@ -292,25 +309,29 @@ function roundingReviewCards() {
 }
 function permissionCards() {
   if (!allowedPermission('identity.manage')) return '';
-  return Object.entries(USERS).filter(([id, user]) => !user.legacy && id !== 'administrator').map(([id, user]) => {
-    const active = effectiveUser(state, id);
-    const labels = permissionSummary(active);
-    const label = labels.length ? `${labels.length}项具体权限` : '已停用';
-    return `<article class="panel"><div class="split"><h3>${esc(user.name)}</h3><span class="badge">${esc(label)}</span></div><p class="muted">${labels.length?esc(labels.slice(0,4).join('、'))+(labels.length>4?' 等':''):'当前没有可用操作'}</p>${btn('调整具体权限','editPermissions',`data-id="${id}"`,'secondary full')}</article>`;
-  }).join('');
+  const users = Object.entries(USERS).filter(([id, user]) => !user.legacy && id !== 'administrator');
+  const selected = users[0]?.[0] || '';
+  const active = selected ? effectiveUser(state, selected) : null;
+  const labels = active ? permissionSummary(active) : [];
+  return `<article class="panel permission-single-card"><div class="split"><div><h3>身份权限</h3><p class="muted">每个身份单独调整具体操作权限，岗位名称只作说明。</p></div><span class="badge">管理员专用</span></div><label>选择身份<select id="permission-target" aria-label="选择要调整的身份">${options(users.map(([id, user]) => [id, user.name]), selected)}</select></label><p id="permission-target-summary" class="permission-summary muted">${labels.length ? esc(labels.join('、')) : '当前没有可用操作'}</p>${btn('调整具体权限','editPermissions',`data-id="${selected}"`,'secondary full')}</article>`;
+}
+function staffRecordingPanel() {
+  if (!allowedPermission('staff.record')) return '';
+  return `<div class="section-title"><h2>员工补录</h2><span>记录订房与增购归属</span></div><div class="menu-list staff-recording-panel">${btn('登记员工订房　→','staffBooking','','secondary')}${btn('登记员工增购酒水　→','staffSale','','secondary')}</div>`;
 }
 function managePage() {
   if (!allowedPermission('backend.view')) return '<p>当前身份没有管理后台权限，请切换管理员或由管理员分配“进入管理后台”权限。</p>';
   const pendingGifts=state.orders.reduce((sum,o)=>sum+(o.giftRequests||[]).filter(r=>r.status==='待确认').length,0);
   const pendingRounding=state.orders.filter(order=>order.roundingReview?.status==='待审核').length;
   const title = allowedPermission('identity.manage') ? '后台总管理' : '门店管理台';
-  return `<p class="eyebrow">${title}</p><h1>今天，心里有数</h1><section class="summary"><div><strong>${money(collected(state))}</strong><span>练习累计实收</span></div><div><strong>${state.orders.filter(o=>o.status==='待审批挂账').length+pendingGifts+pendingRounding}</strong><span>待处理</span></div><div><strong>${money(state.orders.filter(o=>o.status==='已挂账').reduce((n,o)=>n+o.credit.remaining,0))}</strong><span>未回款</span></div></section>${allowedPermission('identity.manage')?`<div class="section-title"><h2>身份权限</h2><span>仅管理员可调整</span></div>${permissionCards()}`:''}<div class="section-title"><h2>特殊差额审核</h2></div>${roundingReviewCards()}<div class="section-title"><h2>赠酒水确认</h2></div>${giftRequestCards()}<div class="section-title"><h2>挂账与回款</h2></div>${creditCards()}${allowedPermission('inventory.adjust')||allowedPermission('inventory.opening')?`<div class="section-title"><h2>库存与提醒</h2>${btn('管理库存','inventory')}</div>${stockNotices()}`:''}${allowedPermission('handover')?`<div class="section-title"><h2>交班核对</h2>${btn('核对收款','handover')}</div>${handoverHistory()}`:''}`;
+  return `<p class="eyebrow">${title}</p><h1>今天，心里有数</h1><section class="summary"><div><strong>${money(collected(state))}</strong><span>练习累计实收</span></div><div><strong>${state.orders.filter(o=>o.status==='待审批挂账').length+pendingGifts+pendingRounding}</strong><span>待处理</span></div><div><strong>${money(state.orders.filter(o=>o.status==='已挂账').reduce((n,o)=>n+o.credit.remaining,0))}</strong><span>未回款</span></div></section>${staffRecordingPanel()}${allowedPermission('identity.manage')?`<div class="section-title"><h2>身份权限</h2><span>仅管理员可调整</span></div>${permissionCards()}`:''}<div class="section-title"><h2>特殊差额审核</h2></div>${roundingReviewCards()}<div class="section-title"><h2>赠酒水确认</h2></div>${giftRequestCards()}<div class="section-title"><h2>挂账与回款</h2></div>${creditCards()}${allowedPermission('inventory.adjust')||allowedPermission('inventory.opening')?`<div class="section-title"><h2>库存与提醒</h2>${btn('管理库存','inventory')}</div>${stockNotices()}`:''}${allowedPermission('handover')?`<div class="section-title"><h2>交班核对</h2>${btn('核对收款','handover')}</div>${handoverHistory()}`:''}`;
 }
 function stockNotices() {
   const low=Object.entries(state.inventory).filter(([,v])=>v.count!==null&&v.count<=v.threshold);
-  return `${low.map(([id,v])=>`<p class="notice">${product(id).name}剩 ${v.count} 支，预警线 ${v.threshold} 支</p>`).join('')}${state.notices.slice().reverse().map(n=>`<div class="panel"><b>${product(n.product).name}：${n.before} → ${n.after} 支</b><p>${esc(n.person)} · ${date(n.time)}</p><p>${esc(n.reason)}</p><span class="badge">已生效 · 事后告知</span></div>`).join('')||'<p class="muted">暂无库管调整提醒。未建账商品不会预警。</p>'}`;
+  const consumableLow=Object.entries(state.consumables || {}).filter(([,v])=>v.count!==null&&v.count<=v.threshold);
+  return `${low.map(([id,v])=>`<p class="notice">${product(id).name}剩 ${v.count} 支，预警线 ${v.threshold} 支</p>`).join('')}${consumableLow.map(([id,v])=>`<p class="notice">${CONSUMABLES.find(item=>item.id===id)?.name || id}剩 ${v.count} ${v.unit || '份'}${v.opened?`，已开封 ${v.opened} 份`:''}，预警线 ${v.threshold}</p>`).join('')}${state.notices.slice().reverse().map(n=>n.kind==='consumable'?`<div class="panel"><b>${CONSUMABLES.find(item=>item.id===n.product)?.name || n.product}：${n.before ?? '未建账'} → ${n.after} ${n.unit || '份'}</b><p>${esc(n.person)} · ${date(n.time)}</p><p>${esc(n.reason)}</p><span class="badge">已生效 · 事后告知</span></div>`:`<div class="panel"><b>${product(n.product).name}：${n.before} → ${n.after} 支</b><p>${esc(n.person)} · ${date(n.time)}</p><p>${esc(n.reason)}</p><span class="badge">已生效 · 事后告知</span></div>`).join('')||'<p class="muted">暂无库管调整提醒。未建账商品不会预警。</p>'}`;
 }
-function handoverHistory() { return state.handovers.slice().reverse().map(h=>`<div class="panel"><b>${date(h.time)} · ${esc(h.person)}</b><p>系统实收 ${money(h.expected)} / 实点 ${money(h.actual)}</p><p>前台抽屉剩余现金：${h.drawerCash===null||h.drawerCash===undefined?'旧记录未填写':money(h.drawerCash)}</p><strong class="${h.difference?'amber':'green'}">差异 ${money(h.difference)}</strong></div>`).join('') || '<p class="muted">尚未交班。挂账不计入实收，回款按实际登记计入。</p>'; }
+function handoverHistory() { return state.handovers.slice().reverse().map(h=>`<div class="panel"><b>${date(h.time)} · ${esc(h.person)}</b><p>系统实收 ${money(h.expected)} / 实点 ${money(h.actual)}</p><p>前台现金：${h.drawerCash===null||h.drawerCash===undefined?'旧记录未填写':money(h.drawerCash)}</p><strong class="${h.difference?'amber':'green'}">差异 ${money(h.difference)}</strong></div>`).join('') || '<p class="muted">尚未交班。挂账不计入实收，回款按实际登记计入。</p>'; }
 function expensesPage() {
   const rows = [...visibleExpenses(state, currentUser())].sort((a,b) => String(b.date || '').localeCompare(String(a.date || '')) || Number(b.id || 0) - Number(a.id || 0));
   const totalAmount = rows.reduce((sum, row) => sum + Number(row.amount || 0), 0);
@@ -327,6 +348,30 @@ function expensesPage() {
 function expenseDialog() {
   openDialog('添加支出 / 报销',`<p class="notice">报销金额超过 ${money(EXPENSE_APPROVAL_THRESHOLD)} 需要老板审批；图片凭证为选填，演示数据只保存在当前浏览器。</p><div class="field-pair"><label>日期<input type="date" name="date" value="${dayValue(state.clock)}" required></label><label>记录类型<select name="type">${options(EXPENSE_TYPES.map(type=>[type,type]),EXPENSE_TYPES[0])}</select></label></div><div class="field-pair"><label>支出金额（元）<input name="amount" inputmode="decimal" placeholder="例如：100.00" required></label><label>付款方式<select name="method">${options(PAYMENT_METHODS.map(method=>[method,method]),PAYMENT_METHODS[0])}</select></label></div><label>性质<select name="nature">${options(EXPENSE_NATURES.map(nature=>[nature,nature]),EXPENSE_NATURES[0])}</select></label><label>说明<textarea name="description" maxlength="200" rows="3" placeholder="例如：1月电费、采购水果、员工报销" required></textarea></label><label>图片凭证（选填）<input id="expense-proof" type="file" accept="image/*"><input id="expense-proof-data" type="hidden" name="proof"><input id="expense-proof-name" type="hidden" name="proofName"></label><p id="expense-proof-status" class="muted">支持图片凭证，单张不超过 500KB。</p>`,'保存记录','expense');
 }
+function procurementPage() {
+  const rows=[...visibleProcurements(state,currentUser())].sort((a,b)=>String(b.date||'').localeCompare(String(a.date||'')) || Number(b.id||0)-Number(a.id||0));
+  const totalAmount=rows.reduce((sum,row)=>sum+Number(row.amount||0),0);
+  const scope=allowedPermission('procurement.viewAll')?'当前显示所有人的采购记录。':'当前只显示你登记的采购记录。';
+  const body=rows.map(row=>`<article class="panel procurement-card"><div class="split"><div><h3>${esc(row.item)}</h3><p>${esc(row.date)} · ${row.quantity} ${esc(row.unit)} · ${money(row.amount)}</p></div><span class="badge">${esc(row.status||'已关联支出')}</span></div><p class="muted">${esc(row.type||'支出')} · ${esc(row.nature||'')} · ${esc(row.method||'')} · ${esc(row.person||'')}</p><p>${esc(row.description||'')}</p></article>`).join('');
+  return `<p class="eyebrow">采购记录</p><div class="section-title expense-heading"><div><h1>采购</h1><p class="muted">${scope} 采购会自动关联一笔支出／报销记录。</p></div><div class="expense-toolbar">${btn('返回我的','backMine','','quiet')}${allowedPermission('procurement.create')?btn('＋ 登记采购','addProcurement','','primary'):''}</div></div><section class="summary expense-summary"><div><strong>${rows.length}</strong><span>采购笔数</span></div><div><strong>${money(totalAmount)}</strong><span>采购合计</span></div><div><strong>${rows.filter(row=>String(row.status||'').includes('待')).length}</strong><span>待审批</span></div></section>${rows.length?`<div class="procurement-list">${body}</div>`:`<div class="empty">${allowedPermission('procurement.viewAll')?'尚无采购记录。':'尚无你登记的采购记录。'}<small>点击“登记采购”填写第一笔采购。</small></div>`}`;
+}
+function procurementDialog() {
+  openDialog('登记采购',`<p class="notice">采购会同步写入支出／报销记录；报销金额超过 ${money(EXPENSE_APPROVAL_THRESHOLD)} 会进入老板审批。</p><div class="field-pair"><label>日期<input type="date" name="date" value="${dayValue(state.clock)}" required></label><label>记录类型<select name="type">${options(EXPENSE_TYPES.map(type=>[type,type]),'支出')}</select></label></div><div class="field-pair"><label>采购项目<input name="item" maxlength="80" placeholder="例如：瓜子、纸巾" required></label><label>数量<input name="quantity" type="number" min="1" step="1" inputmode="numeric" required></label></div><div class="field-pair"><label>单位<input name="unit" maxlength="20" placeholder="包、箱、份" required></label><label>金额（元）<input name="amount" inputmode="decimal" placeholder="例如：120.00" required></label></div><div class="field-pair"><label>付款方式<select name="method">${options(PAYMENT_METHODS.map(method=>[method,method]),PAYMENT_METHODS[0])}</select></label><label>性质<select name="nature">${options(EXPENSE_NATURES.map(nature=>[nature,nature]),EXPENSE_NATURES[0])}</select></label></div><label>说明（选填）<textarea name="description" maxlength="200" rows="3" placeholder="例如：补充消耗品库存"></textarea></label>`,'保存采购并关联支出','procurement');
+}
+function incidentPage() {
+  const rows=[...visibleIncidents(state,currentUser())].sort((a,b)=>String(b.date||'').localeCompare(String(a.date||'')) || Number(b.id||0)-Number(a.id||0));
+  const reminders=pendingIncidentReminders(state,state.clock).filter(row=>rows.some(item=>item.id===row.id));
+  const body=rows.map(row=>{const canResolve= row.status!=='已完成' && allowedPermission('incident.resolve') && (row.assignee===currentUser().name || allowedPermission('incident.viewAll')); return `<article class="panel incident-card ${row.status==='已完成'?'incident-complete':''}"><div class="split"><div><h3>${esc(row.type)} · ${esc(row.room)}</h3><p>${esc(row.date)} · 登记人 ${esc(row.person||'未记录')}</p></div><span class="badge">${esc(row.status)}</span></div><p>${esc(row.description)}</p><p class="muted">负责人：${esc(row.assignee||'未指定')}${row.status==='已完成'?` · ${esc(row.resolvedBy||'')} 于 ${date(row.resolvedAt)}`:''}</p>${row.status==='已完成'?`<div class="incident-result"><b>处理结果</b><p>${esc(row.result)}</p><b>备注</b><p>${esc(row.note)}</p></div>`:canResolve?btn('填写处理结果','resolveIncident',`data-id="${row.id}"`,'secondary full'):'<span class="badge">等待负责人处理</span>'}</article>`;}).join('');
+  return `<p class="eyebrow">现场记录</p><div class="section-title expense-heading"><div><h1>客诉 / 异常</h1><p class="muted">${allowedPermission('incident.viewAll')?'当前显示全部记录。':'当前显示你登记或负责处理的记录。'} 未完成项目每天14:00提醒。</p></div><div class="expense-toolbar">${btn('返回我的','backMine','','quiet')}${allowedPermission('incident.create')?btn('＋ 登记客诉 / 异常','addIncident','','primary'):''}</div></div>${reminders.length?`<div class="notice incident-reminder">今天14:00提醒：还有 ${reminders.length} 项未完成，请及时填写处理结果。</div>`:''}<section class="summary expense-summary"><div><strong>${rows.length}</strong><span>记录数</span></div><div><strong>${rows.filter(row=>row.status!=='已完成').length}</strong><span>待处理</span></div><div><strong>${reminders.length}</strong><span>今日提醒</span></div></section>${rows.length?`<div class="incident-list">${body}</div>`:'<div class="empty">暂无客诉或异常记录。<small>登记后分配负责人填写处理结果和备注。</small></div>'}`;
+}
+function incidentDialog() {
+  openDialog('登记客诉 / 异常',`<p class="notice">未完成项目会在每天14:00提醒；负责人可补充处理结果和备注。</p><div class="field-pair"><label>日期<input type="date" name="date" value="${dayValue(state.clock)}" required></label><label>房号<select name="room">${roomOptions()}</select></label></div><label>问题类型<select name="type">${options(INCIDENT_TYPES.map(type=>[type,type]),INCIDENT_TYPES[0])}</select></label><label>问题描述<textarea name="description" maxlength="300" rows="4" placeholder="请描述发生了什么" required></textarea></label><label>处理负责人<select name="assignee" required>${employeeOptions(state.user)}</select></label>`,'保存并指派负责人','incident');
+}
+function resolveIncidentDialog(id) {
+  const row=state.incidents.find(item=>item.id===Number(id));
+  if(!row) { toast('这条客诉／异常已经不存在'); return; }
+  openDialog(`处理客诉 / 异常 · ${esc(row.room)}`,`<p>${esc(row.date)} · ${esc(row.type)}</p><div class="notice">${esc(row.description)}</div><label>处理结果<textarea name="result" maxlength="300" rows="4" placeholder="例如：已联系客人并完成补偿" required></textarea></label><label>备注<textarea name="note" maxlength="300" rows="3" placeholder="请记录后续跟进信息" required></textarea></label>`,'保存处理结果','resolveIncident',{id});
+}
 function myReservationSection() {
   const name=currentUser().name;
   const reservations=state.reservations.filter(reservation=>reservation.person===name).sort((a,b)=>Date.parse(b.at)-Date.parse(a.at));
@@ -341,7 +386,12 @@ function myReservationSection() {
   return `<div class="section-title"><h2>我的订房与酒水</h2><span>提成核对依据</span></div><section class="summary personal-commission-summary"><div><strong>${reservations.length}</strong><span>本人预订记录</span></div><div><strong>${bookedOrders.length}</strong><span>已关联开房</span></div><div><strong>${money(beverageSales)}</strong><span>关联酒水增购</span></div></section><p class="muted commission-note">这里只列本人名下的订房和酒水金额；提成比例及应发金额尚未配置。</p><div class="personal-booking-list">${rows||'<div class="empty">当前账户还没有预订房间记录。</div>'}</div>`;
 }
 function minePage() {
-  return `<p class="eyebrow">我的账户</p><h1>${esc(currentUser().name)}，辛苦了</h1><p class="muted">演示职责：${currentUser().roles.length?currentUser().roles.join('、'):'暂无岗位权限'}</p>${myReservationSection()}<div class="section-title"><h2>练习设置</h2></div><div class="menu-list">${btn('切换演示身份　→','identity')}${btn('调整练习时间　→','clock')}${allowedPermission('expense.view')?btn('支出 / 报销记录　→','expenses'):''}${allowedPermission('handover')?btn('交班 · 核对收款　→','handover'):''}${allowedPermission('inventory.adjust')||allowedPermission('inventory.opening')?btn('库存 · 建账与调整　→','inventory'):''}${btn('练习说明　→','guide')}${btn('恢复演示数据　→','reset','','danger')}</div><div class="tip"><span>i</span><div><b>这是一份操作演示</b><p>数据只保存在当前浏览器。不同手机不共享；身份切换不是真实登录。手工确认收款不代表银行到账。</p></div></div>${allowedPermission('credit.approve')||allowedPermission('credit.repay')?`<h2>挂账记录</h2>${creditCards()}`:''}`;
+  const reminders=pendingIncidentReminders(visibleIncidents(state,currentUser()),state.clock);
+  return `<p class="eyebrow">我的账户</p><h1>${esc(currentUser().name)}，辛苦了</h1><p class="muted">演示职责：${currentUser().roles.length?currentUser().roles.join('、'):'暂无岗位权限'}</p>${reminders.length?`<div class="notice incident-reminder">今天14:00提醒：还有 ${reminders.length} 项客诉／异常待处理。${btn('查看记录','incidents','', 'quiet')}</div>`:''}${myReservationSection()}${appearanceSettings()}<div class="section-title"><h2>练习设置</h2></div><div class="menu-list">${btn('切换演示身份　→','identity')}${btn('调整练习时间　→','clock')}${allowedPermission('expense.view')?btn('支出 / 报销记录　→','expenses'):''}${allowedPermission('procurement.create')||state.procurements?.length?btn('采购记录　→','procurement'):''}${allowedPermission('incident.create')||state.incidents?.length?btn('客诉 / 异常　→','incidents'):''}${allowedPermission('handover')?btn('交班 · 核对收款　→','handover'):''}${allowedPermission('inventory.adjust')||allowedPermission('inventory.opening')?btn('库存 · 建账与调整　→','inventory'):''}${btn('练习说明　→','guide')}${btn('恢复演示数据　→','reset','','danger')}</div><div class="tip"><span>i</span><div><b>这是一份操作演示</b><p>数据只保存在当前浏览器。不同手机不共享；身份切换不是真实登录。手工确认收款不代表银行到账。</p></div></div>${allowedPermission('credit.approve')||allowedPermission('credit.repay')?`<h2>挂账记录</h2>${creditCards()}`:''}`;
+}
+function staffBookingDialog() {
+  openDialog('为员工登记订房',`<p class="notice">登记后订单归属所选员工，当前操作人会保留为登记人。</p><label>归属员工<select name="employee" required>${employeeOptions()}</select></label><label>房号<select name="room" required>${roomOptions()}</select></label>${bookingFields()}`,'确认登记订房','reserve');
+  setupBookingFields();
 }
 function showRoom(id) {
   const r=state.rooms.find(r=>r.id===id);
@@ -398,12 +448,13 @@ function showOrder(id) {
   const requests=(o.giftRequests||[]).filter(request=>request.status==='待确认').map(request=>`<div class="notice"><b>赠酒水待确认</b><p>${product(request.product).name} ${request.halves}个半打，共${request.bottles}支 · ${esc(request.requestedBy)}申请</p>${allowedPermission('gift.approve')?`<div class="inline-actions">${btn('批准赠送','approveGift',`data-id="${id}" data-request="${request.id}"`,'primary')}${btn('驳回','rejectGift',`data-id="${id}" data-request="${request.id}"`,'danger')}</div>`:'<small>请老板／店长确认后再结账</small>'}</div>`).join('');
   const futureReservations=pendingReservations(o.room);
   const futureText=futureReservations.length?`<br>未来预订：${futureReservations.map(booking=>`${date(booking.at)} · ${esc(booking.sessionLabel || '')}`).join('；')}`:'';
-  const origin=`<p class="muted">开单：${esc(o.openedBy || o.person || '未记录')} · 开房渠道：${esc(o.openSource || '线下')}${o.reservedBy?` · 预订：${esc(o.reservedBy)}（${esc(o.reservationSource || '方式未记录')}）`:''}${futureText}</p>`;
+  const attribution=o.recordedBy && o.recordedBy!== (o.openedBy || o.person) ? ` · 归属员工：${esc(o.openedBy || o.person || '未记录')} · 代录：${esc(o.recordedBy)}`:'';
+  const origin=`<p class="muted">开单：${esc(o.openedBy || o.person || '未记录')}${attribution} · 开房渠道：${esc(o.openSource || '线下')}${o.reservedBy?` · 预订：${esc(o.reservedBy)}（${esc(o.reservationSource || '方式未记录')}）`:''}${futureText}</p>`;
   const voucherNotice=o.voucher?`<div class="notice">${esc(o.voucher.provider)}平台券开房费用 ${money(o.voucher.covered)} · ${esc(o.voucher.status)} · 扫码验券接口待接入</div>`:'';
   const saleLines=o.sales.map(line=>{
     const drinks=(line.drinks||[]).filter(drink=>drink.count);
     const unchanged=drinks.length===1&&drinks[0].product===line.product&&drinks[0].count===line.bottles;
-    return `<div class="bill-line"><span>${product(line.product).name} × ${line.count}${line.spec==='dozen'?'打':line.spec==='half'?'半打':'支'}</span><b>${money(line.amount)}</b></div>${unchanged?'':`<div class="drink-list"><p><b>这笔增购实际领取</b></p>${drinks.map(drink=>`<p>${product(drink.product).name} <b>${drink.count} 支</b></p>`).join('')}</div>`}`;
+    return `<div class="bill-line"><span>${product(line.product).name} × ${line.count}${line.spec==='dozen'?'打':line.spec==='half'?'半打':'支'}<small> · 归属 ${esc(line.person || o.openedBy || o.person || '未记录')}${line.recordedBy && line.recordedBy!==line.person?` · 代录 ${esc(line.recordedBy)}`:''}</small></span><b>${money(line.amount)}</b></div>${unchanged?'':`<div class="drink-list"><p><b>这笔增购实际领取</b></p>${drinks.map(drink=>`<p>${product(drink.product).name} <b>${drink.count} 支</b></p>`).join('')}</div>`}`;
   }).join('');
   const otherLines=(o.otherCharges||[]).map(line=>`<div class="bill-line"><span>其他消费 · ${esc(line.category==='其他'?line.item:line.category)}</span><b>${money(line.amount)}</b></div>`).join('');
   const received=(o.payments||[]).reduce((sum,payment)=>sum+payment.amount,0), due=outstanding(o);
@@ -432,8 +483,10 @@ function saleItemRow(selectedCategory=category, selectedProduct='', selectedSpec
   const spec=specs.some(([id])=>id===selectedSpec)?selectedSpec:'single';
   return `<div class="sale-item"><div class="deposit-item-head"><b>酒水品项</b>${btn('移除','removeSaleItem','','quiet')}</div><label>类别<select name="saleCategory">${options(saleCategories,uiCategory)}</select></label><label>商品<select name="saleProduct">${options(products.map(item=>[item.id,item.name]),productId)}</select></label><label>销售规格<select name="saleSpec">${options(specs,spec)}</select></label>${stepper(999,'数量（按所选规格）','saleCount',value)}<p class="sale-line-total muted"></p></div>`;
 }
-function saleDialog(id) {
-  openDialog('加酒水',`<p class="notice">一单可以添加多种酒水，按“添加一种酒水”继续录入。</p><div id="sale-items">${saleItemRow()}</div>${btn('＋ 添加一种酒水','addSaleItem','','secondary full')}<div id="sale-total" class="quote compact"></div>`, '确认加单','sale',{order:id});
+function saleDialog(id, staffMode=false) {
+  const activeOrders=state.orders.filter(order=>order.status==='营业中');
+  const orderField=staffMode?`<label>归属账单<select name="order" required>${options(activeOrders.map(order=>[order.id,`${order.room} · ${money(total(order))} · ${order.openedBy || order.person || '未记录'}`]),id)}</select></label><label>归属员工<select name="employee" required>${employeeOptions()}</select></label>`:'';
+  openDialog(staffMode?'为员工登记增购酒水':'加酒水',`${orderField}<p class="notice">一单可以添加多种酒水，按“添加一种酒水”继续录入。</p><div id="sale-items">${saleItemRow()}</div>${btn('＋ 添加一种酒水','addSaleItem','','secondary full')}<div id="sale-total" class="quote compact"></div>`, '确认加单','sale',staffMode?{}:{order:id});
   const f=modal.querySelector('form');
   const updateAll=()=> {
     let amount=0;
@@ -512,7 +565,10 @@ function creditDialog(id) {
   canvas.addEventListener('pointerup',()=>down=false); canvas.addEventListener('pointercancel',()=>down=false);
 }
 function inventoryDialog() {
-  openDialog('库存 · 按支计数',`<p class="notice">未盘点商品显示“未建账”，照记流水但不拦营业。</p>${Object.entries(state.inventory).map(([id,v])=>{const canStock=v.count===null?allowedPermission('inventory.opening'):allowedPermission('inventory.adjust');return `<div class="stock-row"><div><b>${product(id).name}</b><p>${v.count===null?'未建账':`${v.count} 支 · 预警线 ${v.threshold}`}</p></div>${canStock?btn(v.count===null?'建账':'调整','stock',`data-id="${id}"`):'<span class="badge">无库存调整权限</span>'}</div>`;}).join('')}<h3>最近库存流水</h3>${state.ledger.slice(-20).reverse().map(l=>`<div class="log"><b>${product(l.product).name} ${l.delta>0?'+':''}${l.delta} 支</b><p>${l.source} · ${l.person} · ${date(l.time)}</p><small>${l.counted?'计入账面':'建账前 · 不计账面'}${l.reason?' · '+esc(l.reason):''}</small></div>`).join('')||'<p class="muted">暂无流水</p>'}`);
+  const drinkRows=Object.entries(state.inventory).map(([id,v])=>{const canStock=v.count===null?allowedPermission('inventory.opening'):allowedPermission('inventory.adjust');return `<div class="stock-row"><div><b>${product(id).name}</b><p>${v.count===null?'未建账':`${v.count} 支 · 预警线 ${v.threshold}`}</p></div>${canStock?btn(v.count===null?'建账':'调整','stock',`data-id="${id}"`):'<span class="badge">无库存调整权限</span>'}</div>`;}).join('');
+  const consumableRows=Object.entries(state.consumables || {}).map(([id,v])=>{const item=CONSUMABLES.find(entry=>entry.id===id), canStock=v.count===null?allowedPermission('inventory.opening'):allowedPermission('inventory.adjust');return `<div class="stock-row"><div><b>${esc(item?.name || id)}</b><p>${v.count===null?'未建账':`${v.count} ${esc(v.unit || item?.unit || '份')} · 已开封 ${v.opened || 0} · 预警线 ${v.threshold}`}</p></div>${canStock?btn(v.count===null?'建账':'调整','consumableStock',`data-id="${id}"`):'<span class="badge">无库存调整权限</span>'}</div>`;}).join('');
+  const logs=state.ledger.slice(-30).reverse().map(l=>{const isConsumable=l.kind==='consumable', label=isConsumable?(CONSUMABLES.find(item=>item.id===l.product)?.name || l.product):product(l.product).name;return `<div class="log"><b>${esc(label)} ${isConsumable?`${l.before ?? '未建账'} → ${l.after} ${l.unit || '份'}`:`${l.delta>0?'+':''}${l.delta} 支`}</b><p>${esc(l.source)} · ${esc(l.person)} · ${date(l.time)}</p><small>${l.counted?'计入账面':'建账前 · 不计账面'}${l.reason?' · '+esc(l.reason):''}</small></div>`;}).join('');
+  openDialog('库存 · 酒水与消耗品',`<p class="notice">酒水按支数统计；消耗品按包数／份数统计，并记录已开封数量。未盘点商品显示“未建账”，照记流水但不拦营业。</p><h3>酒水库存</h3>${drinkRows}<h3>消耗品库存</h3>${consumableRows}<h3>最近库存流水</h3>${logs||'<p class="muted">暂无流水</p>'}`);
 }
 function permissionsDialog(id) {
   if (!allowed(['管理员'])) { toast('仅管理员可以调整身份权限'); return; }
@@ -525,6 +581,19 @@ function permissionsDialog(id) {
 }
 document.addEventListener('change',e=>{
   if(e.target.id==='report-period'){ reportPeriod=e.target.value; render(); window.scrollTo(0,0); return; }
+  if(e.target.id==='appearance-preference'){
+    const saved=window.ktvAppearance.setPreference(e.target.value);
+    syncAppearanceControls();
+    toast(`${e.target.value==='auto'?'已设为自动：日出至19:00日间，其余时间夜间':e.target.value==='dark'?'已设为夜间模式':'已设为日间模式'}${saved?'':' · 本次切换仅在当前页面有效'}`);
+    return;
+  }
+  if(e.target.id==='permission-target'){
+    const button=document.querySelector('[data-action="editPermissions"]');
+    if(button) button.dataset.id=e.target.value;
+    const user=effectiveUser(state,e.target.value), summary=document.querySelector('#permission-target-summary');
+    if(summary) summary.textContent=permissionSummary(user).join('、') || '当前没有可用操作';
+    return;
+  }
   if(e.target.id==='expense-proof'){
     const input=e.target, file=input.files?.[0], dataInput=document.querySelector('#expense-proof-data'), nameInput=document.querySelector('#expense-proof-name'), status=document.querySelector('#expense-proof-status');
     if(!file){ if(dataInput)dataInput.value=''; if(nameInput)nameInput.value=''; if(status)status.textContent='支持图片凭证，单张不超过 500KB。'; return; }
@@ -543,13 +612,17 @@ document.addEventListener('click',e=>{
     if(a==='toggleTheme'||a==='autoTheme'){
       const preference = a==='autoTheme' ? 'auto' : window.ktvAppearance.theme==='dark' ? 'light' : 'dark';
       const saved = window.ktvAppearance.setPreference(preference);
-      toast((preference==='auto'?'已恢复自动：14:00–18:00日间，其余时间夜间':`已手动切换${preference==='dark'?'夜间':'日间'}模式`)+(saved?'':' · 本次切换仅在当前页面有效'));
+      toast((preference==='auto'?'已恢复自动：日出至19:00日间，其余时间夜间':`已手动切换${preference==='dark'?'夜间':'日间'}模式`)+(saved?'':' · 本次切换仅在当前页面有效'));
       return;
     }
     if(a==='nav'||a==='home'){page=a==='home'?'rooms':target.dataset.page;render();window.scrollTo(0,0);return;}
     if(a==='expenses'){if(!allowedPermission('expense.view'))throw Error('当前身份没有查看支出与报销的权限');page='expenses';render();window.scrollTo(0,0);return;}
+    if(a==='procurement'){if(!allowedPermission('procurement.create')&&!state.procurements?.length)throw Error('当前身份没有查看采购记录的权限');page='procurement';render();window.scrollTo(0,0);return;}
+    if(a==='incidents'){if(!allowedPermission('incident.create')&&!state.incidents?.length)throw Error('当前身份没有查看客诉与异常的权限');page='incidents';render();window.scrollTo(0,0);return;}
     if(a==='backMine'){page='mine';render();window.scrollTo(0,0);return;}
     if(a==='addExpense'){if(!allowedPermission('expense.create'))throw Error('当前身份没有新增支出与报销的权限');expenseDialog();return;}
+    if(a==='addProcurement'){if(!allowedPermission('procurement.create'))throw Error('当前身份没有新增采购的权限');procurementDialog();return;}
+    if(a==='addIncident'){if(!allowedPermission('incident.create'))throw Error('当前身份没有登记客诉与异常的权限');incidentDialog();return;}
     if(a==='approveExpense'||a==='rejectExpense'){
       const expense=state.expenses.find(item=>item.id===Number(id));
       if(!expense||expense.status!=='待老板审批')throw Error('这笔报销不在待审批状态');
@@ -569,6 +642,8 @@ document.addEventListener('click',e=>{
     }
     else if(a==='order')showOrder(id);
     else if(a==='sale')saleDialog(id);
+    else if(a==='staffBooking'){if(!allowedPermission('staff.record'))throw Error('当前身份没有代员工登记的权限');staffBookingDialog();}
+    else if(a==='staffSale'){if(!allowedPermission('staff.record'))throw Error('当前身份没有代员工登记的权限');const first=state.orders.find(order=>order.status==='营业中');if(!first){toast('当前没有营业中的账单');return;}saleDialog(first.id,true);}
     else if(a==='otherCharge')otherChargeDialog(id);
     else if(a==='gift')giftDialog(id);
     else if(a==='exchange')exchangeDialog(id);
@@ -620,16 +695,17 @@ document.addEventListener('click',e=>{
     else if(a==='deposit')openDepositDialog();
     else if(a==='withdraw'){const d=state.deposits.find(d=>d.id===Number(id));openDialog('核对并取酒',`<p>${product(d.product).name} · 余 ${d.count} 支</p><label>手机尾号或顾客姓名<input name="identity" required placeholder="至少4位手机尾号，或完整姓名"></label><p class="muted">手机号可输入登记号码的最后4至11位；姓名需与登记姓名一致。</p>${stepper(d.count,'数量（支）')}`,'确认取酒','withdraw',{id});}
     else if(a==='editPermissions')permissionsDialog(id);
+    else if(a==='resolveIncident')resolveIncidentDialog(id);
     else if(a==='approveGift'||a==='rejectGift'){const request=Number(target.dataset.request), gift=(state.orders.find(o=>o.id===id)?.giftRequests||[]).find(item=>item.id===request);openDialog(a==='approveGift'?'批准赠酒水':'驳回赠酒水',`<p>${product(gift.product).name} ${gift.halves}个半打，共${gift.bottles}支。</p><p>申请人：${esc(gift.requestedBy)}</p>`,a==='approveGift'?'确认批准':'确认驳回',a,{order:id,request});}
     else if(a==='reviewRounding'){const o=state.orders.find(o=>o.id===id), review=o?.roundingReview;if(!review||review.status!=='待审核')throw Error('这笔特殊差额已经处理');openDialog('审核特殊差额',`<div class="quote"><span>${esc(o.room)} · 结账差额</span><strong>${money(review.amount)}</strong></div><p>提交人：${esc(review.submittedBy)} · ${date(review.submittedAt)}</p><p class="notice">特殊情况说明：${esc(review.note)}</p><p class="muted">本次审核只确认差额原因已核实，不会追加扣款或改变已完成的结账。</p>`,'确认已审核','approveRounding',{order:id});}
     else if(a==='review'){const o=state.orders.find(o=>o.id===id);openDialog('核对挂账申请',`<p>${o.room} · ${money(o.credit.amount)}</p><p>顾客：${esc(contactText(o.credit))}</p><p>挂账经办 ${esc(o.credit.person)} · ${o.credit.approver}审批</p><p>开单：${esc(o.credit.openedBy || o.openedBy || o.person || '未记录')} · 开房渠道：${esc(o.credit.openSource || o.openSource || '线下')} · 预订：${o.credit.reservedBy?`${esc(o.credit.reservedBy)}（${esc(o.credit.reservationSource || '方式未记录')}）`:'无预订'}</p><p class="notice">备注：${esc(o.credit.note || '未填写')}</p><img class="signature-image" alt="经办员工签字" src="${esc(o.credit.signature)}">${btn('驳回，退回收款','reject',`data-id="${id}"`,'danger')}`,'批准挂账','approve',{order:id});}
     else if(a==='reject')openDialog('驳回挂账',`<p>账单将退回待收款；不会重新占用已释放的房间。</p>`,'确认驳回','reject',{order:id});
     else if(a==='repay'){const o=state.orders.find(o=>o.id===id);openDialog('登记实际回款',`<p>还欠 ${money(o.credit.remaining)} · ${esc(contactText(o.credit))}</p><label>本次已收到（元）<input name="amount" inputmode="decimal" required></label><label>收款方式<select name="method">${options(PAYMENT_METHODS.map(m=>[m,m]))}</select></label><label class="check"><input type="checkbox" required>已核实本次回款（演示）</label>`,'确认回款','repay',{order:id});}
     else if(a==='inventory')inventoryDialog();
-    else if(a==='stock'){const v=state.inventory[id];openDialog(`${product(id).name} · ${v.count===null?'期初建账':'库存调整'}`,`<p>当前：${v.count===null?'未建账':v.count+' 支'}</p><label>盘点后的实际支数<input name="count" type="number" min="0" inputmode="numeric" required></label><label>原因<input name="reason" maxlength="100" required placeholder="例如：首次盘点／发现破损"></label><p class="muted">保存后立即生效并留痕。库管调整会在老板页面生成提醒。</p>`,'确认保存库存','stock',{product:id});}
-    else if(a==='handover')openDialog('交班 · 核对收款',`<div class="quote"><span>本轮练习累计实收</span><strong>${money(collected(state))}</strong></div><p>请将微信、支付宝、现金、美团与抖音的实收合计填入。挂账不算已收款。</p><label>实点收款合计（元）<input name="actual" inputmode="decimal" required></label><label>前台抽屉剩余现金（元）<input name="drawerCash" inputmode="decimal" required></label><p class="muted">抽屉现金单独留档，不重复计入实点收款合计。演示按本轮练习累计核对，不自动切换真实班次。</p>`,'记录交班差异','handover');
+    else if(a==='consumableStock'){const v=state.consumables?.[id], item=CONSUMABLES.find(entry=>entry.id===id);if(!v||!item)throw Error('该消耗品不存在');openDialog(`${item.name} · ${v.count===null?'期初建账':'库存调整'}`,`<p>当前：${v.count===null?'未建账':`${v.count} ${v.unit || item.unit} · 已开封 ${v.opened || 0}`}</p><label>盘点后的未开封数量（${item.unit}）<input name="count" type="number" min="0" inputmode="numeric" required></label><label>其中已开封数量（${item.unit}）<input name="opened" type="number" min="0" inputmode="numeric" value="${v.opened || 0}" required></label><label>原因<input name="reason" maxlength="100" required placeholder="例如：首次盘点／补充采购"></label><p class="muted">已开封数量单独记录，不再重复计入未开封库存。</p>`,'确认保存消耗品库存','consumableStock',{product:id});}
+    else if(a==='handover')openDialog('交班 · 核对收款',`<div class="quote"><span>本轮练习累计实收</span><strong>${money(collected(state))}</strong></div><p>请将微信、支付宝、现金、美团与抖音的实收合计填入。挂账不算已收款。</p><label>实点收款合计（元）<input name="actual" inputmode="decimal" required></label><label>前台现金（元）<input name="drawerCash" inputmode="decimal" required></label><p class="muted">前台现金单独留档，不重复计入实点收款合计。演示按本轮练习累计核对，不自动切换真实班次。</p>`,'记录交班差异','handover');
     else if(a==='guide')openDialog('跟着练一遍',`<ol class="guide"><li>用邵老板身份点空房，选饮料并直接配好种类和支数，确认开房。</li><li>营业中房间卡片底部可点“小吃”和“果盘”标记已上，两个配品都完成后按钮自动隐藏。</li><li>点“收钱”只登记开房费用，房间会继续营业。</li><li>点“加酒水”增购2打百威，再点“赠酒水”赠半打；套餐和增购酒水都能点“换酒水”调整。</li><li>增购后点“收钱”只收最近一笔未收增购；最后点“结账”汇总余款，房间才转待清洁。</li><li>到“存取酒”存6支酒，用手机号任意部分或姓名查找；取酒时用手机尾号或姓名核对。</li><li>另开一房，从“结账”申请挂账，填写手机号或姓名、备注并手写签名；按金额切换店长或老板审批，管理员可处理全部审批。</li><li>卓老板为百威建账，再切换老板娘调整库存，回管理页看提醒。</li></ol><p class="notice">第一次练习可使用虚构手机号13800000000，不填写真实客人信息。</p>`);
-    else if(a==='reset')openDialog('恢复演示数据',`<p>将清空当前浏览器中的练习账单、签名、存酒、支出／报销、库存和交班记录，9个房间恢复空闲。</p>`,'确认清空，重新练习','reset');
+    else if(a==='reset')openDialog('恢复演示数据',`<p>将清空当前浏览器中的练习账单、签名、存酒、支出／报销、采购、客诉／异常、库存和交班记录，9个房间恢复空闲。</p>`,'确认清空，重新练习','reset');
   } catch(error){toast(error.message);}
 });
 document.addEventListener('submit',e=>{
@@ -643,7 +719,7 @@ document.addEventListener('submit',e=>{
     else if(a==='clock'){if(!Number.isFinite(Date.parse(d.clock)))throw Error('请选择有效时间');persist({...state,clock:new Date(d.clock).toISOString()});modal.close();render();}
     else if(a==='reset'){persist({...initialState(),user:'shaoBoss'});page='rooms';filter='全部';searchTerm='';storageProblem='';modal.close();render();toast('已恢复，开始新一轮练习');}
     else{
-      if('count'in d)d.count=Number(d.count);if('line'in d&&/^\d+$/.test(d.line))d.line=Number(d.line);if('id'in d)d.id=Number(d.id);if('halves'in d)d.halves=Number(d.halves);if('request'in d)d.request=Number(d.request);
+      if('count'in d)d.count=Number(d.count);if('opened'in d)d.opened=Number(d.opened);if('quantity'in d)d.quantity=Number(d.quantity);if('line'in d&&/^\d+$/.test(d.line))d.line=Number(d.line);if('id'in d)d.id=Number(d.id);if('halves'in d)d.halves=Number(d.halves);if('request'in d)d.request=Number(d.request);
       if(a==='open'){
         d.beer=d.beer||'bw';d.acceptDirty=d.acceptDirty==='yes';
         if(d.beer==='drink'){const data=new FormData(f), products=data.getAll('mixProduct'), counts=data.getAll('mixCount');d.initialMix=products.map((product,index)=>({product,count:Number(counts[index])}));}
@@ -654,6 +730,7 @@ document.addEventListener('submit',e=>{
         d.items=products.map((product,index)=>({product,spec:specs[index],count:Number(counts[index])}));
       }
       if(a==='otherCharge')d.amount=cents(d.amount);
+      if(a==='procurement')d.amount=cents(d.amount);
       if(['collect','settle','pay'].includes(a)){
         const data=new FormData(f), methods=data.getAll('paymentMethod'), amounts=data.getAll('paymentAmount');
         d.payments=methods.map((method,index)=>({method,amount:cents(amounts[index]||'0')})).filter(p=>p.amount>0);
