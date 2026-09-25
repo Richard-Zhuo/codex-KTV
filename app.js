@@ -264,10 +264,9 @@ function roomCard(r) {
   const o = state.orders.find(o=>o.id===r.order), bookings=pendingReservations(r.id);
   const status=displayRoomStatus(r), css = {'空闲':'free','营业中':'active','待清洁':'dirty','已预订':'reserved'}[status];
   const bookingText=bookings.length?`<small class="room-booking">未来预订：${reservationDate(bookings[0].at)} · ${esc(reservationSessionName(bookings[0]))}${bookings.length>1?`（还有${bookings.length-1}场）`:''}</small>`:'';
-  const issueAction=allowedPermission('room.issue')&&['空闲','待清洁'].includes(r.status)?btn('标记故障/维护','markRoomIssue',`data-id="${r.id}"`,'quiet'):'';
   const issueText=r.status==='故障/维护中'?`<small class="room-issue">${esc(r.issueType || '故障/维护中')}${r.issueNote?` · ${esc(r.issueNote)}`:''}</small>`:'';
   const bottom=r.status==='故障/维护中'?'<span>查看异常</span><span>→</span>':o?`<b>${money(total(o))}</b><span>查看账单 →</span>`:r.status==='空闲'?'<span>点这里开房</span><span>＋</span>':r.status==='待清洁'?'<span>打扫后恢复空房</span><span>→</span>':'<span>查看预订</span><span>→</span>';
-  return `<article class="room-card ${css || 'issue'}" data-action="room" data-id="${r.id}"><span class="room-top"><span>${r.type}</span><span class="status"><i></i>${status}</span></span><strong class="room-number">${r.id}</strong><span class="room-bottom">${bottom}</span>${o && r.status==='营业中'?roomExtraActions(o):''}${issueText}${issueAction}${bookingText}</article>`;
+  return `<article class="room-card ${css || 'issue'}" data-action="room" data-id="${r.id}"><span class="room-top"><span>${r.type}</span><span class="status"><i></i>${status}</span></span><strong class="room-number">${r.id}</strong><span class="room-bottom">${bottom}</span>${o && r.status==='营业中'?roomExtraActions(o):''}${issueText}${bookingText}</article>`;
 }
 function appearanceSettings() {
   const preference = window.ktvAppearance.preference;
@@ -288,7 +287,8 @@ function render() {
 function roomsPage() {
   const active = state.rooms.filter(r=>r.status==='营业中').length;
   const reminders = state.reservations.map(r => reservationReminder(r, state.clock)).filter(Boolean);
-  return `<section class="welcome"><div><p class="eyebrow">今晚，也从容一点</p><h1>房间一眼看清</h1><p>先选房间，再开房、加单或收钱。</p></div><div class="welcome-icon" aria-hidden="true">♫</div></section>${reminders.map(r=>`<div class="reservation-alert"><b>预订提醒 · ${r.room}</b><p>${esc(r.sessionLabel)}已到时，仍未开房；这是第 ${r.number} 次整点提醒，请通知预订人员 ${esc(r.person)}。</p></div>`).join('')}<section class="summary"><div><strong>${state.rooms.filter(r=>displayRoomStatus(r)==='空闲').length}<small> / 9</small></strong><span>空闲房间</span></div><div><strong>${active}</strong><span>正在营业</span></div><div><strong>${money(collected(state))}</strong><span>练习累计实收</span></div></section><div class="section-title"><h2>全部包间</h2><span>点击卡片操作</span></div><div class="tabs" role="group" aria-label="房态筛选">${['全部','空闲','营业中','待清洁','已预订','异常'].map(f=>btn(f,'filter',`data-value="${f}"`,filter===f?'chip chosen':'chip')).join('')}</div><div class="rooms-grid">${state.rooms.filter(roomMatchesFilter).map(roomCard).join('') || '<p class="empty">目前没有这类房间。</p>'}</div><div class="tip"><span>✦</span><div><b>价格自动算，不用记表格</b><p>夜间房价已含赠饮，换酒不会加收差价。</p></div></div>${state.orders.filter(o=>o.status==='营业中'&&!state.rooms.some(r=>r.order===o.id)).map(o=>`<div class="panel"><b>${o.room} · 挂账被驳回，待收款</b>${btn('处理账单','order',`data-id="${o.id}"`)}</div>`).join('')}`;
+  const issueButton = allowedPermission('room.issue') ? btn('标记故障/维护','markRoomIssueMenu','','secondary') : '';
+  return `<section class="welcome"><div><p class="eyebrow">今晚，也从容一点</p><h1>房间一眼看清</h1><p>先选房间，再开房、加单或收钱。</p></div><div class="welcome-icon" aria-hidden="true">♫</div></section>${reminders.map(r=>`<div class="reservation-alert"><b>预订提醒 · ${r.room}</b><p>${esc(r.sessionLabel)}已到时，仍未开房；这是第 ${r.number} 次整点提醒，请通知预订人员 ${esc(r.person)}。</p></div>`).join('')}<section class="summary"><div><strong>${state.rooms.filter(r=>displayRoomStatus(r)==='空闲').length}<small> / 9</small></strong><span>空闲房间</span></div><div><strong>${active}</strong><span>正在营业</span></div><div><strong>${money(collected(state))}</strong><span>练习累计实收</span></div></section><div class="section-title"><h2>全部包间</h2><div class="room-section-actions"><span>点击卡片操作</span>${issueButton}</div></div><div class="tabs" role="group" aria-label="房态筛选">${['全部','空闲','营业中','待清洁','已预订','异常'].map(f=>btn(f,'filter',`data-value="${f}"`,filter===f?'chip chosen':'chip')).join('')}</div><div class="rooms-grid">${state.rooms.filter(roomMatchesFilter).map(roomCard).join('') || '<p class="empty">目前没有这类房间。</p>'}</div><div class="tip"><span>✦</span><div><b>价格自动算，不用记表格</b><p>夜间房价已含赠饮，换酒不会加收差价。</p></div></div>${state.orders.filter(o=>o.status==='营业中'&&!state.rooms.some(r=>r.order===o.id)).map(o=>`<div class="panel"><b>${o.room} · 挂账被驳回，待收款</b>${btn('处理账单','order',`data-id="${o.id}"`)}</div>`).join('')}`;
 }
 function depositPage() {
   const rows = searchDeposits(state.deposits, searchTerm);
@@ -645,11 +645,11 @@ document.addEventListener('click',e=>{
     }
     if(a==='filter'){filter=target.dataset.value;render();return;}
     if(a==='room')showRoom(id);
-    else if(a==='markRoomIssue'){
+    else if(a==='markRoomIssueMenu'){
       if(!allowedPermission('room.issue'))throw Error('当前身份没有标记房间异常的权限');
-      const r=state.rooms.find(room=>room.id===id);
-      if(!r)throw Error('请选择有效房间');
-      openDialog(`${r.id} · 标记房间异常`,`<p class="notice">故障或维护中的房间会归类到“异常”筛选，并暂时不能开房或预订。</p><label>异常状态<select name="issueType">${options(ROOM_ISSUE_TYPES.map(type=>[type,type]),ROOM_ISSUE_TYPES[0])}</select></label><label>故障／维护说明<textarea name="issueNote" maxlength="200" rows="3" placeholder="例如：空调故障，等待维修" required></textarea></label>`,'保存异常状态','markRoomIssue',{room:id});
+      const availableRooms=state.rooms.filter(room=>['空闲','待清洁'].includes(room.status));
+      if(!availableRooms.length){toast('当前没有可标记异常的房间');return;}
+      openDialog('标记房间异常',`<p class="notice">故障或维护中的房间会归类到“异常”筛选，并暂时不能开房或预订。</p><label>房号<select name="room">${options(availableRooms.map(room=>[room.id,`${room.id} · ${room.type}${room.status==='待清洁'?' · 待清洁':''}`]),availableRooms[0].id)}</select></label><label>异常状态<select name="issueType">${options(ROOM_ISSUE_TYPES.map(type=>[type,type]),ROOM_ISSUE_TYPES[0])}</select></label><label>故障／维护说明<textarea name="issueNote" maxlength="200" rows="3" placeholder="例如：空调故障，等待维修" required></textarea></label>`,'保存异常状态','markRoomIssue');
     }
     else if(a==='open'||a==='openDirty')openRoom(id,a==='openDirty');
     else if(a==='reserve'||a==='reserveFuture')openBookingDialog(id);
