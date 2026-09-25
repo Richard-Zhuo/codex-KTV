@@ -1,4 +1,4 @@
-import { PRODUCTS, OTHER_CHARGE_CATEGORIES, USERS, USER_ALIASES, PERMISSION_ROLES, PERMISSION_DEFINITIONS, PERMISSION_IDS, defaultPermissions, defaultCapabilities, permissionsForRoles, effectiveUser, hasPermission, RESERVATION_SOURCES, OPENING_SOURCES, PAYMENT_METHODS, EXPENSE_NATURES, EXPENSE_TYPES, EXPENSE_APPROVAL_THRESHOLD, CONSUMABLES, INCIDENT_TYPES, visibleExpenses, visibleProcurements, visibleIncidents, pendingIncidentReminders, money, product, slot, cents, quote, initialState, total, outstanding, collected, collectableCharges, nextCollectCharge, transact, canExchange, bonusAllowance, reservationReminder, reservationActiveAt, searchDeposits, hasRole } from './rules.js';
+import { PRODUCTS, OTHER_CHARGE_CATEGORIES, USERS, USER_ALIASES, PERMISSION_ROLES, PERMISSION_DEFINITIONS, PERMISSION_IDS, defaultPermissions, defaultCapabilities, permissionsForRoles, effectiveUser, hasPermission, RESERVATION_SOURCES, OPENING_SOURCES, PAYMENT_METHODS, EXPENSE_NATURES, EXPENSE_TYPES, EXPENSE_APPROVAL_THRESHOLD, CONSUMABLES, INCIDENT_TYPES, ROOM_ISSUE_TYPES, visibleExpenses, visibleProcurements, visibleIncidents, pendingIncidentReminders, money, product, slot, cents, quote, initialState, total, outstanding, collected, collectableCharges, nextCollectCharge, transact, canExchange, bonusAllowance, reservationReminder, reservationActiveAt, searchDeposits, hasRole } from './rules.js';
 const KEY = 'jbhh-demo-v1';
 let state, storageProblem = '';
 try {
@@ -59,7 +59,7 @@ function migrateDemoState(next) {
     const fallback = Array.isArray(legacyRoles) ? permissionsForRoles(legacyRoles) : permissions;
     if (id === 'administrator') return [id, [...PERMISSION_IDS]];
     const normalized = Array.isArray(configured) ? [...new Set(configured.filter(permission => PERMISSION_IDS.includes(permission)))] : [...fallback];
-    const added = ['expense.view', 'expense.create', 'expense.viewAll', 'expense.approve', 'identity.manage', 'staff.record', 'procurement.create', 'procurement.viewAll', 'incident.create', 'incident.viewAll', 'incident.resolve'];
+    const added = ['expense.view', 'expense.create', 'expense.viewAll', 'expense.approve', 'identity.manage', 'staff.record', 'procurement.create', 'procurement.viewAll', 'incident.create', 'incident.viewAll', 'incident.resolve', 'room.issue'];
     const configuredBase = normalized.filter(permission => !added.includes(permission));
     const fallbackBase = fallback.filter(permission => !added.includes(permission));
     const matchesRoleDefaults = configuredBase.length === fallbackBase.length && fallbackBase.every(permission => configuredBase.includes(permission));
@@ -89,7 +89,13 @@ function migrateDemoState(next) {
     incident.note ??= '';
     incident.lastReminderDate ??= '';
   }
-  for (const room of next.rooms || []) if (['V05', 'V06'].includes(room.id)) room.type = '中房';
+  for (const room of next.rooms || []) {
+    if (['V05', 'V06'].includes(room.id)) room.type = '中房';
+    room.issueType ??= '';
+    room.issueNote ??= '';
+    room.issueAt ??= '';
+    room.issueBy ??= '';
+  }
   return next;
 }
 state = migrateDemoState(state);
@@ -112,7 +118,7 @@ const creditRoles = ['开单员','收银员','服务员','库管','店长','老�
 const managementRoles = ['管理员','老板','店长','财务','采购','库管'];
 const reportRoles = ['管理员','老板','财务','店长','收银员'];
 const roomOptions = () => options(state.rooms.map(r=>[r.id,`${r.id} · ${r.type}`]));
-const employeeOptions = (selected = '') => options(Object.entries(USERS).filter(([id, user]) => !user.legacy && id !== 'administrator').map(([id, user]) => [id, user.name]), selected);
+const employeeOptions = (selected = '') => options(Object.entries(USERS).filter(([id, user]) => !user.legacy && id !== 'administrator').map(([id, user]) => [id, `${user.name} · ${user.title || '岗位说明未设置'}`]), selected);
 const consumableOptions = (selected = '') => options(CONSUMABLES.map(item => [item.id, `${item.name} · 按${item.unit}统计`]), selected);
 const contactText = record => [record?.name, record?.phone].filter(Boolean).join(' · ') || '未留联系人';
 const permissionDefinition = id => PERMISSION_DEFINITIONS.find(permission => permission.id === id);
@@ -121,7 +127,7 @@ function pendingReservations(roomId) { return state.reservations.filter(reservat
 function reservationDate(time) { return new Date(time).toLocaleDateString('zh-CN',{month:'numeric',day:'numeric'}); }
 function reservationSessionName(reservation) { return reservation.session === 'afternoon' ? '下午场' : reservation.session === 'night' ? '夜间场' : String(reservation.sessionLabel || '').split('（')[0]; }
 function displayRoomStatus(room) { return room.status === '空闲' && pendingReservations(room.id).length ? '已预订' : room.status; }
-function roomMatchesFilter(room) { return filter === '全部' ? true : filter === '已预订' ? room.status === '已预订' || pendingReservations(room.id).length > 0 : displayRoomStatus(room) === filter; }
+function roomMatchesFilter(room) { return filter === '全部' ? true : filter === '已预订' ? room.status === '已预订' || pendingReservations(room.id).length > 0 : filter === '异常' ? room.status === '故障/维护中' : displayRoomStatus(room) === filter; }
 const reportMoney = centsValue => money(Number(centsValue || 0));
 const reportQuantity = value => Number(value || 0).toFixed(2).replace(/\.00$/,'').replace(/(\.\d)0$/,'$1');
 const reportDateKey = value => { const d = new Date(value); return `${d.getFullYear()}-${d.getMonth()+1}-${d.getDate()}`; };
@@ -258,7 +264,10 @@ function roomCard(r) {
   const o = state.orders.find(o=>o.id===r.order), bookings=pendingReservations(r.id);
   const status=displayRoomStatus(r), css = {'空闲':'free','营业中':'active','待清洁':'dirty','已预订':'reserved'}[status];
   const bookingText=bookings.length?`<small class="room-booking">未来预订：${reservationDate(bookings[0].at)} · ${esc(reservationSessionName(bookings[0]))}${bookings.length>1?`（还有${bookings.length-1}场）`:''}</small>`:'';
-  return `<article class="room-card ${css}" data-action="room" data-id="${r.id}"><span class="room-top"><span>${r.type}</span><span class="status"><i></i>${status}</span></span><strong class="room-number">${r.id}</strong><span class="room-bottom">${o?`<b>${money(total(o))}</b><span>查看账单 →</span>`:r.status==='空闲'?'<span>点这里开房</span><span>＋</span>':r.status==='待清洁'?'<span>打扫后恢复空房</span><span>→</span>':'<span>查看预订</span><span>→</span>'}</span>${o && r.status==='营业中'?roomExtraActions(o):''}${bookingText}</article>`;
+  const issueAction=allowedPermission('room.issue')&&['空闲','待清洁'].includes(r.status)?btn('标记故障/维护','markRoomIssue',`data-id="${r.id}"`,'quiet'):'';
+  const issueText=r.status==='故障/维护中'?`<small class="room-issue">${esc(r.issueType || '故障/维护中')}${r.issueNote?` · ${esc(r.issueNote)}`:''}</small>`:'';
+  const bottom=r.status==='故障/维护中'?'<span>查看异常</span><span>→</span>':o?`<b>${money(total(o))}</b><span>查看账单 →</span>`:r.status==='空闲'?'<span>点这里开房</span><span>＋</span>':r.status==='待清洁'?'<span>打扫后恢复空房</span><span>→</span>':'<span>查看预订</span><span>→</span>';
+  return `<article class="room-card ${css || 'issue'}" data-action="room" data-id="${r.id}"><span class="room-top"><span>${r.type}</span><span class="status"><i></i>${status}</span></span><strong class="room-number">${r.id}</strong><span class="room-bottom">${bottom}</span>${o && r.status==='营业中'?roomExtraActions(o):''}${issueText}${issueAction}${bookingText}</article>`;
 }
 function appearanceSettings() {
   const preference = window.ktvAppearance.preference;
@@ -279,7 +288,7 @@ function render() {
 function roomsPage() {
   const active = state.rooms.filter(r=>r.status==='营业中').length;
   const reminders = state.reservations.map(r => reservationReminder(r, state.clock)).filter(Boolean);
-  return `<section class="welcome"><div><p class="eyebrow">今晚，也从容一点</p><h1>房间一眼看清</h1><p>先选房间，再开房、加单或收钱。</p></div><div class="welcome-icon" aria-hidden="true">♫</div></section>${reminders.map(r=>`<div class="reservation-alert"><b>预订提醒 · ${r.room}</b><p>${esc(r.sessionLabel)}已到时，仍未开房；这是第 ${r.number} 次整点提醒，请通知预订人员 ${esc(r.person)}。</p></div>`).join('')}<section class="summary"><div><strong>${state.rooms.filter(r=>displayRoomStatus(r)==='空闲').length}<small> / 9</small></strong><span>空闲房间</span></div><div><strong>${active}</strong><span>正在营业</span></div><div><strong>${money(collected(state))}</strong><span>练习累计实收</span></div></section><div class="section-title"><h2>全部包间</h2><span>点击卡片操作</span></div><div class="tabs" role="group" aria-label="房态筛选">${['全部','空闲','营业中','待清洁','已预订'].map(f=>btn(f,'filter',`data-value="${f}"`,filter===f?'chip chosen':'chip')).join('')}</div><div class="rooms-grid">${state.rooms.filter(roomMatchesFilter).map(roomCard).join('') || '<p class="empty">目前没有这类房间。</p>'}</div><div class="tip"><span>✦</span><div><b>价格自动算，不用记表格</b><p>夜间房价已含赠饮，换酒不会加收差价。</p></div></div>${state.orders.filter(o=>o.status==='营业中'&&!state.rooms.some(r=>r.order===o.id)).map(o=>`<div class="panel"><b>${o.room} · 挂账被驳回，待收款</b>${btn('处理账单','order',`data-id="${o.id}"`)}</div>`).join('')}`;
+  return `<section class="welcome"><div><p class="eyebrow">今晚，也从容一点</p><h1>房间一眼看清</h1><p>先选房间，再开房、加单或收钱。</p></div><div class="welcome-icon" aria-hidden="true">♫</div></section>${reminders.map(r=>`<div class="reservation-alert"><b>预订提醒 · ${r.room}</b><p>${esc(r.sessionLabel)}已到时，仍未开房；这是第 ${r.number} 次整点提醒，请通知预订人员 ${esc(r.person)}。</p></div>`).join('')}<section class="summary"><div><strong>${state.rooms.filter(r=>displayRoomStatus(r)==='空闲').length}<small> / 9</small></strong><span>空闲房间</span></div><div><strong>${active}</strong><span>正在营业</span></div><div><strong>${money(collected(state))}</strong><span>练习累计实收</span></div></section><div class="section-title"><h2>全部包间</h2><span>点击卡片操作</span></div><div class="tabs" role="group" aria-label="房态筛选">${['全部','空闲','营业中','待清洁','已预订','异常'].map(f=>btn(f,'filter',`data-value="${f}"`,filter===f?'chip chosen':'chip')).join('')}</div><div class="rooms-grid">${state.rooms.filter(roomMatchesFilter).map(roomCard).join('') || '<p class="empty">目前没有这类房间。</p>'}</div><div class="tip"><span>✦</span><div><b>价格自动算，不用记表格</b><p>夜间房价已含赠饮，换酒不会加收差价。</p></div></div>${state.orders.filter(o=>o.status==='营业中'&&!state.rooms.some(r=>r.order===o.id)).map(o=>`<div class="panel"><b>${o.room} · 挂账被驳回，待收款</b>${btn('处理账单','order',`data-id="${o.id}"`)}</div>`).join('')}`;
 }
 function depositPage() {
   const rows = searchDeposits(state.deposits, searchTerm);
@@ -313,7 +322,7 @@ function permissionCards() {
   const selected = users[0]?.[0] || '';
   const active = selected ? effectiveUser(state, selected) : null;
   const labels = active ? permissionSummary(active) : [];
-  return `<article class="panel permission-single-card"><div class="split"><div><h3>身份权限</h3><p class="muted">每个身份单独调整具体操作权限，岗位名称只作说明。</p></div><span class="badge">管理员专用</span></div><label>选择身份<select id="permission-target" aria-label="选择要调整的身份">${options(users.map(([id, user]) => [id, user.name]), selected)}</select></label><p id="permission-target-summary" class="permission-summary muted">${labels.length ? esc(labels.join('、')) : '当前没有可用操作'}</p>${btn('调整具体权限','editPermissions',`data-id="${selected}"`,'secondary full')}</article>`;
+  return `<article class="panel permission-single-card"><div class="split"><div><h3>身份权限</h3><p class="muted">每个身份单独调整具体操作权限，岗位名称只作说明。</p></div><span class="badge">管理员专用</span></div><label>选择身份<select id="permission-target" aria-label="选择要调整的身份">${options(users.map(([id, user]) => [id, `${user.name} · ${user.title || '岗位说明未设置'}`]), selected)}</select></label><p id="permission-target-summary" class="permission-summary muted">${labels.length ? esc(labels.join('、')) : '当前没有可用操作'}</p>${btn('调整具体权限','editPermissions',`data-id="${selected}"`,'secondary full')}</article>`;
 }
 function staffRecordingPanel() {
   if (!allowedPermission('staff.record')) return '';
@@ -387,7 +396,7 @@ function myReservationSection() {
 }
 function minePage() {
   const reminders=pendingIncidentReminders(visibleIncidents(state,currentUser()),state.clock);
-  return `<p class="eyebrow">我的账户</p><h1>${esc(currentUser().name)}，辛苦了</h1><p class="muted">演示职责：${currentUser().roles.length?currentUser().roles.join('、'):'暂无岗位权限'}</p>${reminders.length?`<div class="notice incident-reminder">今天14:00提醒：还有 ${reminders.length} 项客诉／异常待处理。${btn('查看记录','incidents','', 'quiet')}</div>`:''}${myReservationSection()}${appearanceSettings()}<div class="section-title"><h2>练习设置</h2></div><div class="menu-list">${btn('切换演示身份　→','identity')}${btn('调整练习时间　→','clock')}${allowedPermission('expense.view')?btn('支出 / 报销记录　→','expenses'):''}${allowedPermission('procurement.create')||state.procurements?.length?btn('采购记录　→','procurement'):''}${allowedPermission('incident.create')||state.incidents?.length?btn('客诉 / 异常　→','incidents'):''}${allowedPermission('handover')?btn('交班 · 核对收款　→','handover'):''}${allowedPermission('inventory.adjust')||allowedPermission('inventory.opening')?btn('库存 · 建账与调整　→','inventory'):''}${btn('练习说明　→','guide')}${btn('恢复演示数据　→','reset','','danger')}</div><div class="tip"><span>i</span><div><b>这是一份操作演示</b><p>数据只保存在当前浏览器。不同手机不共享；身份切换不是真实登录。手工确认收款不代表银行到账。</p></div></div>${allowedPermission('credit.approve')||allowedPermission('credit.repay')?`<h2>挂账记录</h2>${creditCards()}`:''}`;
+  return `<p class="eyebrow">我的账户</p><h1>${esc(currentUser().name)}，辛苦了</h1><p class="muted">岗位说明：${esc(currentUser().title || '未设置')} · 岗位名称只作说明，具体权限由管理员调整</p>${reminders.length?`<div class="notice incident-reminder">今天14:00提醒：还有 ${reminders.length} 项客诉／异常待处理。${btn('查看记录','incidents','', 'quiet')}</div>`:''}${myReservationSection()}${appearanceSettings()}<div class="section-title"><h2>练习设置</h2></div><div class="menu-list">${btn('切换演示身份　→','identity')}${btn('调整练习时间　→','clock')}${allowedPermission('expense.view')?btn('支出 / 报销记录　→','expenses'):''}${allowedPermission('procurement.create')||state.procurements?.length?btn('采购记录　→','procurement'):''}${allowedPermission('incident.create')||state.incidents?.length?btn('客诉 / 异常　→','incidents'):''}${allowedPermission('handover')?btn('交班 · 核对收款　→','handover'):''}${allowedPermission('inventory.adjust')||allowedPermission('inventory.opening')?btn('库存 · 建账与调整　→','inventory'):''}${btn('练习说明　→','guide')}${btn('恢复演示数据　→','reset','','danger')}</div><div class="tip"><span>i</span><div><b>这是一份操作演示</b><p>数据只保存在当前浏览器。不同手机不共享；身份切换不是真实登录。手工确认收款不代表银行到账。</p></div></div>${allowedPermission('credit.approve')||allowedPermission('credit.repay')?`<h2>挂账记录</h2>${creditCards()}`:''}`;
 }
 function staffBookingDialog() {
   openDialog('为员工登记订房',`<p class="notice">登记后订单归属所选员工，当前操作人会保留为登记人。</p><label>归属员工<select name="employee" required>${employeeOptions()}</select></label><label>房号<select name="room" required>${roomOptions()}</select></label>${bookingFields()}`,'确认登记订房','reserve');
@@ -395,6 +404,10 @@ function staffBookingDialog() {
 }
 function showRoom(id) {
   const r=state.rooms.find(r=>r.id===id);
+  if (r.status==='故障/维护中') {
+    openDialog(`${id} · 故障/维护中`, `<p>${esc(r.issueType || '故障/维护中')}：${esc(r.issueNote || '未填写')}</p><p class="muted">登记：${esc(r.issueBy || '未记录')} · ${r.issueAt?date(r.issueAt):'时间未记录'}</p>`, allowedPermission('room.issue')?'恢复为空房':'', 'clearRoomIssue', {room:id});
+    return;
+  }
   if (r.order) { showOrder(r.order); return; }
   if (r.status==='待清洁') { openDialog(`${id} · 待清洁`, `<p>完成打扫后，点下方按钮恢复空房。</p>${allowedPermission('room.open')?btn('客人已到，提示后继续开房','openDirty',`data-id="${id}"`):''}`, allowedPermission('room.clean')?'打扫好了，恢复空房':'','clean',{room:id}); return; }
   const currentBooking=pendingReservations(id).find(booking=>reservationActiveAt(booking,state.clock));
@@ -577,7 +590,7 @@ function permissionsDialog(id) {
   const active = effectiveUser(state, id);
   const groups = [...new Set(PERMISSION_DEFINITIONS.map(permission => permission.group))];
   const checks = groups.map(group => `<fieldset class="choice-field"><legend>${esc(group)}</legend>${PERMISSION_DEFINITIONS.filter(permission => permission.group === group).map(permission => `<label class="check"><input type="checkbox" name="permission" value="${esc(permission.id)}" ${active.permissions.includes(permission.id)?'checked':''}>${esc(permission.label)}</label>`).join('')}</fieldset>`).join('');
-  openDialog(`调整具体权限 · ${esc(base.name)}`,`<p class="notice">按具体操作开关权限，可全部取消以暂时停用此身份。岗位名称只用于说明，不会代替这里的具体权限。</p>${checks}`,'保存具体权限','setPermissions',{user:id});
+  openDialog(`调整具体权限 · ${esc(base.name)}（${esc(base.title || '岗位说明未设置')}）`,`<p class="notice">按具体操作开关权限，可全部取消以暂时停用此身份。岗位名称只用于说明，不会代替这里的具体权限。</p>${checks}`,'保存具体权限','setPermissions',{user:id});
 }
 document.addEventListener('change',e=>{
   if(e.target.id==='report-period'){ reportPeriod=e.target.value; render(); window.scrollTo(0,0); return; }
@@ -632,6 +645,12 @@ document.addEventListener('click',e=>{
     }
     if(a==='filter'){filter=target.dataset.value;render();return;}
     if(a==='room')showRoom(id);
+    else if(a==='markRoomIssue'){
+      if(!allowedPermission('room.issue'))throw Error('当前身份没有标记房间异常的权限');
+      const r=state.rooms.find(room=>room.id===id);
+      if(!r)throw Error('请选择有效房间');
+      openDialog(`${r.id} · 标记房间异常`,`<p class="notice">故障或维护中的房间会归类到“异常”筛选，并暂时不能开房或预订。</p><label>异常状态<select name="issueType">${options(ROOM_ISSUE_TYPES.map(type=>[type,type]),ROOM_ISSUE_TYPES[0])}</select></label><label>故障／维护说明<textarea name="issueNote" maxlength="200" rows="3" placeholder="例如：空调故障，等待维修" required></textarea></label>`,'保存异常状态','markRoomIssue',{room:id});
+    }
     else if(a==='open'||a==='openDirty')openRoom(id,a==='openDirty');
     else if(a==='reserve'||a==='reserveFuture')openBookingDialog(id);
     else if(a==='cancelReservation'){
@@ -690,7 +709,7 @@ document.addEventListener('click',e=>{
     }
     else if(a==='addDepositItem')document.querySelector('#deposit-items').insertAdjacentHTML('beforeend',depositItemRow());
     else if(a==='removeDepositItem'){const rows=modal.querySelectorAll('.deposit-item');if(rows.length===1)toast('至少保留一种酒');else target.closest('.deposit-item').remove();}
-    else if(a==='identity')openDialog('切换演示身份',`<p class="muted">仅用于体验权限，不是真实登录。</p><label>选择身份<select name="user">${options(Object.entries(USERS).filter(([,u])=>!u.legacy).map(([id,u])=>{const active=effectiveUser(state,id);return [id,`${u.name} · ${active.roles.length?active.roles.join('／'):'无权限'}`];}),state.user)}</select></label>`,'使用这个身份','identity');
+    else if(a==='identity')openDialog('切换演示身份',`<p class="muted">仅用于体验权限，不是真实登录；岗位名称只作说明。</p><label>选择身份<select name="user">${options(Object.entries(USERS).filter(([,u])=>!u.legacy).map(([id,u])=>[id,`${u.name} · ${u.title || '岗位说明未设置'}`]),state.user)}</select></label>`,'使用这个身份','identity');
     else if(a==='clock')openDialog('调整练习时间',`<p>默认从当天20:00开始练习。改成18:00或02:00可以测试价格边界，不会改写已有订单。</p><label>演示时间<input type="datetime-local" name="clock" value="${localDate(state.clock)}" required></label>`,'设置练习时间','clock');
     else if(a==='deposit')openDepositDialog();
     else if(a==='withdraw'){const d=state.deposits.find(d=>d.id===Number(id));openDialog('核对并取酒',`<p>${product(d.product).name} · 余 ${d.count} 支</p><label>手机尾号或顾客姓名<input name="identity" required placeholder="至少4位手机尾号，或完整姓名"></label><p class="muted">手机号可输入登记号码的最后4至11位；姓名需与登记姓名一致。</p>${stepper(d.count,'数量（支）')}`,'确认取酒','withdraw',{id});}

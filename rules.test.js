@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { PRODUCTS, OTHER_CHARGE_CATEGORIES, USERS, PERMISSION_ROLES, PERMISSION_IDS, defaultPermissions, defaultCapabilities, effectiveUser, hasPermission, hasRole, visibleExpenses, visibleProcurements, visibleIncidents, pendingIncidentReminders, platformVoucher, CONSUMABLES, INCIDENT_TYPES, initialState, transact, quote, slot, total, outstanding, collected, collectableCharges, nextCollectCharge, cents, product, canExchange, bonusAllowance, reservationTarget, reservationReminder, reservationActiveAt, searchDeposits } from './rules.js';
+import { PRODUCTS, OTHER_CHARGE_CATEGORIES, USERS, PERMISSION_ROLES, PERMISSION_IDS, defaultPermissions, defaultCapabilities, effectiveUser, hasPermission, hasRole, visibleExpenses, visibleProcurements, visibleIncidents, pendingIncidentReminders, platformVoucher, CONSUMABLES, INCIDENT_TYPES, ROOM_ISSUE_TYPES, initialState, transact, quote, slot, total, outstanding, collected, collectableCharges, nextCollectCharge, cents, product, canExchange, bonusAllowance, reservationTarget, reservationReminder, reservationActiveAt, searchDeposits } from './rules.js';
 const at = hour => `2026-09-19T${hour}:00+08:00`;
 let seq=0;
 const apply = (s,a,d={}) => transact(s,a,d,`test-${++seq}`);
@@ -14,6 +14,12 @@ test('演示身份按确认的岗位权限配置，管理员可总管理',()=>{
   assert.deepEqual(USERS.wife.roles,['店长','采购','开单员','服务员','收银员']);
   assert.deepEqual(USERS.zhuYi.roles,['开单员','服务员']);
   assert.deepEqual(USERS.meiJiao.roles,['开单员']);
+  assert.equal(USERS.zhuBoss.title,'老板');
+  assert.equal(USERS.wife.title,'店长');
+  assert.equal(USERS.shaoBoss.title,'大堂经理');
+  assert.equal(USERS.xiongBoss.title,'外联经理');
+  assert.equal(USERS.zhuYi.title,'订房服务专员');
+  assert.equal(USERS.meiJiao.title,'订房专员');
   assert.equal(hasRole(USERS.administrator,['收银员']),true);
   assert.equal(hasRole(USERS.zhuBoss,['老板']),true);
   assert.equal(hasRole(USERS.zhuBoss,['店长']),false);
@@ -64,3 +70,5 @@ test('管理页可按员工登记订房和增购，并保留登记人',()=>{let 
 test('消耗品按包数和已开封数量建账及调整',()=>{assert.equal(CONSUMABLES.some(item=>item.id==='nuts'),true);let s=initialState();s.user='xiongBoss';s=apply(s,'consumableStock',{product:'nuts',count:8,opened:1,reason:'首次盘点'});assert.equal(s.consumables.nuts.count,8);assert.equal(s.consumables.nuts.opened,1);assert.equal(s.consumables.nuts.unit,'包');assert.equal(s.ledger.at(-1).kind,'consumable');});
 test('采购记录自动关联支出，大额报销进入老板审批且按权限查看',()=>{let s=initialState();s.user='zhuBoss';s=apply(s,'procurement',{date:'2026-09-21',item:'瓜子',quantity:10,unit:'包',amount:60000,method:'微信',type:'报销',nature:'一次性支出',description:'补充消耗品'});assert.equal(s.procurements.length,1);assert.equal(s.expenses.length,1);assert.equal(s.procurements[0].expenseId,s.expenses[0].id);assert.equal(s.expenses[0].status,'待老板审批');assert.equal(visibleProcurements(s,effectiveUser(s,'zhuBoss')).length,1);s.user='zhuYi';assert.equal(visibleProcurements(s,effectiveUser(s,'zhuYi')).length,0);});
 test('客诉异常可分配负责人，14点后提醒未完成项目并可由负责人处理',()=>{assert.deepEqual(INCIDENT_TYPES.includes('客诉'),true);let s=initialState();s.clock=at('20:00');s.user='zhuYi';s=apply(s,'incident',{date:'2026-09-19',room:'V01',type:'客诉',description:'需要回访',assignee:'meiJiao'});const id=s.incidents[0].id;assert.equal(visibleIncidents(s,effectiveUser(s,'zhuYi')).length,1);assert.equal(pendingIncidentReminders(s,at('14:00')).length,1);s.user='meiJiao';s=apply(s,'resolveIncident',{id,result:'已电话回访',note:'客人满意'});assert.equal(s.incidents[0].status,'已完成');assert.equal(pendingIncidentReminders(s,at('14:00')).length,0);});
+test('岗位名称只作说明，具体操作权限仍按权限配置判断',()=>{const s=initialState();assert.equal(USERS.zhuYi.title,'订房服务专员');assert.equal(hasPermission(effectiveUser(s,'zhuYi'),'room.open'),true);assert.equal(hasPermission(effectiveUser(s,'zhuYi'),'payment.collect'),false);});
+test('房间可标记故障或维护中并归类到异常，恢复后可开房',()=>{assert.deepEqual(ROOM_ISSUE_TYPES,['故障','维护中']);let s=initialState();s.clock=at('20:00');s.user='xiongBoss';s=apply(s,'markRoomIssue',{room:'V01',issueType:'故障',issueNote:'空调待维修'});const room=s.rooms.find(item=>item.id==='V01');assert.equal(room.status,'故障/维护中');assert.equal(room.issueType,'故障');assert.equal(room.issueNote,'空调待维修');assert.throws(()=>apply(s,'open',{room:'V01',beer:'bw'}),/房间已在使用/);s.user='zhuYi';assert.throws(()=>apply(s,'clearRoomIssue',{room:'V01'}),/权限/);s.user='xiongBoss';s=apply(s,'clearRoomIssue',{room:'V01'});assert.equal(s.rooms.find(item=>item.id==='V01').status,'空闲');s=apply(s,'open',{room:'V01',beer:'bw'});assert.equal(s.rooms.find(item=>item.id==='V01').status,'营业中');});

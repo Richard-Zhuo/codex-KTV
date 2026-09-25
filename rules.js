@@ -18,16 +18,16 @@ export const OTHER_CHARGE_CATEGORIES = ['小吃', '热食', '烧鸡烤肉', '代
 export const ROOM_TYPES = { 小房: { day: 6800, night: 5000, gifts: 1, fruit: 1, nuts: 1 }, 中房: { day: 6800, night: 5000, gifts: 1, fruit: 1, nuts: 1 }, 大房: { day: 8800, night: 5400, gifts: 2, fruit: 1, nuts: 2 }, VIP房: { day: 10800, night: 8400, gifts: 2, fruit: 2, nuts: 2 } };
 // 演示身份按门店确认的岗位配置。legacy 身份只为兼容已有练习数据和规则测试，界面不再展示。
 export const USERS = {
-  administrator: { name: '管理员', roles: ['管理员'] },
-  zhuBoss: { name: '卓老板', roles: ['老板', '财务'] },
-  xiongBoss: { name: '雄老板', roles: ['店长', '财务', '采购', '开单员', '服务员', '收银员'] },
-  shaoBoss: { name: '邵老板', roles: ['店长', '财务', '采购', '开单员', '服务员', '收银员'] },
-  wife: { name: '老板娘', roles: ['店长', '采购', '开单员', '服务员', '收银员'] },
-  zhuYi: { name: '卓益', roles: ['开单员', '服务员'] },
-  meiJiao: { name: '美娇', roles: ['开单员'] },
-  staff: { name: '陈姐', roles: ['开单员', '收银员', '服务员'], legacy: true },
-  keeper: { name: '林哥', roles: ['库管', '服务员'], legacy: true },
-  boss: { name: '老板', roles: ['老板', '店长', '财务'], legacy: true }
+  administrator: { name: '管理员', title: '后台总管理', roles: ['管理员'] },
+  zhuBoss: { name: '卓老板', title: '老板', roles: ['老板', '财务'] },
+  xiongBoss: { name: '雄老板', title: '外联经理', roles: ['店长', '财务', '采购', '开单员', '服务员', '收银员'] },
+  shaoBoss: { name: '邵老板', title: '大堂经理', roles: ['店长', '财务', '采购', '开单员', '服务员', '收银员'] },
+  wife: { name: '老板娘', title: '店长', roles: ['店长', '采购', '开单员', '服务员', '收银员'] },
+  zhuYi: { name: '卓益', title: '订房服务专员', roles: ['开单员', '服务员'] },
+  meiJiao: { name: '美娇', title: '订房专员', roles: ['开单员'] },
+  staff: { name: '陈姐', title: '店员', roles: ['开单员', '收银员', '服务员'], legacy: true },
+  keeper: { name: '林哥', title: '库管', roles: ['库管', '服务员'], legacy: true },
+  boss: { name: '老板', title: '老板', roles: ['老板', '店长', '财务'], legacy: true }
 };
 export const USER_ALIASES = { staff: 'shaoBoss', keeper: 'wife', boss: 'zhuBoss' };
 // 管理员可为其他演示身份分配的具体操作权限。管理员本身固定保留总管理权限。
@@ -38,6 +38,7 @@ export const PERMISSION_DEFINITIONS = [
   { id: 'room.open', label: '开房', group: '房间与订单', roles: ['开单员', '老板'] },
   { id: 'room.reserve', label: '预订与取消预订', group: '房间与订单', roles: ['开单员', '老板'] },
   { id: 'room.clean', label: '完成清洁', group: '房间与订单', roles: ['服务员', '老板'] },
+  { id: 'room.issue', label: '设置房间故障／维护状态', group: '房间与订单', roles: ['管理员', '老板', '店长'] },
   { id: 'order.sale', label: '加酒水／其他消费', group: '房间与订单', roles: ['开单员', '服务员', '老板'] },
   { id: 'order.exchange', label: '换酒水', group: '房间与订单', roles: ['开单员', '服务员', '老板'] },
   { id: 'order.gift', label: '登记赠酒水', group: '房间与订单', roles: ['开单员', '服务员', '店长', '老板'] },
@@ -93,6 +94,7 @@ export const PAYMENT_METHODS = ['微信', '支付宝', '现金', '美团', '抖�
 export const EXPENSE_NATURES = ['一次性支出', '固定支出', '资金周转'];
 export const EXPENSE_TYPES = ['支出', '报销'];
 export const EXPENSE_APPROVAL_THRESHOLD = 50000;
+export const ROOM_ISSUE_TYPES = ['故障', '维护中'];
 export const CONSUMABLES = [
   { id: 'nuts', name: '瓜子', unit: '包', threshold: 2 },
   { id: 'ice', name: '冰块', unit: '袋', threshold: 2 },
@@ -162,7 +164,7 @@ export function bonusAllowance(order, productId) {
 export function initialState() {
   const today = new Date(); today.setHours(20,0,0,0);
   const roomType = id => id === '888' ? 'VIP房' : ['V05', 'V06'].includes(id) ? '中房' : id.startsWith('V') ? '小房' : '大房';
-  return { version: 1, clock: today.toISOString(), user: 'staff', permissions: defaultPermissions(), capabilities: defaultCapabilities(), rooms: ['V01','V02','V03','V05','V06','333','666','999','888'].map(id => ({ id, type: roomType(id), status: '空闲', order: null })), orders: [], reservations: [], deposits: [], withdrawals: [], expenses: [], procurements: [], incidents: [], inventory: Object.fromEntries(PRODUCTS.filter(p => p.managed !== false).map(p => [p.id, { count: null, threshold: p.dozen ? 250 : 10 }])), consumables: Object.fromEntries(CONSUMABLES.map(item => [item.id, { count: null, opened: 0, unit: item.unit, threshold: item.threshold }])), ledger: [], notices: [], handovers: [], processed: [], serial: 0 };
+  return { version: 1, clock: today.toISOString(), user: 'staff', permissions: defaultPermissions(), capabilities: defaultCapabilities(), rooms: ['V01','V02','V03','V05','V06','333','666','999','888'].map(id => ({ id, type: roomType(id), status: '空闲', order: null, issueType: '', issueNote: '', issueAt: '', issueBy: '' })), orders: [], reservations: [], deposits: [], withdrawals: [], expenses: [], procurements: [], incidents: [], inventory: Object.fromEntries(PRODUCTS.filter(p => p.managed !== false).map(p => [p.id, { count: null, threshold: p.dozen ? 250 : 10 }])), consumables: Object.fromEntries(CONSUMABLES.map(item => [item.id, { count: null, opened: 0, unit: item.unit, threshold: item.threshold }])), ledger: [], notices: [], handovers: [], processed: [], serial: 0 };
 }
 export const total = order => order.base + order.gift + (order.sales || []).reduce((sum, line) => sum + line.amount, 0) + (order.otherCharges || []).reduce((sum, line) => sum + line.amount, 0);
 export const outstanding = order => Math.max(0, total(order) - (order.payments || []).reduce((sum, payment) => sum + payment.amount, 0));
@@ -283,6 +285,27 @@ export function transact(original, action, data = {}, key) {
       s.permissions[target] = [...new Set(data.roles)];
       s.capabilities[target] = permissionsForRoles(s.permissions[target]);
     }
+  } else if (action === 'markRoomIssue') {
+    need(s, [], 'room.issue');
+    if (!room) throw Error('请选择有效房间');
+    if (!['空闲', '待清洁'].includes(room.status)) throw Error('营业中的房间不能直接标记为故障或维护中');
+    const issueType = String(data.issueType || '').trim();
+    if (!ROOM_ISSUE_TYPES.includes(issueType)) throw Error('请选择故障或维护中状态');
+    const issueNote = String(data.issueNote || '').trim().slice(0, 200);
+    if (!issueNote) throw Error('请填写故障或维护说明');
+    room.status = '故障/维护中';
+    room.issueType = issueType;
+    room.issueNote = issueNote;
+    room.issueAt = time;
+    room.issueBy = person;
+  } else if (action === 'clearRoomIssue') {
+    need(s, [], 'room.issue');
+    if (!room || room.status !== '故障/维护中') throw Error('房间异常状态已经变化');
+    room.status = '空闲';
+    room.issueType = '';
+    room.issueNote = '';
+    room.issueAt = '';
+    room.issueBy = '';
   } else if (action === 'open') {
     const delegated = delegatedEmployee(s, data);
     if (delegated) person = delegated.name; else need(s, ['开单员','老板'], 'room.open');
