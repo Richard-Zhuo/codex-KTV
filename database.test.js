@@ -13,9 +13,9 @@ test('关系型基线覆盖当前核心业务实体', () => {
   assert.equal(new Set(tables).size, tables.length, '表名不应重复');
   for (const table of [
     'employees', 'employee_permissions', 'rooms', 'room_issues', 'room_issue_change_requests', 'reservations',
-    'room_orders', 'order_items', 'payments', 'credits', 'stored_wine_lots',
-    'inventory_balances', 'inventory_movements', 'expense_records',
-    'procurement_records', 'incidents', 'handovers'
+    'room_orders', 'order_items', 'payments', 'credits', 'credit_repayment_requests', 'stored_wine_lots',
+    'inventory_balances', 'inventory_movements', 'inventory_count_requests', 'expense_records',
+    'procurement_records', 'incidents', 'incident_resolution_requests', 'handovers'
   ]) {
     assert.ok(tables.includes(table), `缺少业务表 ${table}`);
   }
@@ -26,6 +26,10 @@ test('关系型基线覆盖当前核心业务实体', () => {
   assert.match(schema, /CHECK \(decided_by IS NULL OR decided_by <> requested_by\)/);
   assert.match(schema, /status IN \('已批准', '已驳回'\) AND decided_by IS NOT NULL AND decided_at IS NOT NULL/);
   assert.match(schema, /CREATE UNIQUE INDEX room_issue_change_requests_one_pending_per_room/);
+  assert.match(schema, /CREATE UNIQUE INDEX inventory_count_requests_one_pending_per_product/);
+  assert.match(schema, /CREATE UNIQUE INDEX incident_resolution_requests_one_pending_per_incident/);
+  assert.match(schema, /request_id bigint NOT NULL UNIQUE REFERENCES credit_repayment_requests/);
+  assert.ok((schema.match(/CHECK \(decided_by IS NULL OR decided_by <> (?:requested_by|submitted_by)\)/g) || []).length >= 6, '六类复核记录都应禁止本人自审');
 });
 
 test('金额、营业日、房间并发和幂等约束已写入数据库', () => {
@@ -68,6 +72,9 @@ test('种子数据与当前房间、员工说明和历史商品别名一致', ()
   assert.match(seed, /legacy_new_heineken/);
   assert.match(seed, /INSERT INTO employee_permissions/);
   assert.match(seed, /room\.issue\.approve/);
+  assert.match(seed, /credit\.repay\.approve/);
+  assert.match(seed, /inventory\.approve/);
+  assert.match(seed, /incident\.resolve\.approve/);
 });
 
 test('CSV 模板固定金山日报与支出表字段顺序', () => {

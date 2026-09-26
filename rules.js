@@ -49,10 +49,12 @@ export const PERMISSION_DEFINITIONS = [
   { id: 'credit.apply', label: '申请挂账', group: '收款与挂账', roles: ['开单员', '收银员', '服务员', '库管', '店长', '老板'] },
   { id: 'credit.approve', label: '审批挂账', group: '收款与挂账', roles: ['店长', '老板'] },
   { id: 'credit.repay', label: '登记挂账回款', group: '收款与挂账', roles: ['收银员', '财务', '老板'] },
+  { id: 'credit.repay.approve', label: '审核挂账回款', group: '审核与后台', roles: ['财务', '店长', '老板'] },
   { id: 'gift.approve', label: '审批超额赠酒水', group: '审核与后台', roles: ['店长', '老板'] },
   { id: 'rounding.approve', label: '审核特殊差额', group: '审核与后台', roles: ['店长'] },
   { id: 'inventory.opening', label: '库存期初建账', group: '库存与交班', roles: ['店长', '老板', '采购'] },
   { id: 'inventory.adjust', label: '库存盘点与调整', group: '库存与交班', roles: ['店长', '老板', '库管', '采购'] },
+  { id: 'inventory.approve', label: '审核库存盘点', group: '审核与后台', roles: ['店长', '老板', '采购'] },
   { id: 'deposit.manage', label: '登记与取酒', group: '库存与交班', roles: ['服务员', '老板'] },
   { id: 'handover', label: '交班核对', group: '库存与交班', roles: ['收银员', '财务', '店长', '老板'] },
   { id: 'expense.view', label: '查看支出与报销', group: '经营后台', roles: ['管理员', '老板', '店长', '财务', '采购', '开单员', '服务员', '收银员', '库管'] },
@@ -64,6 +66,7 @@ export const PERMISSION_DEFINITIONS = [
   { id: 'incident.create', label: '登记客诉／异常', group: '现场管理', roles: ['管理员', '老板', '店长', '财务', '采购', '开单员', '服务员', '收银员', '库管'] },
   { id: 'incident.viewAll', label: '查看全部客诉／异常', group: '现场管理', roles: ['管理员', '老板', '店长', '财务'] },
   { id: 'incident.resolve', label: '填写客诉／异常处理结果', group: '现场管理', roles: ['管理员', '老板', '店长', '财务', '采购', '开单员', '服务员', '收银员', '库管'] },
+  { id: 'incident.resolve.approve', label: '审核客诉／异常恢复', group: '审核与后台', roles: ['管理员', '老板', '店长', '财务'] },
   { id: 'report.view', label: '查看经营报表', group: '审核与后台', roles: ['管理员', '老板', '财务', '店长', '收银员'] },
   { id: 'backend.view', label: '进入管理后台', group: '审核与后台', roles: ['管理员', '老板', '店长', '财务', '采购', '库管'] }
 ];
@@ -165,7 +168,7 @@ export function bonusAllowance(order, productId) {
 export function initialState() {
   const today = new Date(); today.setHours(20,0,0,0);
   const roomType = id => id === '888' ? 'VIP房' : ['V05', 'V06'].includes(id) ? '中房' : id.startsWith('V') ? '小房' : '大房';
-  return { version: 1, clock: today.toISOString(), user: 'staff', permissions: defaultPermissions(), capabilities: defaultCapabilities(), rooms: ['V01','V02','V03','V05','V06','333','666','999','888'].map(id => ({ id, type: roomType(id), status: '空闲', order: null, issueType: '', issueNote: '', issueAt: '', issueBy: '', issueApprovedBy: '', issueEvidencePhoto: '', issueEvidencePhotoName: '' })), orders: [], reservations: [], deposits: [], withdrawals: [], expenses: [], procurements: [], incidents: [], roomIssueReviews: [], inventory: Object.fromEntries(PRODUCTS.filter(p => p.managed !== false).map(p => [p.id, { count: null, threshold: p.dozen ? 250 : 10 }])), consumables: Object.fromEntries(CONSUMABLES.map(item => [item.id, { count: null, opened: 0, unit: item.unit, threshold: item.threshold }])), ledger: [], notices: [], handovers: [], processed: [], serial: 0 };
+  return { version: 1, capabilitySchemaVersion: 2, clock: today.toISOString(), user: 'staff', permissions: defaultPermissions(), capabilities: defaultCapabilities(), rooms: ['V01','V02','V03','V05','V06','333','666','999','888'].map(id => ({ id, type: roomType(id), status: '空闲', order: null, issueType: '', issueNote: '', issueAt: '', issueBy: '', issueApprovedBy: '', issueEvidencePhoto: '', issueEvidencePhotoName: '' })), orders: [], reservations: [], deposits: [], withdrawals: [], expenses: [], procurements: [], incidents: [], roomIssueReviews: [], inventoryReviews: [], inventory: Object.fromEntries(PRODUCTS.filter(p => p.managed !== false).map(p => [p.id, { count: null, threshold: p.dozen ? 250 : 10 }])), consumables: Object.fromEntries(CONSUMABLES.map(item => [item.id, { count: null, opened: 0, unit: item.unit, threshold: item.threshold }])), ledger: [], notices: [], handovers: [], processed: [], serial: 0 };
 }
 export const total = order => order.base + order.gift + (order.sales || []).reduce((sum, line) => sum + line.amount, 0) + (order.otherCharges || []).reduce((sum, line) => sum + line.amount, 0);
 export const outstanding = order => Math.max(0, total(order) - (order.payments || []).reduce((sum, payment) => sum + payment.amount, 0));
@@ -208,7 +211,7 @@ export function visibleProcurements(state, user = effectiveUser(state)) {
 }
 export function visibleIncidents(state, user = effectiveUser(state)) {
   const rows = Array.isArray(state?.incidents) ? state.incidents : [];
-  if (hasPermission(user, 'incident.viewAll')) return rows;
+  if (hasPermission(user, 'incident.viewAll') || hasPermission(user, 'incident.resolve.approve')) return rows;
   return rows.filter(row => row.person === user?.name || row.assignee === user?.name);
 }
 export function pendingIncidentReminders(stateOrRows, now = new Date().toISOString()) {
@@ -280,6 +283,10 @@ export function transact(original, action, data = {}, key) {
     return { evidenceText, evidencePhoto, evidencePhotoName };
   };
   const pendingRoomIssueReview = roomId => (s.roomIssueReviews ||= []).find(request => request.room === roomId && request.status === '待审核');
+  const pendingInventoryReview = (kind, productId) => (s.inventoryReviews ||= []).find(request => request.kind === kind && request.product === productId && request.status === '待审核');
+  const requireOtherReviewer = submittedById => {
+    if (!submittedById || submittedById === s.user) throw Error('提交人不能审核本人申请，请切换其他有审核权限的身份');
+  };
   if (action === 'setPermissions') {
     need(s, ['管理员']);
     const target = String(data.user || '');
@@ -436,18 +443,18 @@ export function transact(original, action, data = {}, key) {
     const allowance = bonusAllowance(order, p.id);
     if (!allowance.purchased) throw Error('请先增购对应酒水');
     order.giftRequests ??= [];
-    if (hasRole(effectiveUser(s), ['店长','老板']) || data.halves <= allowance.availableHalves) {
-      grantBonus(s, order, p.id, data.halves, data.halves <= allowance.availableHalves ? '每增购2打赠半打' : '老板／店长确认赠送', time);
-    } else {
-      const directHalves = allowance.availableHalves, excessHalves = data.halves - directHalves;
-      if (directHalves) grantBonus(s, order, p.id, directHalves, '每增购2打赠半打', time);
-      order.giftRequests.push({ id: ++s.serial, product: p.id, halves: excessHalves, bottles: excessHalves * 6, allowanceAtRequest: directHalves, status: '待确认', requestedBy: person, time });
-    }
+    const directHalves = Math.min(data.halves, allowance.availableHalves);
+    const excessHalves = data.halves - directHalves;
+    if (directHalves) grantBonus(s, order, p.id, directHalves, '每增购2打赠半打', time);
+    if (excessHalves) order.giftRequests.push({ id: ++s.serial, product: p.id, halves: excessHalves, bottles: excessHalves * 6, allowanceAtRequest: directHalves, status: '待确认', requestedBy: person, requestedById: s.user, submittedAt: time, time, decidedBy: '', decidedAt: '', decisionNote: '' });
   } else if (action === 'approveGift' || action === 'rejectGift') {
     need(s, ['店长','老板'], 'gift.approve'); active();
     const request = (order.giftRequests || []).find(item => item.id === data.request);
     if (!request || request.status !== '待确认') throw Error('赠酒水申请已处理');
-    request.status = action === 'approveGift' ? '已批准' : '已驳回'; request.decidedBy = person; request.decidedAt = time;
+    requireOtherReviewer(request.requestedById);
+    const decisionNote = String(data.decisionNote || '').trim().slice(0, 300);
+    if (action === 'rejectGift' && !decisionNote) throw Error('请填写驳回原因');
+    request.status = action === 'approveGift' ? '已批准' : '已驳回'; request.decidedBy = person; request.decidedAt = time; request.decisionNote = decisionNote;
     if (action === 'approveGift') grantBonus(s, order, request.product, request.halves, '老板／店长确认赠送', time, request.requestedBy);
   } else if (action === 'exchange') {
     need(s, ['开单员','服务员','老板'], 'order.exchange'); active(); quantity(data.count);
@@ -493,12 +500,15 @@ export function transact(original, action, data = {}, key) {
     order.rounding = settlement.rounding;
     order.roundingType = settlement.differenceType;
     order.roundingNote = settlement.differenceNote;
-    order.roundingReview = settlement.needsReview ? { status: '待审核', amount: settlement.rounding, note: settlement.differenceNote, submittedBy: person, submittedAt: time, approver: '店长' } : null;
+    order.roundingReview = settlement.needsReview ? { status: '待审核', amount: settlement.rounding, note: settlement.differenceNote, submittedBy: person, submittedById: s.user, submittedAt: time, approver: '店长', decidedBy: '', decidedAt: '', decisionNote: '' } : null;
     order.status = '已结账'; order.closedAt = time; release(s, order);
-  } else if (action === 'approveRounding') {
+  } else if (action === 'approveRounding' || action === 'rejectRounding') {
     need(s, ['店长'], 'rounding.approve');
     if (!order?.roundingReview || order.roundingReview.status !== '待审核') throw Error('特殊差额审核状态已变化');
-    order.roundingReview.status = '已审核'; order.roundingReview.decidedBy = person; order.roundingReview.decidedAt = time;
+    requireOtherReviewer(order.roundingReview.submittedById);
+    const decisionNote = String(data.decisionNote || '').trim().slice(0, 300);
+    if (action === 'rejectRounding' && !decisionNote) throw Error('请填写驳回原因');
+    order.roundingReview.status = action === 'approveRounding' ? '已批准' : '已驳回'; order.roundingReview.decidedBy = person; order.roundingReview.decidedAt = time; order.roundingReview.decisionNote = decisionNote;
   } else if (action === 'credit') {
     need(s, ['开单员','收银员','服务员','库管','店长','老板'], 'credit.apply'); active();
     if ((order.giftRequests || []).some(item => item.status === '待确认')) throw Error('还有待确认的赠酒水申请，请先处理');
@@ -508,7 +518,7 @@ export function transact(original, action, data = {}, key) {
     const note = String(data.note || '').trim().slice(0,200); if (!note) throw Error('请填写挂账备注');
     if (typeof data.signature !== 'string' || !data.signature.startsWith('data:image/png;base64,') || data.signature.length < 100) throw Error('请由经办员工本人手写签字');
     const amount = outstanding(order); if (!amount) throw Error('本单已经收清，无需挂账');
-    order.credit = { amount, remaining: amount, phone: phoneValue, name, note, person, openedBy: order.openedBy || order.person || '未记录', openSource: order.openSource || '线下', reservedBy: order.reservedBy || '', reservationSource: order.reservationSource || '', signature: data.signature, submittedAt: time, due: new Date(Date.parse(time)+86400000).toISOString(), approver: amount>100000 ? '老板' : '店长', repayments: [] };
+    order.credit = { amount, remaining: amount, phone: phoneValue, name, note, person, openedBy: order.openedBy || order.person || '未记录', openSource: order.openSource || '线下', reservedBy: order.reservedBy || '', reservationSource: order.reservationSource || '', signature: data.signature, submittedAt: time, due: new Date(Date.parse(time)+86400000).toISOString(), approver: amount>100000 ? '老板' : '店长', repayments: [], repaymentRequests: [] };
     order.status = '待审批挂账'; release(s, order);
   } else if (action === 'approve' || action === 'reject') {
     if (!order || order.status !== '待审批挂账') throw Error('审批已处理'); need(s, [order.credit.approver], 'credit.approve');
@@ -518,11 +528,26 @@ export function transact(original, action, data = {}, key) {
   } else if (action === 'repay') {
     need(s, ['收银员','财务','老板'], 'credit.repay');
     if (!order || order.status !== '已挂账') throw Error('请选择已审批的挂账');
-    if (!Number.isSafeInteger(data.amount) || data.amount <= 0 || data.amount > order.credit.remaining) throw Error('回款金额应大于零且不超过欠款');
+    order.credit.repaymentRequests ??= [];
+    const pendingAmount = order.credit.repaymentRequests.filter(request => request.status === '待审核').reduce((sum, request) => sum + request.amount, 0);
+    if (!Number.isSafeInteger(data.amount) || data.amount <= 0 || data.amount > order.credit.remaining - pendingAmount) throw Error('回款金额应大于零且不超过扣除待审核回款后的欠款');
     if (!PAYMENT_METHODS.includes(data.method)) throw Error('请选择收款方式');
-    const p = { amount: data.amount, method: data.method, time, person };
-    order.credit.repayments.push(p); order.payments.push(p); order.credit.remaining -= data.amount;
-    if (!order.credit.remaining) order.status = '已回款';
+    order.credit.repaymentRequests.push({ id: ++s.serial, amount: data.amount, method: data.method, status: '待审核', submittedBy: person, submittedById: s.user, submittedAt: time, decidedBy: '', decidedAt: '', decisionNote: '' });
+  } else if (action === 'approveRepayment' || action === 'rejectRepayment') {
+    need(s, [], 'credit.repay.approve');
+    if (!order?.credit) throw Error('挂账记录不存在');
+    const request = (order.credit.repaymentRequests || []).find(item => item.id === Number(data.request));
+    if (!request || request.status !== '待审核') throw Error('这笔回款申请已经处理');
+    requireOtherReviewer(request.submittedById);
+    const decisionNote = String(data.decisionNote || '').trim().slice(0, 300);
+    if (action === 'rejectRepayment' && !decisionNote) throw Error('请填写驳回原因');
+    if (action === 'approveRepayment') {
+      if (order.status !== '已挂账' || request.amount > order.credit.remaining) throw Error('挂账余额已经变化，请驳回后重新登记');
+      const payment = { amount: request.amount, method: request.method, chargeId: 'credit-repayment', time, person: request.submittedBy, approvedBy: person, repaymentRequestId: request.id };
+      order.credit.repayments.push(payment); order.payments.push(payment); order.credit.remaining -= request.amount;
+      if (!order.credit.remaining) order.status = '已回款';
+    }
+    request.status = action === 'approveRepayment' ? '已批准' : '已驳回'; request.decidedBy = person; request.decidedAt = time; request.decisionNote = decisionNote;
   } else if (action === 'clean') {
     need(s, ['服务员','老板'], 'room.clean'); if (!room || room.status !== '待清洁') throw Error('房间状态已变化'); room.status = '空闲';
   } else if (action === 'deposit') {
@@ -552,21 +577,41 @@ export function transact(original, action, data = {}, key) {
     const item = s.inventory[data.product]; if (!item) throw Error('该商品不管理库存');
     need(s, item.count === null ? ['店长','老板','采购'] : ['店长','老板','库管','采购'], item.count === null ? 'inventory.opening' : 'inventory.adjust');
     if (!Number.isSafeInteger(data.count) || data.count < 0) throw Error('实际库存应为非负整数');
-    if (!String(data.reason || '').trim()) throw Error('请填写调整原因');
+    const reason = String(data.reason || '').trim().slice(0, 300); if (!reason) throw Error('请填写调整原因');
+    if (pendingInventoryReview('drink', data.product)) throw Error('该商品已有库存盘点待审核');
     const before = item.count;
-    s.ledger.push({ id: ++s.serial, product: data.product, delta: data.count-(before ?? 0), before, after: data.count, reason: data.reason, source: before === null ? '期初建账' : '盘点调整', counted: true, person, time });
-    item.count = data.count; if (before === null) item.openedAt = time;
-    if (hasRole(effectiveUser(s), ['库管'])) s.notices.push({ id: ++s.serial, product: data.product, before, after: data.count, reason: data.reason, person, time });
+    s.inventoryReviews.push({ id: ++s.serial, kind: 'drink', product: data.product, before, after: data.count, reason, source: before === null ? '期初建账' : '盘点调整', status: '待审核', submittedBy: person, submittedById: s.user, submittedAt: time, decidedBy: '', decidedAt: '', decisionNote: '' });
   } else if (action === 'consumableStock') {
     const item = s.consumables?.[data.product]; if (!item) throw Error('该消耗品不在库存管理中');
     const permission = item.count === null ? 'inventory.opening' : 'inventory.adjust';
     need(s, [], permission);
     if (!Number.isSafeInteger(data.count) || data.count < 0 || !Number.isSafeInteger(data.opened) || data.opened < 0) throw Error('消耗品数量应为非负整数');
-    if (!String(data.reason || '').trim()) throw Error('请填写调整原因');
+    const reason = String(data.reason || '').trim().slice(0, 300); if (!reason) throw Error('请填写调整原因');
+    if (pendingInventoryReview('consumable', data.product)) throw Error('该消耗品已有库存盘点待审核');
     const before = item.count, beforeOpened = item.opened || 0;
-    s.ledger.push({ id: ++s.serial, kind: 'consumable', product: data.product, delta: data.count-(before ?? 0), before, after: data.count, openedBefore: beforeOpened, openedAfter: data.opened, reason: data.reason, source: before === null ? '消耗品期初建账' : '消耗品盘点调整', counted: true, person, time });
-    item.count = data.count; item.opened = data.opened; if (before === null) item.openedAt = time;
-    if (hasRole(effectiveUser(s), ['库管'])) s.notices.push({ id: ++s.serial, kind: 'consumable', product: data.product, before, after: data.count, openedBefore: beforeOpened, openedAfter: data.opened, reason: data.reason, person, time });
+    s.inventoryReviews.push({ id: ++s.serial, kind: 'consumable', product: data.product, before, after: data.count, openedBefore: beforeOpened, openedAfter: data.opened, reason, source: before === null ? '消耗品期初建账' : '消耗品盘点调整', status: '待审核', submittedBy: person, submittedById: s.user, submittedAt: time, decidedBy: '', decidedAt: '', decisionNote: '' });
+  } else if (action === 'approveInventory' || action === 'rejectInventory') {
+    need(s, [], 'inventory.approve');
+    const request = (s.inventoryReviews || []).find(item => item.id === Number(data.request));
+    if (!request || request.status !== '待审核') throw Error('这笔库存盘点已经处理');
+    requireOtherReviewer(request.submittedById);
+    const decisionNote = String(data.decisionNote || '').trim().slice(0, 300);
+    if (action === 'rejectInventory' && !decisionNote) throw Error('请填写驳回原因');
+    if (action === 'approveInventory') {
+      if (request.kind === 'consumable') {
+        const item = s.consumables?.[request.product];
+        if (!item || item.count !== request.before || (item.opened || 0) !== request.openedBefore) throw Error('消耗品库存已经变化，请驳回后重新盘点');
+        s.ledger.push({ id: ++s.serial, kind: 'consumable', product: request.product, delta: request.after-(request.before ?? 0), before: request.before, after: request.after, openedBefore: request.openedBefore, openedAfter: request.openedAfter, reason: request.reason, source: request.source, counted: true, person: request.submittedBy, reviewedBy: person, time });
+        item.count = request.after; item.opened = request.openedAfter; if (request.before === null) item.openedAt = time;
+      } else {
+        const item = s.inventory[request.product];
+        if (!item || item.count !== request.before) throw Error('酒水库存已经变化，请驳回后重新盘点');
+        s.ledger.push({ id: ++s.serial, product: request.product, delta: request.after-(request.before ?? 0), before: request.before, after: request.after, reason: request.reason, source: request.source, counted: true, person: request.submittedBy, reviewedBy: person, time });
+        item.count = request.after; if (request.before === null) item.openedAt = time;
+      }
+      s.notices.push({ id: ++s.serial, kind: request.kind, product: request.product, unit: request.kind === 'consumable' ? (s.consumables?.[request.product]?.unit || '份') : '支', before: request.before, after: request.after, openedBefore: request.openedBefore, openedAfter: request.openedAfter, reason: request.reason, person: request.submittedBy, reviewedBy: person, time });
+    }
+    request.status = action === 'approveInventory' ? '已批准' : '已驳回'; request.decidedBy = person; request.decidedAt = time; request.decisionNote = decisionNote;
   } else if (action === 'handover') {
     need(s, ['收银员','财务','店长','老板'], 'handover');
     if (!Number.isSafeInteger(data.actual) || data.actual < 0) throw Error('请输入有效实点金额');
@@ -617,15 +662,30 @@ export function transact(original, action, data = {}, key) {
     const assigneeId = String(data.assignee || '').trim(); const assignee = USERS[assigneeId];
     if (!assignee || assignee.legacy || assigneeId === 'administrator') throw Error('请选择处理负责人');
     s.incidents ??= [];
-    s.incidents.push({ id: ++s.serial, date: incidentDate, room: data.room, type, description, assigneeId, assignee: assignee.name, result: '', note: '', status: '待处理', person, createdAt: time, lastReminderDate: '' });
+    s.incidents.push({ id: ++s.serial, date: incidentDate, room: data.room, type, description, assigneeId, assignee: assignee.name, result: '', note: '', status: '待处理', person, createdAt: time, lastReminderDate: '', resolutionReviews: [] });
   } else if (action === 'resolveIncident') {
     need(s, [], 'incident.resolve');
     const incident = (s.incidents || []).find(item => item.id === Number(data.id));
     if (!incident || incident.status === '已完成') throw Error('该客诉／异常已经处理');
     if (incident.assignee !== person && !hasPermission(effectiveUser(s), 'incident.viewAll')) throw Error('只有负责人或管理人员可以填写处理结果');
+    incident.resolutionReviews ??= [];
+    if (incident.resolutionReviews.some(request => request.status === '待审核')) throw Error('处理结果已经提交审核，请等待另一名员工处理');
     const result = String(data.result || '').trim().slice(0, 300); if (!result) throw Error('请填写处理结果');
     const note = String(data.note || '').trim().slice(0, 300); if (!note) throw Error('请填写处理备注');
-    incident.result = result; incident.note = note; incident.status = '已完成'; incident.resolvedBy = person; incident.resolvedAt = time; incident.lastReminderDate = '';
+    incident.resolutionReviews.push({ id: ++s.serial, result, note, status: '待审核', submittedBy: person, submittedById: s.user, submittedAt: time, decidedBy: '', decidedAt: '', decisionNote: '' });
+    incident.status = '待审核'; incident.lastReminderDate = '';
+  } else if (action === 'approveIncidentResolution' || action === 'rejectIncidentResolution') {
+    need(s, [], 'incident.resolve.approve');
+    const incident = (s.incidents || []).find(item => item.id === Number(data.id));
+    const request = (incident?.resolutionReviews || []).find(item => item.id === Number(data.request));
+    if (!incident || !request || request.status !== '待审核') throw Error('这项客诉／异常恢复申请已经处理');
+    requireOtherReviewer(request.submittedById);
+    const decisionNote = String(data.decisionNote || '').trim().slice(0, 300);
+    if (action === 'rejectIncidentResolution' && !decisionNote) throw Error('请填写驳回原因');
+    if (action === 'approveIncidentResolution') {
+      incident.result = request.result; incident.note = request.note; incident.status = '已完成'; incident.resolvedBy = request.submittedBy; incident.resolvedAt = time; incident.reviewedBy = person; incident.lastReminderDate = '';
+    } else incident.status = '待处理';
+    request.status = action === 'approveIncidentResolution' ? '已批准' : '已驳回'; request.decidedBy = person; request.decidedAt = time; request.decisionNote = decisionNote;
   } else if (action === 'approveExpense' || action === 'rejectExpense') {
     need(s, ['老板'], 'expense.approve');
     const expense = (s.expenses || []).find(item => item.id === Number(data.id));

@@ -204,6 +204,34 @@ CREATE TABLE inventory_movements (
   UNIQUE (store_id, idempotency_key)
 );
 
+CREATE TABLE inventory_count_requests (
+  id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  store_id bigint NOT NULL REFERENCES stores(id),
+  product_code varchar(40) NOT NULL REFERENCES products(code),
+  inventory_kind varchar(20) NOT NULL CHECK (inventory_kind IN ('酒水', '消耗品')),
+  before_unopened_quantity numeric(12,3),
+  requested_unopened_quantity numeric(12,3) NOT NULL CHECK (requested_unopened_quantity >= 0),
+  before_opened_quantity numeric(12,3) NOT NULL DEFAULT 0 CHECK (before_opened_quantity >= 0),
+  requested_opened_quantity numeric(12,3) NOT NULL DEFAULT 0 CHECK (requested_opened_quantity >= 0),
+  reason varchar(500) NOT NULL,
+  status varchar(20) NOT NULL DEFAULT '待审核'
+    CHECK (status IN ('待审核', '已批准', '已驳回')),
+  requested_by varchar(40) NOT NULL REFERENCES employees(id),
+  requested_at timestamptz NOT NULL,
+  decided_by varchar(40) REFERENCES employees(id),
+  decided_at timestamptz,
+  decision_note varchar(500) NOT NULL DEFAULT '',
+  CHECK (decided_by IS NULL OR decided_by <> requested_by),
+  CHECK (
+    (status = '待审核' AND decided_by IS NULL AND decided_at IS NULL)
+    OR (status IN ('已批准', '已驳回') AND decided_by IS NOT NULL AND decided_at IS NOT NULL)
+  )
+);
+
+CREATE UNIQUE INDEX inventory_count_requests_one_pending_per_product
+  ON inventory_count_requests(store_id, product_code)
+  WHERE status = '待审核';
+
 CREATE TABLE reservations (
   id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
   store_id bigint NOT NULL REFERENCES stores(id),
@@ -312,10 +340,16 @@ CREATE TABLE gift_requests (
   half_dozen_count integer NOT NULL CHECK (half_dozen_count > 0),
   bottle_count integer NOT NULL CHECK (bottle_count > 0),
   status varchar(20) NOT NULL CHECK (status IN ('待确认', '已批准', '已驳回')),
-  requested_by varchar(40) REFERENCES employees(id),
+  requested_by varchar(40) NOT NULL REFERENCES employees(id),
   requested_at timestamptz NOT NULL,
   decided_by varchar(40) REFERENCES employees(id),
-  decided_at timestamptz
+  decided_at timestamptz,
+  decision_note varchar(500) NOT NULL DEFAULT '',
+  CHECK (decided_by IS NULL OR decided_by <> requested_by),
+  CHECK (
+    (status = '待确认' AND decided_by IS NULL AND decided_at IS NULL)
+    OR (status IN ('已批准', '已驳回') AND decided_by IS NOT NULL AND decided_at IS NOT NULL)
+  )
 );
 
 CREATE TABLE payments (
@@ -339,11 +373,17 @@ CREATE TABLE rounding_reviews (
   amount_cents integer NOT NULL CHECK (amount_cents > 0),
   difference_type varchar(20) NOT NULL CHECK (difference_type IN ('免零', '特殊情况')),
   note varchar(500) NOT NULL DEFAULT '',
-  status varchar(20) NOT NULL DEFAULT '待审核' CHECK (status IN ('待审核', '已审核')),
-  submitted_by varchar(40) REFERENCES employees(id),
+  status varchar(20) NOT NULL DEFAULT '待审核' CHECK (status IN ('待审核', '已批准', '已驳回')),
+  submitted_by varchar(40) NOT NULL REFERENCES employees(id),
   submitted_at timestamptz NOT NULL,
   decided_by varchar(40) REFERENCES employees(id),
-  decided_at timestamptz
+  decided_at timestamptz,
+  decision_note varchar(500) NOT NULL DEFAULT '',
+  CHECK (decided_by IS NULL OR decided_by <> submitted_by),
+  CHECK (
+    (status = '待审核' AND decided_by IS NULL AND decided_at IS NULL)
+    OR (status IN ('已批准', '已驳回') AND decided_by IS NOT NULL AND decided_at IS NOT NULL)
+  )
 );
 
 CREATE TABLE credits (
@@ -367,9 +407,30 @@ CREATE TABLE credits (
   CHECK (remaining_cents <= amount_cents)
 );
 
+CREATE TABLE credit_repayment_requests (
+  id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  credit_id bigint NOT NULL REFERENCES credits(id) ON DELETE RESTRICT,
+  amount_cents integer NOT NULL CHECK (amount_cents > 0),
+  payment_method varchar(30) NOT NULL
+    CHECK (payment_method IN ('微信', '支付宝', '现金', '美团', '抖音')),
+  status varchar(20) NOT NULL DEFAULT '待审核'
+    CHECK (status IN ('待审核', '已批准', '已驳回')),
+  requested_by varchar(40) NOT NULL REFERENCES employees(id),
+  requested_at timestamptz NOT NULL,
+  decided_by varchar(40) REFERENCES employees(id),
+  decided_at timestamptz,
+  decision_note varchar(500) NOT NULL DEFAULT '',
+  CHECK (decided_by IS NULL OR decided_by <> requested_by),
+  CHECK (
+    (status = '待审核' AND decided_by IS NULL AND decided_at IS NULL)
+    OR (status IN ('已批准', '已驳回') AND decided_by IS NOT NULL AND decided_at IS NOT NULL)
+  )
+);
+
 CREATE TABLE credit_repayments (
   id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
   credit_id bigint NOT NULL REFERENCES credits(id) ON DELETE RESTRICT,
+  request_id bigint NOT NULL UNIQUE REFERENCES credit_repayment_requests(id) ON DELETE RESTRICT,
   payment_id bigint NOT NULL UNIQUE REFERENCES payments(id) ON DELETE RESTRICT,
   amount_cents integer NOT NULL CHECK (amount_cents > 0),
   operator_id varchar(40) REFERENCES employees(id),
@@ -447,7 +508,7 @@ CREATE TABLE incidents (
   incident_type varchar(30) NOT NULL,
   description varchar(1000) NOT NULL,
   assignee_id varchar(40) REFERENCES employees(id),
-  status varchar(20) NOT NULL DEFAULT '待处理' CHECK (status IN ('待处理', '已完成')),
+  status varchar(20) NOT NULL DEFAULT '待处理' CHECK (status IN ('待处理', '待审核', '已完成')),
   result varchar(1000) NOT NULL DEFAULT '',
   result_note varchar(1000) NOT NULL DEFAULT '',
   reported_by varchar(40) REFERENCES employees(id),
@@ -456,6 +517,29 @@ CREATE TABLE incidents (
   resolved_at timestamptz,
   last_reminded_on date
 );
+
+CREATE TABLE incident_resolution_requests (
+  id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  incident_id bigint NOT NULL REFERENCES incidents(id) ON DELETE RESTRICT,
+  result varchar(1000) NOT NULL,
+  result_note varchar(1000) NOT NULL,
+  status varchar(20) NOT NULL DEFAULT '待审核'
+    CHECK (status IN ('待审核', '已批准', '已驳回')),
+  requested_by varchar(40) NOT NULL REFERENCES employees(id),
+  requested_at timestamptz NOT NULL,
+  decided_by varchar(40) REFERENCES employees(id),
+  decided_at timestamptz,
+  decision_note varchar(500) NOT NULL DEFAULT '',
+  CHECK (decided_by IS NULL OR decided_by <> requested_by),
+  CHECK (
+    (status = '待审核' AND decided_by IS NULL AND decided_at IS NULL)
+    OR (status IN ('已批准', '已驳回') AND decided_by IS NOT NULL AND decided_at IS NOT NULL)
+  )
+);
+
+CREATE UNIQUE INDEX incident_resolution_requests_one_pending_per_incident
+  ON incident_resolution_requests(incident_id)
+  WHERE status = '待审核';
 
 CREATE TABLE handovers (
   id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
