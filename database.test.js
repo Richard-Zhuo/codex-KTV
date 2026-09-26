@@ -21,7 +21,10 @@ test('关系型基线覆盖当前核心业务实体', () => {
   }
   assert.ok(tables.length >= 35, '数据库应覆盖业务表、审计表和导入暂存表');
   assert.match(schema, /CHECK \(evidence_text <> '' OR evidence_image_ref <> ''\)/);
+  assert.match(schema, /change_type varchar\(20\) NOT NULL CHECK \(change_type = '恢复空房'\)/);
+  assert.match(schema, /requested_status varchar\(30\) NOT NULL CHECK \(requested_status = '空闲'\)/);
   assert.match(schema, /CHECK \(decided_by IS NULL OR decided_by <> requested_by\)/);
+  assert.match(schema, /status IN \('已批准', '已驳回'\) AND decided_by IS NOT NULL AND decided_at IS NOT NULL/);
   assert.match(schema, /CREATE UNIQUE INDEX room_issue_change_requests_one_pending_per_room/);
 });
 

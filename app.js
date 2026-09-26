@@ -100,6 +100,27 @@ function migrateDemoState(next) {
     room.issueEvidencePhoto ??= '';
     room.issueEvidencePhotoName ??= '';
   }
+  for (const request of next.roomIssueReviews) {
+    if (request.status !== '待审核' || request.requestedStatus !== '故障/维护中') continue;
+    const room = (next.rooms || []).find(item => item.id === request.room);
+    if (room && room.status === request.fromStatus) {
+      room.status = '故障/维护中';
+      room.issueType = request.issueType || '故障';
+      room.issueNote = request.evidenceText || '已提交照片凭证';
+      room.issueAt = request.submittedAt || next.clock;
+      room.issueBy = request.submittedBy || '';
+      room.issueApprovedBy = '';
+      room.issueEvidencePhoto = request.evidencePhoto || '';
+      room.issueEvidencePhotoName = request.evidencePhotoName || '';
+      request.status = '无需审核';
+      request.decidedAt = request.submittedAt || next.clock;
+      request.decisionNote = '规则更新：故障／维护标记提交后立即生效';
+    } else {
+      request.status = '已失效';
+      request.decidedAt = next.clock;
+      request.decisionNote = '房间状态已变化，旧标记申请自动失效';
+    }
+  }
   return next;
 }
 state = migrateDemoState(state);
@@ -259,7 +280,7 @@ function roomIssueEvidenceFields() {
   return `<label>文字说明（与照片至少提交一项）<textarea name="evidenceText" maxlength="500" rows="3" placeholder="例如：空调无法制冷；维修完成并试机正常"></textarea></label><label>现场照片（与文字至少提交一项）<input id="room-issue-photo" type="file" accept="image/*"><input id="room-issue-photo-data" type="hidden" name="evidencePhoto"><input id="room-issue-photo-name" type="hidden" name="evidencePhotoName"></label><p id="room-issue-photo-status" class="muted">支持单张图片，不超过 500KB；照片仅保存在本机演示数据中。</p>`;
 }
 function roomIssueEvidenceMarkup(request) {
-  return `${request.evidenceText?`<p class="notice">${esc(request.evidenceText)}</p>`:''}${request.evidencePhoto?`<a class="issue-proof" href="${esc(request.evidencePhoto)}" target="_blank" rel="noreferrer"><img src="${esc(request.evidencePhoto)}" alt="房间状态审核照片"><span>${esc(request.evidencePhotoName || '查看现场照片')}</span></a>`:''}`;
+  return `${request.evidenceText?`<p class="notice">${esc(request.evidenceText)}</p>`:''}${request.evidencePhoto?`<a class="issue-proof" href="${esc(request.evidencePhoto)}" target="_blank" rel="noreferrer"><img src="${esc(request.evidencePhoto)}" alt="房间状态留档照片"><span>${esc(request.evidencePhotoName || '查看现场照片')}</span></a>`:''}`;
 }
 const extraLabels = { nuts: '小吃', fruit: '果盘' };
 function roomExtraActions(order) {
@@ -273,10 +294,10 @@ function roomExtraActions(order) {
 }
 function roomCard(r) {
   const o = state.orders.find(o=>o.id===r.order), bookings=pendingReservations(r.id), review=pendingRoomIssueReview(r.id);
-  const status=displayRoomStatus(r), cardStatus=review?'状态审核中':status, css = review?'issue-review':{'空闲':'free','营业中':'active','待清洁':'dirty','已预订':'reserved'}[status];
+  const status=displayRoomStatus(r), cardStatus=review?'恢复审核中':status, css = review?'issue-review':{'空闲':'free','营业中':'active','待清洁':'dirty','已预订':'reserved'}[status];
   const bookingText=bookings.length?`<small class="room-booking">未来预订：${reservationDate(bookings[0].at)} · ${esc(reservationSessionName(bookings[0]))}${bookings.length>1?`（还有${bookings.length-1}场）`:''}</small>`:'';
   const issueText=`${r.status==='故障/维护中'?`<small class="room-issue">${esc(r.issueType || '故障/维护中')}${r.issueNote?` · ${esc(r.issueNote)}`:''}</small>`:''}${review?`<small class="room-review-pending">${esc(review.change)}申请待审核</small>`:''}`;
-  const bottom=review?'<span>状态变更待审核</span><span>→</span>':r.status==='故障/维护中'?'<span>查看异常</span><span>→</span>':o?`<b>${money(total(o))}</b><span>查看账单 →</span>`:r.status==='空闲'?'<span>点这里开房</span><span>＋</span>':r.status==='待清洁'?'<span>打扫后恢复空房</span><span>→</span>':'<span>查看预订</span><span>→</span>';
+  const bottom=review?'<span>恢复申请待审核</span><span>→</span>':r.status==='故障/维护中'?'<span>查看异常</span><span>→</span>':o?`<b>${money(total(o))}</b><span>查看账单 →</span>`:r.status==='空闲'?'<span>点这里开房</span><span>＋</span>':r.status==='待清洁'?'<span>打扫后恢复空房</span><span>→</span>':'<span>查看预订</span><span>→</span>';
   return `<article class="room-card ${css || 'issue'}" data-action="room" data-id="${r.id}"><span class="room-top"><span>${r.type}</span><span class="status"><i></i>${cardStatus}</span></span><strong class="room-number">${r.id}</strong><span class="room-bottom">${bottom}</span>${o && r.status==='营业中'?roomExtraActions(o):''}${issueText}${bookingText}</article>`;
 }
 function appearanceSettings() {
@@ -298,7 +319,7 @@ function render() {
 function roomsPage() {
   const active = state.rooms.filter(r=>r.status==='营业中').length;
   const reminders = state.reservations.map(r => reservationReminder(r, state.clock)).filter(Boolean);
-  const issueButton = allowedPermission('room.issue') ? btn('申请故障/维护','markRoomIssueMenu','','secondary') : '';
+  const issueButton = allowedPermission('room.issue') ? btn('标记故障/维护','markRoomIssueMenu','','secondary') : '';
   return `<section class="welcome"><div><p class="eyebrow">今晚，也从容一点</p><h1>房间一眼看清</h1><p>先选房间，再开房、加单或收钱。</p></div><div class="welcome-icon" aria-hidden="true">♫</div></section>${reminders.map(r=>`<div class="reservation-alert"><b>预订提醒 · ${r.room}</b><p>${esc(r.sessionLabel)}已到时，仍未开房；这是第 ${r.number} 次整点提醒，请通知预订人员 ${esc(r.person)}。</p></div>`).join('')}<section class="summary"><div><strong>${state.rooms.filter(r=>displayRoomStatus(r)==='空闲'&&!pendingRoomIssueReview(r.id)).length}<small> / 9</small></strong><span>空闲房间</span></div><div><strong>${active}</strong><span>正在营业</span></div><div><strong>${money(collected(state))}</strong><span>练习累计实收</span></div></section><div class="section-title"><h2>全部包间</h2><div class="room-section-actions"><span>点击卡片操作</span>${issueButton}</div></div><div class="tabs" role="group" aria-label="房态筛选">${['全部','空闲','营业中','待清洁','已预订','异常'].map(f=>btn(f,'filter',`data-value="${f}"`,filter===f?'chip chosen':'chip')).join('')}</div><div class="rooms-grid">${state.rooms.filter(roomMatchesFilter).map(roomCard).join('') || '<p class="empty">目前没有这类房间。</p>'}</div><div class="tip"><span>✦</span><div><b>价格自动算，不用记表格</b><p>夜间房价已含赠饮，换酒不会加收差价。</p></div></div>${state.orders.filter(o=>o.status==='营业中'&&!state.rooms.some(r=>r.order===o.id)).map(o=>`<div class="panel"><b>${o.room} · 挂账被驳回，待收款</b>${btn('处理账单','order',`data-id="${o.id}"`)}</div>`).join('')}`;
 }
 function depositPage() {
@@ -332,11 +353,11 @@ function roomIssueReviewCards() {
   const rows=all.filter(request=>request.status==='待审核');
   const pending=rows.map(request=>{
     const canReview=allowedPermission('room.issue.approve') && request.submittedById!==state.user;
-    return `<article class="panel room-issue-review"><div class="split"><h3>${esc(request.room)} · ${esc(request.change)}</h3><span class="badge">待审核</span></div><p>${esc(request.fromStatus)} → ${esc(request.requestedStatus)}${request.issueType?` · ${esc(request.issueType)}`:''}</p><p class="muted">提交：${esc(request.submittedBy)} · ${date(request.submittedAt)}</p>${roomIssueEvidenceMarkup(request)}${canReview?btn('查看并审核','reviewRoomIssue',`data-id="${request.id}"`,'primary full'):request.submittedById===state.user?'<span class="badge">不能审核本人申请</span>':'<span class="badge">需要房间状态审核权限</span>'}</article>`;
+    return `<article class="panel room-issue-review"><div class="split"><h3>${esc(request.room)} · 恢复为空房</h3><span class="badge">待审核</span></div><p>${esc(request.fromStatus)} → 空闲${request.issueType?` · ${esc(request.issueType)}`:''}</p><p class="muted">提交：${esc(request.submittedBy)} · ${date(request.submittedAt)}</p>${roomIssueEvidenceMarkup(request)}${canReview?btn('查看并审核','reviewRoomIssue',`data-id="${request.id}"`,'primary full'):request.submittedById===state.user?'<span class="badge">不能审核本人申请</span>':'<span class="badge">需要房间恢复审核权限</span>'}</article>`;
   }).join('');
   const history=all.filter(request=>request.status!=='待审核').slice(0,6);
-  const historyMarkup=history.length?`<details class="panel room-issue-history"><summary>最近审核记录（${history.length}）</summary>${history.map(request=>`<div class="room-issue-history-row"><div class="split"><b>${esc(request.room)} · ${esc(request.change)}</b><span class="badge">${esc(request.status)}</span></div><p>${esc(request.fromStatus)} → ${esc(request.requestedStatus)} · 提交 ${esc(request.submittedBy)} · 审核 ${esc(request.decidedBy || '未记录')}</p>${roomIssueEvidenceMarkup(request)}${request.decisionNote?`<p class="muted">审核备注：${esc(request.decisionNote)}</p>`:''}</div>`).join('')}</details>`:'';
-  return `${pending || '<p class="muted">暂无房间状态变更待审核。</p>'}${historyMarkup}`;
+  const historyMarkup=history.length?`<details class="panel room-issue-history"><summary>最近房态记录（${history.length}）</summary>${history.map(request=>`<div class="room-issue-history-row"><div class="split"><b>${esc(request.room)} · ${esc(request.change)}</b><span class="badge">${esc(request.status)}</span></div><p>${esc(request.fromStatus)} → ${esc(request.requestedStatus)} · 提交 ${esc(request.submittedBy)}${request.decidedBy?` · 审核 ${esc(request.decidedBy)}`:' · 无需审核'}</p>${roomIssueEvidenceMarkup(request)}${request.decisionNote?`<p class="muted">记录备注：${esc(request.decisionNote)}</p>`:''}</div>`).join('')}</details>`:'';
+  return `${pending || '<p class="muted">暂无房间恢复申请待审核。</p>'}${historyMarkup}`;
 }
 function permissionCards() {
   if (!allowedPermission('identity.manage')) return '';
@@ -356,7 +377,7 @@ function managePage() {
   const pendingRounding=state.orders.filter(order=>order.roundingReview?.status==='待审核').length;
   const pendingRoomIssues=(state.roomIssueReviews || []).filter(request=>request.status==='待审核').length;
   const title = allowedPermission('identity.manage') ? '后台总管理' : '门店管理台';
-  return `<p class="eyebrow">${title}</p><h1>今天，心里有数</h1><section class="summary"><div><strong>${money(collected(state))}</strong><span>练习累计实收</span></div><div><strong>${state.orders.filter(o=>o.status==='待审批挂账').length+pendingGifts+pendingRounding+pendingRoomIssues}</strong><span>待处理</span></div><div><strong>${money(state.orders.filter(o=>o.status==='已挂账').reduce((n,o)=>n+o.credit.remaining,0))}</strong><span>未回款</span></div></section>${staffRecordingPanel()}${allowedPermission('identity.manage')?`<div class="section-title"><h2>身份权限</h2><span>仅管理员可调整</span></div>${permissionCards()}`:''}<div class="section-title"><h2>房间状态审核</h2><span>照片或文字留档</span></div>${roomIssueReviewCards()}<div class="section-title"><h2>特殊差额审核</h2></div>${roundingReviewCards()}<div class="section-title"><h2>赠酒水确认</h2></div>${giftRequestCards()}<div class="section-title"><h2>挂账与回款</h2></div>${creditCards()}${allowedPermission('inventory.adjust')||allowedPermission('inventory.opening')?`<div class="section-title"><h2>库存与提醒</h2>${btn('管理库存','inventory')}</div>${stockNotices()}`:''}${allowedPermission('handover')?`<div class="section-title"><h2>交班核对</h2>${btn('核对收款','handover')}</div>${handoverHistory()}`:''}`;
+  return `<p class="eyebrow">${title}</p><h1>今天，心里有数</h1><section class="summary"><div><strong>${money(collected(state))}</strong><span>练习累计实收</span></div><div><strong>${state.orders.filter(o=>o.status==='待审批挂账').length+pendingGifts+pendingRounding+pendingRoomIssues}</strong><span>待处理</span></div><div><strong>${money(state.orders.filter(o=>o.status==='已挂账').reduce((n,o)=>n+o.credit.remaining,0))}</strong><span>未回款</span></div></section>${staffRecordingPanel()}${allowedPermission('identity.manage')?`<div class="section-title"><h2>身份权限</h2><span>仅管理员可调整</span></div>${permissionCards()}`:''}<div class="section-title"><h2>房间恢复审核</h2><span>故障标记立即生效，恢复需审核</span></div>${roomIssueReviewCards()}<div class="section-title"><h2>特殊差额审核</h2></div>${roundingReviewCards()}<div class="section-title"><h2>赠酒水确认</h2></div>${giftRequestCards()}<div class="section-title"><h2>挂账与回款</h2></div>${creditCards()}${allowedPermission('inventory.adjust')||allowedPermission('inventory.opening')?`<div class="section-title"><h2>库存与提醒</h2>${btn('管理库存','inventory')}</div>${stockNotices()}`:''}${allowedPermission('handover')?`<div class="section-title"><h2>交班核对</h2>${btn('核对收款','handover')}</div>${handoverHistory()}`:''}`;
 }
 function stockNotices() {
   const low=Object.entries(state.inventory).filter(([,v])=>v.count!==null&&v.count<=v.threshold);
@@ -429,11 +450,11 @@ function showRoom(id) {
   const r=state.rooms.find(r=>r.id===id);
   const review=pendingRoomIssueReview(id);
   if (review) {
-    openDialog(`${id} · 状态变更待审核`, `<p><b>${esc(review.change)}</b>：${esc(review.fromStatus)} → ${esc(review.requestedStatus)}</p><p class="muted">提交：${esc(review.submittedBy)} · ${date(review.submittedAt)}</p>${roomIssueEvidenceMarkup(review)}${allowedPermission('room.issue.approve')?btn('到管理页审核','goRoomIssueReviews','','secondary full'):'<p class="muted">请等待有房间状态审核权限的人员处理。</p>'}`);
+    openDialog(`${id} · 恢复申请待审核`, `<p><b>恢复为空房</b>：${esc(review.fromStatus)} → 空闲</p><p class="muted">提交：${esc(review.submittedBy)} · ${date(review.submittedAt)}</p>${roomIssueEvidenceMarkup(review)}${allowedPermission('room.issue.approve')?btn('到管理页审核','goRoomIssueReviews','','secondary full'):'<p class="muted">请等待有房间恢复审核权限的人员处理。</p>'}`);
     return;
   }
   if (r.status==='故障/维护中') {
-    openDialog(`${id} · 故障/维护中`, `<p>${esc(r.issueType || '故障/维护中')}：${esc(r.issueNote || '已提交照片凭证')}</p><p class="muted">提交：${esc(r.issueBy || '未记录')} · 审核：${esc(r.issueApprovedBy || '未记录')} · ${r.issueAt?date(r.issueAt):'时间未记录'}</p>${r.issueEvidencePhoto?`<a class="issue-proof" href="${esc(r.issueEvidencePhoto)}" target="_blank" rel="noreferrer"><img src="${esc(r.issueEvidencePhoto)}" alt="异常状态现场照片"><span>${esc(r.issueEvidencePhotoName || '查看现场照片')}</span></a>`:''}${allowedPermission('room.issue')?btn('申请恢复为空房','requestRoomRecovery',`data-id="${id}"`,'primary full'):'<p class="muted">当前身份没有提交恢复申请的权限。</p>'}`);
+    openDialog(`${id} · 故障/维护中`, `<p>${esc(r.issueType || '故障/维护中')}：${esc(r.issueNote || '已提交照片凭证')}</p><p class="muted">提交：${esc(r.issueBy || '未记录')} · ${r.issueApprovedBy?`历史审核：${esc(r.issueApprovedBy)}`:'标记无需审批'} · ${r.issueAt?date(r.issueAt):'时间未记录'}</p>${r.issueEvidencePhoto?`<a class="issue-proof" href="${esc(r.issueEvidencePhoto)}" target="_blank" rel="noreferrer"><img src="${esc(r.issueEvidencePhoto)}" alt="异常状态现场照片"><span>${esc(r.issueEvidencePhotoName || '查看现场照片')}</span></a>`:''}${allowedPermission('room.issue')?btn('申请恢复为空房','requestRoomRecovery',`data-id="${id}"`,'primary full'):'<p class="muted">当前身份没有提交恢复申请的权限。</p>'}`);
     return;
   }
   if (r.order) { showOrder(r.order); return; }
@@ -684,16 +705,18 @@ document.addEventListener('click',e=>{
     }
     if(a==='reviewRoomIssue'){
       const request=(state.roomIssueReviews || []).find(item=>item.id===Number(id));
-      if(!request||request.status!=='待审核')throw Error('该房间状态申请已经处理');
-      if(!allowedPermission('room.issue.approve'))throw Error('当前身份没有房间状态审核权限');
+      if(!request||request.status!=='待审核')throw Error('该房间恢复申请已经处理');
+      if(request.requestedStatus!=='空闲')throw Error('故障标记无需审核，只有恢复为空房需要审核');
+      if(!allowedPermission('room.issue.approve'))throw Error('当前身份没有房间恢复审核权限');
       if(request.submittedById===state.user)throw Error('提交人不能审核本人申请，请切换其他有审核权限的身份');
-      openDialog(`审核房间状态 · ${esc(request.room)}`,`<div class="quote"><span>${esc(request.change)}</span><strong>${esc(request.requestedStatus)}</strong></div><p>${esc(request.fromStatus)} → ${esc(request.requestedStatus)}${request.issueType?` · ${esc(request.issueType)}`:''}</p><p class="muted">提交：${esc(request.submittedBy)} · ${date(request.submittedAt)}</p>${roomIssueEvidenceMarkup(request)}<label>审核备注（选填）<textarea name="decisionNote" maxlength="300" rows="2" placeholder="记录现场核对情况"></textarea></label>${btn('驳回申请','rejectRoomIssueDialog',`data-id="${request.id}"`,'danger full')}`,'批准并应用状态','approveRoomIssue',{request:request.id});
+      openDialog(`审核恢复申请 · ${esc(request.room)}`,`<div class="quote"><span>恢复为空房</span><strong>空闲</strong></div><p>${esc(request.fromStatus)} → 空闲${request.issueType?` · ${esc(request.issueType)}`:''}</p><p class="muted">提交：${esc(request.submittedBy)} · ${date(request.submittedAt)}</p>${roomIssueEvidenceMarkup(request)}<label>审核备注（选填）<textarea name="decisionNote" maxlength="300" rows="2" placeholder="记录现场核对情况"></textarea></label>${btn('驳回申请','rejectRoomIssueDialog',`data-id="${request.id}"`,'danger full')}`,'批准恢复为空房','approveRoomIssue',{request:request.id});
       return;
     }
     if(a==='rejectRoomIssueDialog'){
       const request=(state.roomIssueReviews || []).find(item=>item.id===Number(id));
-      if(!request||request.status!=='待审核')throw Error('该房间状态申请已经处理');
-      openDialog(`驳回房间状态申请 · ${esc(request.room)}`,`<p>${esc(request.change)}：${esc(request.fromStatus)} → ${esc(request.requestedStatus)}</p><label>驳回原因<textarea name="decisionNote" maxlength="300" rows="3" required placeholder="请说明需要补充或更正的内容"></textarea></label>`,'确认驳回','rejectRoomIssue',{request:request.id});
+      if(!request||request.status!=='待审核')throw Error('该房间恢复申请已经处理');
+      if(request.requestedStatus!=='空闲')throw Error('故障标记无需审核，只有恢复为空房需要审核');
+      openDialog(`驳回恢复申请 · ${esc(request.room)}`,`<p>${esc(request.fromStatus)} → 空闲</p><label>驳回原因<textarea name="decisionNote" maxlength="300" rows="3" required placeholder="请说明需要补充或更正的内容"></textarea></label>`,'确认驳回','rejectRoomIssue',{request:request.id});
       return;
     }
     if(a==='filter'){filter=target.dataset.value;render();return;}
@@ -702,7 +725,7 @@ document.addEventListener('click',e=>{
       if(!allowedPermission('room.issue'))throw Error('当前身份没有标记房间异常的权限');
       const availableRooms=state.rooms.filter(room=>['空闲','待清洁'].includes(room.status)&&!pendingRoomIssueReview(room.id));
       if(!availableRooms.length){toast('当前没有可标记异常的房间');return;}
-      openDialog('申请标记房间异常',`<p class="notice">提交后房间暂停开房和预订；由另一名具备审核权限的人员批准后，才正式变为故障／维护中。</p><label>房号<select name="room">${options(availableRooms.map(room=>[room.id,`${room.id} · ${room.type}${room.status==='待清洁'?' · 待清洁':''}`]),availableRooms[0].id)}</select></label><label>异常状态<select name="issueType">${options(ROOM_ISSUE_TYPES.map(type=>[type,type]),ROOM_ISSUE_TYPES[0])}</select></label>${roomIssueEvidenceFields()}`,'提交异常审核','markRoomIssue');
+      openDialog('标记房间故障/维护',`<p class="notice">提交照片或文字后立即生效，无需另一名员工审批；房间会暂停开房和预订并保留操作记录。</p><label>房号<select name="room">${options(availableRooms.map(room=>[room.id,`${room.id} · ${room.type}${room.status==='待清洁'?' · 待清洁':''}`]),availableRooms[0].id)}</select></label><label>异常状态<select name="issueType">${options(ROOM_ISSUE_TYPES.map(type=>[type,type]),ROOM_ISSUE_TYPES[0])}</select></label>${roomIssueEvidenceFields()}`,'确认标记并立即生效','markRoomIssue');
     }
     else if(a==='requestRoomRecovery'){
       const room=state.rooms.find(item=>item.id===id);

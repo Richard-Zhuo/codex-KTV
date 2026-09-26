@@ -48,7 +48,7 @@ import_batches
 
 金额字段都以 `_cents` 结尾并存整数分。营业记录同时保存 `business_date` 与实际时间，避免凌晨结账被错误归到下一自然日。历史订单使用 `历史已结` 状态，不改变当前房态。
 
-房间故障／维护的标记与恢复均先写入 room_issue_change_requests，照片或文字证据至少一项；另一名具有审核权限的员工批准后才改变 rooms.status。
+房间故障／维护标记提交照片或文字后立即写入 room_issues 并改变 rooms.status，无需另一名员工审批；恢复申请写入 room_issue_change_requests，另一名具有恢复审核权限的员工批准后才恢复为空房。标记与恢复都至少保留一项文字或照片证据。
 
 ## 历史导入流程
 
