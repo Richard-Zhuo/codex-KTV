@@ -48,7 +48,7 @@ import_batches
 
 金额字段都以 `_cents` 结尾并存整数分。营业记录同时保存 `business_date` 与实际时间，避免凌晨结账被错误归到下一自然日。历史订单使用 `历史已结` 状态，不改变当前房态。
 
-房间故障／维护标记提交照片或文字后立即写入 room_issues 并改变 rooms.status，无需审核；恢复申请写入 room_issue_change_requests，由具有恢复审核权限的员工批准后才恢复为空房。若审核人就是提交人，必须同时拥有 review.self 权限并将 self_review_authorized 记为 true。标记与恢复都至少保留一项文字或照片证据。挂账回款、特殊差额、超额赠酒水、库存盘点和客诉／异常恢复采用相同的条件自审约束。
+审批行为以 [当前需求](../docs/REQUIREMENTS.md) 为准。本 schema 在数据库层为房间恢复、挂账回款、特殊差额、超额赠酒水、库存盘点和客诉／异常恢复保留 `self_review_authorized` 约束：审核人等于提交人时该值必须为 `true`，且非本人审核不能误记为自审。房间故障／维护标记与恢复证据分别写入 `room_issues` 和 `room_issue_change_requests`。
 
 ## 历史导入流程
 
