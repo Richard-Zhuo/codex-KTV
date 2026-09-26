@@ -23,13 +23,14 @@ test('关系型基线覆盖当前核心业务实体', () => {
   assert.match(schema, /CHECK \(evidence_text <> '' OR evidence_image_ref <> ''\)/);
   assert.match(schema, /change_type varchar\(20\) NOT NULL CHECK \(change_type = '恢复空房'\)/);
   assert.match(schema, /requested_status varchar\(30\) NOT NULL CHECK \(requested_status = '空闲'\)/);
-  assert.match(schema, /CHECK \(decided_by IS NULL OR decided_by <> requested_by\)/);
+  assert.match(schema, /self_review_authorized boolean NOT NULL DEFAULT false/);
   assert.match(schema, /status IN \('已批准', '已驳回'\) AND decided_by IS NOT NULL AND decided_at IS NOT NULL/);
   assert.match(schema, /CREATE UNIQUE INDEX room_issue_change_requests_one_pending_per_room/);
   assert.match(schema, /CREATE UNIQUE INDEX inventory_count_requests_one_pending_per_product/);
   assert.match(schema, /CREATE UNIQUE INDEX incident_resolution_requests_one_pending_per_incident/);
   assert.match(schema, /request_id bigint NOT NULL UNIQUE REFERENCES credit_repayment_requests/);
-  assert.ok((schema.match(/CHECK \(decided_by IS NULL OR decided_by <> (?:requested_by|submitted_by)\)/g) || []).length >= 6, '六类复核记录都应禁止本人自审');
+  assert.ok((schema.match(/CHECK \(decided_by IS NULL OR decided_by <> (?:requested_by|submitted_by) OR self_review_authorized\)/g) || []).length >= 6, '六类复核记录都应只在授权时允许本人自审');
+  assert.ok((schema.match(/CHECK \(NOT self_review_authorized OR decided_by = (?:requested_by|submitted_by)\)/g) || []).length >= 6, '自审标记必须与提交人和审核人一致');
 });
 
 test('金额、营业日、房间并发和幂等约束已写入数据库', () => {
@@ -75,6 +76,7 @@ test('种子数据与当前房间、员工说明和历史商品别名一致', ()
   assert.match(seed, /credit\.repay\.approve/);
   assert.match(seed, /inventory\.approve/);
   assert.match(seed, /incident\.resolve\.approve/);
+  assert.match(seed, /review\.self/);
 });
 
 test('CSV 模板固定金山日报与支出表字段顺序', () => {

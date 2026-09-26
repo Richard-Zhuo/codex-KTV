@@ -1,7 +1,7 @@
 import http from 'node:http';
 import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
-const files = { '/': ['index.html', 'text/html'], '/app.js': ['app.js', 'text/javascript'], '/rules.js': ['rules.js', 'text/javascript'], '/theme.js': ['theme.js', 'text/javascript'], '/style.css': ['style.css', 'text/css'] };
+const files = { '/': ['index.html', 'text/html'], '/index.html': ['index.html', 'text/html'], '/admin': ['admin.html', 'text/html'], '/admin.html': ['admin.html', 'text/html'], '/app.js': ['app.js', 'text/javascript'], '/rules.js': ['rules.js', 'text/javascript'], '/theme.js': ['theme.js', 'text/javascript'], '/style.css': ['style.css', 'text/css'] };
 const port = Number(process.env.PORT || 4173);
 http.createServer(async (req, res) => {
   const file = files[new URL(req.url, 'http://localhost').pathname];

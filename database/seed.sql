@@ -103,6 +103,7 @@ VALUES
   ('incident.viewAll', '查看全部客诉／异常', '现场管理'),
   ('incident.resolve', '填写客诉／异常处理结果', '现场管理'),
   ('incident.resolve.approve', '审核客诉／异常恢复', '审核与后台'),
+  ('review.self', '允许审核本人申请', '审核与后台'),
   ('report.view', '查看经营报表', '审核与后台'),
   ('backend.view', '进入管理后台', '审核与后台')
 ON CONFLICT (code) DO UPDATE SET

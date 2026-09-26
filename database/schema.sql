@@ -137,8 +137,10 @@ CREATE TABLE room_issue_change_requests (
   decided_by varchar(40) REFERENCES employees(id),
   decided_at timestamptz,
   decision_note varchar(500) NOT NULL DEFAULT '',
+  self_review_authorized boolean NOT NULL DEFAULT false,
   CHECK (evidence_text <> '' OR evidence_image_ref <> ''),
-  CHECK (decided_by IS NULL OR decided_by <> requested_by),
+  CHECK (decided_by IS NULL OR decided_by <> requested_by OR self_review_authorized),
+  CHECK (NOT self_review_authorized OR decided_by = requested_by),
   CHECK (
     (status = '待审核' AND decided_by IS NULL AND decided_at IS NULL)
     OR (status IN ('已批准', '已驳回') AND decided_by IS NOT NULL AND decided_at IS NOT NULL)
@@ -221,7 +223,9 @@ CREATE TABLE inventory_count_requests (
   decided_by varchar(40) REFERENCES employees(id),
   decided_at timestamptz,
   decision_note varchar(500) NOT NULL DEFAULT '',
-  CHECK (decided_by IS NULL OR decided_by <> requested_by),
+  self_review_authorized boolean NOT NULL DEFAULT false,
+  CHECK (decided_by IS NULL OR decided_by <> requested_by OR self_review_authorized),
+  CHECK (NOT self_review_authorized OR decided_by = requested_by),
   CHECK (
     (status = '待审核' AND decided_by IS NULL AND decided_at IS NULL)
     OR (status IN ('已批准', '已驳回') AND decided_by IS NOT NULL AND decided_at IS NOT NULL)
@@ -345,7 +349,9 @@ CREATE TABLE gift_requests (
   decided_by varchar(40) REFERENCES employees(id),
   decided_at timestamptz,
   decision_note varchar(500) NOT NULL DEFAULT '',
-  CHECK (decided_by IS NULL OR decided_by <> requested_by),
+  self_review_authorized boolean NOT NULL DEFAULT false,
+  CHECK (decided_by IS NULL OR decided_by <> requested_by OR self_review_authorized),
+  CHECK (NOT self_review_authorized OR decided_by = requested_by),
   CHECK (
     (status = '待确认' AND decided_by IS NULL AND decided_at IS NULL)
     OR (status IN ('已批准', '已驳回') AND decided_by IS NOT NULL AND decided_at IS NOT NULL)
@@ -379,7 +385,9 @@ CREATE TABLE rounding_reviews (
   decided_by varchar(40) REFERENCES employees(id),
   decided_at timestamptz,
   decision_note varchar(500) NOT NULL DEFAULT '',
-  CHECK (decided_by IS NULL OR decided_by <> submitted_by),
+  self_review_authorized boolean NOT NULL DEFAULT false,
+  CHECK (decided_by IS NULL OR decided_by <> submitted_by OR self_review_authorized),
+  CHECK (NOT self_review_authorized OR decided_by = submitted_by),
   CHECK (
     (status = '待审核' AND decided_by IS NULL AND decided_at IS NULL)
     OR (status IN ('已批准', '已驳回') AND decided_by IS NOT NULL AND decided_at IS NOT NULL)
@@ -420,7 +428,9 @@ CREATE TABLE credit_repayment_requests (
   decided_by varchar(40) REFERENCES employees(id),
   decided_at timestamptz,
   decision_note varchar(500) NOT NULL DEFAULT '',
-  CHECK (decided_by IS NULL OR decided_by <> requested_by),
+  self_review_authorized boolean NOT NULL DEFAULT false,
+  CHECK (decided_by IS NULL OR decided_by <> requested_by OR self_review_authorized),
+  CHECK (NOT self_review_authorized OR decided_by = requested_by),
   CHECK (
     (status = '待审核' AND decided_by IS NULL AND decided_at IS NULL)
     OR (status IN ('已批准', '已驳回') AND decided_by IS NOT NULL AND decided_at IS NOT NULL)
@@ -530,7 +540,9 @@ CREATE TABLE incident_resolution_requests (
   decided_by varchar(40) REFERENCES employees(id),
   decided_at timestamptz,
   decision_note varchar(500) NOT NULL DEFAULT '',
-  CHECK (decided_by IS NULL OR decided_by <> requested_by),
+  self_review_authorized boolean NOT NULL DEFAULT false,
+  CHECK (decided_by IS NULL OR decided_by <> requested_by OR self_review_authorized),
+  CHECK (NOT self_review_authorized OR decided_by = requested_by),
   CHECK (
     (status = '待审核' AND decided_by IS NULL AND decided_at IS NULL)
     OR (status IN ('已批准', '已驳回') AND decided_by IS NOT NULL AND decided_at IS NOT NULL)
