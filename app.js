@@ -1,13 +1,16 @@
-import { PRODUCTS, OTHER_CHARGE_CATEGORIES, USERS, USER_ALIASES, PERMISSION_ROLES, PERMISSION_DEFINITIONS, PERMISSION_IDS, defaultPermissions, defaultCapabilities, permissionsForRoles, effectiveUser, hasPermission, businessReviewSections, RESERVATION_SOURCES, OPENING_SOURCES, PAYMENT_METHODS, EXPENSE_NATURES, EXPENSE_TYPES, EXPENSE_APPROVAL_THRESHOLD, CONSUMABLES, INCIDENT_TYPES, ROOM_ISSUE_TYPES, visibleExpenses, visibleProcurements, visibleIncidents, pendingIncidentReminders, money, product, slot, cents, quote, initialState, total, outstanding, collected, collectableCharges, nextCollectCharge, transact, canExchange, bonusAllowance, reservationReminder, reservationActiveAt, searchDeposits, hasRole } from './rules.js';
+import { OTHER_CHARGE_CATEGORIES, USERS, USER_ALIASES, PERMISSION_ROLES, PERMISSION_DEFINITIONS, PERMISSION_IDS, defaultPermissions, defaultCapabilities, permissionsForRoles, effectiveUser, hasPermission, businessReviewSections, RESERVATION_SOURCES, OPENING_SOURCES, PAYMENT_METHODS, EXPENSE_NATURES, EXPENSE_TYPES, EXPENSE_APPROVAL_THRESHOLD, INCIDENT_TYPES, ROOM_ISSUE_TYPES, visibleExpenses, visibleProcurements, visibleIncidents, pendingIncidentReminders, money, slot, cents, quote, initialState, total, outstanding, collected, collectableCharges, nextCollectCharge, transact, canExchange, bonusAllowance, reservationReminder, reservationActiveAt, searchDeposits, hasRole } from './rules.js';
+import { mergeCatalog, findProduct, saleOptions, sellableProducts, inventoryProducts, consumableProducts, productIdOf, categoryLabel, migrateLegacyOrderPricing } from './catalog.js';
 const KEY = 'jbhh-demo-v1';
 const APP_ENTRY = document.body.dataset.appEntry === 'admin' ? 'admin' : 'staff';
 const REQUESTED_STAFF_PAGE = new URLSearchParams(window.location.search).get('page');
 const DEFAULT_PAGE = APP_ENTRY === 'admin' ? 'manage' : REQUESTED_STAFF_PAGE === 'tasks' ? 'tasks' : 'rooms';
 let state, storageProblem = '';
+const product = id => findProduct(state.catalog, id);
 try {
   const raw = localStorage.getItem(KEY);
   state = raw ? JSON.parse(raw) : initialState();
   if (state.version !== 1 || !Array.isArray(state.rooms) || !state.inventory) throw Error();
+  state.catalog = mergeCatalog(state.catalog);
   const fresh = initialState();
   for (const [id, item] of Object.entries(fresh.inventory)) state.inventory[id] ??= item;
   state.consumables ??= structuredClone(fresh.consumables);
@@ -46,7 +49,91 @@ try {
   }
 }
 catch { state = initialState(); storageProblem = '本机练习记录无法读取，已进入新练习。'; }
+function legacyOrderProductSnapshot(record, baseQuantity = null) {
+  const id = productIdOf(record);
+  return {
+    productId: id,
+    productNameSnapshot: record?.productNameSnapshot ?? null,
+    categorySnapshot: record?.categorySnapshot ?? null,
+    categoryLabelSnapshot: record?.categoryLabelSnapshot ?? null,
+    baseUnitSnapshot: record?.baseUnitSnapshot ?? null,
+    baseQuantity,
+    snapshotStatus: record?.snapshotStatus || 'legacy'
+  };
+}
+function migrateLegacyCatalogFacts(next) {
+  next.catalog = mergeCatalog(next.catalog);
+  next.orders = migrateLegacyOrderPricing(next.orders);
+  const fresh = initialState();
+  const oldConsumables = next.consumables && typeof next.consumables === 'object' ? next.consumables : {};
+  const aliases = { nuts: 'cons_nuts', ice: 'cons_ice', tissue: 'cons_tissue', straw: 'cons_straw' };
+  for (const [oldId, newId] of Object.entries(aliases)) if (!oldConsumables[newId] && oldConsumables[oldId]) oldConsumables[newId] = oldConsumables[oldId];
+  next.inventory = Object.fromEntries(inventoryProducts(next.catalog).map(item => [item.id, { ...(next.inventory?.[item.id] || fresh.inventory[item.id]), unit: item.baseUnit, threshold: next.inventory?.[item.id]?.threshold ?? item.inventoryThreshold ?? 10 }]));
+  next.consumables = Object.fromEntries(consumableProducts(next.catalog).map(item => [item.id, { ...(oldConsumables[item.id] || fresh.consumables[item.id]), unit: item.baseUnit, threshold: oldConsumables[item.id]?.threshold ?? item.inventoryThreshold ?? 10 }]));
+  for (const order of next.orders || []) {
+    order.packageId ??= null;
+    order.packageNameSnapshot ??= null;
+    order.packageBaseCents ??= Number.isSafeInteger(order.base) ? order.base : null;
+    order.packageGiftValueCents ??= Number.isSafeInteger(order.gift) ? order.gift : null;
+    order.packageReferenceGiftValueCents ??= Number.isSafeInteger(order.gift) ? order.gift : null;
+    order.packagePriceCents ??= Number.isSafeInteger(order.base) && Number.isSafeInteger(order.gift) ? order.base + order.gift : null;
+    order.openingGiftReferenceValueCents ??= Number.isSafeInteger(order.gift) ? order.gift : null;
+    order.resolvedComponents ??= [
+      ...(order.drinks || []).map(line => ({ ...legacyOrderProductSnapshot(line, Number.isSafeInteger(line.count) ? line.count : null), kind: 'opening-drink', totalBaseQuantity: Number.isSafeInteger(line.count) ? line.count : null })),
+      ...(order.extras || []).map(line => ({ ...legacyOrderProductSnapshot(line, Number.isSafeInteger(line.count) ? line.count : null), kind: 'package-component', totalBaseQuantity: Number.isSafeInteger(line.count) ? line.count : null }))
+    ];
+    for (const line of order.drinks || []) {
+      line.productId ??= line.product || '';
+      line.productNameSnapshot ??= null;
+      line.baseUnitSnapshot ??= null;
+      line.totalBaseQuantity ??= line.count ?? null;
+      line.snapshotStatus ??= 'legacy';
+    }
+    for (const extra of order.extras || []) extra.productId ??= extra.product || '';
+    for (const sale of order.sales || []) {
+      sale.productId ??= sale.product || '';
+      sale.saleQuantity ??= sale.count ?? null;
+      sale.saleOptionId ??= sale.spec || null;
+      sale.saleOptionNameSnapshot ??= null;
+      sale.baseQuantityPerSaleUnit ??= sale.spec === 'dozen' ? 12 : sale.spec === 'half' ? 6 : sale.spec === 'single' ? 1 : null;
+      sale.totalBaseQuantity ??= sale.bottles ?? null;
+      sale.pricePerSaleUnitCents ??= null;
+      sale.amountCents ??= Number.isSafeInteger(sale.amount) ? sale.amount : null;
+      sale.productNameSnapshot ??= null;
+      sale.categorySnapshot ??= null;
+      sale.baseUnitSnapshot ??= null;
+      sale.snapshotStatus ??= 'legacy';
+      sale.drinks ??= sale.totalBaseQuantity ? [{ id: ++next.serial, product: sale.product, productId: sale.productId, count: sale.totalBaseQuantity, totalBaseQuantity: sale.totalBaseQuantity, productNameSnapshot: null, baseUnitSnapshot: null, snapshotStatus: 'legacy' }] : [];
+      for (const drink of sale.drinks || []) { drink.productId ??= drink.product || sale.productId; drink.totalBaseQuantity ??= drink.count ?? null; drink.productNameSnapshot ??= null; drink.baseUnitSnapshot ??= null; drink.snapshotStatus ??= 'legacy'; }
+    }
+    for (const gift of order.bonusGifts || []) {
+      gift.productId ??= gift.product || '';
+      gift.productNameSnapshot ??= null;
+      gift.categorySnapshot ??= null;
+      gift.baseUnitSnapshot ??= null;
+      gift.saleOptionId ??= 'half';
+      gift.saleOptionNameSnapshot ??= null;
+      gift.saleQuantity ??= gift.halves ?? null;
+      gift.baseQuantityPerSaleUnit ??= 6;
+      gift.totalBaseQuantity ??= gift.bottles ?? null;
+      gift.referenceValueCents ??= null;
+      gift.snapshotStatus ??= 'legacy';
+      gift.drinks ??= gift.bottles ? [{ id: ++next.serial, product: gift.product, productId: gift.productId, count: gift.bottles, totalBaseQuantity: gift.bottles, productNameSnapshot: null, baseUnitSnapshot: null, snapshotStatus: 'legacy' }] : [];
+      for (const drink of gift.drinks || []) { drink.productId ??= drink.product || gift.productId; drink.totalBaseQuantity ??= drink.count ?? null; drink.productNameSnapshot ??= null; drink.baseUnitSnapshot ??= null; drink.snapshotStatus ??= 'legacy'; }
+    }
+    for (const request of order.giftRequests || []) {
+      request.productId ??= request.product || '';
+      request.productNameSnapshot ??= null;
+      request.categorySnapshot ??= null;
+      request.baseUnitSnapshot ??= null;
+      request.referenceValueCents ??= null;
+      request.snapshotStatus ??= 'legacy';
+    }
+  }
+  return next;
+}
 function migrateDemoState(next) {
+  next = migrateLegacyCatalogFacts(next);
   const userIdByName = name => Object.entries(USERS).find(([, user]) => user.name === name)?.[0] || '';
   const capabilitySchemaVersion = Number(next.capabilitySchemaVersion || 0);
   const defaults = defaultPermissions();
@@ -167,7 +254,7 @@ function migrateDemoState(next) {
 state = migrateDemoState(state);
 state.user = USER_ALIASES[state.user] || state.user;
 if (!USERS[state.user] || USERS[state.user].legacy) state.user = 'shaoBoss';
-let page = DEFAULT_PAGE, filter = '全部', searchTerm = '', category = '啤酒', reportPeriod = 'day', busy = false, controlSequence = 0;
+let page = DEFAULT_PAGE, filter = '全部', searchTerm = '', category = 'beer', reportPeriod = 'day', busy = false, controlSequence = 0;
 const app = document.querySelector('#app'), modal = document.querySelector('#modal');
 const esc = v => String(v ?? '').replace(/[&<>"']/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]));
 const btn = (text, action, data='', cls='secondary') => `<button type="button" class="${cls}" data-action="${action}" ${data}>${text}</button>`;
@@ -182,14 +269,15 @@ const selfReviewBlocked = submittedById => submittedById === state.user && !allo
 const reviewPermissionHint = submittedById => selfReviewBlocked(submittedById) ? '<span class="badge">审核本人申请需要“允许审核本人申请”权限</span>' : '';
 const portalBackButton = () => btn('返回我的', 'backMine', '', 'quiet');
 const options = (list, selected) => list.map(([v,n]) => `<option value="${esc(v)}" ${String(v)===String(selected)?'selected':''}>${esc(n)}</option>`).join('');
-const beers = PRODUCTS.filter(p => p.giftEligible).map(p => [p.id,p.name]);
-const initialMixChoices = PRODUCTS.filter(p => canExchange('drink', p.id)).map(p => [p.id,p.name]);
+const openingGiftChoices = () => state.catalog.products.filter(p => p.openingGiftEligible && p.active !== false).sort((a,b)=>(a.sortOrder||0)-(b.sortOrder||0)).map(p => [p.id,p.name]);
+const depositChoices = () => state.catalog.products.filter(p => p.openingGiftEligible && p.active !== false && !p.selectionOnly && p.sellable && saleOptions(p).length).sort((a,b)=>(a.sortOrder||0)-(b.sortOrder||0)).map(p => [p.id,p.name]);
+const initialMixChoices = () => state.catalog.products.filter(p => p.active !== false && p.id !== 'drink' && canExchange('drink', p.id, state.catalog)).sort((a,b)=>(a.sortOrder||0)-(b.sortOrder||0)).map(p => [p.id,p.name]);
 const creditRoles = ['开单员','收银员','服务员','库管','店长','老板'];
 const managementRoles = ['管理员','老板','店长','财务','采购','库管'];
 const reportRoles = ['管理员','老板','财务','店长','收银员'];
 const roomOptions = () => options(state.rooms.map(r=>[r.id,`${r.id} · ${r.type}`]));
 const employeeOptions = (selected = '') => options(Object.entries(USERS).filter(([id, user]) => !user.legacy && id !== 'administrator').map(([id, user]) => [id, `${user.name} · ${user.title || '岗位说明未设置'}`]), selected);
-const consumableOptions = (selected = '') => options(CONSUMABLES.map(item => [item.id, `${item.name} · 按${item.unit}统计`]), selected);
+const consumableOptions = (selected = '') => options(consumableProducts(state.catalog).map(item => [item.id, `${item.name} · 按${item.baseUnit}统计`]), selected);
 const contactText = record => [record?.name, record?.phone].filter(Boolean).join(' · ') || '未留联系人';
 const permissionDefinition = id => PERMISSION_DEFINITIONS.find(permission => permission.id === id);
 const permissionSummary = user => (user.permissions || []).map(id => permissionDefinition(id)?.label).filter(Boolean);
@@ -215,8 +303,10 @@ function reportOrder(roomId) {
   return { ...orders.at(-1), periodOrders:orders, base:orders.reduce((sum,order)=>sum+Number(order.base||0),0), gift:orders.reduce((sum,order)=>sum+Number(order.gift||0),0), drinks:orders.flatMap(order=>order.drinks||[]), extras:orders.flatMap(order=>order.extras||[]), sales:orders.flatMap(order=>order.sales||[]), otherCharges:orders.flatMap(order=>order.otherCharges||[]), bonusGifts:orders.flatMap(order=>order.bonusGifts||[]), payments:orders.flatMap(order=>order.payments||[]), rounding:orders.reduce((sum,order)=>sum+Number(order.rounding||0),0), status:orders.at(-1).status, credit:orders.some(order=>order.credit), voucher:orders.find(order=>order.voucher)?.voucher };
 }
 function reportLooseAlcoholSale(sale) {
-  const p = PRODUCTS.find(item => item.id === sale?.product);
-  return Boolean(p?.saleDozen && Number(sale.bottles || sale.count || 0) % 6 !== 0);
+  const p = state.catalog.products.find(item => item.id === productIdOf(sale));
+  const half = saleOptions(p).find(option => option.id === 'half');
+  const baseQuantity = Number(sale?.totalBaseQuantity ?? sale?.bottles ?? sale?.count ?? 0);
+  return Boolean(half && baseQuantity % half.baseQuantity !== 0);
 }
 function reportProductCount(order, productId) {
   if (!order) return 0;
@@ -225,36 +315,41 @@ function reportProductCount(order, productId) {
     ...(order.sales || []).filter(sale => !reportLooseAlcoholSale(sale)).flatMap(sale=>sale.drinks || []),
     ...(order.bonusGifts || []).flatMap(gift=>gift.drinks || [])
   ];
-  return lines.filter(line=>line.product===productId).reduce((sum,line)=>sum + Number(line.count || 0),0) / 12;
+  const p = state.catalog.products.find(item => item.id === productId);
+  const reportOption = saleOptions(p).find(option => option.id === 'dozen');
+  const baseQuantity = lines.filter(line=>productIdOf(line)===productId).reduce((sum,line)=>sum + Number(line.totalBaseQuantity ?? line.count ?? 0),0);
+  return baseQuantity / (reportOption?.baseQuantity || 1);
 }
-function reportGiftAmount(order) { return (order?.bonusGifts || []).reduce((sum,gift)=>(gift.drinks || []).reduce((n,line)=>n + Number(line.count || 0) * (PRODUCTS.find(item=>item.id===line.product)?.price || 0),sum),0); }
+function reportGiftAmount(order) { return (order?.bonusGifts || []).reduce((sum,gift)=>sum + (Number.isSafeInteger(gift.referenceValueCents) ? gift.referenceValueCents : 0),0); }
 function reportGiftDetails(order) {
   const totals = new Map();
   for (const gift of order?.bonusGifts || []) {
-    for (const line of gift.drinks || []) totals.set(line.product, (totals.get(line.product) || 0) + Number(line.count || 0));
+    for (const line of gift.drinks || []) totals.set(productIdOf(line), (totals.get(productIdOf(line)) || 0) + Number(line.totalBaseQuantity ?? line.count ?? 0));
   }
   return [...totals.entries()].flatMap(([productId,count]) => {
-    const p = PRODUCTS.find(item=>item.id===productId);
-    return p && count ? [`${reportQuantity(count / 12)}打${p.name}`] : [];
+    const p = state.catalog.products.find(item=>item.id===productId);
+    const option = saleOptions(p).find(item=>item.id==='dozen');
+    const name = (order?.bonusGifts || []).flatMap(gift=>gift.drinks || []).find(line=>productIdOf(line)===productId)?.productNameSnapshot || `历史商品（${productId}）`;
+    return count ? [`${reportQuantity(count / (option?.baseQuantity || 1))}${option?'打':p?.baseUnit || '基础单位'}${name}`] : [];
   });
 }
 function reportLooseDetails(order) {
   if (!order) return [];
   const sales = (order.sales || []).flatMap(sale => {
-    const p = PRODUCTS.find(item => item.id === sale.product);
-    if (!p) return [];
-    const isPaidFood = ['零食', '美食', '小吃', '套餐配品'].includes(p.category) && Number(sale.amount || 0) > 0;
+    const p = state.catalog.products.find(item => item.id === productIdOf(sale));
+    const name = sale.productNameSnapshot || `历史商品（${productIdOf(sale)}）`;
+    const amount = sale.amountCents ?? sale.amount ?? 0;
+    const isPaidFood = ['零食', '美食', '小吃', '套餐配品'].includes(sale.categorySnapshot || p?.category) && amount > 0;
     const isLooseAlcohol = reportLooseAlcoholSale(sale);
-    return isPaidFood || isLooseAlcohol ? [`${sale.bottles || sale.count}${p.name} ${money(sale.amount)}`] : [];
+    return isPaidFood || isLooseAlcohol ? [`${sale.totalBaseQuantity ?? sale.bottles ?? sale.count}${name} ${money(amount)}`] : [];
   });
-  const otherCharges = (order.otherCharges || []).map(line => `${line.category === '其他' ? line.item : line.category} ${money(line.amount)}`);
+  const otherCharges = (order.otherCharges || []).map(line => `${line.category === '其他' ? line.item : line.category} ${money(line.amountCents ?? line.amount)}`);
   return [...sales, ...otherCharges];
 }
 function reportTobaccoDetails(order) {
   if (!order) return [];
   return (order.sales || []).flatMap(sale => {
-    const p = PRODUCTS.find(item => item.id === sale.product);
-    return p?.category === '烟' ? [`${sale.bottles || sale.count}${p.name} ${money(sale.amount)}`] : [];
+    return sale.categorySnapshot === 'tobacco' || sale.categorySnapshot === '烟' ? [`${sale.totalBaseQuantity ?? sale.bottles ?? sale.count}${sale.productNameSnapshot || `历史商品（${productIdOf(sale)}）`} ${money(sale.amountCents ?? sale.amount)}`] : [];
   });
 }
 function reportGiftPerson(order) {
@@ -292,10 +387,10 @@ function reportNotes(order) {
 function reportPage() {
   if (!allowedPermission('report.view')) return '<p>当前身份没有报表权限，请切换管理员或由管理员分配“查看经营报表”权限。</p>';
   const rows = state.rooms.map(room=>({room, order:reportOrder(room.id)})).filter(row=>row.order);
-  const productColumns = [['饮料','drink'],['百威','bw'],['喜力','xl'],['青岛','qd'],['红青岛','redqd'],['蓝妹','lm'],['蓝妹（罐装）','lm_can'],['黑金百威','jbw']];
+  const productColumns = [['饮料','drink'], ...state.catalog.products.filter(item=>item.category==='beer' && item.active!==false).sort((a,b)=>(a.sortOrder||0)-(b.sortOrder||0)).map(item=>[item.name,item.id])];
   const reportRows = rows.map(({room,order})=>{
-    const salesAmount = (order?.sales || []).reduce((sum,line)=>sum + Number(line.amount || 0),0), beverageAmount = salesAmount + Number(order?.gift || 0);
-    const drinkCount = PRODUCTS.filter(item=>item.category==='饮料' || item.category==='汽水').reduce((sum,item)=>sum+reportProductCount(order,item.id),0);
+    const salesAmount = (order?.sales || []).reduce((sum,line)=>sum + Number(line.amountCents ?? line.amount ?? 0),0), beverageAmount = salesAmount + Number(order?.gift || 0);
+    const drinkCount = state.catalog.products.filter(item=>['drink','soda','water'].includes(item.category)).reduce((sum,item)=>sum+reportProductCount(order,item.id),0);
     const productCounts = Object.fromEntries(productColumns.map(([,id])=>[id,id==='drink'?drinkCount:reportProductCount(order,id)]));
     const notes = reportNotes(order);
     return { room, order, beverageAmount, productCounts, notes, giftDetails:reportGiftDetails(order), looseDetails:reportLooseDetails(order), tobacco:reportTobaccoDetails(order) };
@@ -303,7 +398,7 @@ function reportPage() {
   const columnCount = 11 + productColumns.length;
   const body = reportRows.length ? reportRows.map(({room,order,beverageAmount,productCounts,notes,giftDetails,looseDetails,tobacco})=>`<tr class="has-order"><th scope="row"><strong>${esc(room.id)}</strong><small>${esc(room.type)}</small></th><td class="money-cell">${reportMoney(order.base)}</td><td class="money-cell emphasis">${reportMoney(beverageAmount)}</td><td>${esc(reportPaymentMethods(order)||'—')}</td><td class="detail-cell">${giftDetails.length?giftDetails.map(esc).join('<br>'):'—'}</td><td>${esc(reportGiftPerson(order)||'—')}</td><td class="detail-cell">${looseDetails.length?looseDetails.map(esc).join('<br>'):'—'}</td><td class="detail-cell">${tobacco.length?tobacco.map(esc).join('<br>'):'—'}</td>${productColumns.map(([,id])=>`<td class="count-cell">${productCounts[id]||'—'}</td>`).join('')}<td class="money-cell">${reportMoney(order.rounding)}</td><td class="money-cell total-cell">${reportMoney(total(order))}</td><td class="note-cell">${notes.length?notes.map(esc).join('<br>'):'—'}</td></tr>`).join('') : `<tr class="empty-period"><td colspan="${columnCount}">本统计周期暂无开房记录</td></tr>`;
   const productTotals = Object.fromEntries(productColumns.map(([,id])=>[id,reportRows.reduce((sum,row)=>sum+Number(row.productCounts[id]||0),0)]));
-  const totals = rows.reduce((sum,{order})=>{ if (!order) return sum; sum.base += Number(order.base||0); sum.sales += (order.sales || []).reduce((n,line)=>n+Number(line.amount||0),0) + Number(order.gift||0); sum.gift += reportGiftAmount(order); sum.total += total(order); sum.rounding += Number(order.rounding||0); return sum; },{base:0,sales:0,gift:0,total:0,rounding:0});
+  const totals = rows.reduce((sum,{order})=>{ if (!order) return sum; sum.base += Number(order.base||0); sum.sales += (order.sales || []).reduce((n,line)=>n+Number(line.amountCents ?? line.amount ?? 0),0) + Number(order.gift||0); sum.gift += reportGiftAmount(order); sum.total += total(order); sum.rounding += Number(order.rounding||0); return sum; },{base:0,sales:0,gift:0,total:0,rounding:0});
   const giftTotals = reportGiftDetails({ bonusGifts:rows.flatMap(({order})=>order.bonusGifts || []) });
   const periodLabel = reportPeriod==='day'?'日报':reportPeriod==='week'?'周报':'月报';
   return `<p class="eyebrow">经营数据</p><div class="report-heading"><div><h1>营业${periodLabel}</h1><p class="muted">${reportPeriod==='day'?'按当天':reportPeriod==='week'?'按本周':'按本月'}演示记录汇总 · ${date(state.clock)} · 金额单位：元，酒水数量按打统计</p></div><label class="report-period">统计范围<select id="report-period"><option value="day" ${reportPeriod==='day'?'selected':''}>日报</option><option value="week" ${reportPeriod==='week'?'selected':''}>周报</option><option value="month" ${reportPeriod==='month'?'selected':''}>月报</option></select></label></div><section class="summary report-summary"><div><strong>${rows.length}</strong><span>有消费房间</span></div><div><strong>${reportMoney(totals.sales)}</strong><span>酒水消费（含开房赠饮）</span></div><div><strong>${reportMoney(totals.total)}</strong><span>账单合计</span></div></section><div class="report-total-strip"><span>酒水赠送金额 <b>${reportMoney(totals.gift)}</b></span><span>免零金额 <b>${reportMoney(totals.rounding)}</b></span></div><div class="report-table-wrap"><table class="report-table"><caption><strong>房间消费明细</strong><span>左右滑动查看完整报表</span></caption><thead><tr><th scope="col">房号</th><th scope="col">房费</th><th scope="col">酒水消费<small>含开房赠饮</small></th><th scope="col">买单方式</th><th scope="col">酒水赠送<small>后续赠送</small></th><th scope="col">赠送人</th><th scope="col">美食／其他</th><th scope="col">烟</th>${productColumns.map(([label])=>`<th scope="col">${esc(label)}<small>/打</small></th>`).join('')}<th scope="col">免零金额</th><th scope="col">合计</th><th scope="col">备注</th></tr></thead><tbody>${body}</tbody><tfoot><tr><th scope="row">合计</th><td>${reportMoney(totals.base)}</td><td>${reportMoney(totals.sales)}</td><td>—</td><td class="detail-cell">${giftTotals.length?giftTotals.map(esc).join('<br>'):'—'}</td><td>—</td><td>—</td><td>—</td>${productColumns.map(([,id])=>`<td>${productTotals[id]||'—'}</td>`).join('')}<td>${reportMoney(totals.rounding)}</td><td>${reportMoney(totals.total)}</td><td>—</td></tr></tfoot></table></div><p class="muted report-note">报表依据本机演示账单生成；房费取开房基础房费，酒水消费包含开房套餐赠饮和增购酒水，其他消费列在“美食／其他”，酒水赠送只统计后续赠送。</p>`;
@@ -415,7 +510,7 @@ function expenseReviewCards() {
 }
 function giftRequestCards() {
   const rows=state.orders.flatMap(o=>(o.giftRequests||[]).filter(request=>request.status==='待确认').map(request=>({o,request})));
-  return rows.map(({o,request})=>`<article class="panel"><div class="split"><h3>${o.room} · ${product(request.product).name}</h3><span class="badge">待确认</span></div><p>${request.halves} 个半打，共 ${request.bottles} 支 · 申请人 ${esc(request.requestedBy)}</p>${allowedPermission('gift.approve')&&canReviewSubmission(request.requestedById)?btn('进入账单处理','order',`data-id="${o.id}"`):reviewPermissionHint(request.requestedById)||'<span class="badge">需要赠酒水审核权限</span>'}</article>`).join('') || '<p class="muted">暂无超额赠酒水申请。</p>';
+  return rows.map(({o,request})=>`<article class="panel"><div class="split"><h3>${o.room} · ${esc(request.productNameSnapshot || product(request.productId || request.product).name)}</h3><span class="badge">待确认</span></div><p>${request.halves} 个半打，共 ${request.bottles} 支 · 申请人 ${esc(request.requestedBy)}</p>${allowedPermission('gift.approve')&&canReviewSubmission(request.requestedById)?btn('进入账单处理','order',`data-id="${o.id}"`):reviewPermissionHint(request.requestedById)||'<span class="badge">需要赠酒水审核权限</span>'}</article>`).join('') || '<p class="muted">暂无超额赠酒水申请。</p>';
 }
 function roundingReviewCards() {
   const rows=state.orders.filter(order=>order.roundingReview?.status==='待审核');
@@ -423,7 +518,7 @@ function roundingReviewCards() {
 }
 function inventoryReviewCards() {
   const rows=(state.inventoryReviews||[]).filter(request=>request.status==='待审核');
-  return rows.map(request=>{const label=request.kind==='consumable'?(CONSUMABLES.find(item=>item.id===request.product)?.name||request.product):product(request.product).name;const unit=request.kind==='consumable'?(state.consumables?.[request.product]?.unit||'份'):'支';const opened=request.kind==='consumable'?` · 已开封 ${request.openedBefore||0} → ${request.openedAfter||0}`:'';const canReview=allowedPermission('inventory.approve')&&canReviewSubmission(request.submittedById);return `<article class="panel"><div class="split"><h3>${esc(label)} · ${esc(request.source)}</h3><span class="badge">待审核</span></div><p>${request.before??'未建账'} → ${request.after} ${esc(unit)}${opened}</p><p>${esc(request.reason)} · 提交人 ${esc(request.submittedBy)}</p>${canReview?btn('审核库存盘点','reviewInventory',`data-id="${request.id}"`,'primary full'):reviewPermissionHint(request.submittedById)||'<span class="badge">需要库存审核权限</span>'}</article>`;}).join('')||'<p class="muted">暂无库存盘点待审核。</p>';
+  return rows.map(request=>{const catalogItem=state.catalog.products.find(item=>item.id===request.product), label=request.kind==='consumable'?(catalogItem?.name||request.product):catalogItem?.name||request.product;const unit=request.kind==='consumable'?(state.consumables?.[request.product]?.unit||catalogItem?.baseUnit||'份'):(catalogItem?.baseUnit||'支');const opened=request.kind==='consumable'?` · 已开封 ${request.openedBefore||0} → ${request.openedAfter||0}`:'';const canReview=allowedPermission('inventory.approve')&&canReviewSubmission(request.submittedById);return `<article class="panel"><div class="split"><h3>${esc(label)} · ${esc(request.source)}</h3><span class="badge">待审核</span></div><p>${request.before??'未建账'} → ${request.after} ${esc(unit)}${opened}</p><p>${esc(request.reason)} · 提交人 ${esc(request.submittedBy)}</p>${canReview?btn('审核库存盘点','reviewInventory',`data-id="${request.id}"`,'primary full'):reviewPermissionHint(request.submittedById)||'<span class="badge">需要库存审核权限</span>'}</article>`;}).join('')||'<p class="muted">暂无库存盘点待审核。</p>';
 }
 function incidentResolutionReviewCards() {
   const rows=(state.incidents||[]).flatMap(incident=>(incident.resolutionReviews||[]).filter(request=>request.status==='待审核').map(request=>({incident,request})));
@@ -465,10 +560,10 @@ function reviewHistoryRows() {
   for(const order of state.orders){
     if(order.credit?.decisionBy===reviewer)add('creditApproval',`${order.room} · 挂账审批`,'已批准',order.credit.decisionAt);
     if(order.roundingReview?.decidedBy===reviewer)add('rounding',`${order.room} · 特殊差额`,order.roundingReview.status,order.roundingReview.decidedAt,order.roundingReview.decisionNote,order.roundingReview.selfReviewAuthorized);
-    for(const request of order.giftRequests||[])if(request.decidedBy===reviewer)add('gift',`${order.room} · ${product(request.product).name}赠酒`,request.status,request.decidedAt,request.decisionNote,request.selfReviewAuthorized);
+    for(const request of order.giftRequests||[])if(request.decidedBy===reviewer)add('gift',`${order.room} · ${request.productNameSnapshot || product(request.productId || request.product).name}赠酒`,request.status,request.decidedAt,request.decisionNote,request.selfReviewAuthorized);
     for(const request of order.credit?.repaymentRequests||[])if(request.decidedBy===reviewer)add('creditRepayment',`${order.room} · 回款${money(request.amount)}`,request.status,request.decidedAt,request.decisionNote,request.selfReviewAuthorized);
   }
-  for(const request of state.inventoryReviews||[])if(request.decidedBy===reviewer){const label=request.kind==='consumable'?(CONSUMABLES.find(item=>item.id===request.product)?.name||request.product):product(request.product).name;add('inventory',`${label} · 库存盘点`,request.status,request.decidedAt,request.decisionNote,request.selfReviewAuthorized);}
+  for(const request of state.inventoryReviews||[])if(request.decidedBy===reviewer){const label=state.catalog.products.find(item=>item.id===request.product)?.name||request.product;add('inventory',`${label} · 库存盘点`,request.status,request.decidedAt,request.decisionNote,request.selfReviewAuthorized);}
   for(const incident of state.incidents||[])for(const request of incident.resolutionReviews||[])if(request.decidedBy===reviewer)add('incident',`${incident.room} · ${incident.type}`,request.status,request.decidedAt,request.decisionNote,request.selfReviewAuthorized);
   for(const expense of state.expenses||[])if(expense.approver===reviewer)add('expense',`${expense.description} · 报销`,expense.status,expense.approvedAt);
   return rows.sort((a,b)=>Date.parse(b.time)-Date.parse(a.time)).slice(0,12);
@@ -504,15 +599,35 @@ function staffRecordingPanel() {
   if (!allowedPermission('staff.record')) return '';
   return `<div class="section-title"><h2>员工补录</h2><span>记录订房与增购归属</span></div><div class="menu-list staff-recording-panel">${btn('登记员工订房　→','staffBooking','','secondary')}${btn('登记员工增购酒水　→','staffSale','','secondary')}</div>`;
 }
+function catalogPriceSummary(item) {
+  return saleOptions(item).map(option => `${option.name} ${money(option.priceCents)}`).join(' · ') || '无直接销售规格';
+}
+function catalogManagementPanel() {
+  if (!allowedPermission('catalog.manage')) return '';
+  const products = state.catalog.products.filter(item => item.kind !== 'consumable' && item.kind !== 'package-component' && item.id !== 'drink').sort((a,b)=>(a.sortOrder||0)-(b.sortOrder||0));
+  const productRows = products.map(item => `<div class="panel"><div class="split"><div><h3>${esc(item.name)} <small>${esc(item.id)}</small></h3><p>${esc(categoryLabel(item))} · 基础单位：${esc(item.baseUnit)} · ${catalogPriceSummary(item)}</p></div><span class="badge">${item.active===false?'已停用':item.sellable?'可销售':'仅选择'}</span></div><p class="muted">库存：${item.inventoryManaged?'管理':'不管理'} · 开房赠饮：${item.openingGiftEligible?'允许':'不参与'} · 排序 ${item.sortOrder ?? 0}</p>${btn('维护商品与价格','editCatalogProduct',`data-id="${item.id}"`,'secondary full')}</div>`).join('');
+  const packageRows = state.catalog.packages.slice().sort((a,b)=>(a.sortOrder||0)-(b.sortOrder||0)).map(item => `<div class="panel"><div class="split"><div><h3>${esc(item.name)} <small>${esc(item.id)}</small></h3><p>${esc(item.roomType)} · ${item.period==='night'?'夜间':'白天'} · 当前总价 ${money(item.priceCents)}</p></div><span class="badge">${item.active===false?'已停用':'启用中'}</span></div><p class="muted">基础房费 ${money(item.basePriceCents)} · 套餐赠饮参考值 ${money(item.includedValueCents || 0)} · 套餐包含选择规则，不直接保存库存。</p>${btn('维护套餐价格','editCatalogPackage',`data-id="${item.id}"`,'secondary full')}</div>`).join('');
+  return `<div class="section-title"><h2>商品、套餐与当前价格</h2><span>管理员专用</span></div><p class="muted">运行时报价、增购、库存和报表都读取当前目录；订单形成时另存成交快照，改价不会回写历史账单。</p><h3>商品目录</h3>${productRows || '<p class="empty">暂无可维护商品。</p>'}<h3>房间套餐</h3>${packageRows || '<p class="empty">暂无可维护套餐。</p>'}`;
+}
+function catalogProductDialog(id) {
+  const item = product(id);
+  const priceFields = saleOptions(item).map(option => `<label>${esc(option.name)}价格（元）<input name="price_${esc(option.id)}" inputmode="decimal" value="${(option.priceCents/100).toFixed(2)}" required></label>`).join('');
+  openDialog(`维护商品 · ${esc(item.name)}`,`<p class="notice">稳定 ID：<b>${esc(item.id)}</b>（本阶段不修改）。库存按${esc(item.baseUnit)}计量；价格只影响新订单。</p><label>商品名称<input name="name" maxlength="80" value="${esc(item.name)}" required></label>${priceFields}<label class="check"><input name="active" type="checkbox" ${item.active===false?'':'checked'}>启用此商品</label><label class="check"><input name="sellable" type="checkbox" ${item.sellable?'checked':''}>允许直接销售</label><label>排序<input name="sortOrder" type="number" step="1" value="${item.sortOrder ?? 0}" required></label>`,'保存商品与当前价格','updateCatalogProduct',{id:item.id});
+}
+function catalogPackageDialog(id) {
+  const item = state.catalog.packages.find(packageItem => packageItem.id === id);
+  if (!item) throw Error('套餐不存在');
+  openDialog(`维护套餐 · ${esc(item.name)}`,`<p class="notice">稳定 ID：<b>${esc(item.id)}</b>（本阶段不修改）。赠饮允许选择范围和历史实际组成不会被当前配置重新解析。</p><label>套餐名称<input name="name" maxlength="80" value="${esc(item.name)}" required></label><label>套餐总价（元）<input name="priceCents" inputmode="decimal" value="${(item.priceCents/100).toFixed(2)}" required></label><label>基础房费（元）<input name="basePriceCents" inputmode="decimal" value="${(item.basePriceCents/100).toFixed(2)}" required></label><label>赠饮参考值（元）<input name="includedValueCents" inputmode="decimal" value="${((item.includedValueCents || 0)/100).toFixed(2)}" required></label><label class="check"><input name="active" type="checkbox" ${item.active===false?'':'checked'}>启用此套餐</label><label>排序<input name="sortOrder" type="number" step="1" value="${item.sortOrder ?? 0}" required></label>`,'保存套餐与当前价格','updateCatalogPackage',{id:item.id});
+}
 function systemManagementPage() {
   if (!allowedPermission('backend.view')) return '<p>当前身份没有系统管理后台权限，请切换管理员或由管理员分配“进入系统管理后台”权限。</p>';
   const identityManagement=allowed(['管理员'])?`<div class="section-title"><h2>员工身份与具体权限</h2><span>管理员专用</span></div>${permissionCards()}`:'<div class="empty">当前身份可以进入系统管理后台，但没有可调整的系统配置。业务审核请返回员工系统的“待办”。</div>';
-  return `<p class="eyebrow">系统管理后台</p><h1>员工身份与权限</h1><p class="muted">这里只提供当前已经实现的低频系统管理能力，不承载挂账、赠酒、房间恢复、库存、客诉、交班或营业报表等日常营业工作。</p>${identityManagement}<div class="tip"><span>i</span><div><b>当前仍是单机演示</b><p>商品、套餐、价格、系统配置、生产数据管理和独立审计尚未实现，本页不会用占位功能冒充已接入能力。</p></div></div>`;
+  return `<p class="eyebrow">系统管理后台</p><h1>系统管理</h1><p class="muted">这里只提供身份权限和商品目录等系统管理能力，不承载挂账、赠酒、房间恢复、库存、客诉、交班或营业报表等日常营业工作。</p>${catalogManagementPanel()}${identityManagement}<div class="tip"><span>i</span><div><b>当前仍是单机演示</b><p>目录、套餐和价格保存在本机 localStorage；尚未接入 PostgreSQL，也不代表生产数据管理或独立审计已经完成。</p></div></div>`;
 }
 function stockNotices() {
   const low=Object.entries(state.inventory).filter(([,v])=>v.count!==null&&v.count<=v.threshold);
   const consumableLow=Object.entries(state.consumables || {}).filter(([,v])=>v.count!==null&&v.count<=v.threshold);
-  return `${low.map(([id,v])=>`<p class="notice">${product(id).name}剩 ${v.count} 支，预警线 ${v.threshold} 支</p>`).join('')}${consumableLow.map(([id,v])=>`<p class="notice">${CONSUMABLES.find(item=>item.id===id)?.name || id}剩 ${v.count} ${v.unit || '份'}${v.opened?`，已开封 ${v.opened} 份`:''}，预警线 ${v.threshold}</p>`).join('')}${state.notices.slice().reverse().map(n=>n.kind==='consumable'?`<div class="panel"><b>${CONSUMABLES.find(item=>item.id===n.product)?.name || n.product}：${n.before ?? '未建账'} → ${n.after} ${n.unit || '份'}</b><p>提交 ${esc(n.person)}${n.reviewedBy?` · 审核 ${esc(n.reviewedBy)}`:''} · ${date(n.time)}</p><p>${esc(n.reason)}</p><span class="badge">审核通过 · 已生效</span></div>`:`<div class="panel"><b>${product(n.product).name}：${n.before ?? '未建账'} → ${n.after} 支</b><p>提交 ${esc(n.person)}${n.reviewedBy?` · 审核 ${esc(n.reviewedBy)}`:''} · ${date(n.time)}</p><p>${esc(n.reason)}</p><span class="badge">审核通过 · 已生效</span></div>`).join('')||'<p class="muted">暂无已通过的库存盘点。未建账商品不会预警。</p>'}`;
+  return `${low.map(([id,v])=>`<p class="notice">${product(id).name}剩 ${v.count} ${v.unit || product(id).baseUnit}，预警线 ${v.threshold} ${v.unit || product(id).baseUnit}</p>`).join('')}${consumableLow.map(([id,v])=>`<p class="notice">${state.catalog.products.find(item=>item.id===id)?.name || id}剩 ${v.count} ${v.unit || '份'}${v.opened?`，已开封 ${v.opened} 份`:''}，预警线 ${v.threshold}</p>`).join('')}${state.notices.slice().reverse().map(n=>n.kind==='consumable'?`<div class="panel"><b>${state.catalog.products.find(item=>item.id===n.product)?.name || n.product}：${n.before ?? '未建账'} → ${n.after} ${n.unit || '份'}</b><p>提交 ${esc(n.person)}${n.reviewedBy?` · 审核 ${esc(n.reviewedBy)}`:''} · ${date(n.time)}</p><p>${esc(n.reason)}</p><span class="badge">审核通过 · 已生效</span></div>`:`<div class="panel"><b>${product(n.product).name}：${n.before ?? '未建账'} → ${n.after} ${n.unit || product(n.product).baseUnit}</b><p>提交 ${esc(n.person)}${n.reviewedBy?` · 审核 ${esc(n.reviewedBy)}`:''} · ${date(n.time)}</p><p>${esc(n.reason)}</p><span class="badge">审核通过 · 已生效</span></div>`).join('')||'<p class="muted">暂无已通过的库存盘点。未建账商品不会预警。</p>'}`;
 }
 function handoverHistory() { return state.handovers.slice().reverse().map(h=>`<div class="panel"><b>${date(h.time)} · ${esc(h.person)}</b><p>系统实收 ${money(h.expected)} / 实点 ${money(h.actual)}</p><p>前台现金：${h.drawerCash===null||h.drawerCash===undefined?'旧记录未填写':money(h.drawerCash)}</p><strong class="${h.difference?'amber':'green'}">差异 ${money(h.difference)}</strong></div>`).join('') || '<p class="muted">尚未交班。挂账不计入实收，回款按实际登记计入。</p>'; }
 function expensesPage() {
@@ -605,12 +720,12 @@ function showRoom(id) {
 }
 function openRoom(id, dirty=false) {
   const r=state.rooms.find(r=>r.id===id), closed=slot(state.clock)==='closed';
-   openDialog(`${id} · ${r.type}${closed?'预订':'开房'}`, closed?`<p class="notice">现在是非营业时段，只接受预订。</p>${bookingFields()}${reservationListMarkup(id)}`:`<p class="muted">${date(state.clock)} · ${slot(state.clock)==='day'?'白天纯唱':'夜间套餐'}</p>${dirty?'<p class="notice">房间尚未标记清洁。提交即确认可以接待客人。</p>':''}${reservationListMarkup(id)}<label>开房渠道<select name="openSource">${options(OPENING_SOURCES.map(source=>[source,source||'线下（默认）']),'')}</select></label>${slot(state.clock)==='night'?`<label>客人选哪种酒水<select name="beer">${options(beers,'bw')}</select></label><section id="initial-mix" class="initial-mix" hidden><div class="split"><b>首次配酒水</b><span id="mix-total" class="badge"></span></div><p class="muted">开房前直接选好种类和支数；开房后再调整请点“换酒水”。</p><div id="mix-items"></div>${btn('＋ 添加一种酒水','addInitialMix','','secondary full')}</section>`:'<p>白天不带赠饮，可开房后另行加购。</p>'}<div id="quote-box"></div>${!dirty&&r.status==='空闲'&&allowedPermission('room.reserve')?btn('预订其他未来场次','reserveFuture',`data-id="${id}"`,'quiet'):''}`,closed?'确认预订':'确认开房',closed?'reserve':'open',{room:id,acceptDirty:dirty?'yes':''});
+  openDialog(`${id} · ${r.type}${closed?'预订':'开房'}`, closed?`<p class="notice">现在是非营业时段，只接受预订。</p>${bookingFields()}${reservationListMarkup(id)}`:`<p class="muted">${date(state.clock)} · ${slot(state.clock)==='day'?'白天纯唱':'夜间套餐'}</p>${dirty?'<p class="notice">房间尚未标记清洁。提交即确认可以接待客人。</p>':''}${reservationListMarkup(id)}<label>开房渠道<select name="openSource">${options(OPENING_SOURCES.map(source=>[source,source||'线下（默认）']),'')}</select></label>${slot(state.clock)==='night'?`<label>客人选哪种酒水<select name="beer">${options(openingGiftChoices(),'bw')}</select></label><section id="initial-mix" class="initial-mix" hidden><div class="split"><b>首次配酒水</b><span id="mix-total" class="badge"></span></div><p class="muted">开房前直接选好种类和支数；开房后再调整请点“换酒水”。</p><div id="mix-items"></div>${btn('＋ 添加一种酒水','addInitialMix','','secondary full')}</section>`:'<p>白天不带赠饮，可开房后另行加购。</p>'}<div id="quote-box"></div>${!dirty&&r.status==='空闲'&&allowedPermission('room.reserve')?btn('预订其他未来场次','reserveFuture',`data-id="${id}"`,'quiet'):''}`,closed?'确认预订':'确认开房',closed?'reserve':'open',{room:id,acceptDirty:dirty?'yes':''});
   if (closed) setupBookingFields();
   else {
     const f=modal.querySelector('form');
     const update=()=> {
-      const q=quote(r.type,state.clock,f.elements.beer?.value || 'bw',f.elements.openSource?.value || ''), mix=document.querySelector('#initial-mix');
+      const q=quote(r.type,state.clock,f.elements.beer?.value || 'bw',f.elements.openSource?.value || '',state.catalog), mix=document.querySelector('#initial-mix');
       let mixText='';
       if (mix) {
         const show=f.elements.beer.value==='drink'; mix.hidden=!show; mix.dataset.max=q.bottles;
@@ -628,7 +743,7 @@ function openRoom(id, dirty=false) {
     f.addEventListener('change',update); f.addEventListener('input',update); update();
   }
 }
-function initialMixRow(max, value=1, selected='drink0') { return `<div class="initial-mix-item"><div class="deposit-item-head"><b>酒水种类</b>${btn('移除','removeInitialMix','','quiet')}</div><label>选择酒水<select name="mixProduct">${options(initialMixChoices,selected)}</select></label>${stepper(max,'数量（支）','mixCount',value)}</div>`; }
+function initialMixRow(max, value=1, selected='drink0') { return `<div class="initial-mix-item"><div class="deposit-item-head"><b>酒水种类</b>${btn('移除','removeInitialMix','','quiet')}</div><label>选择酒水<select name="mixProduct">${options(initialMixChoices(),selected)}</select></label>${stepper(max,'数量（支）','mixCount',value)}</div>`; }
 function bookingFields() { const hour=new Date(state.clock).getHours(), day=hour>=20?'1':'0', session=hour<14?'afternoon':'night'; return `<div class="field-pair"><label>哪一天<select name="dayChoice">${options([['0','今天'],['1','明天'],['2','后天'],['custom','第几天后']],day)}</select></label><label id="custom-day-field" hidden>第几天后<input type="number" name="customDays" inputmode="numeric" min="3" max="30" value="3"></label></div><label>预订时段<select name="session">${options([['afternoon','下午场（14:00—18:00）'],['night','夜间场（20:00—次日02:00）']],session)}</select></label><fieldset class="choice-field"><legend>预订方式</legend><div class="radio-grid">${RESERVATION_SOURCES.map(source=>`<label class="radio-option"><input type="radio" name="source" value="${source}" ${source==='手机'?'checked':''}><span>${source}</span></label>`).join('')}</div></fieldset><p class="muted">可提前预定；下午场为14:00到18:00，夜间场为20:00到次日2:00。</p><p class="muted">到预订场次仍未开房，系统每隔1小时提醒预订人员。</p><label>备注（选填）<input name="note" maxlength="100" placeholder="例如：王生/130****0000，晚上8点到"></label>`; }
 function setupBookingFields() {
   const f = modal.querySelector('form');
@@ -645,9 +760,10 @@ function showOrder(id) {
   const o=state.orders.find(o=>o.id===id);
   const bonus=(o.bonusGifts||[]).map(line=>{
     const drinks=(line.drinks||[]).filter(drink=>drink.count), unchanged=drinks.length===1&&drinks[0].product===line.product&&drinks[0].count===line.bottles;
-    return `<div class="bill-line"><span>赠送 · ${product(line.product).name} ${line.bottles}支</span><b>¥0</b></div>${unchanged?'':`<div class="drink-list"><p><b>这份赠送实际领取</b></p>${drinks.map(drink=>`<p>${product(drink.product).name} <b>${drink.count} 支</b></p>`).join('')}</div>`}`;
+    const giftName=line.productNameSnapshot || `历史商品（${productIdOf(line)}）`;
+    return `<div class="bill-line"><span>赠送 · ${giftName} ${line.bottles}支</span><b>¥0</b></div>${unchanged?'':`<div class="drink-list"><p><b>这份赠送实际领取</b></p>${drinks.map(drink=>`<p>${drink.productNameSnapshot || `历史商品（${productIdOf(drink)}）`} <b>${drink.count} 支</b></p>`).join('')}</div>`}`;
   }).join('');
-  const requests=(o.giftRequests||[]).filter(request=>request.status==='待确认').map(request=>{const canReview=allowedPermission('gift.approve')&&canReviewSubmission(request.requestedById);return `<div class="notice"><b>超额赠酒水待审核</b><p>${product(request.product).name} ${request.halves}个半打，共${request.bottles}支 · ${esc(request.requestedBy)}申请</p>${canReview?`<div class="inline-actions">${btn('批准赠送','approveGift',`data-id="${id}" data-request="${request.id}"`,'primary')}${btn('驳回','rejectGift',`data-id="${id}" data-request="${request.id}"`,'danger')}</div>`:reviewPermissionHint(request.requestedById)||'<small>需要赠酒水审核权限，审核本人申请还需自审权限。</small>'}</div>`;}).join('');
+  const requests=(o.giftRequests||[]).filter(request=>request.status==='待确认').map(request=>{const canReview=allowedPermission('gift.approve')&&canReviewSubmission(request.requestedById);return `<div class="notice"><b>超额赠酒水待审核</b><p>${request.productNameSnapshot || `历史商品（${productIdOf(request)}）`} ${request.halves}个半打，共${request.bottles}支 · ${esc(request.requestedBy)}申请</p>${canReview?`<div class="inline-actions">${btn('批准赠送','approveGift',`data-id="${id}" data-request="${request.id}"`,'primary')}${btn('驳回','rejectGift',`data-id="${id}" data-request="${request.id}"`,'danger')}</div>`:reviewPermissionHint(request.requestedById)||'<small>需要赠酒水审核权限，审核本人申请还需自审权限。</small>'}</div>`;}).join('');
   const futureReservations=pendingReservations(o.room);
   const futureText=futureReservations.length?`<br>未来预订：${futureReservations.map(booking=>`${date(booking.at)} · ${esc(booking.sessionLabel || '')}`).join('；')}`:'';
   const attribution=o.recordedBy && o.recordedBy!== (o.openedBy || o.person) ? ` · 归属员工：${esc(o.openedBy || o.person || '未记录')} · 代录：${esc(o.recordedBy)}`:'';
@@ -656,32 +772,33 @@ function showOrder(id) {
   const saleLines=o.sales.map(line=>{
     const drinks=(line.drinks||[]).filter(drink=>drink.count);
     const unchanged=drinks.length===1&&drinks[0].product===line.product&&drinks[0].count===line.bottles;
-    return `<div class="bill-line"><span>${product(line.product).name} × ${line.count}${line.spec==='dozen'?'打':line.spec==='half'?'半打':'支'}<small> · 归属 ${esc(line.person || o.openedBy || o.person || '未记录')}${line.recordedBy && line.recordedBy!==line.person?` · 代录 ${esc(line.recordedBy)}`:''}</small></span><b>${money(line.amount)}</b></div>${unchanged?'':`<div class="drink-list"><p><b>这笔增购实际领取</b></p>${drinks.map(drink=>`<p>${product(drink.product).name} <b>${drink.count} 支</b></p>`).join('')}</div>`}`;
+    const saleName=line.productNameSnapshot || `历史商品（${productIdOf(line)}）`, optionName=line.saleOptionNameSnapshot || (line.spec==='dozen'?'整打':line.spec==='half'?'半打':'单支');
+    return `<div class="bill-line"><span>${saleName} × ${line.saleQuantity ?? line.count}${optionName}<small> · 归属 ${esc(line.person || o.openedBy || o.person || '未记录')}${line.recordedBy && line.recordedBy!==line.person?` · 代录 ${esc(line.recordedBy)}`:''}</small></span><b>${money(line.amountCents ?? line.amount)}</b></div>${unchanged?'':`<div class="drink-list"><p><b>这笔增购实际领取</b></p>${drinks.map(drink=>`<p>${drink.productNameSnapshot || `历史商品（${productIdOf(drink)}）`} <b>${drink.count} 支</b></p>`).join('')}</div>`}`;
   }).join('');
-  const otherLines=(o.otherCharges||[]).map(line=>`<div class="bill-line"><span>其他消费 · ${esc(line.category==='其他'?line.item:line.category)}</span><b>${money(line.amount)}</b></div>`).join('');
+  const otherLines=(o.otherCharges||[]).map(line=>`<div class="bill-line"><span>其他消费 · ${esc(line.category==='其他'?line.item:line.category)}</span><b>${money(line.amountCents ?? line.amount)}</b></div>`).join('');
   const received=(o.payments||[]).reduce((sum,payment)=>sum+payment.amount,0), due=outstanding(o);
-  const exchangeable=[...o.drinks,...o.sales.flatMap(line=>line.drinks||[]),...(o.bonusGifts||[]).flatMap(line=>line.drinks||[])].some(line=>line.count&&product(line.product).level!==4);
-  const actions=o.status==='营业中'?`<div class="action-grid">${allowedPermission('order.sale')?`${btn('＋ 加酒水','sale',`data-id="${id}"`,'primary')}${btn('＋ 加其他','otherCharge',`data-id="${id}"`)}`:''}${exchangeable&&allowedPermission('order.exchange')?btn('⇄ 换酒水','exchange',`data-id="${id}"`):''}${allowedPermission('order.gift')?btn('＋ 赠酒水','gift',`data-id="${id}"`):''}${allowedPermission('room.reserve')?btn('预订未来场次','reserveFuture',`data-id="${id}"`):''}${allowedPermission('payment.collect')&&nextCollectCharge(o)?btn('收钱','collect',`data-id="${id}"`,'primary'):''}${allowedPermission('payment.settle')||allowedPermission('credit.apply')?btn('结账','checkout',`data-id="${id}"`,'primary'):''}</div>`:'';
-  const openingDetails=o.gift||o.drinks.length?`<div class="bill-line"><span>${o.voucher?'平台券赠饮（已含）':'套餐赠饮（已含）'}</span><b>${money(o.gift)}</b></div><div class="drink-list">${o.drinks.filter(d=>d.count).map(d=>`<p>${product(d.product).name} <b>${d.count} 支</b></p>`).join('')}${(o.extras||[]).map(d=>`<p>${extraLabels[d.product] || product(d.product).name} ${d.count} 份 · ${d.served?'已上':'待上'}</p>`).join('')}</div>`:'';
+  const exchangeable=[...o.drinks,...o.sales.flatMap(line=>line.drinks||[]),...(o.bonusGifts||[]).flatMap(line=>line.drinks||[])].some(line=>line.count&&product(productIdOf(line)).exchangeLevel!==4);
+  const actions=o.status==='营业中'?`<div class="action-grid">${allowedPermission('order.sale')?`${btn('＋ 加酒水','sale',`data-id="${id}"`,'primary')}${btn('＋ 加其他','otherCharge',`data-id="${id}"`)}`:''}${exchangeable&&allowedPermission('order.exchange')?btn('⇄ 换酒水','exchange',`data-id="${id}"`):''}${allowedPermission('order.gift')?btn('＋ 赠酒水','gift',`data-id="${id}"`):''}${allowedPermission('room.reserve')?btn('预订未来场次','reserveFuture',`data-id="${id}"`):''}${allowedPermission('payment.collect')&&nextCollectCharge(o,state.catalog)?btn('收钱','collect',`data-id="${id}"`,'primary'):''}${allowedPermission('payment.settle')||allowedPermission('credit.apply')?btn('结账','checkout',`data-id="${id}"`,'primary'):''}</div>`:'';
+  const openingDetails=o.gift||o.drinks.length?`<div class="bill-line"><span>${o.voucher?'平台券赠饮（已含）':'套餐赠饮（已含）'}</span><b>${money(o.gift)}</b></div><div class="drink-list">${o.drinks.filter(d=>d.count).map(d=>`<p>${d.productNameSnapshot || `历史商品（${productIdOf(d)}）`} <b>${d.count} 支</b></p>`).join('')}${(o.extras||[]).map(d=>`<p>${extraLabels[d.product] || d.productNameSnapshot || `历史配品（${productIdOf(d)}）`} ${d.count} 份 · ${d.served?'已上':'待上'}</p>`).join('')}</div>`:'';
   openDialog(`${o.room} · 账单`, `<div class="quote"><span>本单总额</span><strong>${money(total(o))}</strong><p>${o.status} · ${date(o.time)} 开房<br>已收 ${money(received)} · 待收 ${money(due)}</p></div>${voucherNotice}${origin}${reservationListMarkup(o.room)}<div class="bill-line"><span>基础包间费</span><b>${money(o.base)}</b></div>${openingDetails}${saleLines}${otherLines}${bonus}${requests}${received?`<div class="bill-line"><span>已登记收款</span><b>${money(received)}</b></div>`:''}<p class="muted">加时费 ¥0 · 按开房时段计价</p>${actions}`);
 }
 function giftDialog(id) {
   const o=state.orders.find(o=>o.id===id);
-  const productIds=[...new Set(o.sales.filter(line=>product(line.product).saleDozen).map(line=>line.product))];
+  const productIds=[...new Set(o.sales.filter(line=>saleOptions(product(productIdOf(line))).some(option=>option.id==='dozen')).map(line=>productIdOf(line)))];
   if (!productIds.length) { toast('请先增购酒水，再登记赠送'); return; }
   const labels=productIds.map(productId=>{const a=bonusAllowance(o,productId);return [productId,`${product(productId).name} · 已增购${a.purchased}支`];});
   openDialog('赠酒水',`<p class="notice">同一种酒水每增购24支，可由开单员／服务员赠送对应酒水半打；超出数量交老板／店长确认。</p><label>对应酒水<select name="product">${options(labels)}</select></label>${stepper(99,'赠送几个半打','halves')}<div id="gift-hint" class="quote compact"></div>`,'确认赠酒水','gift',{order:id});
   const f=modal.querySelector('form'), update=()=>{const a=bonusAllowance(o,f.elements.product.value), halves=Number(f.elements.halves.value), manager=allowedPermission('gift.approve'), direct=Math.min(halves,a.availableHalves), excess=Math.max(0,halves-direct);let hint='本次确认后立即赠送',label='确认赠酒水';if(!manager&&excess){hint=direct?`先直接赠${direct}个半打，另${excess}个提交老板／店长确认`:'本次超出规则，提交老板／店长确认';label=direct?'确认赠送并提交额外部分':'提交确认';}document.querySelector('#gift-hint').innerHTML=`已增购 ${a.purchased} 支<br>规则内还可赠 ${a.availableHalves} 个半打<br><small>${hint}</small>`;f.querySelector('[type=submit]').textContent=label;};
   f.addEventListener('input',update);f.addEventListener('change',update);update();
 }
-const saleCategories=[['啤酒','啤酒'],['饮料','饮料'],['汽水','汽水'],['瓶装水','瓶装水']];
-const saleProductCategories=value=>value==='啤酒'?['普通啤酒','高端啤酒']:[value];
+const saleCategories=[['beer','啤酒'],['drink','饮料'],['soda','汽水'],['water','瓶装水']];
+const saleProductCategories=value=>[value];
 function saleItemRow(selectedCategory=category, selectedProduct='', selectedSpec='single', value=1) {
-  const uiCategory=['普通啤酒','高端啤酒'].includes(selectedCategory)?'啤酒':selectedCategory;
-  const products=PRODUCTS.filter(p=>saleProductCategories(uiCategory).includes(p.category)&&p.price>0);
+  const uiCategory=selectedCategory;
+  const products=sellableProducts(state.catalog).filter(p=>saleProductCategories(uiCategory).includes(p.category));
   const productId=products.some(p=>p.id===selectedProduct)?selectedProduct:products[0]?.id;
-  const p=productId?product(productId):PRODUCTS.find(item=>item.price>0);
-  const specs=[['single',`单支 · ${money(p.price)}`],...(p.saleDozen?[['half',`半打6支 · ${money(p.dozen/2)}`],['dozen',`整打12支 · ${money(p.dozen)}`]]:[])];
+  const p=productId?product(productId):products[0];
+  const specs=saleOptions(p).map(option=>[option.id,`${option.name} · ${money(option.priceCents)}`]);
   const spec=specs.some(([id])=>id===selectedSpec)?selectedSpec:'single';
   return `<div class="sale-item"><div class="deposit-item-head"><b>酒水品项</b>${btn('移除','removeSaleItem','','quiet')}</div><label>类别<select name="saleCategory">${options(saleCategories,uiCategory)}</select></label><label>商品<select name="saleProduct">${options(products.map(item=>[item.id,item.name]),productId)}</select></label><label>销售规格<select name="saleSpec">${options(specs,spec)}</select></label>${stepper(999,'数量（按所选规格）','saleCount',value)}<p class="sale-line-total muted"></p></div>`;
 }
@@ -694,11 +811,11 @@ function saleDialog(id, staffMode=false) {
     let amount=0;
     f.querySelectorAll('.sale-item').forEach(row=>{
       const categorySelect=row.querySelector('[name="saleCategory"]'), productSelect=row.querySelector('[name="saleProduct"]'), specSelect=row.querySelector('[name="saleSpec"]');
-      const currentProduct=productSelect.value, products=PRODUCTS.filter(p=>saleProductCategories(categorySelect.value).includes(p.category)&&p.price>0);
+      const currentProduct=productSelect.value, products=sellableProducts(state.catalog).filter(p=>saleProductCategories(categorySelect.value).includes(p.category));
       productSelect.innerHTML=options(products.map(item=>[item.id,item.name]),currentProduct);
-      const p=product(productSelect.value), currentSpec=specSelect.value, specs=[['single',`单支 · ${money(p.price)}`],...(p.saleDozen?[['half',`半打6支 · ${money(p.dozen/2)}`],['dozen',`整打12支 · ${money(p.dozen)}`]]:[])];
+      const p=product(productSelect.value), currentSpec=specSelect.value, specs=saleOptions(p).map(option=>[option.id,`${option.name} · ${money(option.priceCents)}`]);
       specSelect.innerHTML=options(specs,currentSpec);
-      const spec=specSelect.value, count=Math.max(1,Number(row.querySelector('[name="saleCount"]').value)||1), price=spec==='dozen'?p.dozen:spec==='half'?p.dozen/2:p.price;
+      const spec=specSelect.value, count=Math.max(1,Number(row.querySelector('[name="saleCount"]').value)||1), price=saleOptions(p).find(option=>option.id===spec)?.priceCents || 0;
       amount+=price*count;
       row.querySelector('.sale-line-total').textContent=`本行 ${money(price*count)} · ${p.name} ${spec==='dozen'?'整打':spec==='half'?'半打':'单支'}`;
     });
@@ -713,7 +830,7 @@ function otherChargeDialog(id) {
   categorySelect.addEventListener('change',update);update();
 }
 function stepper(max=999, label='数量（支）', name='count', value=1) { const id=`quantity-${++controlSequence}`; return `<div class="quantity-field"><label for="${id}">${label}</label><div class="stepper">${btn('−','step','data-delta="-1" aria-label="减少数量"')}<input id="${id}" name="${name}" type="number" inputmode="numeric" min="1" max="${max}" value="${value}" required aria-label="${label}">${btn('＋','step','data-delta="1" aria-label="增加数量"')}</div></div>`; }
-function depositItemRow() { return `<div class="deposit-item"><div class="deposit-item-head"><b>存酒品项</b>${btn('移除','removeDepositItem','','quiet')}</div><label>酒名<select name="depositProduct">${options(beers)}</select></label>${stepper(999,'数量（支）','depositCount')}</div>`; }
+function depositItemRow() { return `<div class="deposit-item"><div class="deposit-item-head"><b>存酒品项</b>${btn('移除','removeDepositItem','','quiet')}</div><label>酒名<select name="depositProduct">${options(depositChoices())}</select></label>${stepper(999,'数量（支）','depositCount')}</div>`; }
 function openDepositDialog() {
   const prefilledPhone = /^1\d{10}$/.test(searchTerm) ? searchTerm : '';
   const prefilledName = searchTerm && !/^\d+$/.test(searchTerm) ? searchTerm : '';
@@ -721,10 +838,10 @@ function openDepositDialog() {
 }
 function exchangeDialog(id) {
   const o=state.orders.find(o=>o.id===id);
-  const lines=[...o.drinks.map(line=>({key:`gift:${line.id}`,line,label:`套餐 · ${product(line.product).name}`})),...o.sales.flatMap(sale=>(sale.drinks||[]).map(line=>({key:`sale:${line.id}`,line,label:`增购 · ${product(line.product).name}`}))),...(o.bonusGifts||[]).flatMap(gift=>(gift.drinks||[]).map(line=>({key:`bonus:${line.id}`,line,label:`赠送 · ${product(line.product).name}`})))].filter(item=>item.line.count&&product(item.line.product).level!==4);
+  const lines=[...o.drinks.map(line=>({key:`gift:${line.id}`,line,label:`套餐 · ${line.productNameSnapshot || product(productIdOf(line)).name}`})),...o.sales.flatMap(sale=>(sale.drinks||[]).map(line=>({key:`sale:${line.id}`,line,label:`增购 · ${line.productNameSnapshot || product(productIdOf(line)).name}`}))),...(o.bonusGifts||[]).flatMap(gift=>(gift.drinks||[]).map(line=>({key:`bonus:${line.id}`,line,label:`赠送 · ${line.productNameSnapshot || product(productIdOf(line)).name}`})))].filter(item=>item.line.count&&product(productIdOf(item.line)).exchangeLevel!==4);
   if (!lines.length) { toast('没有可换出的酒水，瓶装水不能继续换出'); return; }
   openDialog('换酒水 · 不加钱',`<p class="notice">套餐、增购和已赠酒水都可按 1 支换 1 支，可只换几支。原账单金额不变。</p><label>从哪份酒水换出<select name="line">${options(lines.map(item=>[item.key,`${item.label} · 可换${item.line.count}支`]))}</select></label><label>换成<select name="product"></select></label>${stepper()}<p class="muted">换酒后，本单总额仍为 ${money(total(o))}</p>`,'确认换酒水','exchange',{order:id});
-  const f=modal.querySelector('form'); const update=()=> { const item=lines.find(row=>row.key===f.elements.line.value); f.elements.product.innerHTML=options(PRODUCTS.filter(p=>canExchange(item.line.product,p.id)).map(p=>[p.id,p.name])); f.elements.count.max=item.line.count; f.elements.count.value=1; }; f.elements.line.addEventListener('change',update); update();
+  const f=modal.querySelector('form'); const update=()=> { const item=lines.find(row=>row.key===f.elements.line.value); f.elements.product.innerHTML=options(state.catalog.products.filter(p=>p.active!==false&&p.sellable&&!p.selectionOnly&&saleOptions(p).length&&canExchange(productIdOf(item.line),p.id,state.catalog)).map(p=>[p.id,p.name])); f.elements.count.max=item.line.count; f.elements.count.value=1; }; f.elements.line.addEventListener('change',update); update();
 }
 function paymentRow(amount=0, selected=PAYMENT_METHODS[0]) {
   return `<div class="payment-row"><label>付款方式<select name="paymentMethod">${options(PAYMENT_METHODS.map(method=>[method,method]),selected)}</select></label><label>已收到（元）<input name="paymentAmount" inputmode="decimal" value="${amount?(amount/100).toFixed(2):'0'}" required></label>${btn('移除','removePayment','','quiet')}</div>`;
@@ -742,14 +859,14 @@ function bindPaymentSummary(amount, allowRounding=false) {
   form.addEventListener('input',update);form.addEventListener('change',update);update();
 }
 function collectDialog(id) {
-  const o=state.orders.find(o=>o.id===id), charge=nextCollectCharge(o);
+  const o=state.orders.find(o=>o.id===id), charge=nextCollectCharge(o,state.catalog);
   if (!charge) { toast('本单没有待收费用'); return; }
   openDialog(`${o.room} · 收钱`,`<div class="quote"><span>本次只收</span><strong>${money(charge.remaining)}</strong><p>${esc(charge.label)}</p></div><p class="muted">收钱后房间继续营业。若刚增购酒水，本次只收最近一笔未收的增购；否则收开房费用。</p>${paymentFields(charge.remaining)}`,`确认收到 ${money(charge.remaining)}`,'collect',{order:id,charge:charge.id});
   bindPaymentSummary(charge.remaining);
 }
 function checkout(id) {
   const o=state.orders.find(o=>o.id===id), due=outstanding(o), received=total(o)-due;
-  const pending=collectableCharges(o).map(charge=>`<div class="bill-line"><span>${esc(charge.label)}</span><b>${money(charge.remaining)}</b></div>`).join('');
+  const pending=collectableCharges(o,state.catalog).map(charge=>`<div class="bill-line"><span>${esc(charge.label)}</span><b>${money(charge.remaining)}</b></div>`).join('');
   const canReceive=allowedPermission('payment.settle');
   const payment=due?(canReceive?paymentFields(due,true):'<p class="notice">当前身份可申请挂账；实际收款结账请切换有收银员或老板权限的身份。</p>'):'<p class="notice">费用已经通过“收钱”登记完毕。确认结账后，房间转为待清洁。</p>';
   const creditButton=due&&allowedPermission('credit.apply')?btn('客人暂未付款，申请挂账','credit',`data-id="${id}"`,'quiet full'):'';
@@ -768,9 +885,9 @@ function creditDialog(id) {
 }
 function inventoryDialog() {
   const pending=(kind,id)=>(state.inventoryReviews||[]).find(request=>request.kind===kind&&request.product===id&&request.status==='待审核');
-  const drinkRows=Object.entries(state.inventory).map(([id,v])=>{const review=pending('drink',id), canStock=v.count===null?allowedPermission('inventory.opening'):allowedPermission('inventory.adjust');return `<div class="stock-row"><div><b>${product(id).name}</b><p>${v.count===null?'未建账':`${v.count} 支 · 预警线 ${v.threshold}`}${review?` · 待审核盘点 ${review.after} 支`:''}</p></div>${review?'<span class="badge">盘点待审核</span>':canStock?btn(v.count===null?'提交建账':'提交盘点','stock',`data-id="${id}"`):'<span class="badge">无库存调整权限</span>'}</div>`;}).join('');
-  const consumableRows=Object.entries(state.consumables || {}).map(([id,v])=>{const item=CONSUMABLES.find(entry=>entry.id===id), review=pending('consumable',id), canStock=v.count===null?allowedPermission('inventory.opening'):allowedPermission('inventory.adjust');return `<div class="stock-row"><div><b>${esc(item?.name || id)}</b><p>${v.count===null?'未建账':`${v.count} ${esc(v.unit || item?.unit || '份')} · 已开封 ${v.opened || 0} · 预警线 ${v.threshold}`}${review?` · 待审核盘点 ${review.after} / 已开封 ${review.openedAfter||0}`:''}</p></div>${review?'<span class="badge">盘点待审核</span>':canStock?btn(v.count===null?'提交建账':'提交盘点','consumableStock',`data-id="${id}"`):'<span class="badge">无库存调整权限</span>'}</div>`;}).join('');
-  const logs=state.ledger.slice(-30).reverse().map(l=>{const isConsumable=l.kind==='consumable', label=isConsumable?(CONSUMABLES.find(item=>item.id===l.product)?.name || l.product):product(l.product).name;return `<div class="log"><b>${esc(label)} ${isConsumable?`${l.before ?? '未建账'} → ${l.after} ${l.unit || '份'}`:`${l.delta>0?'+':''}${l.delta} 支`}</b><p>${esc(l.source)} · ${esc(l.person)} · ${date(l.time)}</p><small>${l.counted?'计入账面':'建账前 · 不计账面'}${l.reason?' · '+esc(l.reason):''}</small></div>`;}).join('');
+  const drinkRows=inventoryProducts(state.catalog).map(item=>{const id=item.id,v=state.inventory[id] || { count:null, threshold:item.inventoryThreshold || 10, unit:item.baseUnit }, review=pending('drink',id), canStock=v.count===null?allowedPermission('inventory.opening'):allowedPermission('inventory.adjust');return `<div class="stock-row"><div><b>${esc(item.name)}</b><p>${v.count===null?'未建账':`${v.count} ${esc(v.unit || item.baseUnit)} · 预警线 ${v.threshold}`}${review?` · 待审核盘点 ${review.after} ${esc(v.unit || item.baseUnit)}`:''}</p></div>${review?'<span class="badge">盘点待审核</span>':canStock?btn(v.count===null?'提交建账':'提交盘点','stock',`data-id="${id}"`):'<span class="badge">无库存调整权限</span>'}</div>`;}).join('');
+  const consumableRows=consumableProducts(state.catalog).map(item=>{const id=item.id,v=state.consumables?.[id] || { count:null, opened:0, unit:item.baseUnit, threshold:item.inventoryThreshold || 10 }, review=pending('consumable',id), canStock=v.count===null?allowedPermission('inventory.opening'):allowedPermission('inventory.adjust');return `<div class="stock-row"><div><b>${esc(item.name)}</b><p>${v.count===null?'未建账':`${v.count} ${esc(v.unit || item.baseUnit)} · 已开封 ${v.opened || 0} · 预警线 ${v.threshold}`}${review?` · 待审核盘点 ${review.after} / 已开封 ${review.openedAfter||0}`:''}</p></div>${review?'<span class="badge">盘点待审核</span>':canStock?btn(v.count===null?'提交建账':'提交盘点','consumableStock',`data-id="${id}"`):'<span class="badge">无库存调整权限</span>'}</div>`;}).join('');
+  const logs=state.ledger.slice(-30).reverse().map(l=>{const isConsumable=l.kind==='consumable', item=state.catalog.products.find(productItem=>productItem.id===l.product), label=item?.name || l.product, unit=l.unit || item?.baseUnit || '份';return `<div class="log"><b>${esc(label)} ${isConsumable?`${l.before ?? '未建账'} → ${l.after} ${unit}`:`${l.delta>0?'+':''}${l.delta} ${unit}`}</b><p>${esc(l.source)} · ${esc(l.person)} · ${date(l.time)}</p><small>${l.counted?'计入账面':'建账前 · 不计账面'}${l.reason?' · '+esc(l.reason):''}</small></div>`;}).join('');
   openDialog('库存 · 酒水与消耗品',`<p class="notice">酒水按支数统计；消耗品按包数／份数统计，并记录已开封数量。每次建账或盘点都需库存审核权限；审核本人申请还需额外的自审权限，审核前不改变账面库存。</p><h3>待审核盘点</h3>${inventoryReviewCards()}<h3>酒水库存</h3>${drinkRows}<h3>消耗品库存</h3>${consumableRows}<h3>最近库存流水</h3>${logs||'<p class="muted">暂无流水</p>'}`);
 }
 function permissionsDialog(id) {
@@ -899,7 +1016,7 @@ document.addEventListener('click',e=>{
       const box=document.querySelector('#initial-mix'), list=document.querySelector('#mix-items'), max=Number(box.dataset.max), inputs=[...list.querySelectorAll('[name="mixCount"]')];
       const sum=inputs.reduce((n,input)=>n+Number(input.value),0); let value=Math.max(1,max-sum);
       if(sum>=max){const donor=inputs.find(input=>Number(input.value)>1);if(!donor){toast('请先减少一种酒水的支数');return;}donor.value=Number(donor.value)-1;value=1;}
-      const used=new Set([...list.querySelectorAll('[name="mixProduct"]')].map(select=>select.value)), selected=initialMixChoices.find(([productId])=>!used.has(productId))?.[0]||initialMixChoices[0][0];
+      const mixChoices=initialMixChoices(), used=new Set([...list.querySelectorAll('[name="mixProduct"]')].map(select=>select.value)), selected=mixChoices.find(([productId])=>!used.has(productId))?.[0]||mixChoices[0]?.[0]||'drink0';
       list.insertAdjacentHTML('beforeend',initialMixRow(max,value,selected));box.closest('form').dispatchEvent(new Event('input',{bubbles:true}));
     }
     else if(a==='removeInitialMix'){
@@ -937,6 +1054,8 @@ document.addEventListener('click',e=>{
     else if(a==='deposit')openDepositDialog();
     else if(a==='withdraw'){const d=state.deposits.find(d=>d.id===Number(id));openDialog('核对并取酒',`<p>${product(d.product).name} · 余 ${d.count} 支</p><label>手机尾号或顾客姓名<input name="identity" required placeholder="至少4位手机尾号，或完整姓名"></label><p class="muted">手机号可输入登记号码的最后4至11位；姓名需与登记姓名一致。</p>${stepper(d.count,'数量（支）')}`,'确认取酒','withdraw',{id});}
     else if(a==='editPermissions')permissionsDialog(id);
+    else if(a==='editCatalogProduct'){if(!allowedPermission('catalog.manage'))throw Error('当前身份没有目录维护权限');catalogProductDialog(id);}
+    else if(a==='editCatalogPackage'){if(!allowedPermission('catalog.manage'))throw Error('当前身份没有目录维护权限');catalogPackageDialog(id);}
     else if(a==='resolveIncident')resolveIncidentDialog(id);
     else if(a==='reviewIncidentResolution'){
       const incident=state.incidents.find(item=>item.id===Number(id)), request=(incident?.resolutionReviews||[]).find(item=>item.id===Number(target.dataset.request));
@@ -956,10 +1075,10 @@ document.addEventListener('click',e=>{
     }
     else if(a==='rejectRepaymentDialog'){const o=state.orders.find(o=>o.id===id), request=(o?.credit?.repaymentRequests||[]).find(item=>item.id===Number(target.dataset.request));if(!request||request.status!=='待审核')throw Error('这笔回款申请已经处理');openDialog('驳回挂账回款',`<p>${money(request.amount)} · ${esc(request.method)}</p><label>驳回原因<textarea name="decisionNote" maxlength="300" rows="3" required></textarea></label>`,'确认驳回','rejectRepayment',{order:o.id,request:request.id});}
     else if(a==='inventory')inventoryDialog();
-    else if(a==='stock'){const v=state.inventory[id];if(!v)throw Error('该商品不存在');openDialog(`${product(id).name} · ${v.count===null?'期初建账':'库存盘点'}`,`<p>当前：${v.count===null?'未建账':`${v.count} 支`}</p><label>盘点后的实际库存（支）<input name="count" type="number" min="0" inputmode="numeric" required></label><label>原因<input name="reason" maxlength="100" required placeholder="例如：首次盘点／破损一支"></label><p class="muted">提交后需库存审核权限；本人审核还需额外拥有自审权限。批准前不改变账面库存。</p>`,'提交库存审核','stock',{product:id});}
-    else if(a==='consumableStock'){const v=state.consumables?.[id], item=CONSUMABLES.find(entry=>entry.id===id);if(!v||!item)throw Error('该消耗品不存在');openDialog(`${item.name} · ${v.count===null?'期初建账':'库存盘点'}`,`<p>当前：${v.count===null?'未建账':`${v.count} ${v.unit || item.unit} · 已开封 ${v.opened || 0}`}</p><label>盘点后的未开封数量（${item.unit}）<input name="count" type="number" min="0" inputmode="numeric" required></label><label>其中已开封数量（${item.unit}）<input name="opened" type="number" min="0" inputmode="numeric" value="${v.opened || 0}" required></label><label>原因<input name="reason" maxlength="100" required placeholder="例如：首次盘点／补充采购"></label><p class="muted">已开封数量单独记录。提交后需库存审核权限；本人审核还需额外拥有自审权限。</p>`,'提交库存审核','consumableStock',{product:id});}
+    else if(a==='stock'){const v=state.inventory[id],item=product(id),unit=v?.unit||item.baseUnit;if(!v)throw Error('该商品不存在');openDialog(`${item.name} · ${v.count===null?'期初建账':'库存盘点'}`,`<p>当前：${v.count===null?'未建账':`${v.count} ${unit}`}</p><label>盘点后的实际库存（${unit}）<input name="count" type="number" min="0" inputmode="numeric" required></label><label>原因<input name="reason" maxlength="100" required placeholder="例如：首次盘点／破损一件"></label><p class="muted">提交后需库存审核权限；本人审核还需额外拥有自审权限。批准前不改变账面库存。</p>`,'提交库存审核','stock',{product:id});}
+    else if(a==='consumableStock'){const v=state.consumables?.[id], item=state.catalog.products.find(entry=>entry.id===id);if(!v||!item)throw Error('该消耗品不存在');openDialog(`${item.name} · ${v.count===null?'期初建账':'库存盘点'}`,`<p>当前：${v.count===null?'未建账':`${v.count} ${v.unit || item.baseUnit} · 已开封 ${v.opened || 0}`}</p><label>盘点后的未开封数量（${item.baseUnit}）<input name="count" type="number" min="0" inputmode="numeric" required></label><label>其中已开封数量（${item.baseUnit}）<input name="opened" type="number" min="0" inputmode="numeric" value="${v.opened || 0}" required></label><label>原因<input name="reason" maxlength="100" required placeholder="例如：首次盘点／补充采购"></label><p class="muted">已开封数量单独记录。提交后需库存审核权限；本人审核还需额外拥有自审权限。</p>`,'提交库存审核','consumableStock',{product:id});}
     else if(a==='reviewInventory'){
-      const request=(state.inventoryReviews||[]).find(item=>item.id===Number(id));if(!request||request.status!=='待审核')throw Error('这笔库存盘点已经处理');if(!canReviewSubmission(request.submittedById))throw Error('审核本人申请需要“允许审核本人申请”权限');const label=request.kind==='consumable'?(CONSUMABLES.find(item=>item.id===request.product)?.name||request.product):product(request.product).name, unit=request.kind==='consumable'?(state.consumables?.[request.product]?.unit||'份'):'支';openDialog(`审核库存盘点 · ${esc(label)}`,`<div class="quote"><span>${request.before??'未建账'} → ${request.after}</span><strong>${esc(unit)}</strong></div>${request.kind==='consumable'?`<p>已开封：${request.openedBefore||0} → ${request.openedAfter||0}</p>`:''}<p>${esc(request.reason)}</p><p class="muted">提交 ${esc(request.submittedBy)} · ${date(request.submittedAt)}</p><label>审核备注（选填）<textarea name="decisionNote" maxlength="300" rows="2"></textarea></label>${btn('驳回盘点','rejectInventoryDialog',`data-id="${request.id}"`,'danger full')}`,'批准并更新库存','approveInventory',{request:request.id});
+      const request=(state.inventoryReviews||[]).find(item=>item.id===Number(id));if(!request||request.status!=='待审核')throw Error('这笔库存盘点已经处理');if(!canReviewSubmission(request.submittedById))throw Error('审核本人申请需要“允许审核本人申请”权限');const catalogItem=state.catalog.products.find(item=>item.id===request.product), label=catalogItem?.name||request.product, unit=request.kind==='consumable'?(state.consumables?.[request.product]?.unit||catalogItem?.baseUnit||'份'):(catalogItem?.baseUnit||'支');openDialog(`审核库存盘点 · ${esc(label)}`,`<div class="quote"><span>${request.before??'未建账'} → ${request.after}</span><strong>${esc(unit)}</strong></div>${request.kind==='consumable'?`<p>已开封：${request.openedBefore||0} → ${request.openedAfter||0}</p>`:''}<p>${esc(request.reason)}</p><p class="muted">提交 ${esc(request.submittedBy)} · ${date(request.submittedAt)}</p><label>审核备注（选填）<textarea name="decisionNote" maxlength="300" rows="2"></textarea></label>${btn('驳回盘点','rejectInventoryDialog',`data-id="${request.id}"`,'danger full')}`,'批准并更新库存','approveInventory',{request:request.id});
     }
     else if(a==='rejectInventoryDialog'){const request=(state.inventoryReviews||[]).find(item=>item.id===Number(id));if(!request||request.status!=='待审核')throw Error('这笔库存盘点已经处理');openDialog('驳回库存盘点',`<label>驳回原因<textarea name="decisionNote" maxlength="300" rows="3" required></textarea></label>`,'确认驳回','rejectInventory',{request:request.id});}
     else if(a==='handover')openDialog('交班 · 核对收款',`<div class="quote"><span>本轮练习累计实收</span><strong>${money(collected(state))}</strong></div><p>请将微信、支付宝、现金、美团与抖音的实收合计填入。挂账不算已收款。</p><label>实点收款合计（元）<input name="actual" inputmode="decimal" required></label><label>前台现金（元）<input name="drawerCash" inputmode="decimal" required></label><p class="muted">前台现金单独留档，不重复计入实点收款合计。演示按本轮练习累计核对，不自动切换真实班次。</p>`,'记录交班差异','handover');
@@ -978,7 +1097,7 @@ document.addEventListener('submit',e=>{
     else if(a==='clock'){if(!Number.isFinite(Date.parse(d.clock)))throw Error('请选择有效时间');persist({...state,clock:new Date(d.clock).toISOString()});modal.close();render();}
     else if(a==='reset'){persist({...initialState(),user:'shaoBoss'});page=DEFAULT_PAGE;filter='全部';searchTerm='';storageProblem='';modal.close();render();toast('已恢复，开始新一轮练习');}
     else{
-      if('count'in d)d.count=Number(d.count);if('opened'in d)d.opened=Number(d.opened);if('quantity'in d)d.quantity=Number(d.quantity);if('line'in d&&/^\d+$/.test(d.line))d.line=Number(d.line);if('id'in d)d.id=Number(d.id);if('halves'in d)d.halves=Number(d.halves);if('request'in d)d.request=Number(d.request);
+      if('count'in d)d.count=Number(d.count);if('opened'in d)d.opened=Number(d.opened);if('quantity'in d)d.quantity=Number(d.quantity);if('line'in d&&/^\d+$/.test(d.line))d.line=Number(d.line);if('id'in d&&/^\d+$/.test(String(d.id)))d.id=Number(d.id);if('halves'in d)d.halves=Number(d.halves);if('request'in d)d.request=Number(d.request);
       if(a==='open'){
         d.beer=d.beer||'bw';d.acceptDirty=d.acceptDirty==='yes';
         if(d.beer==='drink'){const data=new FormData(f), products=data.getAll('mixProduct'), counts=data.getAll('mixCount');d.initialMix=products.map((product,index)=>({product,count:Number(counts[index])}));}
@@ -1004,6 +1123,14 @@ document.addEventListener('submit',e=>{
         searchTerm=String(d.phone||d.name||'').trim();
       }
       if(a==='setPermissions') d.permissions=new FormData(f).getAll('permission');
+      if(a==='updateCatalogProduct'){
+        const item=product(d.id);
+        d.active=Boolean(f.elements.active?.checked); d.sellable=Boolean(f.elements.sellable?.checked); d.sortOrder=Number(d.sortOrder);
+        d.saleOptions=saleOptions(item).map(option=>({...option,priceCents:cents(d[`price_${option.id}`])}));
+      }
+      if(a==='updateCatalogPackage'){
+        d.active=Boolean(f.elements.active?.checked); d.priceCents=cents(d.priceCents); d.basePriceCents=cents(d.basePriceCents); d.includedValueCents=cents(d.includedValueCents); d.sortOrder=Number(d.sortOrder);
+      }
       f.dataset.key ||= globalThis.crypto?.randomUUID?.() || `op-${Date.now()}-${Math.random()}`;
       commit(a,d,f.dataset.key);
     }

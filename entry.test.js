@@ -13,6 +13,7 @@ test('店员系统与后台管理使用独立入口并共享同一业务应用',
   assert.match(admin, /系统管理后台/);
   assert.match(server, /'\/admin': \['admin\.html', 'text\/html'\]/);
   assert.match(server, /'\/admin\.html': \['admin\.html', 'text\/html'\]/);
+  assert.match(server, /'\/catalog\.js': \['catalog\.js', 'text\/javascript'\]/);
   assert.match(app, /const APP_ENTRY = document\.body\.dataset\.appEntry === 'admin'/);
   assert.match(app, /canManage \? '<a class="entry-link" href="\/admin">系统管理<\/a>'/);
 });
