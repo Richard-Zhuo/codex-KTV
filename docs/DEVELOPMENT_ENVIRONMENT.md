@@ -31,8 +31,8 @@
 
 ## 入口与端口
 
-- 店员系统：`http://localhost:4173/`
-- 后台管理：`http://localhost:4173/admin`
+- 员工系统：`http://localhost:4173/`
+- 系统管理后台：`http://localhost:4173/admin`
 - 局域网访问：`http://<电脑局域网IPv4>:4173/`
 - `server.js` 仅允许 `index.html`、`admin.html`、`app.js`、`rules.js`、`theme.js` 和 `style.css` 等白名单静态路径，不提供业务 API。
 
@@ -73,4 +73,4 @@
 
 ## 当前验证状态
 
-当前结论与最后证据见 [CURRENT_STAGE](./CURRENT_STAGE.md)。2026-09-27 的本轮文档整理没有启动应用、运行测试或执行数据库命令。
+当前结论与最后证据见 [CURRENT_STAGE](./CURRENT_STAGE.md)。具体任务是否已运行自动测试和浏览器验收，只在该文件按日期记录。

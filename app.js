@@ -1,7 +1,8 @@
-import { PRODUCTS, OTHER_CHARGE_CATEGORIES, USERS, USER_ALIASES, PERMISSION_ROLES, PERMISSION_DEFINITIONS, PERMISSION_IDS, defaultPermissions, defaultCapabilities, permissionsForRoles, effectiveUser, hasPermission, RESERVATION_SOURCES, OPENING_SOURCES, PAYMENT_METHODS, EXPENSE_NATURES, EXPENSE_TYPES, EXPENSE_APPROVAL_THRESHOLD, CONSUMABLES, INCIDENT_TYPES, ROOM_ISSUE_TYPES, visibleExpenses, visibleProcurements, visibleIncidents, pendingIncidentReminders, money, product, slot, cents, quote, initialState, total, outstanding, collected, collectableCharges, nextCollectCharge, transact, canExchange, bonusAllowance, reservationReminder, reservationActiveAt, searchDeposits, hasRole } from './rules.js';
+import { PRODUCTS, OTHER_CHARGE_CATEGORIES, USERS, USER_ALIASES, PERMISSION_ROLES, PERMISSION_DEFINITIONS, PERMISSION_IDS, defaultPermissions, defaultCapabilities, permissionsForRoles, effectiveUser, hasPermission, businessReviewSections, RESERVATION_SOURCES, OPENING_SOURCES, PAYMENT_METHODS, EXPENSE_NATURES, EXPENSE_TYPES, EXPENSE_APPROVAL_THRESHOLD, CONSUMABLES, INCIDENT_TYPES, ROOM_ISSUE_TYPES, visibleExpenses, visibleProcurements, visibleIncidents, pendingIncidentReminders, money, product, slot, cents, quote, initialState, total, outstanding, collected, collectableCharges, nextCollectCharge, transact, canExchange, bonusAllowance, reservationReminder, reservationActiveAt, searchDeposits, hasRole } from './rules.js';
 const KEY = 'jbhh-demo-v1';
 const APP_ENTRY = document.body.dataset.appEntry === 'admin' ? 'admin' : 'staff';
-const DEFAULT_PAGE = APP_ENTRY === 'admin' ? 'manage' : 'rooms';
+const REQUESTED_STAFF_PAGE = new URLSearchParams(window.location.search).get('page');
+const DEFAULT_PAGE = APP_ENTRY === 'admin' ? 'manage' : REQUESTED_STAFF_PAGE === 'tasks' ? 'tasks' : 'rooms';
 let state, storageProblem = '';
 try {
   const raw = localStorage.getItem(KEY);
@@ -179,7 +180,7 @@ const allowedPermission = permission => hasPermission(currentUser(), permission)
 const canReviewSubmission = submittedById => submittedById !== state.user || allowedPermission('review.self');
 const selfReviewBlocked = submittedById => submittedById === state.user && !allowedPermission('review.self');
 const reviewPermissionHint = submittedById => selfReviewBlocked(submittedById) ? '<span class="badge">审核本人申请需要“允许审核本人申请”权限</span>' : '';
-const portalBackButton = () => btn(APP_ENTRY === 'admin' ? '返回管理后台' : '返回我的', 'backMine', '', 'quiet');
+const portalBackButton = () => btn('返回我的', 'backMine', '', 'quiet');
 const options = (list, selected) => list.map(([v,n]) => `<option value="${esc(v)}" ${String(v)===String(selected)?'selected':''}>${esc(n)}</option>`).join('');
 const beers = PRODUCTS.filter(p => p.giftEligible).map(p => [p.id,p.name]);
 const initialMixChoices = PRODUCTS.filter(p => canExchange('drink', p.id)).map(p => [p.id,p.name]);
@@ -357,20 +358,20 @@ function syncAppearanceControls() {
 window.addEventListener('appearancechange', syncAppearanceControls);
 function render() {
   const canManage = allowedPermission('backend.view');
-  const adminPages = ['manage', 'report', 'expenses', 'procurement', 'incidents'];
+  const adminPages = ['manage'];
   if (APP_ENTRY === 'admin' && !adminPages.includes(page)) page = 'manage';
   if (APP_ENTRY === 'staff' && page === 'manage') page = 'rooms';
   const content = APP_ENTRY === 'admin' && !canManage
-    ? `<section class="panel portal-denied"><p class="eyebrow">后台管理</p><h1>当前身份不能进入后台</h1><p>请切换为有“进入管理后台”权限的身份，或返回店员系统继续操作。</p><a class="entry-link primary" href="/">返回店员系统</a></section>`
-    : page==='rooms'?roomsPage():page==='deposits'?depositPage():page==='manage'?managePage():page==='expenses'?expensesPage():page==='procurement'?procurementPage():page==='incidents'?incidentPage():page==='report'?reportPage():minePage();
+    ? `<section class="panel portal-denied"><p class="eyebrow">系统管理</p><h1>当前身份不能进入系统后台</h1><p>请切换为有“进入系统管理后台”权限的身份，或返回员工系统继续营业操作。</p><a class="entry-link primary" href="/">返回员工系统</a></section>`
+    : page==='rooms'?roomsPage():page==='deposits'?depositPage():page==='tasks'?taskCenterPage():page==='manage'?systemManagementPage():page==='expenses'?expensesPage():page==='procurement'?procurementPage():page==='incidents'?incidentPage():page==='report'?reportPage():minePage();
   const navItems = APP_ENTRY === 'admin'
-    ? (canManage ? [['manage','▧','管理'],...(allowedPermission('report.view')?[['report','▤','报表']]:[])] : [])
-    : [['rooms','▦','房间'],['deposits','▤','存取酒'],...(allowedPermission('report.view')?[['report','▤','报表']]:[]),['mine','○','我的']];
+    ? (canManage ? [['manage','▧','系统']] : [])
+    : [['rooms','▦','房间'],['deposits','▤','存取酒'],['tasks','✓','待办'],...(allowedPermission('report.view')?[['report','▤','报表']]:[]),['mine','○','我的']];
   const portalLink = APP_ENTRY === 'admin'
-    ? '<a class="entry-link" href="/">店员系统</a>'
-    : canManage ? '<a class="entry-link" href="/admin">后台管理</a>' : '';
-  const portalName = APP_ENTRY === 'admin' ? '后台管理' : '门店助手';
-  app.innerHTML = `<header class="topbar"><a class="brand" href="${APP_ENTRY==='admin'?'/admin':'/'}" data-action="home"><span class="brand-mark">金</span><span>金碧辉煌<small>KTV · ${portalName}</small></span></a><div class="header-actions">${portalLink}<button class="identity" data-action="identity"><span class="avatar">${esc(currentUser().name[0])}</span>${esc(currentUser().name)} <span>⌄</span></button></div></header><main id="main"><div class="connection"><span class="online-dot"></span>${APP_ENTRY==='admin'?'后台演示':'本机练习'}${navigator.onLine?'':' · 当前设备离线'}<span>${date(state.clock)} · ${slot(state.clock)==='day'?'白天场':slot(state.clock)==='night'?'夜间场':'非营业时段'}</span></div>${storageProblem?`<p class="notice">${storageProblem}</p>`:''}${content}</main>${navItems.length?`<nav class="bottom-nav" aria-label="${APP_ENTRY==='admin'?'后台导航':'主导航'}">${navItems.map(([id,icon,label])=>`<button data-action="nav" data-page="${id}" class="${page===id?'selected':''}" ${page===id?'aria-current="page"':''}><span aria-hidden="true">${icon}</span>${label}</button>`).join('')}</nav>`:''}`;
+    ? '<a class="entry-link" href="/">员工系统</a>'
+    : canManage ? '<a class="entry-link" href="/admin">系统管理</a>' : '';
+  const portalName = APP_ENTRY === 'admin' ? '系统管理' : '门店助手';
+  app.innerHTML = `<header class="topbar"><a class="brand" href="${APP_ENTRY==='admin'?'/admin':'/'}" data-action="home"><span class="brand-mark">金</span><span>金碧辉煌<small>KTV · ${portalName}</small></span></a><div class="header-actions">${portalLink}<button class="identity" data-action="identity"><span class="avatar">${esc(currentUser().name[0])}</span>${esc(currentUser().name)} <span>⌄</span></button></div></header><main id="main"><div class="connection"><span class="online-dot"></span>${APP_ENTRY==='admin'?'系统管理演示':'本机练习'}${navigator.onLine?'':' · 当前设备离线'}<span>${date(state.clock)} · ${slot(state.clock)==='day'?'白天场':slot(state.clock)==='night'?'夜间场':'非营业时段'}</span></div>${storageProblem?`<p class="notice">${storageProblem}</p>`:''}${content}</main>${navItems.length?`<nav class="bottom-nav" aria-label="${APP_ENTRY==='admin'?'系统管理导航':'主导航'}">${navItems.map(([id,icon,label])=>`<button data-action="nav" data-page="${id}" class="${page===id?'selected':''}" ${page===id?'aria-current="page"':''}><span aria-hidden="true">${icon}</span>${label}</button>`).join('')}</nav>`:''}`;
 }
 function roomsPage() {
   const active = state.rooms.filter(r=>r.status==='营业中').length;
@@ -400,6 +401,18 @@ function creditCards() {
   }).join('');
   return rows || '<div class="empty">暂无挂账。员工或老板可从营业账单的“结账”入口申请挂账。</div>';
 }
+function creditApprovalCards() {
+  const rows=state.orders.filter(order=>order.status==='待审批挂账'&&order.credit);
+  return rows.map(order=>`<article class="panel"><div class="split"><h3>${esc(order.room)} · ${money(order.credit.amount)}</h3><span class="badge">待审批挂账</span></div>${creditDetailMarkup(order)}</article>`).join('')||'<p class="muted">暂无挂账申请待审批。</p>';
+}
+function repaymentReviewCards() {
+  const rows=state.orders.filter(order=>(order.credit?.repaymentRequests||[]).some(request=>request.status==='待审核'));
+  return rows.map(order=>`<article class="panel"><div class="split"><h3>${esc(order.room)} · ${esc(contactText(order.credit))}</h3><span class="badge">回款待审核</span></div>${repaymentReviewMarkup(order)}</article>`).join('')||'<p class="muted">暂无挂账回款待审核。</p>';
+}
+function expenseReviewCards() {
+  const rows=(state.expenses||[]).filter(expense=>expense.status==='待老板审批');
+  return rows.map(expense=>`<article class="panel"><div class="split"><h3>${esc(expense.description)} · ${money(expense.amount)}</h3><span class="badge">待老板审批</span></div><p>${esc(expense.date)} · ${esc(expense.person)} · ${esc(expense.method)}</p><div class="inline-actions">${btn('批准报销','approveExpense',`data-id="${expense.id}"`,'primary')}${btn('驳回','rejectExpense',`data-id="${expense.id}"`,'danger')}</div></article>`).join('')||'<p class="muted">暂无大额报销待审批。</p>';
+}
 function giftRequestCards() {
   const rows=state.orders.flatMap(o=>(o.giftRequests||[]).filter(request=>request.status==='待确认').map(request=>({o,request})));
   return rows.map(({o,request})=>`<article class="panel"><div class="split"><h3>${o.room} · ${product(request.product).name}</h3><span class="badge">待确认</span></div><p>${request.halves} 个半打，共 ${request.bottles} 支 · 申请人 ${esc(request.requestedBy)}</p>${allowedPermission('gift.approve')&&canReviewSubmission(request.requestedById)?btn('进入账单处理','order',`data-id="${o.id}"`):reviewPermissionHint(request.requestedById)||'<span class="badge">需要赠酒水审核权限</span>'}</article>`).join('') || '<p class="muted">暂无超额赠酒水申请。</p>';
@@ -427,6 +440,58 @@ function roomIssueReviewCards() {
   const historyMarkup=history.length?`<details class="panel room-issue-history"><summary>最近房态记录（${history.length}）</summary>${history.map(request=>`<div class="room-issue-history-row"><div class="split"><b>${esc(request.room)} · ${esc(request.change)}</b><span class="badge">${esc(request.status)}</span></div><p>${esc(request.fromStatus)} → ${esc(request.requestedStatus)} · 提交 ${esc(request.submittedBy)}${request.decidedBy?` · 审核 ${esc(request.decidedBy)}`:' · 无需审核'}</p>${roomIssueEvidenceMarkup(request)}${request.decisionNote?`<p class="muted">记录备注：${esc(request.decisionNote)}</p>`:''}</div>`).join('')}</details>`:'';
   return `${pending || '<p class="muted">暂无房间恢复申请待审核。</p>'}${historyMarkup}`;
 }
+function myPendingIncidentTasks() {
+  const name=currentUser().name;
+  return visibleIncidents(state,currentUser()).filter(incident=>incident.assignee===name&&incident.status==='待处理'&&!(incident.resolutionReviews||[]).some(request=>request.status==='待审核'));
+}
+function myTaskCards(rows=myPendingIncidentTasks()) {
+  return rows.map(incident=>`<article class="panel"><div class="split"><h3>${esc(incident.room)} · ${esc(incident.type)}</h3><span class="badge">等待处理</span></div><p>${esc(incident.description)}</p><p class="muted">${esc(incident.date)} · 负责人 ${esc(incident.assignee)}</p>${allowedPermission('incident.resolve')?btn('填写处理结果','resolveIncident',`data-id="${incident.id}"`,'primary full'):'<span class="badge">需要客诉／异常处理权限</span>'}</article>`).join('')||'<p class="muted">当前没有分配给你的业务待办。</p>';
+}
+function pendingBusinessReviewCount(section) {
+  if(section==='creditApproval')return state.orders.filter(order=>order.status==='待审批挂账').length;
+  if(section==='creditRepayment')return state.orders.reduce((sum,order)=>sum+(order.credit?.repaymentRequests||[]).filter(request=>request.status==='待审核').length,0);
+  if(section==='rounding')return state.orders.filter(order=>order.roundingReview?.status==='待审核').length;
+  if(section==='gift')return state.orders.reduce((sum,order)=>sum+(order.giftRequests||[]).filter(request=>request.status==='待确认').length,0);
+  if(section==='roomRecovery')return (state.roomIssueReviews||[]).filter(request=>request.status==='待审核').length;
+  if(section==='inventory')return (state.inventoryReviews||[]).filter(request=>request.status==='待审核').length;
+  if(section==='incident')return (state.incidents||[]).reduce((sum,incident)=>sum+(incident.resolutionReviews||[]).filter(request=>request.status==='待审核').length,0);
+  if(section==='expense')return (state.expenses||[]).filter(expense=>expense.status==='待老板审批').length;
+  return 0;
+}
+function reviewHistoryRows() {
+  const reviewer=currentUser().name, visibleSections=new Set(businessReviewSections(currentUser())), rows=[];
+  const add=(section,title,status,time,note='',selfReviewAuthorized=false)=>{if(visibleSections.has(section)&&time)rows.push({section,title,status,time,note,selfReviewAuthorized});};
+  for(const request of state.roomIssueReviews||[])if(request.decidedBy===reviewer)add('roomRecovery',`${request.room} · 房间恢复`,request.status,request.decidedAt,request.decisionNote,request.selfReviewAuthorized);
+  for(const order of state.orders){
+    if(order.credit?.decisionBy===reviewer)add('creditApproval',`${order.room} · 挂账审批`,'已批准',order.credit.decisionAt);
+    if(order.roundingReview?.decidedBy===reviewer)add('rounding',`${order.room} · 特殊差额`,order.roundingReview.status,order.roundingReview.decidedAt,order.roundingReview.decisionNote,order.roundingReview.selfReviewAuthorized);
+    for(const request of order.giftRequests||[])if(request.decidedBy===reviewer)add('gift',`${order.room} · ${product(request.product).name}赠酒`,request.status,request.decidedAt,request.decisionNote,request.selfReviewAuthorized);
+    for(const request of order.credit?.repaymentRequests||[])if(request.decidedBy===reviewer)add('creditRepayment',`${order.room} · 回款${money(request.amount)}`,request.status,request.decidedAt,request.decisionNote,request.selfReviewAuthorized);
+  }
+  for(const request of state.inventoryReviews||[])if(request.decidedBy===reviewer){const label=request.kind==='consumable'?(CONSUMABLES.find(item=>item.id===request.product)?.name||request.product):product(request.product).name;add('inventory',`${label} · 库存盘点`,request.status,request.decidedAt,request.decisionNote,request.selfReviewAuthorized);}
+  for(const incident of state.incidents||[])for(const request of incident.resolutionReviews||[])if(request.decidedBy===reviewer)add('incident',`${incident.room} · ${incident.type}`,request.status,request.decidedAt,request.decisionNote,request.selfReviewAuthorized);
+  for(const expense of state.expenses||[])if(expense.approver===reviewer)add('expense',`${expense.description} · 报销`,expense.status,expense.approvedAt);
+  return rows.sort((a,b)=>Date.parse(b.time)-Date.parse(a.time)).slice(0,12);
+}
+function reviewHistoryCards(rows=reviewHistoryRows()) {
+  return rows.map(row=>`<article class="panel"><div class="split"><h3>${esc(row.title)}</h3><span class="badge">${esc(row.status)}</span></div><p class="muted">${date(row.time)}${row.selfReviewAuthorized?' · 已授权自审':''}</p>${row.note?`<p>${esc(row.note)}</p>`:''}</article>`).join('')||'<p class="muted">当前身份暂无已处理审核记录。</p>';
+}
+function taskCenterPage() {
+  const sections=businessReviewSections(currentUser()), myTasks=myPendingIncidentTasks(), history=reviewHistoryRows();
+  const reviewViews={
+    creditApproval:['挂账审批','按金额对应的店长或老板权限处理。',creditApprovalCards],
+    creditRepayment:['挂账回款审核','批准后才扣减欠款并计入实收。',repaymentReviewCards],
+    rounding:['特殊差额审核','核实特殊少收原因，不改写已完成账单。',roundingReviewCards],
+    gift:['超额赠酒水审核','待确认赠送会阻止结账或挂账。',giftRequestCards],
+    roomRecovery:['房间恢复审核','故障标记立即生效，恢复为空房才需审核。',roomIssueReviewCards],
+    inventory:['库存盘点审核','批准后才改变酒水或消耗品账面数量。',inventoryReviewCards],
+    incident:['客诉／异常恢复审核','处理结果批准后才转为完成。',incidentResolutionReviewCards],
+    expense:['大额报销审批','超过500元的报销由有权限人员处理。',expenseReviewCards]
+  };
+  const pendingCount=sections.reduce((sum,section)=>sum+pendingBusinessReviewCount(section),0);
+  const reviews=sections.map(section=>{const [title,hint,renderCards]=reviewViews[section];return `<section class="task-review-section" data-review-section="${section}"><div class="section-title"><div><h2>${title}</h2><p class="muted">${hint}</p></div><span>${pendingBusinessReviewCount(section)} 项</span></div>${renderCards()}</section>`;}).join('');
+  return `<p class="eyebrow">员工系统 · 营业待办</p><h1>待办 / 审核中心</h1><p class="muted">这里只汇总当前需要你处理的事项；主动发起型营业操作仍在房间、库存、采购、客诉、交班或“我的”中。</p><section class="summary"><div><strong>${myTasks.length}</strong><span>我的待办</span></div><div><strong>${pendingCount}</strong><span>待审核事项</span></div><div><strong>${history.length}</strong><span>最近已处理</span></div></section><div class="section-title"><h2>我的待办</h2><span>按负责人显示</span></div>${myTaskCards(myTasks)}<div class="section-title"><h2>待我审核</h2><span>按具体审核权限显示</span></div>${reviews||'<div class="empty">当前身份没有业务审核权限，不显示其他审核事项。</div>'}<div class="section-title"><h2>审核记录 / 已处理事项</h2><span>仅显示当前身份处理的对应业务</span></div>${reviewHistoryCards(history)}`;
+}
 function permissionCards() {
   if (!allowedPermission('identity.manage')) return '';
   const users = Object.entries(USERS).filter(([id, user]) => !user.legacy && id !== 'administrator');
@@ -439,16 +504,10 @@ function staffRecordingPanel() {
   if (!allowedPermission('staff.record')) return '';
   return `<div class="section-title"><h2>员工补录</h2><span>记录订房与增购归属</span></div><div class="menu-list staff-recording-panel">${btn('登记员工订房　→','staffBooking','','secondary')}${btn('登记员工增购酒水　→','staffSale','','secondary')}</div>`;
 }
-function managePage() {
-  if (!allowedPermission('backend.view')) return '<p>当前身份没有管理后台权限，请切换管理员或由管理员分配“进入管理后台”权限。</p>';
-  const pendingGifts=state.orders.reduce((sum,o)=>sum+(o.giftRequests||[]).filter(r=>r.status==='待确认').length,0);
-  const pendingRounding=state.orders.filter(order=>order.roundingReview?.status==='待审核').length;
-  const pendingRoomIssues=(state.roomIssueReviews || []).filter(request=>request.status==='待审核').length;
-  const pendingRepayments=state.orders.reduce((sum,o)=>sum+(o.credit?.repaymentRequests||[]).filter(request=>request.status==='待审核').length,0);
-  const pendingInventory=(state.inventoryReviews||[]).filter(request=>request.status==='待审核').length;
-  const pendingIncidentResolutions=(state.incidents||[]).reduce((sum,incident)=>sum+(incident.resolutionReviews||[]).filter(request=>request.status==='待审核').length,0);
-  const title = allowedPermission('identity.manage') ? '后台总管理' : '门店管理台';
-  return `<p class="eyebrow">${title}</p><h1>今天，心里有数</h1><section class="summary"><div><strong>${money(collected(state))}</strong><span>练习累计实收</span></div><div><strong>${state.orders.filter(o=>o.status==='待审批挂账').length+pendingGifts+pendingRounding+pendingRoomIssues+pendingRepayments+pendingInventory+pendingIncidentResolutions}</strong><span>待处理</span></div><div><strong>${money(state.orders.filter(o=>o.status==='已挂账').reduce((n,o)=>n+o.credit.remaining,0))}</strong><span>未回款</span></div></section>${staffRecordingPanel()}${allowedPermission('identity.manage')?`<div class="section-title"><h2>身份权限</h2><span>仅管理员可调整</span></div>${permissionCards()}`:''}<div class="section-title"><h2>房间恢复审核</h2><span>故障标记立即生效，恢复需审核</span></div>${roomIssueReviewCards()}<div class="section-title"><h2>特殊差额审核</h2></div>${roundingReviewCards()}<div class="section-title"><h2>赠酒水确认</h2></div>${giftRequestCards()}<div class="section-title"><h2>挂账与回款</h2></div>${creditCards()}<div class="section-title"><h2>客诉／异常恢复审核</h2>${btn('查看全部记录','incidents')}</div>${incidentResolutionReviewCards()}${allowedPermission('inventory.adjust')||allowedPermission('inventory.opening')||allowedPermission('inventory.approve')?`<div class="section-title"><h2>库存盘点审核</h2>${btn('管理库存','inventory')}</div>${inventoryReviewCards()}${stockNotices()}`:''}${allowedPermission('handover')?`<div class="section-title"><h2>交班核对</h2>${btn('核对收款','handover')}</div>${handoverHistory()}`:''}`;
+function systemManagementPage() {
+  if (!allowedPermission('backend.view')) return '<p>当前身份没有系统管理后台权限，请切换管理员或由管理员分配“进入系统管理后台”权限。</p>';
+  const identityManagement=allowed(['管理员'])?`<div class="section-title"><h2>员工身份与具体权限</h2><span>管理员专用</span></div>${permissionCards()}`:'<div class="empty">当前身份可以进入系统管理后台，但没有可调整的系统配置。业务审核请返回员工系统的“待办”。</div>';
+  return `<p class="eyebrow">系统管理后台</p><h1>员工身份与权限</h1><p class="muted">这里只提供当前已经实现的低频系统管理能力，不承载挂账、赠酒、房间恢复、库存、客诉、交班或营业报表等日常营业工作。</p>${identityManagement}<div class="tip"><span>i</span><div><b>当前仍是单机演示</b><p>商品、套餐、价格、系统配置、生产数据管理和独立审计尚未实现，本页不会用占位功能冒充已接入能力。</p></div></div>`;
 }
 function stockNotices() {
   const low=Object.entries(state.inventory).filter(([,v])=>v.count!==null&&v.count<=v.threshold);
@@ -519,7 +578,9 @@ function myReservationSection() {
 }
 function minePage() {
   const reminders=pendingIncidentReminders(visibleIncidents(state,currentUser()),state.clock);
-  return `<p class="eyebrow">我的账户</p><h1>${esc(currentUser().name)}，辛苦了</h1><p class="muted">岗位说明：${esc(currentUser().title || '未设置')} · 岗位名称只作说明，具体权限由管理员调整</p>${reminders.length?`<div class="notice incident-reminder">今天14:00提醒：还有 ${reminders.length} 项客诉／异常待处理。${btn('查看记录','incidents','', 'quiet')}</div>`:''}${myReservationSection()}${appearanceSettings()}<div class="section-title"><h2>练习设置</h2></div><div class="menu-list">${btn('切换演示身份　→','identity')}${btn('调整练习时间　→','clock')}${allowedPermission('expense.view')?btn('支出 / 报销记录　→','expenses'):''}${allowedPermission('procurement.create')||state.procurements?.length?btn('采购记录　→','procurement'):''}${allowedPermission('incident.create')||allowedPermission('incident.resolve.approve')||state.incidents?.length?btn('客诉 / 异常　→','incidents'):''}${allowedPermission('handover')?btn('交班 · 核对收款　→','handover'):''}${allowedPermission('inventory.adjust')||allowedPermission('inventory.opening')||allowedPermission('inventory.approve')?btn('库存 · 建账与调整　→','inventory'):''}${btn('练习说明　→','guide')}${btn('恢复演示数据　→','reset','','danger')}</div><div class="tip"><span>i</span><div><b>这是一份操作演示</b><p>数据只保存在当前浏览器。不同手机不共享；身份切换不是真实登录。手工确认收款不代表银行到账。</p></div></div>${allowedPermission('credit.approve')||allowedPermission('credit.repay')||allowedPermission('credit.repay.approve')?`<h2>挂账记录</h2>${creditCards()}`:''}`;
+  const businessTools=`${allowedPermission('expense.view')?btn('支出 / 报销记录　→','expenses'):''}${allowedPermission('procurement.create')||state.procurements?.length?btn('采购记录　→','procurement'):''}${allowedPermission('incident.create')||allowedPermission('incident.resolve')||state.incidents?.length?btn('客诉 / 异常　→','incidents'):''}${allowedPermission('handover')?btn('交班 · 核对收款　→','handover'):''}${allowedPermission('inventory.adjust')||allowedPermission('inventory.opening')||allowedPermission('inventory.approve')?btn('库存 · 建账与调整　→','inventory'):''}`;
+  const creditRecords=allowedPermission('credit.approve')||allowedPermission('credit.repay')||allowedPermission('credit.repay.approve')?`<div class="section-title"><h2>挂账与回款记录</h2><span>主动登记回款仍在本业务模块</span></div>${creditCards()}`:'';
+  return `<p class="eyebrow">我的账户</p><h1>${esc(currentUser().name)}，辛苦了</h1><p class="muted">岗位说明：${esc(currentUser().title || '未设置')} · 岗位名称只作说明，具体权限由管理员调整</p>${reminders.length?`<div class="notice incident-reminder">今天14:00提醒：还有 ${reminders.length} 项客诉／异常待处理。${btn('查看记录','incidents','', 'quiet')}</div>`:''}${myReservationSection()}${staffRecordingPanel()}${businessTools?`<div class="section-title"><h2>日常营业</h2><span>按具体权限显示</span></div><div class="menu-list">${businessTools}</div>`:''}${creditRecords}${appearanceSettings()}<div class="section-title"><h2>DEMO / training 工具</h2><span>不属于正式生产业务功能</span></div><div class="menu-list">${btn('切换演示身份　→','identity')}${btn('调整练习时间　→','clock')}${btn('练习说明　→','guide')}${btn('恢复演示数据　→','reset','','danger')}</div><div class="tip"><span>i</span><div><b>这些是练习工具</b><p>数据只保存在当前浏览器。身份切换不是真实登录；练习时间和恢复数据不会成为正式生产功能，手工确认收款也不代表银行到账。</p></div></div>`;
 }
 function staffBookingDialog() {
   openDialog('为员工登记订房',`<p class="notice">登记后订单归属所选员工，当前操作人会保留为登记人。</p><label>归属员工<select name="employee" required>${employeeOptions()}</select></label><label>房号<select name="room" required>${roomOptions()}</select></label>${bookingFields()}`,'确认登记订房','reserve');
@@ -529,7 +590,7 @@ function showRoom(id) {
   const r=state.rooms.find(r=>r.id===id);
   const review=pendingRoomIssueReview(id);
   if (review) {
-    openDialog(`${id} · 恢复申请待审核`, `<p><b>恢复为空房</b>：${esc(review.fromStatus)} → 空闲</p><p class="muted">提交：${esc(review.submittedBy)} · ${date(review.submittedAt)}</p>${roomIssueEvidenceMarkup(review)}${allowedPermission('room.issue.approve')?btn('到管理页审核','goRoomIssueReviews','','secondary full'):'<p class="muted">请等待有房间恢复审核权限的人员处理。</p>'}`);
+    openDialog(`${id} · 恢复申请待审核`, `<p><b>恢复为空房</b>：${esc(review.fromStatus)} → 空闲</p><p class="muted">提交：${esc(review.submittedBy)} · ${date(review.submittedAt)}</p>${roomIssueEvidenceMarkup(review)}${allowedPermission('room.issue.approve')?btn('到待办中心审核','goReviewTasks','','secondary full'):'<p class="muted">请等待有房间恢复审核权限的人员处理。</p>'}`);
     return;
   }
   if (r.status==='故障/维护中') {
@@ -768,7 +829,7 @@ document.addEventListener('click',e=>{
       return;
     }
     if(a==='nav'||a==='home'){page=a==='home'?DEFAULT_PAGE:target.dataset.page;render();window.scrollTo(0,0);return;}
-    if(a==='goRoomIssueReviews'){modal.close();if(APP_ENTRY==='admin'){page='manage';render();window.scrollTo(0,0);}else window.location.assign('/admin');return;}
+    if(a==='goReviewTasks'){modal.close();if(APP_ENTRY==='staff'){page='tasks';render();window.scrollTo(0,0);}else window.location.assign('/?page=tasks');return;}
     if(a==='expenses'){if(!allowedPermission('expense.view'))throw Error('当前身份没有查看支出与报销的权限');page='expenses';render();window.scrollTo(0,0);return;}
     if(a==='procurement'){if(!allowedPermission('procurement.create')&&!state.procurements?.length)throw Error('当前身份没有查看采购记录的权限');page='procurement';render();window.scrollTo(0,0);return;}
     if(a==='incidents'){if(!allowedPermission('incident.create')&&!allowedPermission('incident.resolve.approve')&&!state.incidents?.length)throw Error('当前身份没有查看客诉与异常的权限');page='incidents';render();window.scrollTo(0,0);return;}
@@ -902,7 +963,7 @@ document.addEventListener('click',e=>{
     }
     else if(a==='rejectInventoryDialog'){const request=(state.inventoryReviews||[]).find(item=>item.id===Number(id));if(!request||request.status!=='待审核')throw Error('这笔库存盘点已经处理');openDialog('驳回库存盘点',`<label>驳回原因<textarea name="decisionNote" maxlength="300" rows="3" required></textarea></label>`,'确认驳回','rejectInventory',{request:request.id});}
     else if(a==='handover')openDialog('交班 · 核对收款',`<div class="quote"><span>本轮练习累计实收</span><strong>${money(collected(state))}</strong></div><p>请将微信、支付宝、现金、美团与抖音的实收合计填入。挂账不算已收款。</p><label>实点收款合计（元）<input name="actual" inputmode="decimal" required></label><label>前台现金（元）<input name="drawerCash" inputmode="decimal" required></label><p class="muted">前台现金单独留档，不重复计入实点收款合计。演示按本轮练习累计核对，不自动切换真实班次。</p>`,'记录交班差异','handover');
-    else if(a==='guide')openDialog('跟着练一遍',`<ol class="guide"><li>用邵老板身份点空房，选饮料并直接配好种类和支数，确认开房。</li><li>营业中房间卡片底部可点“小吃”和“果盘”标记已上，两个配品都完成后按钮自动隐藏。</li><li>点“收钱”只登记开房费用，房间会继续营业。</li><li>点“加酒水”增购2打百威，再点“赠酒水”赠半打；套餐和增购酒水都能点“换酒水”调整。</li><li>增购后点“收钱”只收最近一笔未收增购；最后点“结账”汇总余款，房间才转待清洁。</li><li>到“存取酒”存6支酒，用手机号任意部分或姓名查找；取酒时用手机尾号或姓名核对。</li><li>另开一房，从“结账”申请挂账，填写手机号或姓名、备注并手写签名；按金额切换店长或老板审批，管理员可处理全部审批。</li><li>卓老板为百威建账，再切换老板娘调整库存，回管理页看提醒。</li></ol><p class="notice">第一次练习可使用虚构手机号13800000000，不填写真实客人信息。</p>`);
+    else if(a==='guide')openDialog('跟着练一遍',`<ol class="guide"><li>用邵老板身份点空房，选饮料并直接配好种类和支数，确认开房。</li><li>营业中房间卡片底部可点“小吃”和“果盘”标记已上，两个配品都完成后按钮自动隐藏。</li><li>点“收钱”只登记开房费用，房间会继续营业。</li><li>点“加酒水”增购2打百威，再点“赠酒水”赠半打；套餐和增购酒水都能点“换酒水”调整。</li><li>增购后点“收钱”只收最近一笔未收增购；最后点“结账”汇总余款，房间才转待清洁。</li><li>到“存取酒”存6支酒，用手机号任意部分或姓名查找；取酒时用手机尾号或姓名核对。</li><li>另开一房，从“结账”申请挂账，填写手机号或姓名、备注并手写签名；切换到有对应具体审核权限的人员，在“待办”处理。</li><li>卓老板为百威建账，再切换有库存审核权限的人员，到“待办”处理盘点申请。</li></ol><p class="notice">第一次练习可使用虚构手机号13800000000，不填写真实客人信息。</p>`);
     else if(a==='reset')openDialog('恢复演示数据',`<p>将清空当前浏览器中的练习账单、签名、存酒、支出／报销、采购、客诉／异常、库存和交班记录，9个房间恢复空闲。</p>`,'确认清空，重新练习','reset');
   } catch(error){toast(error.message);}
 });

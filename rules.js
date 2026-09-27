@@ -33,13 +33,13 @@ export const USER_ALIASES = { staff: 'shaoBoss', keeper: 'wife', boss: 'zhuBoss'
 // 管理员可为其他演示身份分配的具体操作权限。管理员本身固定保留总管理权限。
 export const PERMISSION_ROLES = ['老板', '店长', '财务', '采购', '开单员', '服务员', '收银员', '库管'];
 export const PERMISSION_DEFINITIONS = [
-  { id: 'identity.manage', label: '调整身份权限', group: '身份与员工', roles: ['管理员'] },
-  { id: 'staff.record', label: '代员工登记订房与增购', group: '身份与员工', roles: ['管理员', '老板', '店长', '财务'] },
+  { id: 'identity.manage', label: '调整身份权限', group: '系统管理', roles: ['管理员'] },
+  { id: 'staff.record', label: '代员工登记订房与增购', group: '营业补录', roles: ['管理员', '老板', '店长', '财务'] },
   { id: 'room.open', label: '开房', group: '房间与订单', roles: ['开单员', '老板'] },
   { id: 'room.reserve', label: '预订与取消预订', group: '房间与订单', roles: ['开单员', '老板'] },
   { id: 'room.clean', label: '完成清洁', group: '房间与订单', roles: ['服务员', '老板'] },
   { id: 'room.issue', label: '标记房间故障／维护及提交恢复申请', group: '房间与订单', roles: ['管理员', '老板', '店长'] },
-  { id: 'room.issue.approve', label: '审核房间恢复申请', group: '审核与后台', roles: ['管理员', '老板', '店长'] },
+  { id: 'room.issue.approve', label: '审核房间恢复申请', group: '营业审核', roles: ['管理员', '老板', '店长'] },
   { id: 'order.sale', label: '加酒水／其他消费', group: '房间与订单', roles: ['开单员', '服务员', '老板'] },
   { id: 'order.exchange', label: '换酒水', group: '房间与订单', roles: ['开单员', '服务员', '老板'] },
   { id: 'order.gift', label: '登记赠酒水', group: '房间与订单', roles: ['开单员', '服务员', '店长', '老板'] },
@@ -49,29 +49,42 @@ export const PERMISSION_DEFINITIONS = [
   { id: 'credit.apply', label: '申请挂账', group: '收款与挂账', roles: ['开单员', '收银员', '服务员', '库管', '店长', '老板'] },
   { id: 'credit.approve', label: '审批挂账', group: '收款与挂账', roles: ['店长', '老板'] },
   { id: 'credit.repay', label: '登记挂账回款', group: '收款与挂账', roles: ['收银员', '财务', '老板'] },
-  { id: 'credit.repay.approve', label: '审核挂账回款', group: '审核与后台', roles: ['财务', '店长', '老板'] },
-  { id: 'gift.approve', label: '审批超额赠酒水', group: '审核与后台', roles: ['店长', '老板'] },
-  { id: 'rounding.approve', label: '审核特殊差额', group: '审核与后台', roles: ['店长'] },
+  { id: 'credit.repay.approve', label: '审核挂账回款', group: '营业审核', roles: ['财务', '店长', '老板'] },
+  { id: 'gift.approve', label: '审批超额赠酒水', group: '营业审核', roles: ['店长', '老板'] },
+  { id: 'rounding.approve', label: '审核特殊差额', group: '营业审核', roles: ['店长'] },
   { id: 'inventory.opening', label: '库存期初建账', group: '库存与交班', roles: ['店长', '老板', '采购'] },
   { id: 'inventory.adjust', label: '库存盘点与调整', group: '库存与交班', roles: ['店长', '老板', '库管', '采购'] },
-  { id: 'inventory.approve', label: '审核库存盘点', group: '审核与后台', roles: ['店长', '老板', '采购'] },
+  { id: 'inventory.approve', label: '审核库存盘点', group: '营业审核', roles: ['店长', '老板', '采购'] },
   { id: 'deposit.manage', label: '登记与取酒', group: '库存与交班', roles: ['服务员', '老板'] },
   { id: 'handover', label: '交班核对', group: '库存与交班', roles: ['收银员', '财务', '店长', '老板'] },
   { id: 'expense.view', label: '查看支出与报销', group: '经营后台', roles: ['管理员', '老板', '店长', '财务', '采购', '开单员', '服务员', '收银员', '库管'] },
   { id: 'expense.create', label: '新增支出与报销', group: '经营后台', roles: ['管理员', '老板', '店长', '财务', '采购', '开单员', '服务员', '收银员', '库管'] },
   { id: 'expense.viewAll', label: '查看他人支出与报销', group: '经营后台', roles: ['老板', '店长', '财务'] },
-  { id: 'expense.approve', label: '审批大额报销', group: '经营后台', roles: ['老板'] },
+  { id: 'expense.approve', label: '审批大额报销', group: '营业审核', roles: ['老板'] },
   { id: 'procurement.create', label: '登记采购并关联支出／报销', group: '采购与库存', roles: ['管理员', '老板', '店长', '财务', '采购'] },
   { id: 'procurement.viewAll', label: '查看全部采购记录', group: '采购与库存', roles: ['管理员', '老板', '店长', '财务'] },
   { id: 'incident.create', label: '登记客诉／异常', group: '现场管理', roles: ['管理员', '老板', '店长', '财务', '采购', '开单员', '服务员', '收银员', '库管'] },
   { id: 'incident.viewAll', label: '查看全部客诉／异常', group: '现场管理', roles: ['管理员', '老板', '店长', '财务'] },
   { id: 'incident.resolve', label: '填写客诉／异常处理结果', group: '现场管理', roles: ['管理员', '老板', '店长', '财务', '采购', '开单员', '服务员', '收银员', '库管'] },
-  { id: 'incident.resolve.approve', label: '审核客诉／异常恢复', group: '审核与后台', roles: ['管理员', '老板', '店长', '财务'] },
-  { id: 'review.self', label: '允许审核本人申请', group: '审核与后台', roles: ['管理员'] },
-  { id: 'report.view', label: '查看经营报表', group: '审核与后台', roles: ['管理员', '老板', '财务', '店长', '收银员'] },
-  { id: 'backend.view', label: '进入管理后台', group: '审核与后台', roles: ['管理员', '老板', '店长', '财务', '采购', '库管'] }
+  { id: 'incident.resolve.approve', label: '审核客诉／异常恢复', group: '营业审核', roles: ['管理员', '老板', '店长', '财务'] },
+  { id: 'review.self', label: '允许审核本人申请', group: '营业审核', roles: ['管理员'] },
+  { id: 'report.view', label: '查看经营报表', group: '经营数据', roles: ['管理员', '老板', '财务', '店长', '收银员'] },
+  { id: 'backend.view', label: '进入系统管理后台', group: '系统管理', roles: ['管理员', '老板', '店长', '财务', '采购', '库管'] }
 ];
 export const PERMISSION_IDS = PERMISSION_DEFINITIONS.map(permission => permission.id);
+export const BUSINESS_REVIEW_SECTIONS = [
+  { id: 'creditApproval', permission: 'credit.approve' },
+  { id: 'creditRepayment', permission: 'credit.repay.approve' },
+  { id: 'rounding', permission: 'rounding.approve' },
+  { id: 'gift', permission: 'gift.approve' },
+  { id: 'roomRecovery', permission: 'room.issue.approve' },
+  { id: 'inventory', permission: 'inventory.approve' },
+  { id: 'incident', permission: 'incident.resolve.approve' },
+  { id: 'expense', permission: 'expense.approve' }
+];
+export function businessReviewSections(user) {
+  return BUSINESS_REVIEW_SECTIONS.filter(section => hasPermission(user, section.permission)).map(section => section.id);
+}
 export function permissionsForRoles(roles = []) {
   return PERMISSION_DEFINITIONS.filter(permission => permission.roles.some(role => roles.includes(role))).map(permission => permission.id);
 }
