@@ -6,8 +6,8 @@
 |---|---|---|---|---|
 | 员工／系统管理入口和静态路由 | `index.html`、`admin.html` 的 `data-app-entry`；`server.js` 的静态 `files` 映射（含 `catalog.js`） | `entry.test.js` | [需求：身份、入口与权限](./REQUIREMENTS.md#已确认身份入口与权限) | `/` 承载日常营业；`/admin` 只承载系统管理；服务器没有 API |
 | 商品目录、销售规格和套餐定义 | `catalog.js`：`DEFAULT_CATALOG`、`mergeCatalog`、`findProduct`、`roomPackage`、`saleOption`、`migrateLegacyOrderPricing` | `catalog.test.js` | [需求：商品、套餐与价格模型](./REQUIREMENTS.md#已确认商品套餐与价格模型) | `DEFAULT_CATALOG` 只用于初始化、迁移和 DEMO 恢复；运行时唯一来源是 `state.catalog`；不维护重复 `sku` |
-| 页面导航、待办、弹窗、目录维护与本机状态 | `app.js`：`APP_ENTRY`、`render`、`taskCenterPage`、`systemManagementPage`、`migrateDemoState`、`persist`、`commit` | `entry.test.js`；目录与业务变化还需 `catalog.test.js`、`rules.test.js` | [架构：数据流](./ARCHITECTURE.md#数据流与事务边界) | 待办只聚合本人待办、业务审核和本人处理记录；主动营业操作留在所属模块；报表读取订单快照 |
-| 房型报价、价格快照和业务事务 | `rules.js`：`initialState`、`quote`、`productSnapshot`、`transact` 及领域导出函数 | `rules.test.js` | [需求：商品、套餐与价格模型](./REQUIREMENTS.md#已确认商品套餐与价格模型) | 金额使用整数分；库存按基础单位；订单形成时保存销售规格、成交金额、赠酒参考值和套餐最终组成；事务失败不回写原状态 |
+| 页面导航、待办、零售、目录维护、报表与本机状态 | `app.js`：`render`、`retailPage`、`retailDialog`、`saleDialog`、`reportPage`、`catalogCreateDialog`、`migrateDemoState`、`persist`、`commit` | `entry.test.js`、`retail.test.js`；浏览器验收页面流程 | [架构：数据流](./ARCHITECTURE.md#数据流与事务边界) | 零售与房间商品选择共用表单；报表读取销售行快照，独立列零售明细 |
+| 房型报价、普通商品、统一订单和销售事务 | `rules.js`：`initialState`、`quote`、`prepareSaleRows`、`appendSaleRows`、`transact`（`createCatalogProduct`、`sale`、`retailSale`） | `rules.test.js`、`retail.test.js` | [需求：普通商品与独立零售](./REQUIREMENTS.md#已确认普通商品与独立零售) | 金额用整数分；库存按基础单位；零售付款与订单、销售行、流水原子写入，失败不回写原状态 |
 | 身份与具体权限 | `rules.js`：`PERMISSION_DEFINITIONS`、`defaultCapabilities`、`effectiveUser`、`hasPermission`、`businessReviewSections` | `rules.test.js` | [需求：身份、入口与权限](./REQUIREMENTS.md#已确认身份入口与权限) | `backend.view` 不授予业务审核；`review.self` 只是自审附加条件 |
 | 主题与自动切换 | `theme.js`：`refresh`、`window.ktvAppearance`；`style.css` 主题选择器 | `theme.test.js` | [需求：报表、主题与数据边界](./REQUIREMENTS.md#已确认报表主题与数据边界) | 使用设备时间和独立键 `jbhh-appearance-v1`，不跟随练习时间 |
 | 房卡、表单、弹窗和报表视觉 | `style.css`；对应 `app.js` 渲染函数 | 没有独立视觉自动测试；规则行为由现有测试覆盖 | [店员练习手册](../店员练习手册.md) | 视觉通过必须使用约定浏览器或真机证据，不能由规则测试替代 |

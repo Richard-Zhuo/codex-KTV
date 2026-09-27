@@ -29,6 +29,7 @@ export const PERMISSION_DEFINITIONS = [
   { id: 'room.issue', label: '标记房间故障／维护及提交恢复申请', group: '房间与订单', roles: ['管理员', '老板', '店长'] },
   { id: 'room.issue.approve', label: '审核房间恢复申请', group: '营业审核', roles: ['管理员', '老板', '店长'] },
   { id: 'order.sale', label: '加酒水／其他消费', group: '房间与订单', roles: ['开单员', '服务员', '老板'] },
+  { id: 'retail.sale', label: '独立零售成交', group: '房间与订单', roles: ['收银员', '老板'] },
   { id: 'order.exchange', label: '换酒水', group: '房间与订单', roles: ['开单员', '服务员', '老板'] },
   { id: 'order.gift', label: '登记赠酒水', group: '房间与订单', roles: ['开单员', '服务员', '店长', '老板'] },
   { id: 'order.serveExtra', label: '标记小吃／果盘已上', group: '房间与订单', roles: ['开单员', '服务员', '老板'] },
@@ -172,7 +173,7 @@ export function initialState() {
   const today = new Date(); today.setHours(20,0,0,0);
   const roomType = id => id === '888' ? 'VIP房' : ['V05', 'V06'].includes(id) ? '中房' : id.startsWith('V') ? '小房' : '大房';
   const catalog = cloneCatalog(DEFAULT_CATALOG);
-  return { version: 1, capabilitySchemaVersion: 3, catalogSchemaVersion: catalog.schemaVersion, catalog, clock: today.toISOString(), user: 'staff', permissions: defaultPermissions(), capabilities: defaultCapabilities(), rooms: ['V01','V02','V03','V05','V06','333','666','999','888'].map(id => ({ id, type: roomType(id), status: '空闲', order: null, issueType: '', issueNote: '', issueAt: '', issueBy: '', issueApprovedBy: '', issueEvidencePhoto: '', issueEvidencePhotoName: '' })), orders: [], reservations: [], deposits: [], withdrawals: [], expenses: [], procurements: [], incidents: [], roomIssueReviews: [], inventoryReviews: [], inventory: Object.fromEntries(inventoryProducts(catalog).map(item => [item.id, { count: null, threshold: item.inventoryThreshold ?? 10, unit: item.baseUnit }])), consumables: Object.fromEntries(consumableProducts(catalog).map(item => [item.id, { count: null, opened: 0, unit: item.baseUnit, threshold: item.inventoryThreshold ?? 10 }])), ledger: [], notices: [], handovers: [], processed: [], serial: 0 };
+  return { version: 1, capabilitySchemaVersion: 4, catalogSchemaVersion: catalog.schemaVersion, catalog, clock: today.toISOString(), user: 'staff', permissions: defaultPermissions(), capabilities: defaultCapabilities(), rooms: ['V01','V02','V03','V05','V06','333','666','999','888'].map(id => ({ id, type: roomType(id), status: '空闲', order: null, issueType: '', issueNote: '', issueAt: '', issueBy: '', issueApprovedBy: '', issueEvidencePhoto: '', issueEvidencePhotoName: '' })), orders: [], reservations: [], deposits: [], withdrawals: [], expenses: [], procurements: [], incidents: [], roomIssueReviews: [], inventoryReviews: [], inventory: Object.fromEntries(inventoryProducts(catalog).map(item => [item.id, { count: null, threshold: item.inventoryThreshold ?? 10, unit: item.baseUnit }])), consumables: Object.fromEntries(consumableProducts(catalog).map(item => [item.id, { count: null, opened: 0, unit: item.baseUnit, threshold: item.inventoryThreshold ?? 10 }])), ledger: [], notices: [], handovers: [], processed: [], serial: 0 };
 }
 export const total = order => (order.packageBaseCents ?? order.base ?? 0) + (order.packageGiftValueCents ?? order.gift ?? 0) + (order.sales || []).reduce((sum, line) => sum + (line.amountCents ?? line.amount ?? 0), 0) + (order.otherCharges || []).reduce((sum, line) => sum + (line.amountCents ?? line.amount ?? 0), 0);
 export const outstanding = order => Math.max(0, total(order) - (order.payments || []).reduce((sum, payment) => sum + payment.amount, 0));
@@ -239,14 +240,58 @@ function delegatedEmployee(state, data) {
   if (!employee || employee.legacy || id === 'administrator') throw Error('请选择有效的演示员工');
   return { id, name: employee.name, recordedBy: effectiveUser(state).name };
 }
-function inventory(state, id, delta, source, time) {
+function inventory(state, id, delta, source, time, related = {}) {
   const catalogProduct = product(id, state.catalog);
   if (!catalogProduct.inventoryManaged) return;
   const item = state.inventory[id];
   if (!item) throw Error(`${catalogProduct.name}没有建立库存账`);
   if (item.count !== null && item.count + delta < 0) throw Error(`${catalogProduct.name}库存不足，请减少数量或先核对库存`);
-  state.ledger.push({ id: ++state.serial, product: id, delta, source, counted: item.count !== null, time, person: effectiveUser(state).name });
+  state.ledger.push({ id: ++state.serial, product: id, productId: id, productNameSnapshot: catalogProduct.name, baseUnitSnapshot: catalogProduct.baseUnit, delta, baseQuantityDelta: delta, source, ...related, counted: item.count !== null, time, person: effectiveUser(state).name });
   if (item.count !== null) item.count += delta;
+}
+function normalizeSaleOptions(options, sellable) {
+  if (!Array.isArray(options) || (sellable && !options.length)) throw Error('可售商品至少需要一种销售规格');
+  const ids = new Set();
+  return options.map(option => {
+    const id = String(option?.id || '').trim(), name = String(option?.name || '').trim();
+    if (!/^[A-Za-z][A-Za-z0-9._-]{0,39}$/.test(id) || ids.has(id) || !name || name.length > 30 || !Number.isSafeInteger(option.baseQuantity) || option.baseQuantity <= 0 || !Number.isSafeInteger(option.priceCents) || option.priceCents < 0 || (sellable && option.priceCents === 0)) throw Error('销售规格 ID、基础数量或价格无效，且 ID 不得重复');
+    ids.add(id);
+    return { id, name, baseQuantity: option.baseQuantity, priceCents: option.priceCents };
+  });
+}
+function prepareSaleRows(state, data) {
+  const items = Array.isArray(data.items) ? data.items : [{ product: data.product, spec: data.spec, count: data.count }];
+  if (!items.length) throw Error('请至少添加一种商品');
+  const required = new Map();
+  const rows = items.map(item => {
+    const saleQuantity = item.saleQuantity ?? item.count;
+    quantity(saleQuantity);
+    const p = product(item.productId || item.product, state.catalog);
+    if (!p.sellable || p.active === false) throw Error('该商品当前不可销售');
+    const option = saleOption(p, item.saleOptionId || item.spec || 'single');
+    const pricePerSaleUnitCents = item.manualPriceCents !== undefined && p.manualPriceAllowed ? item.manualPriceCents : option.priceCents;
+    const totalBaseQuantity = saleQuantity * option.baseQuantity, amountCents = saleQuantity * pricePerSaleUnitCents;
+    if (!Number.isSafeInteger(pricePerSaleUnitCents) || pricePerSaleUnitCents <= 0 || !Number.isSafeInteger(amountCents) || amountCents <= 0) throw Error('销售价格无效');
+    if (!Number.isSafeInteger(totalBaseQuantity) || totalBaseQuantity <= 0) throw Error('销售基础数量无效');
+    if (p.inventoryManaged) required.set(p.id, (required.get(p.id) || 0) + totalBaseQuantity);
+    return { p, option, saleQuantity, totalBaseQuantity, pricePerSaleUnitCents, amountCents };
+  });
+  for (const [id, count] of required) {
+    if (!Number.isSafeInteger(count)) throw Error('销售基础数量无效');
+    const balance = state.inventory[id];
+    if (!balance || balance.count === null || !Number.isSafeInteger(balance.count)) throw Error(`${product(id, state.catalog).name}未建账，完成库存期初建账后才能销售`);
+    if (balance.count < count) throw Error(`${product(id, state.catalog).name}库存不足，请减少数量或先核对库存`);
+  }
+  return rows;
+}
+function appendSaleRows(state, order, rows, person, operator, employeeId, time, source) {
+  const batch = ++state.serial;
+  for (const row of rows) {
+    const saleId = ++state.serial;
+    inventory(state, row.p.id, -row.totalBaseQuantity, source, time, { orderId: order.id, saleLineId: saleId });
+    const snapshot = productSnapshot(state.catalog, row.p.id, row.totalBaseQuantity, { saleOptionId: row.option.id, saleOptionNameSnapshot: row.option.name, saleQuantity: row.saleQuantity, baseQuantityPerSaleUnit: row.option.baseQuantity, totalBaseQuantity: row.totalBaseQuantity, pricePerSaleUnitCents: row.pricePerSaleUnitCents, amountCents: row.amountCents, snapshotStatus: 'current' });
+    order.sales.push({ id: saleId, batch, product: row.p.id, productId: row.p.id, count: row.saleQuantity, spec: row.option.id, bottles: row.totalBaseQuantity, amount: row.amountCents, ...snapshot, drinks: [{ id: ++state.serial, product: row.p.id, productId: row.p.id, productNameSnapshot: row.p.name, baseUnitSnapshot: row.p.baseUnit, count: row.totalBaseQuantity, totalBaseQuantity: row.totalBaseQuantity }], person, recordedBy: operator, employeeId, time });
+  }
 }
 function grantBonus(state, order, productId, halves, source, time, requestedBy) {
   const bottles = halves * 6;
@@ -321,6 +366,16 @@ export function transact(original, action, data = {}, key) {
       s.permissions[target] = [...new Set(data.roles)];
       s.capabilities[target] = permissionsForRoles(s.permissions[target]);
     }
+  } else if (action === 'createCatalogProduct') {
+    need(s, [], 'catalog.manage');
+    const id = String(data.id || '').trim(), name = String(data.name || '').trim(), category = String(data.category || '').trim(), baseUnit = String(data.baseUnit || '').trim();
+    if (!/^[a-z][a-z0-9._-]{0,39}$/.test(id) || s.catalog.products.some(item => item.id === id)) throw Error('商品 ID 无效或已存在');
+    if (!name || name.length > 80 || !category || category.length > 40 || !baseUnit || baseUnit.length > 20) throw Error('请填写有效的商品名称、分类和基础单位');
+    if (!Number.isSafeInteger(data.sortOrder)) throw Error('排序必须是整数');
+    const sellable = Boolean(data.sellable), inventoryManaged = Boolean(data.inventoryManaged);
+    const options = normalizeSaleOptions(data.saleOptions || [], sellable);
+    s.catalog.products.push({ id, name, category, categoryLabel: category, baseUnit, saleOptions: options, inventoryManaged, inventoryThreshold: 10, sellable, manualPriceAllowed: false, exchangeLevel: null, openingGiftEligible: false, active: data.active !== false, sortOrder: data.sortOrder });
+    if (inventoryManaged) s.inventory[id] = { count: null, threshold: 10, unit: baseUnit };
   } else if (action === 'updateCatalogProduct') {
     need(s, [], 'catalog.manage');
     const id = String(data.id || '').trim();
@@ -333,10 +388,8 @@ export function transact(original, action, data = {}, key) {
       if (!Number.isSafeInteger(data.sortOrder)) throw Error('排序必须是整数');
       next.sortOrder = data.sortOrder;
     }
-    if (data.saleOptions !== undefined) {
-      if (!Array.isArray(data.saleOptions) || data.saleOptions.some(option => !option?.id || !option.name || !Number.isSafeInteger(option.baseQuantity) || option.baseQuantity <= 0 || !Number.isSafeInteger(option.priceCents) || option.priceCents < 0)) throw Error('销售规格或价格无效');
-      next.saleOptions = data.saleOptions.map(option => ({ id: String(option.id), name: String(option.name).slice(0, 30), baseQuantity: option.baseQuantity, priceCents: option.priceCents }));
-    }
+    if (data.saleOptions !== undefined) next.saleOptions = normalizeSaleOptions(data.saleOptions, next.sellable);
+    else if (next.sellable) normalizeSaleOptions(next.saleOptions, true);
     s.catalog.products = s.catalog.products.map(item => item.id === id ? next : item);
   } else if (action === 'updateCatalogPackage') {
     need(s, [], 'catalog.manage');
@@ -440,7 +493,7 @@ export function transact(original, action, data = {}, key) {
       ...drinks.map(line => productSnapshot(s.catalog, productIdOf(line), line.count, { kind: 'opening-drink', totalBaseQuantity: line.count })),
       ...q.extras.map(extra => productSnapshot(s.catalog, extra.productId || extra.product, extra.count, { kind: 'package-component', totalBaseQuantity: extra.count }))
     ];
-    s.orders.push({ id, room: room.id, time, person, recordedBy: operator, employeeId: delegated?.id || '', openedBy: person, openSource: openSource || '线下', voucher: q.voucher, reservedBy: booking?.person || '', reservationSource: booking?.source || '', status: '营业中', packageId: q.packageId, packageNameSnapshot: q.packageName, packagePriceCents: q.total, packageBaseCents: q.base, packageGiftValueCents: q.gift, packageReferenceGiftValueCents: q.packageGiftValueCents, base: q.base, gift: q.gift, period: q.period, openingGiftReferenceValueCents: q.packageGiftValueCents, drinks, resolvedComponents, extras: q.extras.map(extra => ({ ...extra, served: false })), sales: [], otherCharges: [], bonusGifts: [], giftRequests: [], payments: [], rounding: 0, roundingType: '', roundingNote: '', roundingReview: null, credit: null, exchanges: [] });
+    s.orders.push({ id, kind: 'room', room: room.id, time, createdAt: time, person, recordedBy: operator, employeeId: delegated?.id || '', openedBy: person, openSource: openSource || '线下', voucher: q.voucher, reservedBy: booking?.person || '', reservationSource: booking?.source || '', status: '营业中', packageId: q.packageId, packageNameSnapshot: q.packageName, packagePriceCents: q.total, packageBaseCents: q.base, packageGiftValueCents: q.gift, packageReferenceGiftValueCents: q.packageGiftValueCents, base: q.base, gift: q.gift, period: q.period, openingGiftReferenceValueCents: q.packageGiftValueCents, drinks, resolvedComponents, extras: q.extras.map(extra => ({ ...extra, served: false })), sales: [], otherCharges: [], bonusGifts: [], giftRequests: [], payments: [], rounding: 0, roundingType: '', roundingNote: '', roundingReview: null, credit: null, exchanges: [] });
     room.status = '营业中'; room.order = id;
     if (booking) booking.status = '已到店';
   } else if (action === 'reserve') {
@@ -465,26 +518,20 @@ export function transact(original, action, data = {}, key) {
     const delegated = delegatedEmployee(s, data);
     if (delegated) person = delegated.name; else need(s, ['开单员','服务员','老板'], 'order.sale');
     active();
-    const items = Array.isArray(data.items) ? data.items : [{ product: data.product, spec: data.spec, count: data.count }];
-    if (!items.length) throw Error('请至少添加一种酒水');
-    const prepared = items.map(item => {
-      const saleQuantity = item.saleQuantity ?? item.count;
-      quantity(saleQuantity);
-      const p = product(item.productId || item.product, s.catalog);
-      if (!p.sellable || p.active === false) throw Error('该商品当前不可销售');
-      const saleOptionId = item.saleOptionId || item.spec || 'single';
-      const option = saleOption(p, saleOptionId);
-      const pricePerSaleUnitCents = item.manualPriceCents !== undefined && p.manualPriceAllowed ? item.manualPriceCents : option.priceCents;
-      if (!Number.isSafeInteger(pricePerSaleUnitCents) || pricePerSaleUnitCents < 0) throw Error('销售价格无效');
-      return { p, item, option, saleQuantity, saleOptionId, bottles: saleQuantity * option.baseQuantity, amount: saleQuantity * pricePerSaleUnitCents, pricePerSaleUnitCents };
-    });
-    prepared.forEach(row => inventory(s, row.p.id, -row.bottles, '加购销售', time));
-    const batch = ++s.serial;
-    prepared.forEach(row => {
-      const saleId = ++s.serial;
-      const snapshot = productSnapshot(s.catalog, row.p.id, row.bottles, { saleOptionId: row.saleOptionId, saleOptionNameSnapshot: row.option.name, saleQuantity: row.saleQuantity, baseQuantityPerSaleUnit: row.option.baseQuantity, totalBaseQuantity: row.bottles, pricePerSaleUnitCents: row.pricePerSaleUnitCents, amountCents: row.amount, snapshotStatus: 'current' });
-      order.sales.push({ id: saleId, batch, product: row.p.id, productId: row.p.id, count: row.saleQuantity, spec: row.saleOptionId, bottles: row.bottles, amount: row.amount, ...snapshot, drinks: [{ id: ++s.serial, product: row.p.id, productId: row.p.id, productNameSnapshot: row.p.name, baseUnitSnapshot: row.p.baseUnit, count: row.bottles, totalBaseQuantity: row.bottles }], person, recordedBy: operator, employeeId: delegated?.id || '' });
-    });
+    appendSaleRows(s, order, prepareSaleRows(s, data), person, operator, delegated?.id || s.user, time, '加购销售');
+  } else if (action === 'retailSale') {
+    need(s, [], 'retail.sale');
+    const delegated = delegatedEmployee(s, data);
+    if (delegated) person = delegated.name;
+    const rows = prepareSaleRows(s, data);
+    const amount = rows.reduce((sum, row) => sum + row.amountCents, 0);
+    if (!Number.isSafeInteger(amount) || amount <= 0) throw Error('成交金额无效');
+    const payments = validatePayments(data.payments, amount);
+    const id = `D${++s.serial}`;
+    const retailOrder = { id, kind: 'retail', room: null, time, createdAt: time, paidAt: time, closedAt: time, person, recordedBy: operator, employeeId: delegated?.id || s.user, status: '已结账', packageId: null, packageNameSnapshot: null, packagePriceCents: 0, packageBaseCents: 0, packageGiftValueCents: 0, base: 0, gift: 0, drinks: [], resolvedComponents: [], extras: [], sales: [], otherCharges: [], bonusGifts: [], giftRequests: [], payments: [], rounding: 0, roundingType: '', roundingNote: '', roundingReview: null, credit: null, exchanges: [] };
+    s.orders.push(retailOrder);
+    appendSaleRows(s, retailOrder, rows, person, operator, delegated?.id || s.user, time, '零售销售');
+    retailOrder.payments.push(...payments.map(payment => ({ ...payment, chargeId: 'retail', time, person: operator })));
   } else if (action === 'otherCharge') {
     need(s, ['开单员','服务员','老板'], 'order.sale'); active();
     const category = String(data.category || '').trim();
@@ -498,6 +545,7 @@ export function transact(original, action, data = {}, key) {
   } else if (action === 'gift') {
     need(s, ['开单员','服务员','店长','老板'], 'order.gift'); active(); quantity(data.halves);
     const p = product(data.productId || data.product, s.catalog);
+    if (!p.openingGiftEligible || p.selectionOnly) throw Error('该商品不参与赠酒水规则');
     const halfOption = saleOption(p, 'half');
     const allowance = bonusAllowance(order, p.id);
     if (!allowance.purchased) throw Error('请先增购对应酒水');
@@ -665,11 +713,11 @@ export function transact(original, action, data = {}, key) {
         item.count = request.after; item.opened = request.openedAfter; if (request.before === null) item.openedAt = time;
       } else {
         const item = s.inventory[request.product];
-        if (!item || item.count !== request.before) throw Error('酒水库存已经变化，请驳回后重新盘点');
+        if (!item || item.count !== request.before) throw Error('商品库存已经变化，请驳回后重新盘点');
         s.ledger.push({ id: ++s.serial, product: request.product, delta: request.after-(request.before ?? 0), before: request.before, after: request.after, reason: request.reason, source: request.source, counted: true, person: request.submittedBy, reviewedBy: person, time });
         item.count = request.after; if (request.before === null) item.openedAt = time;
       }
-      s.notices.push({ id: ++s.serial, kind: request.kind, product: request.product, unit: request.kind === 'consumable' ? (s.consumables?.[request.product]?.unit || '份') : '支', before: request.before, after: request.after, openedBefore: request.openedBefore, openedAfter: request.openedAfter, reason: request.reason, person: request.submittedBy, reviewedBy: person, time });
+      s.notices.push({ id: ++s.serial, kind: request.kind, product: request.product, unit: request.kind === 'consumable' ? (s.consumables?.[request.product]?.unit || '份') : (s.inventory[request.product]?.unit || product(request.product, s.catalog).baseUnit), before: request.before, after: request.after, openedBefore: request.openedBefore, openedAfter: request.openedAfter, reason: request.reason, person: request.submittedBy, reviewedBy: person, time });
     }
     request.status = action === 'approveInventory' ? '已批准' : '已驳回'; request.decidedBy = person; request.decidedAt = time; request.decisionNote = decisionNote; request.selfReviewAuthorized = selfReview;
   } else if (action === 'handover') {

@@ -22,12 +22,12 @@
 | 直接启动 | `node server.js` | 配置确认 | 默认监听 `0.0.0.0:4173` |
 | 使用其他端口（PowerShell） | `$env:PORT = 4174; npm start` | 配置确认 | `server.js` 读取 `PORT`，本轮未执行 |
 | 完整自动测试 | `npm test` | 配置确认 | `package.json` 映射到 `node --test` |
-| 当前 Codex 环境的 npm 替代调用 | `pnpm --package=npm dlx npm test` | 历史执行 | 2026-09-27 历史记录为 58 项通过；本轮未执行 |
+| 当前 Codex 环境的测试调用 | `$env:NODE_OPTIONS = '--test-isolation=none'; pnpm test` | 本次执行 | 2026-09-28 当前环境无 `npm` 命令，默认子进程隔离遇到 `EPERM`；同一 `node --test` 测试集合在进程内隔离模式下通过 73 项 |
 | 单文件语法诊断 | `node --check app.js` 等 | 历史使用／诊断 | 不能替代 `npm test` |
 | 初始化数据库基线 | `psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f database/schema.sql` | 仅契约命令 | 项目运行时尚未连接 PostgreSQL，本轮未执行 |
 | 写入主数据 | `psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f database/seed.sql` | 仅契约命令 | 只应在明确的目标数据库和授权下执行 |
 
-修改 JavaScript 后，项目约定的正式自动验证命令是 `npm test`。若环境没有 `npm`，可以使用上表的 `pnpm` 调用，但必须如实记录实际执行的命令。
+修改 JavaScript 后，项目约定的正式自动验证命令是 `npm test`。若当前执行环境没有 `npm`，可用上表的 `pnpm` 调用同一脚本，并如实记录 `npm test` 未能执行及替代命令的测试结果。
 
 ## 入口与端口
 
