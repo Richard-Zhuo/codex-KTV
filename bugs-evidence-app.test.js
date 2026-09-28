@@ -12,17 +12,20 @@ import { readFileSync } from 'node:fs';
 
 const app = readFileSync(new URL('./app.js', import.meta.url), 'utf8');
 const server = readFileSync(new URL('./server.js', import.meta.url), 'utf8');
-// Phase 6 起报表聚合迁至 reporting.js；Bug #6/#7 的缺陷代码随迁，证据断言指向新 owner 模块。
+// Phase 6 起报表聚合迁至 reporting.js；Phase 7 起存酒页迁至 ui/pages/deposits.js、
+// persist/commit 外壳迁至 ui/shell.js；Bug #6/#7 缺陷代码与持久化边界断言指向新 owner 模块。
 const reporting = readFileSync(new URL('./reporting.js', import.meta.url), 'utf8');
+const depositsPageModule = readFileSync(new URL('./ui/pages/deposits.js', import.meta.url), 'utf8');
+const shell = readFileSync(new URL('./ui/shell.js', import.meta.url), 'utf8');
 
 test('BUG#6 证据（未修复）：存酒页取当前目录名而非存酒时的名称快照', () => {
   // 存酒记录 d 本身写入 productNameSnapshot（rules.js deposit），但渲染时未使用
-  const start = app.indexOf('客人的酒，记得清楚');
-  const end = app.indexOf('function repaymentReviewMarkup', start);
-  const depositPage = app.slice(start, end);
-  assert.match(depositPage, /<h3>\$\{product\(d\.product\)\.name\}<\/h3>/, '存酒页渲染当前目录名（缺陷）');
+  const start = depositsPageModule.indexOf('客人的酒，记得清楚');
+  const depositPage = start >= 0 ? depositsPageModule.slice(start) : '';
+  assert.ok(start >= 0, '存酒页实现应在 ui/pages/deposits.js');
+  assert.match(depositPage, /<h3>\$\{(?:ctx\.)?product\(d\.product\)\.name\}<\/h3>/, '存酒页渲染当前目录名（缺陷）');
   assert.doesNotMatch(depositPage, /d\.productNameSnapshot/, '未使用存酒记录自带的名称快照');
-  // 取酒对话框同样使用当前目录名
+  // 取酒对话框同样使用当前目录名（仍留在 app.js 点击分发）
   assert.ok(app.includes("核对并取酒',`<p>${product(d.product).name} · 余 ${d.count} 支"), '取酒对话框也用当前目录名（缺陷）');
 });
 
@@ -38,10 +41,10 @@ test('回归保护（原 BUG#8，Phase 1 已修）：损坏数据不再静默覆
   // 唯一载入入口是 persistence.load()
   assert.match(app, /const persistence = createDemoPersistence\(\{ storage: localStorage \}\)/);
   assert.match(app, /const loaded = persistence\.load\(\)/);
-  // 保存唯一经 persistence.save
-  assert.match(app, /persistence\.save\(next\)/);
-  assert.doesNotMatch(app, /localStorage\.setItem\(KEY/, '不得再直接写账本 key');
-  assert.doesNotMatch(app, /localStorage\.getItem\(KEY/, '不得再直接读账本 key');
+  // 保存唯一经 persistence.save（Phase 7 起在 ui/shell.js）
+  assert.match(shell, /ctx\.persistence\.save\(next\)/);
+  assert.doesNotMatch(app + shell, /localStorage\.setItem\(KEY/, '不得再直接写账本 key');
+  assert.doesNotMatch(app + shell, /localStorage\.getItem\(KEY/, '不得再直接读账本 key');
 });
 
 test('持久化边界结构：迁移链移入 migrations.js，app.js 不再内嵌迁移实现', () => {
@@ -49,8 +52,8 @@ test('持久化边界结构：迁移链移入 migrations.js，app.js 不再内�
   for (const symbol of ['legacyOrderProductSnapshot', 'migrateLegacyCatalogFacts', 'migrateDemoState']) {
     assert.doesNotMatch(app, new RegExp(`function ${symbol}`), `${symbol} 不应再定义在 app.js`);
   }
-  // 跨标签页事件改经 persistence.loadExternal
-  assert.match(app, /persistence\.loadExternal\(e\.newValue\)/);
+  // 跨标签页事件改经 persistence.loadExternal（Phase 7 起为 ctx.persistence）
+  assert.match(app, /(?:ctx\.)?persistence\.loadExternal\(e\.newValue\)/);
   assert.match(app, /e\.key===DEMO_STATE_KEY/);
 });
 
@@ -58,4 +61,9 @@ test('server.js 静态映射提供新模块', () => {
   assert.match(server, /'\/migrations\.js': \['migrations\.js', 'text\/javascript'\]/);
   assert.match(server, /'\/persistence\.js': \['persistence\.js', 'text\/javascript'\]/);
   assert.match(server, /'\/reporting\.js': \['reporting\.js', 'text\/javascript'\]/);
+  assert.match(server, /'\/ui\/shell\.js': \['ui\/shell\.js', 'text\/javascript'\]/);
+  assert.match(server, /'\/ui\/context\.js': \['ui\/context\.js', 'text\/javascript'\]/);
+  assert.match(server, /'\/ui\/forms\.js': \['ui\/forms\.js', 'text\/javascript'\]/);
+  assert.match(server, /'\/ui\/pages\/rooms\.js': \['ui\/pages\/rooms\.js', 'text\/javascript'\]/);
+  assert.match(server, /'\/ui\/dialogs\/orders\.js': \['ui\/dialogs\/orders\.js', 'text\/javascript'\]/);
 });
