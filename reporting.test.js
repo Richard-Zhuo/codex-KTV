@@ -35,7 +35,7 @@ function reportOrder(state, roomId, reportPeriod) {
   const orders = state.orders.filter(order => order.kind !== 'retail' && order.room === roomId && reportPeriodMatch(order, state.clock, reportPeriod)).sort((a, b) => Date.parse(a.time) - Date.parse(b.time));
   if (!orders.length) return null;
   const base = orders.reduce((sum, order) => sum + Number(order.packageBaseCents ?? order.base ?? 0), 0), gift = orders.reduce((sum, order) => sum + Number(order.packageGiftValueCents ?? order.gift ?? 0), 0);
-  return { ...orders.at(-1), periodOrders: orders, packageBaseCents: base, packageGiftValueCents: gift, base, gift, drinks: orders.flatMap(order => order.drinks || []), extras: orders.flatMap(order => order.extras || []), sales: orders.flatMap(order => order.sales || []), otherCharges: orders.flatMap(order => order.otherCharges || []), bonusGifts: orders.flatMap(order => order.bonusGifts || []), payments: orders.flatMap(order => order.payments || []), rounding: orders.reduce((sum, order) => sum + Number(order.rounding || 0), 0), status: orders.at(-1).status, credit: orders.some(order => order.credit), voucher: orders.find(order => order.voucher)?.voucher };
+  return { ...orders.at(-1), periodOrders: orders, packageBaseCents: base, packageGiftValueCents: gift, base, gift, drinks: orders.flatMap(order => order.drinks || []), extras: orders.flatMap(order => order.extras || []), sales: orders.flatMap(order => order.sales || []), otherCharges: orders.flatMap(order => order.otherCharges || []), bonusGifts: orders.flatMap(order => order.bonusGifts || []), payments: orders.flatMap(order => order.payments || []), rounding: orders.reduce((sum, order) => sum + Number(order.rounding || 0), 0), status: orders.at(-1).status, voucher: orders.find(order => order.voucher)?.voucher };
 }
 const reportGiftAmount = order => (order?.bonusGifts || []).reduce((sum, gift) => sum + (Number.isSafeInteger(gift.referenceValueCents) ? gift.referenceValueCents : 0), 0);
 function reportGiftDetails(order) {
@@ -82,13 +82,18 @@ function reportNotes(order, reportPeriod) {
     const fullyRepaid = item?.status === '已回款' || (credit && typeof credit === 'object' && Number(credit.remaining || 0) === 0);
     return credit && fullyRepaid ? ' 已回款' : '';
   };
-  if (reportPeriod !== 'day') {
-    return [...(order.periodOrders || [])]
+  // Bug #7 修复后的正确口径：日报备注逐笔列出周期内每笔挂账（含金额与回款状态）。
+  if (reportPeriod === 'day') {
+    const creditNotes = [...(order.periodOrders || [order])]
       .filter(item => item.credit)
       .sort((a, b) => Date.parse(b.credit.submittedAt || b.time) - Date.parse(a.credit.submittedAt || a.time))
-      .map(item => `${reservationDate(item.credit.submittedAt || item.time)} 挂账${reportMoney(item.credit.amount)}${repaymentSuffix(item)}`);
+      .map(item => `挂账${reportMoney(item.credit.amount)}${repaymentSuffix(item)}`);
+    return [...creditNotes, order.voucher ? `${order.voucher.provider}待验券` : '', order.status === '已结账' ? '已结账' : ''].filter(Boolean);
   }
-  return [order.credit ? `挂账${repaymentSuffix(order)}` : '', order.voucher ? `${order.voucher.provider}待验券` : '', order.status === '已结账' ? '已结账' : ''].filter(Boolean);
+  return [...(order.periodOrders || [])]
+    .filter(item => item.credit)
+    .sort((a, b) => Date.parse(b.credit.submittedAt || b.time) - Date.parse(a.credit.submittedAt || a.time))
+    .map(item => `${reservationDate(item.credit.submittedAt || item.time)} 挂账${reportMoney(item.credit.amount)}${repaymentSuffix(item)}`);
 }
 // reportPage 头部的视图模型聚合（逐行来自 HEAD app.js reportPage，不含模板字符串）
 function reportViewModel(state, reportPeriod) {
@@ -178,11 +183,11 @@ test('前测·其他消费明细：非“其他”分类显示分类名，金额
   assert.deepEqual(reportOtherDetails(reportOrder(a, 'V01', 'day')), []);
 });
 
-test('前测·备注矩阵：日报读聚合行 credit 布尔/状态；非日报列挂账流水；平台券待验券', () => {
+test('前测·备注矩阵：日报逐笔挂账含金额；非日报列挂账流水；平台券待验券', () => {
   const a = scenarioA();
   const v01 = reportOrder(a, 'V01', 'day'), r333 = reportOrder(a, '333', 'day');
   assert.deepEqual(reportNotes(v01, 'day'), ['已结账']);
-  assert.deepEqual(reportNotes(r333, 'day'), ['挂账', '已结账']);
+  assert.deepEqual(reportNotes(r333, 'day'), ['挂账¥300', '已结账']);
   // 周/月报：只列有挂账的订单，按提交时间倒序，日期为提交日（9/19），部分回款不显示已回款
   assert.deepEqual(reportNotes(r333, 'week'), ['9/19 挂账¥300']);
   assert.deepEqual(reportNotes(r333, 'month'), ['9/19 挂账¥300']);
@@ -192,6 +197,18 @@ test('前测·备注矩阵：日报读聚合行 credit 布尔/状态；非日报
   assert.deepEqual(reportNotes(v06, 'day'), ['美团待验券', '已结账']);
   // 平台券聚合：voucher 取首个有券订单
   assert.deepEqual(v06.voucher, { provider: '美团', status: '待验券', covered: 16800, interface: 'platform-voucher-scan' });
+  // Bug #7 回归：同房多单时日报备注逐笔保留每笔挂账金额
+  let multi = scenarioA();
+  multi = apply(multi, 'clean', { room: '333' });
+  multi.user = 'shaoBoss';
+  multi = apply(multi, 'open', { room: '333', beer: 'bw' });
+  const d5 = multi.orders.at(-1).id;
+  multi = apply(multi, 'sale', { order: d5, product: 'water', spec: 'single', count: 1 });
+  multi.user = 'keeper';
+  multi = apply(multi, 'credit', { order: d5, name: '二单顾客', note: '第二笔挂账', signature });
+  const r333m = reportOrder(multi, '333', 'day');
+  const secondAmount = multi.orders.find(o => o.id === d5).credit.amount;
+  assert.deepEqual(reportNotes(r333m, 'day'), ['挂账¥300', `挂账${reportMoney(secondAmount)}`], '两笔挂账逐笔列出且金额各自保留（末单未审批完成，不显示已结账）');
 });
 
 test('前测·付款方式列：纯微信只显示方式名；混合显示金额；未收款显示“未收”；0 元券单为空', () => {

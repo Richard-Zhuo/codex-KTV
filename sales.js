@@ -33,7 +33,10 @@ export function collectableCharges(order, catalog = DEFAULT_CATALOG) {
     const productId = productIdOf(line);
     const saleQuantity = line.saleQuantity ?? line.count ?? 0;
     const optionName = line.saleOptionNameSnapshot || (line.spec === 'dozen' ? '整打' : line.spec === 'half' ? '半打' : '单支');
-    const label = `${line.productNameSnapshot || product(productId, catalog).name} ${saleQuantity}${optionName}`;
+    // Bug #4 修复：无名称快照的历史行显示「历史商品（id）」，不回退当前目录；
+    // catalog 参数仅为兼容保留，不再用于回退查询（商品移除也不会抛错）。
+    const productLabel = line.productNameSnapshot || `历史商品（${productId}）`;
+    const label = `${productLabel} ${saleQuantity}${optionName}`;
     const amount = line.amountCents ?? line.amount ?? 0;
     const current = groups.get(id);
     if (current) { current.amount += amount; current.labels.push(label); }
@@ -197,6 +200,12 @@ export function applyCredit(s, order, data, person, time) {
 }
 export function decideCredit(s, order, action, person, time) {
   if (!order || order.status !== '待审批挂账') throw Error('审批已处理'); need(s, [order.credit.approver], 'credit.approve');
+  // Bug #1 修复：指定审批人是硬性岗位限制，need 的管理员岗位穿透不再适用于此分支。
+  // 层级语义：店长级挂账可由店长或老板批准，老板级挂账只能由老板批准；
+  // 无对应营业岗位的身份（如仅持 credit.approve 具体权限的管理员）不能跨级批准。
+  const roles = effectiveUser(s).roles || [];
+  const allowedRoles = order.credit.approver === '店长' ? ['店长', '老板'] : [order.credit.approver];
+  if (!roles.some(role => allowedRoles.includes(role))) throw Error(`这笔挂账需要${order.credit.approver}岗位审批`);
   order.credit.decisionAt = time; order.credit.decisionBy = person; order.status = action === 'approve' ? '已挂账' : '营业中';
   // 驳回只恢复账单，不重新占用已经释放或被新客使用的房间。
   if (action === 'reject') order.credit = null;

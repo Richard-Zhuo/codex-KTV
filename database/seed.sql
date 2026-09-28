@@ -175,10 +175,10 @@ VALUES
   ('water','瓶装水','瓶装水','酒水','支',4,true,false,false,200,NULL,NULL,true),
   ('fruit','果盘','套餐配品','不管理','份',NULL,false,false,false,0,NULL,NULL,true),
   ('nuts_extra','花生瓜子（套餐）','套餐配品','不管理','份',NULL,false,false,false,0,NULL,NULL,true),
-  ('cons_nuts','瓜子','消耗品','包',NULL,true,false,false,NULL,NULL,NULL,true),
-  ('cons_ice','冰块','消耗品','袋',NULL,true,false,false,NULL,NULL,NULL,true),
-  ('cons_tissue','纸巾','消耗品','包',NULL,true,false,false,NULL,NULL,NULL,true),
-  ('cons_straw','吸管','消耗品','包',NULL,true,false,false,NULL,NULL,NULL,true),
+  ('cons_nuts','瓜子','消耗品','消耗品','包',NULL,true,false,false,NULL,NULL,NULL,true),
+  ('cons_ice','冰块','消耗品','消耗品','袋',NULL,true,false,false,NULL,NULL,NULL,true),
+  ('cons_tissue','纸巾','消耗品','消耗品','包',NULL,true,false,false,NULL,NULL,NULL,true),
+  ('cons_straw','吸管','消耗品','消耗品','包',NULL,true,false,false,NULL,NULL,NULL,true),
   ('legacy_yanjing','燕京','历史酒水','不管理','支',2,false,false,true,NULL,NULL,NULL,false),
   ('legacy_new_heineken','新喜力','历史酒水','不管理','支',2,false,false,true,NULL,NULL,NULL,false)
 ON CONFLICT (code) DO UPDATE SET

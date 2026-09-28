@@ -1,14 +1,9 @@
-// Phase 0：审计报告第 13 节 Existing Bugs 的重现证据。
-// ⚠️ 本文件断言的是【当前有缺陷的行为】，不是产品契约。
-// 每个 test 名以「BUG」开头，并在注释中引用审计报告条目编号。
-// 修复任一 bug 后，对应断言会失败——这是预期的：修复时必须同步改写
-// 这些测试为正确行为的回归测试。Phase 0 只建立证据，不做任何修复。
-//
-// 覆盖（rules.js 可达范围）：Bug #1 挂账跨级审批、Bug #2 套餐价格口径分裂、
-// Bug #3 换酒目标行缺名称快照、Bug #4 收费列表回退当前目录名、Bug #5 采购状态不同步。
-// Bug #6（存酒页当前目录名）、#7（报表 credit 布尔，已并入
-// characterization-report.test.js 冻结口径）、#8（损坏 localStorage 覆盖）、
-// #9（SQL 种子偏差）位于 app.js/database 层，在对应文件中另建证据。
+// 原 Phase 0 的 bug 重现证据测试，Bug 修复任务（2026-09-28）后改写为回归保护。
+// Bug #1-#5 已修复：以下断言改为验证修复后的正确行为。
+// 修复历史证据见 docs/CURRENT_STAGE.md 与 git 历史（Phase 0 原断言可查
+// 重构检查点 46b558a 之前的提交）。
+// Bug #6（存酒页）、#7（报表 credit）在 bugs-evidence-app.test.js；
+// #8 已由 Phase 1 结构性解决；#9 为 SQL 种子层，在 database.test.js。
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { initialState, transact } from './rules.js';
@@ -16,12 +11,12 @@ import { total, collectableCharges } from './sales.js';
 import { quote } from './rooms.js';
 
 let seq = 0;
-const apply = (s, a, d = {}) => transact(s, a, d, `bug-evidence-${++seq}`);
+const apply = (s, a, d = {}) => transact(s, a, d, `bug-fix-${++seq}`);
 const at = hour => `2026-09-19T${hour}:00+08:00`;
 function stocked(s) { for (const balance of Object.values(s.inventory)) if (balance.count === null) balance.count = 1000; return s; }
 const signature = 'data:image/png;base64,' + 'A'.repeat(100);
 
-test('BUG#1 挂账审批：指定「老板」审批的大额挂账可被仅持 credit.approve 权限的「管理员」批准', () => {
+test('回归（Bug#1 已修）：大额挂账只能由指定审批人岗位（或更高）批准，仅持权限不能跨级', () => {
   let s = stocked(initialState());
   s.clock = at('20:00');
   s.user = 'shaoBoss';
@@ -34,36 +29,67 @@ test('BUG#1 挂账审批：指定「老板」审批的大额挂账可被仅持 c
   assert.equal(s.orders[0].status, '待审批挂账');
   // administrator 岗位仅 ['管理员']，无「老板」角色，但持有全部具体权限（含 credit.approve）
   s.user = 'administrator';
-  // 当前实现：need(s, ['老板'], 'credit.approve') 只校验 permission，忽略岗位限制 → 放行
+  const before = structuredClone(s);
+  assert.throws(() => apply(s, 'approve', { order: id }), /这笔挂账需要老板岗位审批/);
+  assert.deepEqual(s, before, '拒绝后状态不变');
+  // 老板本人批准仍正常
+  s.user = 'zhuBoss';
   s = apply(s, 'approve', { order: id });
-  assert.equal(s.orders[0].status, '已挂账', '缺陷：跨级审批被放行');
-  assert.equal(s.orders[0].credit.decisionBy, '管理员');
+  assert.equal(s.orders[0].status, '已挂账');
+  assert.equal(s.orders[0].credit.decisionBy, '卓老板');
 });
 
-test('BUG#2 套餐价格口径分裂：priceCents 可设为与 basePriceCents+includedValueCents 不一致，quote 与账单互相矛盾', () => {
+test('回归（Bug#1 已修）：小额挂账店长或老板可批；无岗位身份不能批任何挂账', () => {
+  let s = stocked(initialState());
+  s.clock = at('20:00');
+  s.user = 'shaoBoss';
+  s = apply(s, 'open', { room: 'V02', beer: 'bw' });
+  const id = s.orders[0].id;
+  s.user = 'keeper';
+  s = apply(s, 'credit', { order: id, name: '小额顾客', note: '小额挂账', signature });
+  assert.equal(s.orders[0].credit.approver, '店长');
+  // 无营业岗位的管理员不能批店长级挂账
+  s.user = 'administrator';
+  assert.throws(() => apply(s, 'approve', { order: id }), /这笔挂账需要店长岗位审批/);
+  // 老板可批店长级（层级语义）；店长本人也可批
+  s.user = 'zhuBoss';
+  s = apply(s, 'approve', { order: id });
+  assert.equal(s.orders[0].status, '已挂账');
+  // 验证店长本人路径
+  s = stocked(initialState());
+  s.clock = at('20:00');
+  s.user = 'shaoBoss';
+  s = apply(s, 'open', { room: 'V02', beer: 'bw' });
+  const id2 = s.orders[0].id;
+  s.user = 'keeper';
+  s = apply(s, 'credit', { order: id2, name: '小额顾客', note: '小额挂账', signature });
+  s.user = 'shaoBoss';
+  s = apply(s, 'approve', { order: id2 });
+  assert.equal(s.orders.find(o => o.id === id2).status, '已挂账');
+});
+
+test('回归（Bug#2 已修）：套餐三金额字段必须一致，不一致提交被拒绝', () => {
   let s = initialState();
   s.clock = at('20:00');
   s.user = 'administrator';
-  // 更新套餐只改总价，不改基础价/含赠价值（当前实现允许）
-  s = apply(s, 'updateCatalogPackage', { id: 'room.small.night', priceCents: 9999 });
+  const before = structuredClone(s);
+  // 只改总价 → 与基础+赠饮不一致 → 拒绝
+  assert.throws(() => apply(s, 'updateCatalogPackage', { id: 'room.small.night', priceCents: 9999 }), /套餐总价必须等于基础房费加赠饮参考值/);
+  assert.deepEqual(s, before, '拒绝后目录不变');
+  // 只改基础价，总价同步重算（UI 提交路径的等价行为）→ 成功且三字段一致
+  s = apply(s, 'updateCatalogPackage', { id: 'room.small.night', basePriceCents: 6000, priceCents: 6000 + 11800 });
   const pkg = s.catalog.packages.find(p => p.id === 'room.small.night');
-  assert.equal(pkg.priceCents, 9999);
-  assert.equal(pkg.basePriceCents + pkg.includedValueCents, 16800, '三字段不再一致（缺陷）');
-  // quote() 的 total 用 priceCents，而 base/gift 用 basePriceCents/includedValueCents → 同一报价单内互相矛盾
+  assert.equal(pkg.priceCents, pkg.basePriceCents + pkg.includedValueCents);
+  // quote 与订单口径一致
   const q = quote('小房', at('20:00'), 'bw', '', s.catalog);
-  assert.equal(q.total, 9999, 'quote total 用 priceCents');
-  assert.equal(q.base + q.gift, 16800, 'base+gift 仍为原基础+赠饮');
-  assert.notEqual(q.total, q.base + q.gift, '缺陷：同一报价内 total ≠ base+gift');
-  // 开出的订单用 base/gift 口径，与 quote.total 不一致
+  assert.equal(q.total, q.base + q.gift);
   s.user = 'shaoBoss';
   s = apply(s, 'open', { room: 'V01', beer: 'bw' });
   const order = s.orders[0];
-  assert.equal(order.packagePriceCents, 9999, '订单套餐价快照用 priceCents');
-  assert.equal(order.base + order.gift, 16800, '订单 base+gift 口径不变');
-  assert.notEqual(order.packagePriceCents, total(order), '缺陷：订单套餐价快照 ≠ 账单 total（两个总价口径）');
+  assert.equal(order.packagePriceCents, total(order), '订单套餐价快照与账单 total 同一口径');
 });
 
-test('BUG#3 换酒目标行缺少名称快照：换入青岛后新 drinks 行没有 productNameSnapshot', () => {
+test('回归（Bug#3 已修）：换酒换入行带完整名称/单位快照', () => {
   let s = stocked(initialState());
   s.clock = at('20:00');
   s.user = 'shaoBoss';
@@ -71,16 +97,21 @@ test('BUG#3 换酒目标行缺少名称快照：换入青岛后新 drinks 行没
   const id = s.orders[0].id;
   s = apply(s, 'sale', { order: id, product: 'bw', spec: 'single', count: 1 });
   const sourceDrink = s.orders[0].sales[0].drinks[0];
-  assert.equal(sourceDrink.productNameSnapshot, '百威', '原行有快照');
   s = apply(s, 'exchange', { order: id, line: `sale:${sourceDrink.id}`, product: 'qd', count: 1 });
   const target = s.orders[0].sales[0].drinks.find(d => d.product === 'qd');
   assert.ok(target, '换入行已存在');
-  assert.equal(target.productNameSnapshot, undefined, '缺陷：换入行没有 productNameSnapshot');
-  assert.equal(target.baseUnitSnapshot, undefined, '缺陷：换入行没有 baseUnitSnapshot');
-  // 后果：历史展示只能回退到当前目录名（见 BUG#4 同类机制），改名后语义漂移
+  assert.equal(target.productNameSnapshot, '青岛', '换入行有名称快照');
+  assert.equal(target.baseUnitSnapshot, '支', '换入行有单位快照');
+  assert.equal(target.productId, 'qd');
+  assert.equal(target.snapshotStatus, 'current');
+  assert.equal(target.totalBaseQuantity, 1);
+  // 改名后历史行展示不漂移
+  s.user = 'administrator';
+  s = apply(s, 'updateCatalogProduct', { id: 'qd', name: '改名青岛' });
+  assert.equal(s.orders[0].sales[0].drinks.find(d => d.product === 'qd').productNameSnapshot, '青岛', '快照不随当前目录改名');
 });
 
-test('BUG#4 收费列表回退当前目录：无快照的历史销售行在商品改名后显示新名字', () => {
+test('回归（Bug#4 已修）：无快照历史销售行显示「历史商品（id）」，不跟随当前目录改名', () => {
   let s = initialState();
   s.orders.push({
     id: 'D1', kind: 'room', room: 'V01', time: '2026-09-19T20:00:00+08:00', status: '营业中',
@@ -88,25 +119,40 @@ test('BUG#4 收费列表回退当前目录：无快照的历史销售行在商�
     otherCharges: [], bonusGifts: [], payments: [], giftRequests: [], exchanges: [], rounding: 0, credit: null
   });
   const before = collectableCharges(s.orders[0], s.catalog).find(c => c.id === 'sale:1');
-  assert.match(before.label, /百威/);
-  // 后台改名后，同一笔历史销售的待收标签变了
+  s.orders[0].sales[0].productNameSnapshot = '百威';
+  const snapshotted = collectableCharges(s.orders[0], s.catalog).find(c => c.id === 'sale:1');
+  assert.match(snapshotted.label, /百威/, '有快照时正常显示快照名');
   s.user = 'administrator';
   s = apply(s, 'updateCatalogProduct', { id: 'bw', name: '改名百威' });
+  // 无快照行（模拟旧数据）
+  s.orders[0].sales[0].productNameSnapshot = undefined;
   const after = collectableCharges(s.orders[0], s.catalog).find(c => c.id === 'sale:1');
-  assert.match(after.label, /改名百威/, '缺陷：历史行金额未变但显示名跟随当前目录');
-  assert.equal(after.amount, 11800, '金额本身不受影响');
+  assert.match(after.label, /历史商品（bw）/, '无快照显示历史占位，不读当前目录');
+  assert.doesNotMatch(after.label, /改名百威/);
+  assert.equal(after.amount, 11800, '金额不受影响');
+  // 商品从目录移除后也不抛错（不再回退查询当前目录）
+  s.catalog.products = s.catalog.products.filter(p => p.id !== 'bw');
+  const removed = collectableCharges(s.orders[0], s.catalog).find(c => c.id === 'sale:1');
+  assert.match(removed.label, /历史商品（bw）/);
 });
 
-test('BUG#5 采购状态不同步：approveExpense 只改支出状态，关联采购单永远停在「报销待老板审批」', () => {
+test('回归（Bug#5 已修）：审批费用后关联采购单状态同步', () => {
   let s = initialState();
   s.clock = at('20:00');
   s.user = 'administrator';
   s = apply(s, 'procurement', { date: '2026-09-19', item: '一次性杯', quantity: 100, unit: '个', amount: 60000, method: '现金', type: '报销', nature: '一次性支出' });
   assert.equal(s.procurements[0].status, '报销待老板审批');
-  assert.equal(s.expenses[0].status, '待老板审批');
   assert.equal(s.procurements[0].expenseId, s.expenses[0].id);
   s.user = 'zhuBoss';
   s = apply(s, 'approveExpense', { id: s.expenses[0].id });
   assert.equal(s.expenses[0].status, '已审批');
-  assert.equal(s.procurements[0].status, '报销待老板审批', '缺陷：采购单状态未同步，仍显示待审批');
+  assert.equal(s.procurements[0].status, '已关联支出', '采购单状态同步');
+  assert.equal(s.procurements[0].decisionBy, '卓老板');
+  // 驳回路径：新建一笔大额报销后驳回 → 采购单显示已驳回
+  s.user = 'administrator';
+  s = apply(s, 'procurement', { date: '2026-09-19', item: '洋酒', quantity: 2, unit: '瓶', amount: 200000, method: '支付宝', type: '报销', nature: '资金周转' });
+  s.user = 'zhuBoss';
+  s = apply(s, 'rejectExpense', { id: s.expenses[1].id });
+  assert.equal(s.expenses[1].status, '已驳回');
+  assert.equal(s.procurements[1].status, '报销已驳回', '驳回同步到采购单');
 });

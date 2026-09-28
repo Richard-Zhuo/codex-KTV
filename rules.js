@@ -126,6 +126,9 @@ export function transact(original, action, data = {}, key) {
       if (!Number.isSafeInteger(data[field]) || data[field] < 0) throw Error('套餐金额或排序无效');
       next[field] = data[field];
     }
+    // Bug #2 修复：总价只有一个来源——基础房费＋赠饮参考值；提交不一致直接拒绝，
+    // 开房报价、订单快照与账单 total 不再出现两个总价口径。
+    if (next.priceCents !== next.basePriceCents + (next.includedValueCents || 0)) throw Error('套餐总价必须等于基础房费加赠饮参考值');
     if (data.active !== undefined) next.active = Boolean(data.active);
     s.catalog.packages = s.catalog.packages.map(item => item.id === id ? next : item);
   } else if (action === 'markRoomIssue') {
@@ -203,7 +206,11 @@ export function transact(original, action, data = {}, key) {
     recordInventoryChange(s, productIdOf(line), data.count, '换购退回', time); recordInventoryChange(s, data.product, -data.count, '换购领取', time);
     line.count -= data.count;
     const target = lines.find(drink => productIdOf(drink) === data.product);
-    if (target) target.count += data.count; else lines.push({ id: ++s.serial, product: data.product, count: data.count });
+    if (target) target.count += data.count; else {
+      // Bug #3 修复：换入行写入完整名称/单位快照，历史展示不再依赖当前目录。
+      const exchanged = product(data.product, s.catalog);
+      lines.push({ id: ++s.serial, product: data.product, productId: exchanged.id, productNameSnapshot: exchanged.name, baseUnitSnapshot: exchanged.baseUnit, count: data.count, totalBaseQuantity: data.count, snapshotStatus: 'current' });
+    }
     order.exchanges.push({ from: productIdOf(line), to: data.product, fromProductId: productIdOf(line), toProductId: data.product, count: data.count, scope, time, person });
   } else if (action === 'serveExtra') {
     need(s, ['开单员','服务员','老板'], 'order.serveExtra'); active();

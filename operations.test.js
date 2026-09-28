@@ -206,15 +206,15 @@ test('前测·跨域原子性·采购联动支出：失败两表都不写、成�
   assert.equal(s.procurements[0].status, '已关联支出');
   assert.equal(s.procurements[0].expenseId, s.expenses[0].id);
   assert.equal(s.procurements[0].description, '吧台补货');
-  // 大额报销：两边同时进入待审批（已知 bug：审批后采购状态不同步，见 bugs-evidence #5，单独修复）
+  // 大额报销：两边同时进入待审批（Bug #5 已修：审批后采购状态同步）
   s = apply(s, 'procurement', { date: '2026-09-28', item: '洋酒', quantity: 2, unit: '瓶', amount: 200000, method: '支付宝', type: '报销', nature: '资金周转' });
   assert.equal(s.expenses[1].status, '待老板审批');
   assert.equal(s.procurements[1].status, '报销待老板审批');
-  // 老板批准支出后，采购状态保持旧值（bug #5 行为冻结，修复另立任务）
+  // 老板批准支出后，采购状态同步（Bug #5 修复后行为）
   s.user = 'zhuBoss';
   s = apply(s, 'approveExpense', { id: s.expenses[1].id });
   assert.equal(s.expenses[1].status, '已审批');
-  assert.equal(s.procurements[1].status, '报销待老板审批');
+  assert.equal(s.procurements[1].status, '已关联支出');
 });
 
 test('前测·交班与可见性：expected 口径取 collected、按权限过滤行', () => {

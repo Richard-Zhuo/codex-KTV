@@ -211,6 +211,7 @@ test('采购联动支出：低于阈值直接已记录，超过阈值需老板�
   s.user = 'zhuBoss';
   s = apply(s, 'approveExpense', { id: s.expenses[1].id });
   assert.equal(s.expenses[1].status, '已审批');
+  assert.equal(s.procurements[1].status, '已关联支出', 'Bug #5 修复：采购状态同步');
 });
 
 test('赠酒水超过配额进入待确认，批准后入账且计入 bonusGifts 参考值', () => {

@@ -8,6 +8,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { initialState, transact } from './rules.js';
 import { total, outstanding, collected, nextCollectCharge } from './sales.js';
+// Phase 6 抽取后 reportNotes/reportMoney 已有真实 selector，直接测试（Bug #7 回归断言用）
+import { reportNotes, reportMoney } from './reporting.js';
 
 let seq = 0;
 const apply = (s, a, d = {}) => transact(s, a, d, `report-char-${++seq}`);
@@ -29,7 +31,7 @@ function reportOrder(state, roomId, reportPeriod) {
   const orders = state.orders.filter(order => order.kind !== 'retail' && order.room === roomId && reportPeriodMatch(order, state.clock, reportPeriod)).sort((a, b) => Date.parse(a.time) - Date.parse(b.time));
   if (!orders.length) return null;
   const base = orders.reduce((sum, order) => sum + Number(order.packageBaseCents ?? order.base ?? 0), 0), gift = orders.reduce((sum, order) => sum + Number(order.packageGiftValueCents ?? order.gift ?? 0), 0);
-  return { ...orders.at(-1), periodOrders: orders, packageBaseCents: base, packageGiftValueCents: gift, base, gift, drinks: orders.flatMap(order => order.drinks || []), extras: orders.flatMap(order => order.extras || []), sales: orders.flatMap(order => order.sales || []), otherCharges: orders.flatMap(order => order.otherCharges || []), bonusGifts: orders.flatMap(order => order.bonusGifts || []), payments: orders.flatMap(order => order.payments || []), rounding: orders.reduce((sum, order) => sum + Number(order.rounding || 0), 0), status: orders.at(-1).status, credit: orders.some(order => order.credit), voucher: orders.find(order => order.voucher)?.voucher };
+  return { ...orders.at(-1), periodOrders: orders, packageBaseCents: base, packageGiftValueCents: gift, base, gift, drinks: orders.flatMap(order => order.drinks || []), extras: orders.flatMap(order => order.extras || []), sales: orders.flatMap(order => order.sales || []), otherCharges: orders.flatMap(order => order.otherCharges || []), bonusGifts: orders.flatMap(order => order.bonusGifts || []), payments: orders.flatMap(order => order.payments || []), rounding: orders.reduce((sum, order) => sum + Number(order.rounding || 0), 0), status: orders.at(-1).status, voucher: orders.find(order => order.voucher)?.voucher };
 }
 function reportTotals(orders) {
   return orders.reduce((sum, order) => { sum.base += Number(order.packageBaseCents ?? order.base ?? 0); sum.sales += (order.sales || []).reduce((n, line) => n + Number(line.amountCents ?? line.amount ?? 0), 0) + Number(order.packageGiftValueCents ?? order.gift ?? 0); sum.gift += (order.bonusGifts || []).reduce((n, gift) => n + (Number.isSafeInteger(gift.referenceValueCents) ? gift.referenceValueCents : 0), 0); sum.total += total(order); sum.rounding += Number(order.rounding || 0); return sum; }, { base: 0, sales: 0, gift: 0, total: 0, rounding: 0 });
@@ -109,9 +111,10 @@ test('日报：房间行按房号聚合，跨房间与零售计入同一账单�
   assert.equal(r333.periodOrders.length, 2);
   assert.equal(r333.base, 10800);
   assert.equal(r333.gift, 47200);
-  // 聚合备注的 credit 布尔值：任一订单有挂账即为 true（当前口径）
-  assert.equal(r333.credit, true);
-  assert.equal(v01.credit, false);
+  // Bug #7 修复：聚合行不再压缩 credit 布尔；挂账详情看 periodOrders 各单。
+  assert.equal(r333.credit, null, '聚合行 credit 不再是布尔（末单无挂账时为 null）');
+  assert.equal(r333.periodOrders.filter(item => item.credit).length, 1, '挂账详情在 periodOrders 中保留');
+  assert.equal(v01.credit, null);
   const totals = reportTotals(periodOrders);
   assert.equal(totals.base, 5000 + 5400 * 2);
   assert.equal(totals.sales, 11800 + 11800 + 23600 + 1000 + 23600 + 200 + 400);
@@ -119,18 +122,19 @@ test('日报：房间行按房号聚合，跨房间与零售计入同一账单�
   assert.equal(totals.rounding, 1000);
 });
 
-test('日报：同房多单聚合后备注按聚合 credit 布尔解释，已部分回款的单被最后一笔订单状态遮蔽', () => {
+test('日报：同房多单备注逐笔列出挂账，部分回款不再被末单状态遮蔽（Bug #7 已修）', () => {
   const s = scenario();
   const r333 = reportOrder(s, '333', 'day');
-  // 当前实现：reportNotes 在日报下读取聚合行的 credit 布尔值与聚合行状态（最后一笔订单的状态）。
-  // 审计报告第 13 节已确认这是现存口径（Bug 7）：第一笔订单的挂账回款进度被第二笔订单的状态遮蔽。
-  // 本断言只冻结当前行为，不代表正确的业务语义。
-  assert.equal(r333.credit, true);
+  // Bug #7 修复后：日报备注按 periodOrders 逐笔生成挂账（含金额），
+  // 部分回款的单不再被第二笔订单的已结账状态遮蔽。
   assert.equal(r333.status, '已结账');
   const first = r333.periodOrders[0];
   assert.equal(first.status, '已挂账');
   assert.equal(first.credit.remaining, 29500);
   assert.equal(r333.payments.filter(p => p.chargeId === 'credit-repayment').length, 1);
+  const notes = reportNotes(r333, 'day');
+  assert.ok(notes.includes(`挂账${reportMoney(first.credit.amount)}`), '日报备注逐笔列出第一笔挂账金额');
+  assert.ok(!notes.some(note => note.includes('已回款')), '部分回款不显示已回款');
 });
 
 test('日报：回款批准写入 order.payments 且 collected 计入实收（口径冻结）', () => {

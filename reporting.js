@@ -39,7 +39,7 @@ export function reportOrder(state, roomId, reportPeriod) {
   const orders = state.orders.filter(order=>order.kind!=='retail' && order.room===roomId && reportPeriodMatch(order, state.clock, reportPeriod)).sort((a,b)=>Date.parse(a.time)-Date.parse(b.time));
   if (!orders.length) return null;
   const base=orders.reduce((sum,order)=>sum+Number(order.packageBaseCents ?? order.base ?? 0),0), gift=orders.reduce((sum,order)=>sum+Number(order.packageGiftValueCents ?? order.gift ?? 0),0);
-  return { ...orders.at(-1), periodOrders:orders, packageBaseCents:base, packageGiftValueCents:gift, base, gift, drinks:orders.flatMap(order=>order.drinks||[]), extras:orders.flatMap(order=>order.extras||[]), sales:orders.flatMap(order=>order.sales||[]), otherCharges:orders.flatMap(order=>order.otherCharges||[]), bonusGifts:orders.flatMap(order=>order.bonusGifts||[]), payments:orders.flatMap(order=>order.payments||[]), rounding:orders.reduce((sum,order)=>sum+Number(order.rounding||0),0), status:orders.at(-1).status, credit:orders.some(order=>order.credit), voucher:orders.find(order=>order.voucher)?.voucher };
+  return { ...orders.at(-1), periodOrders:orders, packageBaseCents:base, packageGiftValueCents:gift, base, gift, drinks:orders.flatMap(order=>order.drinks||[]), extras:orders.flatMap(order=>order.extras||[]), sales:orders.flatMap(order=>order.sales||[]), otherCharges:orders.flatMap(order=>order.otherCharges||[]), bonusGifts:orders.flatMap(order=>order.bonusGifts||[]), payments:orders.flatMap(order=>order.payments||[]), rounding:orders.reduce((sum,order)=>sum+Number(order.rounding||0),0), status:orders.at(-1).status, voucher:orders.find(order=>order.voucher)?.voucher };
 }
 export function reportGiftAmount(order) { return (order?.bonusGifts || []).reduce((sum,gift)=>sum + (Number.isSafeInteger(gift.referenceValueCents) ? gift.referenceValueCents : 0),0); }
 export function reportGiftDetails(order) {
@@ -86,13 +86,19 @@ export function reportNotes(order, reportPeriod) {
     const fullyRepaid = item?.status === '已回款' || (credit && typeof credit === 'object' && Number(credit.remaining || 0) === 0);
     return credit && fullyRepaid ? ' 已回款' : '';
   };
-  if (reportPeriod !== 'day') {
-    return [...(order.periodOrders || [])]
-      .filter(item=>item.credit)
-      .sort((a,b)=>Date.parse(b.credit.submittedAt || b.time)-Date.parse(a.credit.submittedAt || a.time))
-      .map(item=>`${reservationDate(item.credit.submittedAt || item.time)} 挂账${reportMoney(item.credit.amount)}${repaymentSuffix(item)}`);
+  // Bug #7 修复：日报备注不再按聚合行 credit 布尔压缩，改为逐笔列出周期内每笔挂账，
+  // 同房多单时保留每笔金额与回款状态。
+  if (reportPeriod === 'day') {
+    const creditNotes = [...(order.periodOrders || [order])]
+      .filter(item => item.credit)
+      .sort((a, b) => Date.parse(b.credit.submittedAt || b.time) - Date.parse(a.credit.submittedAt || a.time))
+      .map(item => `挂账${reportMoney(item.credit.amount)}${repaymentSuffix(item)}`);
+    return [...creditNotes, order.voucher ? `${order.voucher.provider}待验券` : '', order.status === '已结账' ? '已结账' : ''].filter(Boolean);
   }
-  return [order.credit?`挂账${repaymentSuffix(order)}`:'', order.voucher?`${order.voucher.provider}待验券`:'', order.status==='已结账'?'已结账':''].filter(Boolean);
+  return [...(order.periodOrders || [])]
+    .filter(item=>item.credit)
+    .sort((a,b)=>Date.parse(b.credit.submittedAt || b.time)-Date.parse(a.credit.submittedAt || a.time))
+    .map(item=>`${reservationDate(item.credit.submittedAt || item.time)} 挂账${reportMoney(item.credit.amount)}${repaymentSuffix(item)}`);
 }
 // 视图模型：reportPage 头部的聚合常量（自 HEAD app.js reportPage 逐行迁出），
 // 另将房间行的 sales／other 汇总并入 rows，报表 UI 不再自行聚合。

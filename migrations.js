@@ -76,12 +76,16 @@ export function migrateStartupState(state) {
     for (const gift of order.bonusGifts) {
       gift.id ??= ++state.serial;
       gift.drinks ??= gift.bottles ? [{ id: ++state.serial, product: gift.product, count: gift.bottles }] : [];
+      // Bug #3 配套：旧数据里换入/缺名称的饮品行补齐快照字段骨架（历史名保持未知，不读当前目录）。
+      for (const drink of gift.drinks) { drink.productId ??= drink.product || gift.productId || gift.product || ''; drink.productNameSnapshot ??= null; drink.baseUnitSnapshot ??= null; drink.totalBaseQuantity ??= drink.count ?? null; drink.snapshotStatus ??= 'legacy'; }
     }
     for (const sale of order.sales) {
       sale.id ??= ++state.serial;
       const multiplier = sale.spec === 'dozen' ? 12 : sale.spec === 'half' ? 6 : 1;
       sale.bottles ??= Number(sale.count || 0) * multiplier;
       sale.drinks ??= sale.bottles ? [{ id: ++state.serial, product: sale.product, count: sale.bottles }] : [];
+      // Bug #3 配套：同上，销售行内嵌饮品行补齐快照字段骨架。
+      for (const drink of sale.drinks) { drink.productId ??= drink.product || sale.productId || sale.product || ''; drink.productNameSnapshot ??= null; drink.baseUnitSnapshot ??= null; drink.totalBaseQuantity ??= drink.count ?? null; drink.snapshotStatus ??= 'legacy'; }
     }
   }
   for (const room of state.rooms) {

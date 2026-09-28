@@ -43,4 +43,11 @@ export function decideExpense(s, action, data, person, time) {
   expense.status = action === 'approveExpense' ? '已审批' : '已驳回';
   expense.approver = person;
   expense.approvedAt = time;
+  // Bug #5 修复：审批结果同步到关联采购单，采购页不再停留在旧状态。
+  for (const procurement of (s.procurements || [])) {
+    if (procurement.expenseId !== expense.id || procurement.status !== '报销待老板审批') continue;
+    procurement.status = action === 'approveExpense' ? '已关联支出' : '报销已驳回';
+    procurement.decisionAt = time;
+    procurement.decisionBy = person;
+  }
 }

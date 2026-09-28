@@ -19,9 +19,28 @@
 | Phase 8 | 旧 facade／兼容代码清理：删除 `rules.js` 全部 facade re-export（shared 基础、sales 查询、rooms 查询、catalog product、各域可见性选择器），调用方（app.js、migrations.js、ui/ 18 个模块、11 个测试文件）重指向 owner 模块；`rules.js` 288→270 行，仅导出 `OTHER_CHARGE_CATEGORIES`／`bonusAllowance`／`initialState`／`transact`（事务边界唯一职责）；删除死代码 `ui/pages/admin.js` 的 `stockNotices`／`handoverHistory`（从未被调用的死渲染）与 `ui/context.js` 的 `creditRoles`／`managementRoles`／`reportRoles`／`consumableOptions`（导出后无人导入）；`productSnapshot` 改为 rules.js 私有（另有 rooms.js／sales.js 同名私有副本，Phase 4 先例）；不新建业务模块，旧状态迁移与历史快照不变 | 2026-09-28 | 前测＝基线 188/188（含旧格式夹具迁移测试 persistence/migrations）+ 全仓引用搜索矩阵（每个待删符号确认零调用方）；后测：静态核查全部 rules.js 导入可解析、死符号零残留，facade 同绑定测试改写为反向断言（rules.js 导出面恰为 4 符号），188/188；浏览器验证 39 模块全部 200、六页导航、admin 页（死代码删除处）权限卡片、开房（quote→money→transact 全链路）与挂账（签字 canvas→审批中→房态待清洁）；验收后已恢复演示数据 | 本阶段 commit |
 | Phase 9 | 终局回归：Git 差异审计（e6d0fed..HEAD 共 10 个提交均为授权重构，无未授权改动混入）；DoD §23 逐项核查通过；后测三组——A 完整自动套件 188/188＋浏览器级旧数据升级（v0 旧格式注入→迁移补齐 capabilitySchemaVersion/能力/快照，未知历史价保持 null，报表 legacy 渲染“历史未分类”，首次保存后写回）；B 资源服务 44 白名单资源全 200、非白名单与路径穿越 404；C 浏览器端到端 §20 全清单（V03 开房→未建账拒售→建账审核→增购→分次收款→结账→待清洁→清洁、独立零售、存取酒、挂账及回款、自审拦截×2、历史目录改价后报表不变、两入口、手机视口、明/自动主题、DEMO 时钟）；验收后已重置演示数据并关停本地服务 | 2026-09-28 | 见“有效证据”表 Phase 9 各行 | 本阶段 commit |
 
-全部 9 个阶段已完成。原审计报告 Bug #1-#7、#9 未修复（仅 #8 由 Phase 1 结构性解决）；修复需另立任务。
+全部 9 个阶段已完成。2026-09-28 另立 bug 修复任务，已修复审计报告 §13 全部未修 Bug #1-#7、#9（#8 由 Phase 1 结构性解决），见下方独立任务表。
 
 ## 当前目标
+
+### 已完成：审计报告 §13 业务 Bug 修复（独立于重构）
+
+按用户「修复 bug，全部授权」指令另立任务，与重构提交严格分离。8 个修复点全部完成：
+
+| Bug | 修复要点 | 证据 | 日期 |
+|---|---|---|---|
+| #1 挂账审批岗位穿透 | `sales.js` decideCredit 在权限校验后增加营业岗位硬限制（店长级可由店长或老板批，老板级仅老板；无对应岗位的身份如管理员被拒，文案「这笔挂账需要XX岗位审批」） | bugs-evidence.test.js 回归×2；浏览器：管理员批 ¥1668 老板级挂账被拒，卓老板批准成功，订单转「已挂账」 | 2026-09-28 |
+| #2 套餐总价不校验 | `rules.js` updateCatalogPackage 增加 `priceCents === basePriceCents + includedValueCents` 校验；对话框总价改只读并随基础房费/赠饮参考值联动重算；app.js 提交前重算双保险 | bugs-evidence.test.js；浏览器：小房夜间套餐对话框改基础房费 60→总价自动 178，提交后持久化三元组一致，已恢复原值 | 2026-09-28 |
+| #3 换酒不写名称快照 | `rules.js` exchange 换入行写入完整 productNameSnapshot/baseUnitSnapshot/snapshotStatus='current'；migrations.js 为旧 gift.drinks/sale.drinks 行补齐快照字段骨架（历史名保持 null 不读当前目录） | bugs-evidence.test.js；浏览器：V02 增购百威换喜力后账单显示「这笔增购实际领取喜力 1 支」，目录改名后展示不变 | 2026-09-28 |
+| #4 历史销售行回退当前目录 | `sales.js` collectableCharges 改用 `productNameSnapshot || 历史商品（id）`，不再回退当前目录，商品移除不抛错 | bugs-evidence.test.js；自动测试覆盖（浏览器可选项未单独执行） | 2026-09-28 |
+| #5 采购状态不同步 | `expenses.js` decideExpense 审批后将关联采购单从「报销待老板审批」同步为「已关联支出」或「报销已驳回」（含 decisionAt/decisionBy） | bugs-evidence.test.js + operations/characterization-core 断言更新；浏览器：老板娘登记报销采购 ¥600→卓老板批准→采购页徽标同步显示「已关联支出」 | 2026-09-28 |
+| #6 存酒页改名后回退目录 | `ui/pages/deposits.js` 存酒卡改用 `productNameSnapshot`（app.js 取酒对话框同步） | bugs-evidence-app.test.js；浏览器：存酒时商品名「百威（验收改名）」，目录再改名后存酒卡仍显示登记时快照名 | 2026-09-28 |
+| #7 日报备注布尔压缩挂账 | `reporting.js` reportNotes 日报分支改按 periodOrders 逐笔列出每笔挂账（含金额与回款状态）；reportOrder 聚合行删除 credit 布尔字段 | bugs-evidence-app.test.js + reporting.test.js 备注矩阵/同房多单回归 + characterization-report.test.js 冻结断言更新；浏览器：V01 挂账 ¥1668 日报备注列显示「挂账¥1668」 | 2026-09-28 |
+| #9 种子消耗品行分类错位 | `database/seed.sql` 四行消耗品（瓜子/冰块/纸巾/吸管）补上缺失的 inventory_class 列值「消耗品」，使列数与 INSERT 列名行一致 | database.test.js 静态回归（逐行列数一致性 + 消耗品/套餐配品分类断言）；环境无 PostgreSQL，未执行真实导入 | 2026-09-28 |
+
+全套 `npm test`（`NODE_OPTIONS=--test-isolation=none TZ=Asia/Shanghai`）190/190 通过（188 基线 + Bug#9 新增 1 项 + 备注矩阵新增 1 项）。浏览器验收后已恢复演示数据并关停本地服务。修复 commit 与重构 commit 分离。
+
+### 后续目标
 
 维持可操作的单机浏览器演示，在已统一的 `state.catalog` 上完成普通零售商品的创建、库存建账、房间增购、独立零售、成交快照和通用报表闭环。香烟属于普通商品分类，未添加任何未经确认价格的具体香烟主数据。
 
@@ -42,6 +61,8 @@
 
 | 证据 | 日期 | 结论 | 状态 |
 |---|---|---|---|
+| Bug 修复全套自动测试 | 2026-09-28 | `npm test`（`NODE_OPTIONS=--test-isolation=none TZ=Asia/Shanghai`）190/190：Bug #1-#7、#9 各有回归断言（bugs-evidence.test.js / bugs-evidence-app.test.js / database.test.js / reporting.test.js / characterization-report.test.js）；受影响冻结断言同步更新（挂账层级、采购同步后状态、聚合 credit 字段删除） | 本次执行 |
+| Bug 修复浏览器验收 | 2026-09-28 | 本地 Chromium `localhost:4321`：#1 管理员批老板级挂账 ¥1668 被拒（「这笔挂账需要老板岗位审批」）、卓老板批准→「已挂账」；#7 日报备注列「挂账¥1668」；#2 套餐对话框改基础房费 60→只读总价自动 178、提交持久化 base:6000/included:11800/price:16000 三元组一致；#6 存酒登记后目录两次改名、存酒卡仍显示登记时快照名；#3 V02 增购百威换喜力、账单显示「这笔增购实际领取喜力 1 支」、目录再改名后展示不变；#5 老板娘登记报销采购 ¥600→卓老板批准→采购页徽标「已关联支出」；#4/#9 由自动测试覆盖（#9 环境无 PostgreSQL 仅静态验证）；验收后已重置演示数据并关停服务 | 本次页面操作通过 |
 | 针对性规则测试 | 2026-09-28 | `node --test --test-isolation=none catalog.test.js rules.test.js retail.test.js entry.test.js`：64/64 通过，覆盖统一订单、未建账、库存不足、付款失败原子性、整打 12 支、人员与历史价格快照 | 本次执行 |
 | 完整自动测试 | 2026-09-28 | 重构 Phase 9 终局回归后 `npm test`（`NODE_OPTIONS=--test-isolation=none`）188/188 通过（含 Phase 0 新增 27 项、Phase 1 新增 11 项、Phase 2 新增 15 项、Phase 3 新增 16 项、Phase 4 新增 8 项、Phase 5 新增 18 项、Phase 6 新增 12 项、Phase 7 新增 7 项；Phase 8 改写 facade 同绑定断言为反向断言，总数不变） | 本次执行 |
 | Phase 9 Git 差异审计 | 2026-09-28 | `git diff e6d0fed..74c3f55` 逐提交核对：10 个提交（Phase 0-8）均为授权重构内容，无未授权文件、无未跟踪用户文件（AI_IN_WORK.pptx、calendar-widget.html、codex-KTV.zip、nocode-*.png、审计报告.txt）混入；无 force push、无远端推送 | 本次执行 |

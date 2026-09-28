@@ -36,6 +36,15 @@ ctx.persistence = persistence; ctx.modal = modal; ctx.app = app;
 
 document.addEventListener('change',e=>{
   if(e.target.id==='report-period'){ ctx.reportPeriod=e.target.value; render(); window.scrollTo(0,0); return; }
+  // Bug #2 修复：套餐维护对话框中基础房费或赠饮参考值变化时，只读总价同步重算。
+  if(e.target.name==='basePriceCents'||e.target.name==='includedValueCents'){
+    const form=e.target.closest('form');
+    if(form?.dataset?.form==='updateCatalogPackage'){
+      const total=form.elements.priceCents, base=Number(form.elements.basePriceCents.value)||0, included=Number(form.elements.includedValueCents.value)||0;
+      if(total){ total.value=(base+included).toFixed(2); }
+    }
+    return;
+  }
   if(e.target.id==='appearance-preference'){
     const saved=window.ktvAppearance.setPreference(e.target.value);
     syncAppearanceControls();
@@ -194,7 +203,7 @@ document.addEventListener('click',e=>{
     else if(a==='identity')openDialog('切换演示身份',`<p class="muted">仅用于体验权限，不是真实登录；岗位名称只作说明。</p><label>选择身份<select name="user">${options(Object.entries(USERS).filter(([,u])=>!u.legacy).map(([id,u])=>[id,`${u.name} · ${u.title || '岗位说明未设置'}`]),ctx.state.user)}</select></label>`,'使用这个身份','identity');
     else if(a==='clock')openDialog('调整练习时间',`<p>默认从当天20:00开始练习。改成18:00或02:00可以测试价格边界，不会改写已有订单。</p><label>演示时间<input type="datetime-local" name="clock" value="${localDate(ctx.state.clock)}" required></label>`,'设置练习时间','clock');
     else if(a==='deposit')openDepositDialog();
-    else if(a==='withdraw'){const d=ctx.state.deposits.find(d=>d.id===Number(id));openDialog('核对并取酒',`<p>${product(d.product).name} · 余 ${d.count} 支</p><label>手机尾号或顾客姓名<input name="identity" required placeholder="至少4位手机尾号，或完整姓名"></label><p class="muted">手机号可输入登记号码的最后4至11位；姓名需与登记姓名一致。</p>${stepper(d.count,'数量（支）')}`,'确认取酒','withdraw',{id});}
+    else if(a==='withdraw'){const d=ctx.state.deposits.find(d=>d.id===Number(id));openDialog('核对并取酒',`<p>${d.productNameSnapshot || product(d.product).name} · 余 ${d.count} 支</p><label>手机尾号或顾客姓名<input name="identity" required placeholder="至少4位手机尾号，或完整姓名"></label><p class="muted">手机号可输入登记号码的最后4至11位；姓名需与登记姓名一致。</p>${stepper(d.count,'数量（支）')}`,'确认取酒','withdraw',{id});}
     else if(a==='editPermissions')permissionsDialog(id);
     else if(a==='editCatalogProduct'){if(!allowedPermission('catalog.manage'))throw Error('当前身份没有目录维护权限');catalogProductDialog(id);}
     else if(a==='createCatalogProduct'){if(!allowedPermission('catalog.manage'))throw Error('当前身份没有目录维护权限');catalogCreateDialog();}
@@ -277,7 +286,9 @@ document.addEventListener('submit',e=>{
         d.saleOptions=saleOptions(item).map(option=>({...option,priceCents:cents(d[`price_${option.id}`])}));
       }
       if(a==='updateCatalogPackage'){
-        d.active=Boolean(f.elements.active?.checked); d.priceCents=cents(d.priceCents); d.basePriceCents=cents(d.basePriceCents); d.includedValueCents=cents(d.includedValueCents); d.sortOrder=Number(d.sortOrder);
+        // Bug #2 修复：priceCents 不再独立填写，提交前由基础房费＋赠饮参考值重新计算，
+        // 对话框中为只读展示（rules.js 仍校验一致性，双保险）。
+        d.active=Boolean(f.elements.active?.checked); d.basePriceCents=cents(d.basePriceCents); d.includedValueCents=cents(d.includedValueCents); d.priceCents=d.basePriceCents+d.includedValueCents; d.sortOrder=Number(d.sortOrder);
       }
       f.dataset.key ||= globalThis.crypto?.randomUUID?.() || `op-${Date.now()}-${Math.random()}`;
       commit(a,d,f.dataset.key);

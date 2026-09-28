@@ -88,3 +88,32 @@ test('CSV 模板固定金山日报与支出表字段顺序', () => {
   ]);
   assert.deepEqual(expenseTemplate.split(','), ['日期', '支出金额', '付款方式', '性质', '说明', '图片']);
 });
+
+test('回归（Bug#9 已修）：种子商品行与列数一致，消耗品/套餐配品分类与运行时目录对齐', () => {
+  // DDL 含 created_at DEFAULT now()（14 列），INSERT 列名行显式列出 13 列；逐行值个数应与 INSERT 列名数一致
+  const insertColumnsStart = seed.indexOf('INSERT INTO products(');
+  const insertColumnsEnd = seed.indexOf(')', insertColumnsStart);
+  const insertColumns = seed.slice(insertColumnsStart + 'INSERT INTO products('.length, insertColumnsEnd)
+    .split(',').map(name => name.trim()).filter(Boolean);
+  assert.equal(insertColumns.length, 13, 'products INSERT 显式列出 13 列');
+  const valuesStart = seed.indexOf("VALUES\n  ('bw'");
+  // products 段的 ON CONFLICT 是其后第一个；不能从头 indexOf（KTV 名表等更早段落也有 ON CONFLICT (code)）
+  const valuesEnd = seed.indexOf('ON CONFLICT (code)', valuesStart);
+  assert.ok(valuesStart > 0 && valuesEnd > valuesStart, '商品种子段应存在');
+  const rows = seed.slice(valuesStart, valuesEnd).split("\n  ").map(line => {
+    const match = line.match(/^\('([a-z0-9_]+)',(.*)\),?$/);
+    if (!match) return null;
+    // 按顶层逗号计数（字符串内不含逗号，本种子为 ASCII/中文名）
+    const fields = match[2].match(/'[^']*'|[^,]+/g).filter(token => token.trim() !== '');
+    return { code: match[1], fieldCount: fields.length + 1 };
+  }).filter(Boolean);
+  assert.ok(rows.length >= 23, '种子商品应覆盖全部目录商品');
+  for (const row of rows) {
+    assert.equal(row.fieldCount, insertColumns.length, `商品 ${row.code} 种子值个数应等于 INSERT 列数 ${insertColumns.length}`);
+  }
+  // 消耗品与套餐配品的 inventory_class 与运行时 catalog.js 对齐
+  assert.ok(seed.includes("('cons_nuts','瓜子','消耗品','消耗品','包'"), '瓜子：category=消耗品，inventory_class=消耗品，unit=包');
+  assert.ok(seed.includes("('cons_ice','冰块','消耗品','消耗品','袋'"), '冰块：inventory_class=消耗品，unit=袋');
+  assert.ok(seed.includes("('fruit','果盘','套餐配品','不管理','份'"), '果盘：套餐配品不管理库存');
+  assert.ok(seed.includes("('water','瓶装水','瓶装水','酒水','支',4"), '瓶装水：exchange_level=4（不可换出）');
+});
