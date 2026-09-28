@@ -10,7 +10,15 @@ Track A＋B 集成提交 `81e1a4c` 已在 `main`；下方“隔离集成候选�
 
 已新增 `snapshot-preflight.js:preflightDemoSnapshot(raw)` 和 `snapshot-preflight.test.js`。输入为复制出的 `jbhh-demo-v1` 原始 JSON 字符串，按 UTF-8 字节计算 SHA-256；仅在深拷贝上调用现有 `migrations.js` 链，输出订单 room/retail、逐笔/逐渠道付款、挂账回款关联、库存 `count:null` 与 0、计账/未计账流水及房态引用的核对摘要。未知历史名称、规格、单价、基础数量或赠酒参考值保持未知，并返回明确 ambiguity/error；损坏输入不进入可写状态。`ok` 仅表示此预检覆盖项未发现问题，不构成正式导入批准。该模块没有 localStorage、UI、HTTP 或数据库写入口，生产业务规则未改。
 
-本次修改 JavaScript 后按约定尝试 `npm test`，PowerShell 报 `The term npm is not recognized`，npm 进程未启动。实际运行 `package.json` 对应的 `node --test`：235 项、229 通过、0 失败、6 项已知问题复现跳过，退出码 0；新增预检器测试 12/12 通过。以上是本次执行证据，不沿用此前 217/6/0 的历史结果；没有浏览器或 PostgreSQL 验收。
+上轮预检器修改 JavaScript 后按约定尝试 `npm test`，PowerShell 报 `The term npm is not recognized`，npm 进程未启动；当轮实际运行 `package.json` 对应的 `node --test`：235 项、229 通过、0 失败、6 项已知问题复现跳过，退出码 0，预检器测试 12/12 通过。这是上轮证据；当时没有浏览器或 PostgreSQL 验收。
+
+## P0-1 Stage 1A：账本核心事务协议（2026-09-29）
+
+从干净 `main@a819635` 建立 `codex/p0-1-trusted-ledger`。新增 `ledger/application.js` 与 `ledger/memory-store.js`：独立 Node 应用层接收操作键、期望 revision、动作和 JSON payload，计算稳定请求指纹；在同一原子存储边界内先查已提交回执，再检查 revision，成功后调用原 `rules.js:transact` 并一次提交新状态、成功回执、审计和递增一次的 revision。同键同内容返回首次回执；同键不同内容、旧 revision、已有领域键但回执缺失均拒绝且不改状态。业务失败不写成功结果；两个新键竞争同一旧版本时最多一个提交。`ledger/application.test.js` 覆盖房／零售边界、付款与库存副作用及这些冲突。原 `transact`、门店业务规则和 6 项 Known Issues 未修改。
+
+这里的 `memory-store` 只验证单实例原子协议，重启即丢失，不是正式共享账本；没有接入 `persistence.js`／`migrations.js` 的正式导入、浏览器 UI、HTTP、真人认证或 PostgreSQL。成功审计尚无真人 actor 字段，须待真实认证后由服务端提供，不使用演示身份冒充。
+
+本次修改 JavaScript 后按规则尝试 `npm test`，PowerShell 报 `The term npm is not recognized`，npm 进程未启动；实际执行 `package.json` 对应的 `node --test`：249 项、243 通过、0 失败、6 项已知问题复现跳过，退出码 0。其中 Stage 1A 定向测试 14/14 通过；这仅证明单实例协议行为，未取得跨进程持久化或真实服务验收。
 
 ## 本轮隔离集成候选（2026-09-29）
 
@@ -148,7 +156,7 @@ Track A＋B 集成提交 `81e1a4c` 已在 `main`；下方“隔离集成候选�
 
 ## 下一步
 
-只读 `jbhh-demo-v1` 快照预检器与契约测试已完成；后续 P0-1 的 PostgreSQL 生产账本、真人认证和客户端 API 切换均未开始，本轮不推进。正式营业日和班次规则已确认的部分见 [REQUIREMENTS](./REQUIREMENTS.md)，运行实现仍属后续任务。
+只读快照预检器和 Stage 1A 核心事务协议已完成；后续 P0-1 的正式持久存储、真人认证和客户端 API 切换均未开始，本轮不推进 Stage 1B。正式营业日和班次规则已确认的部分见 [REQUIREMENTS](./REQUIREMENTS.md)，运行实现仍属后续任务。
 
 ## 阶段停止条件
 

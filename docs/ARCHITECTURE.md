@@ -1,6 +1,6 @@
 # 系统架构
 
-本文件描述当前隔离集成候选（Track A `6aa01ba` ＋ Track B `3193635`）的运行边界。具体入口见 [MODULE_MAP](./MODULE_MAP.md)，验证结果见 [CURRENT_STAGE](./CURRENT_STAGE.md)。
+本文件描述已集成的 Track A＋B 单机演示运行边界，以及尚未接入客户端的 P0-1 Stage 1A 账本协议。具体入口见 [MODULE_MAP](./MODULE_MAP.md)，验证结果见 [CURRENT_STAGE](./CURRENT_STAGE.md)。
 
 ## 系统边界
 
@@ -44,6 +44,14 @@ flowchart TD
 5. 主题偏好使用 `jbhh-appearance-v1`，不随业务练习状态重置。
 
 这仍是单机快照事务，没有服务端并发控制、可靠备份或真实资金事件。跨设备、正式支付、退款、撤单、冲正、营业日、班次和渠道对账须另行实现，目标见 [脱岗 P0 契约](./OFFSITE_CONTRACTS.md)。
+
+## P0-1 Stage 1A 账本核心事务协议（独立 Node 入口）
+
+`ledger/application.js:createLedgerApplication` 接收 `{operationKey, expectedRevision, action, payload}`，按 JSON 值规范化请求内容并计算 SHA-256 指纹（包括 `expectedRevision`、动作和业务输入）。它在存储适配器的 `runAtomic` 边界内先查询该操作键的已提交结果，再比较当前 revision；同键同指纹返回原成功回执，同键不同指纹返回 `idempotency-conflict`，新键旧版本返回 `revision-conflict`。冲突不自动生成新键，也不调用领域事务。
+
+首次有效命令沿用未修改的 `rules.js:transact`。仅在领域事务成功、原有 `state.processed` 操作键可核对后，才提出一次 `revision + 1` 的提交。存储适配器必须把业务状态、该操作键的成功回执和 `command.succeeded` 审计作为**同一事务**持久化；失败不得出现三者中任意一项的部分提交。回执含原 revision、新 revision、请求指纹和提交时间。已有 `processed` 键却没有可信回执时保守返回冲突，不伪造成功。成功审计只记录动作、操作键、指纹、版本和时间，不把 payload 复制进第二份业务事实；真人身份须在后续认证阶段由可信服务端绑定。
+
+`ledger/memory-store.js:createMemoryLedgerStore` 通过单实例串行队列实现上述 `runAtomic` 端口并用于契约测试，隔离读取副本，在一次赋值中公开状态、回执、revision 和审计。它**不是**跨进程共享或断电可恢复的账本。未来正式存储适配器必须在同一数据库事务中锁定／比较账本版本、保证操作键唯一，并在提交前保存全部三项；遇到并发冲突时返回新版本供调用方刷新判断。当前 UI、`persistence.js`、`migrations.js`、PostgreSQL 设计基线及报表均未连接此协议。
 
 ## 状态所有权
 
