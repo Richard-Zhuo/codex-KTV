@@ -20,6 +20,14 @@ Track A＋B 集成提交 `81e1a4c` 已在 `main`；下方“隔离集成候选�
 
 本次修改 JavaScript 后按规则尝试 `npm test`，PowerShell 报 `The term npm is not recognized`，npm 进程未启动；实际执行 `package.json` 对应的 `node --test`：249 项、243 通过、0 失败、6 项已知问题复现跳过，退出码 0。其中 Stage 1A 定向测试 14/14 通过；这仅证明单实例协议行为，未取得跨进程持久化或真实服务验收。
 
+## P0-1 Stage 1A.1：actor 绑定与操作键终态（2026-09-29）
+
+在 `codex/p0-1-trusted-ledger` 上核查 Stage 1A：原指纹已覆盖动作、期望 revision 和业务 payload，且按 JSON 值规范化属性顺序；额外传输字段原本就不在命令内。此次补上可信调用方注入的 `principal.id` 和适配器的 `ledgerId`，成功回执及审计明确记录 actor，原回执只对同 actor／同请求可重放；另一 actor 使用同键同请求只得冲突。没有新增真人登录或把演示 `state.user` 当成可信账号。
+
+新键的旧 revision 与现有领域规则的业务拒绝分别落为 `revision-conflict`、`business-rejected` 终态：两者只保存该操作键的结果，不改营业 state、revision 或成功审计。此后即使账本继续变化，同 actor／同请求仍取原终态；刷新并决定重试时必须使用新键，付款也不例外。普通 `Error` 是当前领域规则的预期拒绝约定；其他异常不占用操作键，留给故障恢复。内存适配器仍只证明单实例协议，正式持久化留待 Stage 1B。
+
+本轮修改 JavaScript 后已尝试 `npm test`，PowerShell 找不到 npm，命令未启动。实际运行 `package.json` 对应的 `node --test`：252 项、246 通过、0 失败、6 项已知问题复现跳过，退出码 0；Stage 1A.1 所在 `ledger/application.test.js` 定向 17/17 通过。没有数据库、跨进程或真人认证验收。
+
 ## 本轮隔离集成候选（2026-09-29）
 
 来源：用户交付的 `jbhh-ktv-full.zip`，基线 `ca726b2`；纯重构检查点 `74c3f55`；业务修复终点 `6aa01ba`。Track B 来源为 `codex/offsite-contracts@3193635`。候选位于独立工作树的 `codex/track-a-integration`，主工作区未提交内容保留；未合并 `main`、未推送。
@@ -156,7 +164,7 @@ Track A＋B 集成提交 `81e1a4c` 已在 `main`；下方“隔离集成候选�
 
 ## 下一步
 
-只读快照预检器和 Stage 1A 核心事务协议已完成；后续 P0-1 的正式持久存储、真人认证和客户端 API 切换均未开始，本轮不推进 Stage 1B。正式营业日和班次规则已确认的部分见 [REQUIREMENTS](./REQUIREMENTS.md)，运行实现仍属后续任务。
+只读快照预检器、Stage 1A 核心协议及 Stage 1A.1 硬化已完成；Stage 1B 仅输出 PostgreSQL 适配设计，正式持久存储、真人认证和客户端 API 切换均未开始。正式营业日和班次规则已确认的部分见 [REQUIREMENTS](./REQUIREMENTS.md)，运行实现仍属后续任务。
 
 ## 阶段停止条件
 

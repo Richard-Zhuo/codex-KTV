@@ -23,8 +23,8 @@
 - 报表影响：只读已提交事件和快照。
 - 需要的审批：动作本身有审批要求时执行。
 - 异常停止点：账本不可读或状态不明时停止新交易。
-- 当前代码是否已经支持：仅 Stage 1A 的 revision／幂等／冲突／原子回执协议有单进程测试；共享持久账本仍否，SQL 仍是设计基线。
-- 现有测试覆盖：ledger/application.test.js 验协议、重试和单实例并发；entry.test.js、database.test.js 只查静态边界；offsite.contract.test.js 测本机操作键。
+- 当前代码是否已经支持：Stage 1A／1A.1 的 revision、可信 actor 绑定、成功／拒绝终态和原子回执协议有单进程测试；共享持久账本仍否，SQL 仍是设计基线。
+- 现有测试覆盖：ledger/application.test.js 验 actor 隔离、三类终态、重试和单实例并发；entry.test.js、database.test.js 只查静态边界；offsite.contract.test.js 测本机操作键。
 - 缺失测试：双设备一致性、跨进程／数据库并发冲突、重启后的持久幂等、断线重试与迁移核对。
 
 ## 02 真人账号与最小权限

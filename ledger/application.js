@@ -48,29 +48,45 @@ function prepare(command) {
 
 // Store port: runAtomic holds one ledger's transaction lock from read to commit;
 // commit stages state, result and success audit together, or persists none of them.
-export function createLedgerApplication({ store, transactCommand = transact, now = () => new Date().toISOString() }) {
-  if (typeof store?.runAtomic !== 'function' || typeof transactCommand !== 'function' || typeof now !== 'function') throw TypeError('账本执行边界未配置');
+export function createLedgerApplication({ store, principal, transactCommand = transact, now = () => new Date().toISOString() }) {
+  const ledgerId = store?.ledgerId;
+  const actorId = principal?.id; // Trusted caller input; authentication is a later stage.
+  if (typeof ledgerId !== 'string' || !ledgerId || typeof actorId !== 'string' || !actorId || actorId.trim() !== actorId || typeof store?.runAtomic !== 'function' || typeof transactCommand !== 'function' || typeof now !== 'function') throw TypeError('账本、可信操作者或执行边界未配置');
   return {
     async execute(command) {
       const request = prepare(command);
       return store.runAtomic(async transaction => {
-        const { state, revision: currentRevision } = await transaction.read();
+        const { ledgerId: observedLedgerId, state, revision: currentRevision } = await transaction.read();
+        if (observedLedgerId !== ledgerId) throw Error('账本标识不一致，停止提交');
         const saved = await transaction.findOperationResult(request.operationKey);
         if (saved) {
-          if (saved.requestFingerprint !== request.requestFingerprint) {
-            return { status: 'idempotency-conflict', operationKey: request.operationKey, currentRevision };
-          }
+          if (saved.ledgerId !== ledgerId || saved.result?.ledgerId !== ledgerId || saved.result?.actorId !== saved.actorId || saved.result?.operationKey !== request.operationKey) throw Error('操作结果归属不一致，停止提交');
+          if (saved.actorId !== actorId) return { status: 'idempotency-conflict', ledgerId, operationKey: request.operationKey, currentRevision, reason: 'actor-mismatch' };
+          if (saved.requestFingerprint !== request.requestFingerprint) return { status: 'idempotency-conflict', ledgerId, operationKey: request.operationKey, currentRevision, reason: 'request-mismatch' };
+          if (saved.action !== request.action || saved.expectedRevision !== request.expectedRevision) throw Error('操作结果请求元数据不一致，停止提交');
           return saved.result;
         }
+        const finishRejected = async result => {
+          await transaction.recordTerminal({ ledgerId, actorId, operationKey: request.operationKey, action: request.action, requestFingerprint: request.requestFingerprint, expectedRevision: request.expectedRevision, observedRevision: currentRevision, committedRevision: null, result });
+          return result;
+        };
         if (request.expectedRevision !== currentRevision) {
-          return { status: 'revision-conflict', operationKey: request.operationKey, expectedRevision: request.expectedRevision, currentRevision };
+          return finishRejected({ status: 'revision-conflict', ledgerId, actorId, operationKey: request.operationKey, expectedRevision: request.expectedRevision, currentRevision });
         }
         if (!Array.isArray(state?.processed)) throw Error('领域操作键状态不可核对，停止提交');
         if (state.processed.includes(request.operationKey)) {
-          return { status: 'idempotency-conflict', operationKey: request.operationKey, currentRevision, reason: 'untracked-domain-key' };
+          return { status: 'idempotency-conflict', ledgerId, operationKey: request.operationKey, currentRevision, reason: 'untracked-domain-key' };
         }
         if (!Number.isSafeInteger(currentRevision + 1)) throw RangeError('revision 已达到安全整数上限');
-        const nextState = transactCommand(state, request.action, request.payload, request.operationKey);
+        let nextState;
+        try {
+          nextState = transactCommand(state, request.action, request.payload, request.operationKey);
+        } catch (error) {
+          // Existing domain rules signal expected business rejections with plain Error.
+          // Unexpected error types leave the key unreserved for incident recovery.
+          if (error?.constructor !== Error) throw error;
+          return finishRejected({ status: 'business-rejected', ledgerId, actorId, operationKey: request.operationKey, expectedRevision: request.expectedRevision, currentRevision, reason: error.message });
+        }
         if (nextState === state || !Array.isArray(nextState?.processed) || !nextState.processed.includes(request.operationKey)) {
           throw Error('领域事务未确认操作键，停止提交');
         }
@@ -78,14 +94,14 @@ export function createLedgerApplication({ store, transactCommand = transact, now
         const committedAt = now();
         if (typeof committedAt !== 'string' || !/T.+(?:Z|[+-]\d{2}:\d{2})$/.test(committedAt) || !Number.isFinite(Date.parse(committedAt))) throw TypeError('成功审计时间无效');
         const result = {
-          status: 'committed', operationKey: request.operationKey, requestFingerprint: request.requestFingerprint,
+          status: 'committed', ledgerId, actorId, operationKey: request.operationKey, requestFingerprint: request.requestFingerprint,
           previousRevision: currentRevision, revision, committedAt
         };
         const audit = {
-          kind: 'command.succeeded', operationKey: request.operationKey, action: request.action,
+          kind: 'command.succeeded', ledgerId, actorId, operationKey: request.operationKey, action: request.action,
           requestFingerprint: request.requestFingerprint, previousRevision: currentRevision, revision, occurredAt: committedAt
         };
-        await transaction.commit({ expectedRevision: currentRevision, revision, operationKey: request.operationKey, requestFingerprint: request.requestFingerprint, state: nextState, result, audit });
+        await transaction.commit({ ledgerId, actorId, expectedRevision: currentRevision, revision, committedRevision: revision, operationKey: request.operationKey, action: request.action, requestFingerprint: request.requestFingerprint, state: nextState, result, audit });
         return result;
       });
     }
