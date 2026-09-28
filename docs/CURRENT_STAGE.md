@@ -2,6 +2,10 @@
 
 更新日期：2026-09-29。本文件是当前进度的唯一汇总入口。
 
+## 当前基线与业务契约纠偏（2026-09-29）
+
+Track A＋B 集成提交 `81e1a4c` 已在 `main`；下方“隔离集成候选尚未合并 main”的文字是当时的历史记录，不再代表当前 Git 状态。本轮收到门店对完整营业职责、≤5 元免零和超额审批自批限制、暂定 06:00 营业日、订单营业额与逐笔付款资金分日归属、平台券先核销和无固定备用金的明确确认，已更新 [REQUIREMENTS](./REQUIREMENTS.md)、[OFFSITE_CONTRACTS](./OFFSITE_CONTRACTS.md)、[OPEN BUSINESS DECISIONS](./OPEN_BUSINESS_DECISIONS.md) 与 [P0 矩阵](./OFFSITE_P0_MATRIX.md)。这些是目标契约纠偏，当前演示代码并未因此实现新规则；K01、K05、K07 仍见 [KNOWN_ISSUES](./KNOWN_ISSUES.md)。真人与历史演示账号 ID 的映射继续待确认。
+
 ## 本轮隔离集成候选（2026-09-29）
 
 来源：用户交付的 `jbhh-ktv-full.zip`，基线 `ca726b2`；纯重构检查点 `74c3f55`；业务修复终点 `6aa01ba`。Track B 来源为 `codex/offsite-contracts@3193635`。候选位于独立工作树的 `codex/track-a-integration`，主工作区未提交内容保留；未合并 `main`、未推送。
@@ -138,7 +142,7 @@
 
 ## 下一步
 
-普通商品闭环继续沿 `state.catalog`、`rules.js` 和 `app.js` 扩展；正式化先确定后端、认证、数据库 migration 与审计边界，不把浏览器状态直接当作生产账本。正式营业日和班次、内部物料统一分别作为独立任务设计。
+当前按 P0-1 先实施只读 `jbhh-demo-v1` 快照预检器与契约测试，保护原始记录并报告迁移歧义；本阶段不接入 PostgreSQL 生产账本、真人认证或客户端 API。正式营业日和班次规则已确认的部分见 [REQUIREMENTS](./REQUIREMENTS.md)，运行实现仍属后续任务。
 
 ## 阶段停止条件
 
