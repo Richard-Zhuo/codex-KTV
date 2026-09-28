@@ -4,7 +4,9 @@
 import { allowedPermission, btn, ctx, employeeOptions, options, roomOptions } from '../context.js';
 import { openDialog } from '../shell.js';
 import { bindPaymentSummary, bindSaleForm, bookingFields, paymentFields, saleItemRow, setupBookingFields } from '../forms.js';
-import { USERS, quote, total } from '../../rules.js';
+import { USERS } from '../../shared/identity.js';
+import { quote } from '../../rooms.js';
+import { total } from '../../sales.js';
 import { sellableProducts } from '../../catalog.js';
 
 function retailDialog() {

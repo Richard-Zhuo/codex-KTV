@@ -3,7 +3,9 @@
 
 import { allowedPermission, btn, canReviewSubmission, contactText, ctx, currentUser, date, esc, product, reviewPermissionHint } from '../context.js';
 import { roomIssueEvidenceMarkup } from '../forms.js';
-import { businessReviewSections, money, visibleIncidents } from '../../rules.js';
+import { businessReviewSections } from '../../shared/identity.js';
+import { visibleIncidents } from '../../incidents.js';
+import { money } from '../../shared/money.js';
 import { pendingBusinessReviewCount as inboxPendingCount, reviewHistoryRows as inboxHistoryRows } from '../../reviewInbox.js';
 
 function repaymentReviewMarkup(o) {

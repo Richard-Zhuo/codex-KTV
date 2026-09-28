@@ -9,15 +9,7 @@ import {
   BUSINESS_REVIEW_SECTIONS, businessReviewSections, permissionsForRoles,
   defaultPermissions, defaultCapabilities, effectiveUser, hasPermission, hasRole
 } from './shared/identity.js';
-import {
-  money as facadeMoney, cents as facadeCents, slot as facadeSlot,
-  USERS as facadeUSERS, USER_ALIASES as facadeUSER_ALIASES, PERMISSION_ROLES as facadePERMISSION_ROLES,
-  PERMISSION_DEFINITIONS as facadePERMISSION_DEFINITIONS, PERMISSION_IDS as facadePERMISSION_IDS,
-  BUSINESS_REVIEW_SECTIONS as facadeBUSINESS_REVIEW_SECTIONS, businessReviewSections as facadeBusinessReviewSections,
-  permissionsForRoles as facadePermissionsForRoles, defaultPermissions as facadeDefaultPermissions,
-  defaultCapabilities as facadeDefaultCapabilities, effectiveUser as facadeEffectiveUser,
-  hasPermission as facadeHasPermission, hasRole as facadeHasRole, initialState
-} from './rules.js';
+import { initialState } from './rules.js';
 
 const ACTIVE_USER_IDS = ['administrator', 'zhuBoss', 'xiongBoss', 'shaoBoss', 'wife', 'zhuYi', 'meiJiao'];
 const LEGACY_USER_IDS = ['staff', 'keeper', 'boss'];
@@ -199,30 +191,17 @@ test('permissionsForRoles：岗位到权限的派生与空输入', () => {
   assert.ok(permissionsForRoles(['收银员']).includes('retail.sale'));
 });
 
-test('facade：rules.js 对 shared 基础符号的 re-export 是同一绑定，未复制第二份定义', () => {
-  assert.equal(facadeMoney, money);
-  assert.equal(facadeCents, cents);
-  assert.equal(facadeSlot, slot);
-  assert.equal(facadeUSERS, USERS);
-  assert.equal(facadeUSER_ALIASES, USER_ALIASES);
-  assert.equal(facadePERMISSION_ROLES, PERMISSION_ROLES);
-  assert.equal(facadePERMISSION_DEFINITIONS, PERMISSION_DEFINITIONS);
-  assert.equal(facadePERMISSION_IDS, PERMISSION_IDS);
-  assert.equal(facadeBUSINESS_REVIEW_SECTIONS, BUSINESS_REVIEW_SECTIONS);
-  assert.equal(facadeBusinessReviewSections, businessReviewSections);
-  assert.equal(facadePermissionsForRoles, permissionsForRoles);
-  assert.equal(facadeDefaultPermissions, defaultPermissions);
-  assert.equal(facadeDefaultCapabilities, defaultCapabilities);
-  assert.equal(facadeEffectiveUser, effectiveUser);
-  assert.equal(facadeHasPermission, hasPermission);
-  assert.equal(facadeHasRole, hasRole);
+test('Phase 8 后测：rules.js 已无 shared facade re-export，仅保留事务边界职责', async () => {
+  const rules = await import('./rules.js');
+  const exports = Object.keys(rules);
+  assert.deepEqual([...exports].sort(), ['OTHER_CHARGE_CATEGORIES', 'bonusAllowance', 'initialState', 'transact']);
 });
 
-test('facade：经 rules.js 使用 shared 基础符号的领域行为不变（quote 场景金额与时段）', () => {
+test('shared 基础符号经直接导入参与领域行为不变（quote 场景金额与时段）', () => {
   const state = initialState();
   // slot 经 shared/time.js 参与报价：白天小房固定价 6800 分
-  assert.equal(facadeSlot('2024-06-01T15:00'), 'day');
+  assert.equal(slot('2024-06-01T15:00'), 'day');
   const dayQuote = state.catalog.packages.find(p => p.roomType === '小房' && p.period === 'day');
   assert.ok(dayQuote);
-  assert.equal(facadeMoney(dayQuote.priceCents), '¥68');
+  assert.equal(money(dayQuote.priceCents), '¥68');
 });

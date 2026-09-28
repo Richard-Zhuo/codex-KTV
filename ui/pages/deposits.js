@@ -2,7 +2,7 @@
 // reportPeriod/storageProblem/APP_ENTRY/DEFAULT_PAGE/modal 等）→ ctx.*，函数体逐字保留。
 
 import { allowedPermission, btn, ctx, date, esc, product } from '../context.js';
-import { searchDeposits } from '../../rules.js';
+import { searchDeposits } from '../../deposits.js';
 
 function depositPage() {
   const rows = searchDeposits(ctx.state.deposits, ctx.searchTerm);

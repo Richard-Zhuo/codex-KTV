@@ -2,7 +2,8 @@
 // reportPeriod/storageProblem/APP_ENTRY/DEFAULT_PAGE/modal 等）→ ctx.*，函数体逐字保留。
 
 import { allowed, allowedPermission, btn, ctx, date, esc, options, permissionSummary, product } from '../context.js';
-import { USERS, effectiveUser, money } from '../../rules.js';
+import { USERS, effectiveUser } from '../../shared/identity.js';
+import { money } from '../../shared/money.js';
 import { categoryLabel, saleOptions } from '../../catalog.js';
 
 function permissionCards() {
@@ -37,20 +38,13 @@ function systemManagementPage() {
   return `<p class="eyebrow">系统管理后台</p><h1>系统管理</h1><p class="muted">这里只提供身份权限和商品目录等系统管理能力，不承载挂账、赠酒、房间恢复、库存、客诉、交班或营业报表等日常营业工作。</p>${catalogManagementPanel()}${identityManagement}<div class="tip"><span>i</span><div><b>当前仍是单机演示</b><p>目录、套餐和价格保存在本机 localStorage；尚未接入 PostgreSQL，也不代表生产数据管理或独立审计已经完成。</p></div></div>`;
 }
 
-function stockNotices() {
-  const low=Object.entries(ctx.state.inventory).filter(([,v])=>v.count!==null&&v.count<=v.threshold);
-  const consumableLow=Object.entries(ctx.state.consumables || {}).filter(([,v])=>v.count!==null&&v.count<=v.threshold);
-  return `${low.map(([id,v])=>`<p class="notice">${product(id).name}剩 ${v.count} ${v.unit || product(id).baseUnit}，预警线 ${v.threshold} ${v.unit || product(id).baseUnit}</p>`).join('')}${consumableLow.map(([id,v])=>`<p class="notice">${ctx.state.catalog.products.find(item=>item.id===id)?.name || id}剩 ${v.count} ${v.unit || '份'}${v.opened?`，已开封 ${v.opened} 份`:''}，预警线 ${v.threshold}</p>`).join('')}${ctx.state.notices.slice().reverse().map(n=>n.kind==='consumable'?`<div class="panel"><b>${ctx.state.catalog.products.find(item=>item.id===n.product)?.name || n.product}：${n.before ?? '未建账'} → ${n.after} ${n.unit || '份'}</b><p>提交 ${esc(n.person)}${n.reviewedBy?` · 审核 ${esc(n.reviewedBy)}`:''} · ${date(n.time)}</p><p>${esc(n.reason)}</p><span class="badge">审核通过 · 已生效</span></div>`:`<div class="panel"><b>${product(n.product).name}：${n.before ?? '未建账'} → ${n.after} ${n.unit || product(n.product).baseUnit}</b><p>提交 ${esc(n.person)}${n.reviewedBy?` · 审核 ${esc(n.reviewedBy)}`:''} · ${date(n.time)}</p><p>${esc(n.reason)}</p><span class="badge">审核通过 · 已生效</span></div>`).join('')||'<p class="muted">暂无已通过的库存盘点。未建账商品不会预警。</p>'}`;
-}
-
-function handoverHistory() { return ctx.state.handovers.slice().reverse().map(h=>`<div class="panel"><b>${date(h.time)} · ${esc(h.person)}</b><p>系统实收 ${money(h.expected)} / 实点 ${money(h.actual)}</p><p>前台现金：${h.drawerCash===null||h.drawerCash===undefined?'旧记录未填写':money(h.drawerCash)}</p><strong class="${h.difference?'amber':'green'}">差异 ${money(h.difference)}</strong></div>`).join('') || '<p class="muted">尚未交班。挂账不计入实收，回款按实际登记计入。</p>'; }
+// Phase 8 清理：本模块原有两个从未被调用的死渲染函数（库存通知、交班历史），
+// 已随死代码清理删除；state.notices 与 state.handovers 的字段和写入路径保持不变。
 
 export {
   permissionCards,
   staffRecordingPanel,
   catalogPriceSummary,
   catalogManagementPanel,
-  systemManagementPage,
-  stockNotices,
-  handoverHistory
+  systemManagementPage
 };

@@ -16,9 +16,9 @@
 | 客诉与交班 | `incidents.js`：`INCIDENT_TYPES`、`visibleIncidents`、`pendingIncidentReminders`、`submitIncident`／`submitIncidentResolution`／`decideIncidentResolution`；`handover.js`：`submitHandover`（Phase 5 起唯一 owner） | `operations.test.js` | [需求：客诉与交班](./REQUIREMENTS.md) | 客诉恢复走审批链；交班实收口径来自 `sales.js` 的 `collected`；可见性按 `expense.viewAll`／`incident.viewAll` 等权限过滤 |
 | 审核中心待办投影 | `reviewInbox.js`：`pendingBusinessReviewCount`（state, section）、`reviewHistoryRows`（state, user）（Phase 5 自 `app.js` 迁入，只读） | `operations.test.js` | [架构：数据流](./ARCHITECTURE.md#数据流与事务边界) | 审核中心不决定业务状态：所有审批决策仍走 `rules.js` 的 `transact` 委托的领域命令；`app.js` 同名函数仅转发 |
 | 经营报表 selectors 与视图模型 | `reporting.js`：`reportViewModel`（state, period）及 `reportPeriodMatch`／`reportOrder`／`reportTotals`／`reportBreakdown`／`reportSaleDetails`／`reportGiftDetails`／`reportOtherDetails`／`reportPaymentMethods`／`reportNotes` 等纯投影（Phase 6 自 `app.js` 迁入；纯 state 输入，不依赖 DOM） | `reporting.test.js`、`characterization-report.test.js` | [需求：报表、主题与数据边界](./REQUIREMENTS.md#已确认报表主题与数据边界) | UI 无报表聚合：日/周/月（自然周周一起始）、房间按同房多单聚合、快照优先；Bug #7（聚合 credit 布尔）代码随迁保持原状，修复需另立任务 |
-| 事务入口与剩余内联分支 | `rules.js`：`initialState`、`transact`（身份设置 `setPermissions`、目录命令 `createCatalogProduct`／`updateCatalogProduct`／`updateCatalogPackage`、订单内联分支 `sale`／`retailSale`／`collect`／`settle`／`pay`／`credit` 等及赠酒／换酒／其他消费；其余分支委托各领域模块） | `rules.test.js`、`retail.test.js` | [需求：普通商品与独立零售](./REQUIREMENTS.md#已确认普通商品与独立零售) | 金额用整数分；库存按基础单位；零售付款与订单、销售行、流水原子写入，失败不回写原状态；失败不提交由 `transact` 克隆-校验-提交边界保证 |
-| 身份与具体权限 | `shared/identity.js`：`USERS`、`PERMISSION_DEFINITIONS`、`permissionsForRoles`、`defaultCapabilities`、`effectiveUser`、`hasPermission`、`businessReviewSections`（`rules.js` 目前作 facade re-export，Phase 8 再清理） | `rules.test.js`、`shared.test.js` | [需求：身份、入口与权限](./REQUIREMENTS.md#已确认身份入口与权限) | `backend.view` 不授予业务审核；`review.self` 只是自审附加条件 |
-| 金额与营业时段基础 | `shared/money.js`：`money`、`cents`；`shared/time.js`：`slot`（`rules.js` facade re-export） | `shared.test.js`、`rules.test.js` | [架构：数据流](./ARCHITECTURE.md#数据流与事务边界) | 金额用整数分，取整规则与错误文案已冻结；时段边界 14-18／18-02 |
+| 事务入口与剩余内联分支 | `rules.js`：`initialState`、`transact`、`OTHER_CHARGE_CATEGORIES`、`bonusAllowance`（Phase 8 起唯一导出面——事务边界职责；身份设置 `setPermissions`、目录命令 `createCatalogProduct`／`updateCatalogProduct`／`updateCatalogPackage`、订单内联分支 `sale`／`retailSale`／`collect`／`settle`／`pay`／`credit` 等及赠酒／换酒／其他消费；其余分支委托各领域模块）。查询与选择器不再经 rules.js：金额／付款用 `sales.js`，房间查询用 `rooms.js`，身份用 `shared/identity.js`，可见性用各域模块，`product` 用 `catalog.js` | `rules.test.js`、`retail.test.js`、`shared.test.js`（Phase 8 反向断言） | [需求：普通商品与独立零售](./REQUIREMENTS.md#已确认普通商品与独立零售) | 金额用整数分；库存按基础单位；零售付款与订单、销售行、流水原子写入，失败不回写原状态；失败不提交由 `transact` 克隆-校验-提交边界保证 |
+| 身份与具体权限 | `shared/identity.js`：`USERS`、`PERMISSION_DEFINITIONS`、`permissionsForRoles`、`defaultCapabilities`、`effectiveUser`、`hasPermission`、`businessReviewSections`（Phase 8 起 rules.js 不再 re-export，调用方直接导入） | `rules.test.js`、`shared.test.js` | [需求：身份、入口与权限](./REQUIREMENTS.md#已确认身份入口与权限) | `backend.view` 不授予业务审核；`review.self` 只是自审附加条件 |
+| 金额与营业时段基础 | `shared/money.js`：`money`、`cents`；`shared/time.js`：`slot`（Phase 8 起 rules.js 不再 re-export，调用方直接导入） | `shared.test.js`、`rules.test.js` | [架构：数据流](./ARCHITECTURE.md#数据流与事务边界) | 金额用整数分，取整规则与错误文案已冻结；时段边界 14-18／18-02 |
 | 主题与自动切换 | `theme.js`：`refresh`、`window.ktvAppearance`；`style.css` 主题选择器 | `theme.test.js` | [需求：报表、主题与数据边界](./REQUIREMENTS.md#已确认报表主题与数据边界) | 使用设备时间和独立键 `jbhh-appearance-v1`，不跟随练习时间 |
 | 房卡、表单、弹窗和报表视觉 | `style.css`；对应渲染在 `ui/pages/*`、`ui/dialogs/*` | 没有独立视觉自动测试；规则行为由现有测试覆盖 | [店员练习手册](../店员练习手册.md) | 视觉通过必须使用约定浏览器或真机证据，不能由规则测试替代 |
 | PostgreSQL 关系模型 | `database/schema.sql`、`database/seed.sql` | `database.test.js` | [数据库说明](../database/README.md) | 当前页面未连接数据库；SQL 是未来后端契约基线 |
@@ -31,21 +31,21 @@
 ### 改身份或权限基础
 
 1. 读需求中的身份与权限章节。
-2. 进入 `shared/identity.js`（`USERS`、`PERMISSION_DEFINITIONS`、`effectiveUser` 等低层选择器）；`rules.js` 只是 facade，不在那里改定义。
+2. 进入 `shared/identity.js`（`USERS`、`PERMISSION_DEFINITIONS`、`effectiveUser` 等低层选择器，直接导入不经 rules.js）。
 3. 读 `shared.test.js` 的权限矩阵与 `rules.test.js` 对应行为的测试。
 4. 入口和静态路由再读 `APP_ENTRY`、入口 HTML、`server.js` 与 `entry.test.js`。
 
 ### 改金额或时段基础
 
 1. 金额读 `shared/money.js`（`money`、`cents`），时段读 `shared/time.js`（`slot`）；取整规则、错误文案和时段边界是冻结契约，变化需先更新 `shared.test.js` 与需求。
-2. 业务侧消费方在 `rules.js` 事务分支与 `app.js` 展示层。
+2. 业务侧消费方在 `rules.js` 事务分支与 `ui/` 展示层（均直接导入 shared/*）。
 
 ### 改业务规则
 
 1. 在 `REQUIREMENTS.md` 找到已确认行为。
 2. 商品、销售规格变化先读 `catalog.js` 和 `catalog.test.js`，房间套餐构造读 `packages.js`（`DEFAULT_PACKAGES`），确认运行时只从 `state.catalog` 读取。
 3. 库存记账、盘点或审核读 `inventory.js` 和 `inventory.test.js`；`rules.js` 的 `transact` 分支只做委托。
-4. 销售成交、收款、抹零、挂账回款读 `sales.js` 和 `sales.test.js`；房间增购与独立零售共用同一成交管道。
+4. 销售成交、收款、抹零、挂账回款读 `sales.js` 和 `sales.test.js`（金额查询 `total`／`outstanding`／`collected` 等也直接从 `sales.js` 导入，不再经 `rules.js`）；房间增购与独立零售共用同一成交管道。
 5. 房态、预约、开房、清洁、房间异常审核读 `rooms.js` 和 `rooms.test.js`；存取酒读 `deposits.js`；费用／采购／客诉／交班读 `expenses.js`／`procurement.js`／`incidents.js`／`handover.js`，测试在 `operations.test.js`；审核中心待办只读投影读 `reviewInbox.js`。
 6. 报表口径、聚合或明细格式读 `reporting.js` 和 `reporting.test.js`（历史冻结参考在 `characterization-report.test.js`）。
 7. 读 `rules.js` 中对应事务分支，确认仅是委托。
@@ -61,7 +61,7 @@
 ### 改入口或权限
 
 1. 读需求中的身份与权限章节。
-2. 读 `PERMISSION_DEFINITIONS`、`effectiveUser` 和 `transact` 的权限校验。
+2. 读 `PERMISSION_DEFINITIONS`、`effectiveUser` 和 `transact` 的权限校验（定义在 `shared/identity.js`，直接导入）。
 3. 读 `APP_ENTRY`、入口 HTML、`server.js` 与 `entry.test.js`。
 
 ### 改主题或视觉

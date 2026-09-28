@@ -4,7 +4,8 @@
 // 抽取后同文件应改为从 './sales.js' 验证同一绑定（见文件尾部后测段）。
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { initialState, transact, total, outstanding, collected, nextCollectCharge } from './rules.js';
+import { initialState, transact } from './rules.js';
+import { total, outstanding, collected, nextCollectCharge } from './sales.js';
 
 let sequence = 0;
 const apply = (state, action, data) => transact(state, action, data, `sales-front-${++sequence}`);
@@ -167,14 +168,15 @@ test('前测·挂账与回款：审批人分级、回款审核后入实收、失
   assert.equal(collected(s), 29000);
 });
 
-// —— Phase 4 后测：sales.js 为销售域唯一 owner，rules.js facade re-export 是同一绑定 ——
+// —— Phase 4 后测：sales.js 为销售域唯一 owner；Phase 8 起 rules.js 不再 re-export ——
 
-test('后测·rules.js facade 与 sales.js 同绑定（total/outstanding/PAYMENT_METHODS/查询）', async () => {
-  const facade = await import('./rules.js');
+test('后测·sales.js 为销售域唯一 owner（total/outstanding/PAYMENT_METHODS 直连）', async () => {
+  const rules = await import('./rules.js');
   const domain = await import('./sales.js');
-  assert.strictEqual(facade.total, domain.total);
-  assert.strictEqual(facade.outstanding, domain.outstanding);
-  assert.strictEqual(facade.PAYMENT_METHODS, domain.PAYMENT_METHODS);
+  assert.strictEqual(rules.total, undefined);
+  assert.strictEqual(rules.PAYMENT_METHODS, undefined);
+  assert.strictEqual(total, domain.total);
+  assert.strictEqual(outstanding, domain.outstanding);
   // 金额查询与命令入口为纯销售域职责
   for (const name of ['submitSale', 'submitRetailSale', 'collectPayment', 'settleOrder', 'payOrder', 'decideRounding', 'applyCredit', 'decideCredit', 'submitRepay', 'decideRepayment']) {
     assert.equal(typeof domain[name], 'function', name);

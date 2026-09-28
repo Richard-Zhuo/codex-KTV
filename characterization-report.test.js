@@ -6,7 +6,8 @@
 // 这些断言将改为直接测试真正的 selector，并要求结果与本处冻结值一致。
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { initialState, transact, total, outstanding, collected, nextCollectCharge } from './rules.js';
+import { initialState, transact } from './rules.js';
+import { total, outstanding, collected, nextCollectCharge } from './sales.js';
 
 let seq = 0;
 const apply = (s, a, d = {}) => transact(s, a, d, `report-char-${++seq}`);

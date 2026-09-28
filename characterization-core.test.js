@@ -4,7 +4,9 @@
 // 采购/支出/审核状态机。所有断言只冻结当前行为。
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { initialState, transact, total, outstanding, collected, nextCollectCharge, effectiveUser, hasPermission, hasRole } from './rules.js';
+import { initialState, transact } from './rules.js';
+import { total, outstanding, collected, nextCollectCharge } from './sales.js';
+import { effectiveUser, hasPermission, hasRole } from './shared/identity.js';
 
 let seq = 0;
 const apply = (s, a, d = {}) => transact(s, a, d, `core-char-${++seq}`);

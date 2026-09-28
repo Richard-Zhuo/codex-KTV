@@ -2,7 +2,7 @@
 // reportPeriod/storageProblem/APP_ENTRY/DEFAULT_PAGE/modal 等）→ ctx.*，函数体逐字保留。
 
 import { allowedPermission, btn, canReviewSubmission, ctx, currentUser, date, esc, portalBackButton, reviewPermissionHint } from '../context.js';
-import { pendingIncidentReminders, visibleIncidents } from '../../rules.js';
+import { pendingIncidentReminders, visibleIncidents } from '../../incidents.js';
 
 function incidentPage() {
   const rows=[...visibleIncidents(ctx.state,currentUser())].sort((a,b)=>String(b.date||'').localeCompare(String(a.date||'')) || Number(b.id||0)-Number(a.id||0));

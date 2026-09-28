@@ -2,7 +2,9 @@
 // 当前从 rules.js/catalog.js 导入；抽取完成后补充直接针对新模块的断言与 facade 一致性检查。
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { initialState, transact, product, quote } from './rules.js';
+import { initialState, transact } from './rules.js';
+import { quote } from './rooms.js';
+import { product } from './catalog.js';
 import { DEFAULT_CATALOG, mergeCatalog, cloneCatalog, findProduct, roomPackage } from './catalog.js';
 
 const at = hour => `2026-09-19T${hour}:00+08:00`;
@@ -194,7 +196,7 @@ test('开房扣库：单选酒水记开房赠饮，混选记开房首次配酒�
 import { DEFAULT_PACKAGES } from './packages.js';
 import { need, pendingInventoryReview, recordInventoryChange, submitStock, submitConsumableStock, decideInventory } from './inventory.js';
 import { product as catalogProduct } from './catalog.js';
-import { product as facadeProduct, initialState as facadeInitialState, transact as facadeTransact } from './rules.js';
+import { initialState as facadeInitialState, transact as facadeTransact } from './rules.js';
 
 test('packages.js：DEFAULT_PACKAGES 与 DEFAULT_CATALOG.packages 内容一致（同一构造源）', () => {
   assert.equal(JSON.stringify(DEFAULT_PACKAGES), JSON.stringify(DEFAULT_CATALOG.packages));
@@ -232,9 +234,9 @@ test('inventory.js：need 与 rules.js 权限闸门行为一致（BUG#1 行为�
   need(s, [], 'inventory.adjust');
 });
 
-test('facade：rules.js 的 product 与 catalog.js 的 product 是同一绑定', () => {
-  assert.equal(facadeProduct, catalogProduct);
-  assert.equal(facadeProduct('bw').name, '百威');
+test('Phase 8 后测：rules.js 不再 re-export product（目录查询唯一 owner 为 catalog.js）', () => {
+  assert.equal(typeof catalogProduct, 'function');
+  assert.equal(catalogProduct('bw').name, '百威');
 });
 
 test('后测：房间增购与独立零售共用同一成交与扣库管道', () => {

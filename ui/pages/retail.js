@@ -2,7 +2,8 @@
 // reportPeriod/storageProblem/APP_ENTRY/DEFAULT_PAGE/modal 等）→ ctx.*，函数体逐字保留。
 
 import { allowedPermission, btn, ctx, date, esc } from '../context.js';
-import { money, total } from '../../rules.js';
+import { total } from '../../sales.js';
+import { money } from '../../shared/money.js';
 import { productIdOf } from '../../catalog.js';
 
 function retailPage() {

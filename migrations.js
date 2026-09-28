@@ -4,7 +4,9 @@
 // 行为与迁移前逐字一致：未知历史价格保持 null（不用当前价格填补），
 // 旧字段只做 ??= 补值，不做删改。
 // Phase 3：migrateLegacyOrderPricing 自 catalog.js 迁入（目录不迁移订单），函数体逐字保留。
-import { USERS, USER_ALIASES, PERMISSION_ROLES, PERMISSION_IDS, defaultPermissions, defaultCapabilities, permissionsForRoles, initialState, reservationActiveAt } from './rules.js';
+import { initialState } from './rules.js';
+import { USERS, USER_ALIASES, PERMISSION_ROLES, PERMISSION_IDS, defaultPermissions, defaultCapabilities, permissionsForRoles } from './shared/identity.js';
+import { reservationActiveAt } from './rooms.js';
 import { mergeCatalog, inventoryProducts, consumableProducts, productIdOf } from './catalog.js';
 
 // 旧订单只补充可从原记录确定的金额和数量；缺失的历史商品元数据与参考价值保持未知，绝不读取迁移当天的当前售价。

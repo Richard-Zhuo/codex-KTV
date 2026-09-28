@@ -2,7 +2,9 @@
 // 唯一机械转换：模块级可变状态（state/category/controlSequence/modal）→ ctx.*；函数体逐字保留。
 
 import { btn, ctx, depositChoices, esc, initialMixChoices, options, product } from './context.js';
-import { PAYMENT_METHODS, RESERVATION_SOURCES, cents, money, total } from '../rules.js';
+import { PAYMENT_METHODS, total } from '../sales.js';
+import { RESERVATION_SOURCES } from '../rooms.js';
+import { cents, money } from '../shared/money.js';
 import { categoryLabel, saleOptions, sellableProducts } from '../catalog.js';
 
 function roomIssueEvidenceFields() {

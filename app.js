@@ -3,7 +3,11 @@
 // 页面渲染在 ui/pages/*，对话框在 ui/dialogs/*，外壳与 persist/commit 在 ui/shell.js，
 // 表单件在 ui/forms.js，通用助手与 ctx 单例在 ui/context.js；业务命令经 rules.js facade。
 // 唯一机械转换：模块级可变状态 → ctx.*（见 ui/context.js 头注释），分支与文案逐字保留。
-import { USERS, PERMISSION_DEFINITIONS, effectiveUser, PAYMENT_METHODS, ROOM_ISSUE_TYPES, collected, initialState, cents, money } from './rules.js';
+import { initialState } from './rules.js';
+import { USERS, PERMISSION_DEFINITIONS, effectiveUser } from './shared/identity.js';
+import { PAYMENT_METHODS, collected } from './sales.js';
+import { ROOM_ISSUE_TYPES } from './rooms.js';
+import { cents, money } from './shared/money.js';
 import { saleOptions } from './catalog.js';
 import { createDemoPersistence, DEMO_STATE_KEY } from './persistence.js';
 import { ctx, product, esc, btn, date, localDate, options, contactText, allowedPermission, canReviewSubmission, permissionSummary, initialMixChoices, pendingRoomIssueReview, syncAppearanceControls } from './ui/context.js';

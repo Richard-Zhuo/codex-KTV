@@ -12,7 +12,8 @@ import { procurementPage } from './pages/procurement.js';
 import { incidentPage } from './pages/incidents.js';
 import { reportPage } from './pages/reports.js';
 import { minePage } from './pages/mine.js';
-import { slot, transact } from '../rules.js';
+import { transact } from '../rules.js';
+import { slot } from '../shared/time.js';
 
 function persist(next) { try { ctx.persistence.save(next); ctx.state = next; } catch { throw Error('本机保存失败，操作未完成。请检查浏览器存储空间后重试。'); } }
 

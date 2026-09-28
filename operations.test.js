@@ -5,7 +5,12 @@
 // 抽取后同文件追加后测段验证 facade 同绑定（见文件尾部）。
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { initialState, transact, total, collected, visibleExpenses, visibleProcurements, visibleIncidents, pendingIncidentReminders, searchDeposits } from './rules.js';
+import { initialState, transact } from './rules.js';
+import { total, collected } from './sales.js';
+import { visibleExpenses } from './expenses.js';
+import { visibleProcurements } from './procurement.js';
+import { visibleIncidents, pendingIncidentReminders } from './incidents.js';
+import { searchDeposits } from './deposits.js';
 
 let sequence = 0;
 const apply = (state, action, data = {}) => transact(state, action, data, `ops-front-${++sequence}`);
@@ -241,7 +246,7 @@ import { visibleProcurements as procurementVisible, submitProcurement } from './
 import { visibleIncidents as incidentsVisible, pendingIncidentReminders as incidentsReminders, submitIncident, submitIncidentResolution, decideIncidentResolution } from './incidents.js';
 import { submitHandover } from './handover.js';
 import { pendingBusinessReviewCount, reviewHistoryRows } from './reviewInbox.js';
-import { effectiveUser } from './rules.js';
+import { effectiveUser } from './shared/identity.js';
 
 test('后测·facade 同绑定：rules.js re-export 与各领域模块导出是同一函数', () => {
   assert.strictEqual(collected, salesCollected);

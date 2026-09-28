@@ -4,7 +4,8 @@
 import { allowedPermission, appearanceSettings, btn, ctx, currentUser, esc, reservationSessionName } from '../context.js';
 import { creditCards } from './tasks.js';
 import { staffRecordingPanel } from './admin.js';
-import { money, pendingIncidentReminders, visibleIncidents } from '../../rules.js';
+import { pendingIncidentReminders, visibleIncidents } from '../../incidents.js';
+import { money } from '../../shared/money.js';
 import { reservationDate } from '../../reporting.js';
 
 function myReservationSection() {

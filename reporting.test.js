@@ -8,7 +8,8 @@
 // 本处冻结值完全一致；拷贝函数继续保留作为冻结参考，不删除。
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { initialState, transact, total, outstanding, nextCollectCharge } from './rules.js';
+import { initialState, transact } from './rules.js';
+import { total, outstanding, nextCollectCharge } from './sales.js';
 
 let seq = 0;
 const apply = (s, a, d = {}) => transact(s, a, d, `reporting-char-${++seq}`);

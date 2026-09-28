@@ -2,7 +2,9 @@
 // reportPeriod/storageProblem/APP_ENTRY/DEFAULT_PAGE/modal 等）→ ctx.*，函数体逐字保留。
 
 import { allowedPermission, btn, ctx, date, displayRoomStatus, esc, pendingReservations, pendingRoomIssueReview, product, reservationSessionName, roomMatchesFilter } from '../context.js';
-import { collected, money, reservationReminder, total } from '../../rules.js';
+import { collected, total } from '../../sales.js';
+import { reservationReminder } from '../../rooms.js';
+import { money } from '../../shared/money.js';
 import { reservationDate } from '../../reporting.js';
 
 const extraLabels = { nuts: '小吃', fruit: '果盘' };

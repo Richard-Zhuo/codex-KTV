@@ -1,6 +1,16 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { OTHER_CHARGE_CATEGORIES, USERS, PERMISSION_ROLES, PERMISSION_IDS, defaultPermissions, defaultCapabilities, effectiveUser, hasPermission, businessReviewSections, hasRole, visibleExpenses, visibleProcurements, visibleIncidents, pendingIncidentReminders, platformVoucher, INCIDENT_TYPES, ROOM_ISSUE_TYPES, initialState, transact, quote, slot, total, outstanding, collected, collectableCharges, nextCollectCharge, cents, product, canExchange, bonusAllowance, reservationTarget, reservationReminder, reservationActiveAt, searchDeposits } from './rules.js';
+import { OTHER_CHARGE_CATEGORIES, bonusAllowance, initialState, transact } from './rules.js';
+import { USERS, PERMISSION_ROLES, PERMISSION_IDS, defaultPermissions, defaultCapabilities, effectiveUser, hasPermission, businessReviewSections, hasRole } from './shared/identity.js';
+import { slot } from './shared/time.js';
+import { cents } from './shared/money.js';
+import { product } from './catalog.js';
+import { total, outstanding, collected, collectableCharges, nextCollectCharge } from './sales.js';
+import { platformVoucher, quote, canExchange, reservationTarget, reservationReminder, reservationActiveAt, ROOM_ISSUE_TYPES } from './rooms.js';
+import { visibleExpenses } from './expenses.js';
+import { visibleProcurements } from './procurement.js';
+import { visibleIncidents, pendingIncidentReminders, INCIDENT_TYPES } from './incidents.js';
+import { searchDeposits } from './deposits.js';
 import { DEFAULT_CATALOG, consumableProducts, saleOption } from './catalog.js';
 const at = hour => `2026-09-19T${hour}:00+08:00`;
 let seq=0;

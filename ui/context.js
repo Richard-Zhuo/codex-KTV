@@ -3,8 +3,9 @@
 // busy/controlSequence/storageProblem/APP_ENTRY/DEFAULT_PAGE/persistence/modal/app）改为 ctx.* 属性，
 // 函数体逐字保留；ctx 由 app.js 启动时装配注入。
 
-import { PERMISSION_DEFINITIONS, USERS, canExchange, effectiveUser, hasPermission, hasRole } from '../rules.js';
-import { consumableProducts, findProduct, saleOptions } from '../catalog.js';
+import { PERMISSION_DEFINITIONS, USERS, effectiveUser, hasPermission, hasRole } from '../shared/identity.js';
+import { canExchange } from '../rooms.js';
+import { findProduct, saleOptions } from '../catalog.js';
 
 export const ctx = { state: null, storageProblem: '', page: 'rooms', filter: '全部',
   searchTerm: '', category: 'beer', reportPeriod: 'day', busy: false, controlSequence: 0,
@@ -44,17 +45,12 @@ const depositChoices = () => ctx.state.catalog.products.filter(p => p.openingGif
 
 const initialMixChoices = () => ctx.state.catalog.products.filter(p => p.active !== false && p.id !== 'drink' && canExchange('drink', p.id, ctx.state.catalog)).sort((a,b)=>(a.sortOrder||0)-(b.sortOrder||0)).map(p => [p.id,p.name]);
 
-const creditRoles = ['开单员','收银员','服务员','库管','店长','老板'];
-
-const managementRoles = ['管理员','老板','店长','财务','采购','库管'];
-
-const reportRoles = ['管理员','老板','财务','店长','收银员'];
+// Phase 8 清理：creditRoles／managementRoles／reportRoles／consumableOptions 为
+// 导出后从未被任何模块导入的死代码（角色名单已被权限矩阵取代），随死代码清理删除。
 
 const roomOptions = () => options(ctx.state.rooms.map(r=>[r.id,`${r.id} · ${r.type}`]));
 
 const employeeOptions = (selected = '') => options(Object.entries(USERS).filter(([id, user]) => !user.legacy && id !== 'administrator').map(([id, user]) => [id, `${user.name} · ${user.title || '岗位说明未设置'}`]), selected);
-
-const consumableOptions = (selected = '') => options(consumableProducts(ctx.state.catalog).map(item => [item.id, `${item.name} · 按${item.baseUnit}统计`]), selected);
 
 const contactText = record => [record?.name, record?.phone].filter(Boolean).join(' · ') || '未留联系人';
 
@@ -104,12 +100,8 @@ export {
   openingGiftChoices,
   depositChoices,
   initialMixChoices,
-  creditRoles,
-  managementRoles,
-  reportRoles,
   roomOptions,
   employeeOptions,
-  consumableOptions,
   contactText,
   permissionDefinition,
   permissionSummary,

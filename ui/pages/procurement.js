@@ -2,7 +2,8 @@
 // reportPeriod/storageProblem/APP_ENTRY/DEFAULT_PAGE/modal 等）→ ctx.*，函数体逐字保留。
 
 import { allowedPermission, btn, ctx, currentUser, date, esc, portalBackButton } from '../context.js';
-import { money, visibleProcurements } from '../../rules.js';
+import { visibleProcurements } from '../../procurement.js';
+import { money } from '../../shared/money.js';
 
 function procurementPage() {
   const rows=[...visibleProcurements(ctx.state,currentUser())].sort((a,b)=>String(b.date||'').localeCompare(String(a.date||'')) || Number(b.id||0)-Number(a.id||0));

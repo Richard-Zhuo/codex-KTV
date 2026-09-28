@@ -11,7 +11,9 @@
 // #9（SQL 种子偏差）位于 app.js/database 层，在对应文件中另建证据。
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { initialState, transact, total, quote, collectableCharges } from './rules.js';
+import { initialState, transact } from './rules.js';
+import { total, collectableCharges } from './sales.js';
+import { quote } from './rooms.js';
 
 let seq = 0;
 const apply = (s, a, d = {}) => transact(s, a, d, `bug-evidence-${++seq}`);

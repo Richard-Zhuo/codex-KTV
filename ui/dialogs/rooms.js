@@ -6,7 +6,10 @@ import { openDialog } from '../shell.js';
 import { bookingFields, initialMixRow, roomIssueEvidenceMarkup, setupBookingFields } from '../forms.js';
 import { reservationListMarkup } from '../pages/rooms.js';
 import { showOrder } from './orders.js';
-import { OPENING_SOURCES, money, quote, reservationActiveAt, slot, total } from '../../rules.js';
+import { OPENING_SOURCES, quote, reservationActiveAt } from '../../rooms.js';
+import { total } from '../../sales.js';
+import { money } from '../../shared/money.js';
+import { slot } from '../../shared/time.js';
 
 function showRoom(id) {
   const r=ctx.state.rooms.find(r=>r.id===id);

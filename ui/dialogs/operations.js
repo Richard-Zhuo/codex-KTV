@@ -3,7 +3,10 @@
 
 import { ctx, date, dayValue, employeeOptions, esc, options, roomOptions } from '../context.js';
 import { openDialog, toast } from '../shell.js';
-import { EXPENSE_APPROVAL_THRESHOLD, EXPENSE_NATURES, EXPENSE_TYPES, INCIDENT_TYPES, PAYMENT_METHODS, money } from '../../rules.js';
+import { EXPENSE_APPROVAL_THRESHOLD, EXPENSE_NATURES, EXPENSE_TYPES } from '../../expenses.js';
+import { INCIDENT_TYPES } from '../../incidents.js';
+import { PAYMENT_METHODS } from '../../sales.js';
+import { money } from '../../shared/money.js';
 
 function expenseDialog() {
   openDialog('添加支出 / 报销',`<p class="notice">报销金额超过 ${money(EXPENSE_APPROVAL_THRESHOLD)} 需要老板审批；图片凭证为选填，演示数据只保存在当前浏览器。</p><div class="field-pair"><label>日期<input type="date" name="date" value="${dayValue(ctx.state.clock)}" required></label><label>记录类型<select name="type">${options(EXPENSE_TYPES.map(type=>[type,type]),EXPENSE_TYPES[0])}</select></label></div><div class="field-pair"><label>支出金额（元）<input name="amount" inputmode="decimal" placeholder="例如：100.00" required></label><label>付款方式<select name="method">${options(PAYMENT_METHODS.map(method=>[method,method]),PAYMENT_METHODS[0])}</select></label></div><label>性质<select name="nature">${options(EXPENSE_NATURES.map(nature=>[nature,nature]),EXPENSE_NATURES[0])}</select></label><label>说明<textarea name="description" maxlength="200" rows="3" placeholder="例如：1月电费、采购水果、员工报销" required></textarea></label><label>图片凭证（选填）<input id="expense-proof" type="file" accept="image/*"><input id="expense-proof-data" type="hidden" name="proof"><input id="expense-proof-name" type="hidden" name="proofName"></label><p id="expense-proof-status" class="muted">支持图片凭证，单张不超过 500KB。</p>`,'保存记录','expense');

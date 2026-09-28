@@ -4,7 +4,9 @@
 // 抽取后同文件追加后测段验证 facade 同绑定（见文件尾部）。
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { initialState, transact, total, quote, canExchange, platformVoucher, reservationTarget, reservationActiveAt, reservationReminder } from './rules.js';
+import { initialState, transact } from './rules.js';
+import { total } from './sales.js';
+import { quote, canExchange, platformVoucher, reservationTarget, reservationActiveAt, reservationReminder } from './rooms.js';
 
 let sequence = 0;
 const apply = (state, action, data = {}) => transact(state, action, data, `rooms-front-${++sequence}`);
@@ -156,7 +158,8 @@ test('前测·开房跨域原子性：首次配酒支数不符时房态/订单/�
 
 import { quote as roomsQuote, canExchange as roomsCanExchange, platformVoucher as roomsPlatformVoucher, reservationTarget as roomsReservationTarget, reservationReminder as roomsReservationReminder, reservationActiveAt as roomsReservationActiveAt, release as roomsRelease } from './rooms.js';
 
-test('后测·facade 同绑定：rules.js re-export 与 rooms.js 导出是同一函数', () => {
+test('后测·rooms.js 为房间域唯一 owner（Phase 8 起 rules.js 不再 re-export，调用方直连）', () => {
+  assert.strictEqual(typeof roomsQuote, 'function');
   assert.strictEqual(quote, roomsQuote);
   assert.strictEqual(canExchange, roomsCanExchange);
   assert.strictEqual(platformVoucher, roomsPlatformVoucher);

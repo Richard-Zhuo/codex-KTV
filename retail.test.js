@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { initialState, transact, total, collected } from './rules.js';
+import { initialState, transact } from './rules.js';
+import { total, collected } from './sales.js';
 
 let sequence = 0;
 const apply = (state, action, data) => transact(state, action, data, `retail-test-${++sequence}`);

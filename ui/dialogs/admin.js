@@ -5,7 +5,7 @@ import { allowed, allowedPermission, btn, ctx, date, esc, options, product } fro
 import { openDialog, toast } from '../shell.js';
 import { catalogSaleOptionRow } from '../forms.js';
 import { inventoryReviewCards } from '../pages/tasks.js';
-import { PERMISSION_DEFINITIONS, USERS, effectiveUser } from '../../rules.js';
+import { PERMISSION_DEFINITIONS, USERS, effectiveUser } from '../../shared/identity.js';
 import { consumableProducts, inventoryProducts, saleOptions } from '../../catalog.js';
 
 function catalogCreateDialog() {

@@ -1,38 +1,24 @@
 // 只承载演示业务：整数分计价、事务式状态变更，不依赖 DOM。
 // 商品与套餐的运行时唯一来源是 state.catalog。DEFAULT_CATALOG 只由目录模块负责初始化、迁移和恢复演示数据。
 // 领域模块已分阶段迁出：catalog／inventory（Phase 3）、sales（Phase 4）、
-// rooms／deposits／expenses／procurement／incidents／handover（Phase 5）。
-// rules.js 的 transact 分支委托调用各领域命令；身份与目录维护命令、
-// 订单内联分支（otherCharge／gift／exchange／serveExtra）暂留此处，Phase 7/8 再收口。
+// rooms／deposits／expenses／procurement／incidents／handover（Phase 5）、UI（Phase 7）。
+// Phase 8 起移除全部 facade re-export：调用方直接从 owner 模块导入；
+// rules.js 仅导出 OTHER_CHARGE_CATEGORIES／bonusAllowance／initialState／transact，
+// 并保留订单内联分支（otherCharge／gift／exchange／serveExtra）与身份/目录命令。
 import { DEFAULT_CATALOG, cloneCatalog, mergeCatalog, product, saleOption, inventoryProducts, consumableProducts, categoryLabel, productIdOf } from './catalog.js';
-// 库存领域（记账、盘点与审核命令）已迁至 inventory.js；rules.js 的事务分支委托调用，行为不变。
 import { need, recordInventoryChange, submitStock, submitConsumableStock, decideInventory } from './inventory.js';
-// 销售领域（成交管道、收款、结账抹零、挂账回款命令与金额查询）已迁至 sales.js（Phase 4）；rules.js 的事务分支委托调用，行为不变。
-// collected（实收汇总）为 payments 口径选择器，Phase 5 自 rules.js 迁入。
-import { PAYMENT_METHODS as SALES_PAYMENT_METHODS, total, outstanding, collected, collectableCharges, nextCollectCharge, submitSale, submitRetailSale, collectPayment, settleOrder, payOrder, decideRounding, applyCredit, decideCredit, submitRepay, decideRepayment } from './sales.js';
-// 房间领域（房态流转、开房/释放/清洁、预约与房间异常审核）已迁至 rooms.js（Phase 5）；rules.js 的事务分支委托调用，行为不变。
-import { RESERVATION_SOURCES, OPENING_SOURCES, PLATFORM_OPENING_SOURCES, ROOM_ISSUE_TYPES, platformVoucher, quote, canExchange, reservationTarget, reservationReminder, reservationActiveAt, release, openRoom, reserveRoom, cancelReservation, cleanRoom, markRoomIssue, clearRoomIssue, decideRoomIssue } from './rooms.js';
-// 存取酒、费用、采购、客诉、交班领域已迁至各自模块（Phase 5）；rules.js 的事务分支委托调用，行为不变。
-import { searchDeposits, submitDeposit, withdrawDeposit } from './deposits.js';
-import { EXPENSE_NATURES, EXPENSE_TYPES, EXPENSE_APPROVAL_THRESHOLD, visibleExpenses, submitExpense, decideExpense } from './expenses.js';
-import { visibleProcurements, submitProcurement } from './procurement.js';
-import { INCIDENT_TYPES, visibleIncidents, pendingIncidentReminders, submitIncident, submitIncidentResolution, decideIncidentResolution } from './incidents.js';
+import { submitSale, submitRetailSale, collectPayment, settleOrder, payOrder, decideRounding, applyCredit, decideCredit, submitRepay, decideRepayment } from './sales.js';
+import { canExchange, release, openRoom, reserveRoom, cancelReservation, cleanRoom, markRoomIssue, clearRoomIssue, decideRoomIssue } from './rooms.js';
+import { submitDeposit, withdrawDeposit } from './deposits.js';
+import { submitExpense, decideExpense } from './expenses.js';
+import { submitProcurement } from './procurement.js';
+import { submitIncident, submitIncidentResolution, decideIncidentResolution } from './incidents.js';
 import { submitHandover } from './handover.js';
-// product 查询包装已迁至 catalog.js（Phase 3）；re-export 保持 rules.js 既有导入路径兼容（facade，Phase 8 再清理）。
-export { product };
-// 共同基础（金额、时段、身份与权限选择器）已迁移到 shared/*；此处 re-export 保持既有导入路径兼容（facade，Phase 8 再清理）。
-import { money, cents } from './shared/money.js';
-import { slot } from './shared/time.js';
-import { USERS, USER_ALIASES, PERMISSION_ROLES, PERMISSION_DEFINITIONS, PERMISSION_IDS, BUSINESS_REVIEW_SECTIONS, businessReviewSections, permissionsForRoles, defaultPermissions, defaultCapabilities, effectiveUser, hasPermission, hasRole } from './shared/identity.js';
-export { money, cents, slot, USERS, USER_ALIASES, PERMISSION_ROLES, PERMISSION_DEFINITIONS, PERMISSION_IDS, BUSINESS_REVIEW_SECTIONS, businessReviewSections, permissionsForRoles, defaultPermissions, defaultCapabilities, effectiveUser, hasPermission, hasRole };
+import { USERS, PERMISSION_ROLES, PERMISSION_IDS, defaultPermissions, defaultCapabilities, permissionsForRoles, effectiveUser, hasPermission } from './shared/identity.js';
 
 export const OTHER_CHARGE_CATEGORIES = ['小吃', '热食', '烧鸡烤肉', '代驾', '其他'];
-export const PAYMENT_METHODS = SALES_PAYMENT_METHODS;
-export { total, outstanding, collected, collectableCharges, nextCollectCharge };
-export { RESERVATION_SOURCES, OPENING_SOURCES, PLATFORM_OPENING_SOURCES, ROOM_ISSUE_TYPES, platformVoucher, quote, canExchange, reservationTarget, reservationReminder, reservationActiveAt };
-export { searchDeposits, EXPENSE_NATURES, EXPENSE_TYPES, EXPENSE_APPROVAL_THRESHOLD, visibleExpenses, visibleProcurements, INCIDENT_TYPES, visibleIncidents, pendingIncidentReminders };
 
-export function productSnapshot(catalog, id, baseQuantity, extra = {}) {
+function productSnapshot(catalog, id, baseQuantity, extra = {}) {
   const p = product(id, catalog);
   return { productId: p.id, productNameSnapshot: p.name, categorySnapshot: p.category, categoryLabelSnapshot: categoryLabel(p), baseUnitSnapshot: p.baseUnit, baseQuantity, ...extra };
 }

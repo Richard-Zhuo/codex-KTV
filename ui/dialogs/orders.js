@@ -5,7 +5,10 @@ import { allowedPermission, btn, canReviewSubmission, ctx, currentUser, date, em
 import { openDialog, toast } from '../shell.js';
 import { bindPaymentSummary, bindSaleForm, paymentFields, saleItemRow, stepper } from '../forms.js';
 import { extraLabels, reservationListMarkup } from '../pages/rooms.js';
-import { OTHER_CHARGE_CATEGORIES, bonusAllowance, canExchange, collectableCharges, money, nextCollectCharge, outstanding, quote, total } from '../../rules.js';
+import { OTHER_CHARGE_CATEGORIES, bonusAllowance } from '../../rules.js';
+import { canExchange, quote } from '../../rooms.js';
+import { collectableCharges, nextCollectCharge, outstanding, total } from '../../sales.js';
+import { money } from '../../shared/money.js';
 import { productIdOf, saleOptions, sellableProducts } from '../../catalog.js';
 
 function showOrder(id) {

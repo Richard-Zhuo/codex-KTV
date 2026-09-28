@@ -42,7 +42,8 @@ test('营业待办留在员工系统，系统后台不承载日常营业页面',
 
   const taskPage = moduleOf('pages/tasks.js') || sliceOf(app, 'function taskCenterPage()', 'function permissionCards()');
   const adminSrc = moduleOf('pages/admin.js') || app;
-  const systemPage = sliceOf(adminSrc, 'function systemManagementPage()', 'function stockNotices()');
+  // Phase 8 起 stockNotices／handoverHistory 已作为死代码删除，admin.js 以 export 块结尾。
+  const systemPage = sliceOf(adminSrc, 'function systemManagementPage()', 'export {') || adminSrc;
   assert.ok(taskPage.length > 0, '待办中心页面实现必须存在');
   assert.ok(systemPage.length > 0, '系统管理页面实现必须存在');
 
@@ -51,6 +52,8 @@ test('营业待办留在员工系统，系统后台不承载日常营业页面',
 
   assert.match(systemPage, /permissionCards\(\)/);
   assert.doesNotMatch(systemPage, /creditCards|ReviewCards|giftRequestCards|roomIssueReviewCards|stockNotices|handoverHistory|reportPage|staffRecordingPanel/);
+  // Phase 8 死代码清理：stockNotices／handoverHistory 已从 ui/pages/admin.js 全文删除
+  assert.doesNotMatch(adminSrc, /function stockNotices|function handoverHistory/);
   assert.match(sources, /if\(a==='goReviewTasks'\)[\s\S]*?(?:ctx\.)?page='tasks'/);
   assert.doesNotMatch(sources, /goRoomIssueReviews|window\.location\.assign\('\/admin'\)/);
 });
