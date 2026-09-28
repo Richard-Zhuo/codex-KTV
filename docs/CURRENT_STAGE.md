@@ -9,9 +9,10 @@
 | 阶段 | 内容 | 日期 | 证据 | 检查点 |
 |---|---|---|---|---|
 | Phase 0 | 行为冻结：新增 27 项 characterization 与缺陷重现证据测试（73→100） | 2026-09-28 | `npm test`（`NODE_OPTIONS=--test-isolation=none`）100/100；Bug #1-#8 均有证据（bugs-evidence*.test.js） | `e6d0fed` |
-| Phase 1 | 单一 persistence/migration 边界：迁移链抽入 `migrations.js`，`persistence.js` 成为唯一读写账本 key 的模块；损坏数据先备份不覆盖 | 2026-09-28 | 112/112；抽取前与 app.js 旧代码字节级等价比对通过；浏览器验证开房→重载保留、损坏→备份不覆盖 | 待提交（本阶段 commit） |
+| Phase 1 | 单一 persistence/migration 边界：迁移链抽入 `migrations.js`，`persistence.js` 成为唯一读写账本 key 的模块；损坏数据先备份不覆盖 | 2026-09-28 | 112/112；抽取前与 app.js 旧代码字节级等价比对通过；浏览器验证开房→重载保留、损坏→备份不覆盖 | `1e6de59` |
+| Phase 2 | 共同基础：金额／时段／身份与权限选择器抽入 `shared/money.js`、`shared/time.js`、`shared/identity.js`；`rules.js` 改为 re-export facade，取整、日期、默认岗位、`backend.view`／`review.self` 语义未变 | 2026-09-28 | 前测（金额＋全身份×39权限矩阵，13 项）先冻结 rules.js 行为；后测改测 shared/* 并断言 facade 同绑定；127/127；shared 三模块与 HEAD rules.js 字节级等价比对通过；浏览器抽样权限可见性（邵老板全入口、美娇无零售/报表/后台、卓老板恢复、美娇访问 /admin 被拒） | 待提交（本阶段 commit） |
 
-未开始：Phase 2-9。原审计报告 Bug #1-#7、#9 未修复（仅 #8 由 Phase 1 结构性解决）；修复需另立任务。
+未开始：Phase 3-9。原审计报告 Bug #1-#7、#9 未修复（仅 #8 由 Phase 1 结构性解决）；修复需另立任务。
 
 ## 当前目标
 
@@ -35,7 +36,9 @@
 | 证据 | 日期 | 结论 | 状态 |
 |---|---|---|---|
 | 针对性规则测试 | 2026-09-28 | `node --test --test-isolation=none catalog.test.js rules.test.js retail.test.js entry.test.js`：64/64 通过，覆盖统一订单、未建账、库存不足、付款失败原子性、整打 12 支、人员与历史价格快照 | 本次执行 |
-| 完整自动测试 | 2026-09-28 | 重构 Phase 1 后 `npm test`（`NODE_OPTIONS=--test-isolation=none`）112/112 通过（含 Phase 0 新增 27 项与 Phase 1 新增 11 项 persistence/migration 测试） | 本次执行 |
+| 完整自动测试 | 2026-09-28 | 重构 Phase 2 后 `npm test`（`NODE_OPTIONS=--test-isolation=none`）127/127 通过（含 Phase 0 新增 27 项、Phase 1 新增 11 项、Phase 2 新增 15 项 shared 基础测试） | 本次执行 |
+| shared 基础等价性 | 2026-09-28 | 抽取前先以 rules.js 为源运行 13 项前测全部通过（行为冻结）；抽取后 `shared/money.js`、`shared/time.js`、`shared/identity.js` 与 HEAD rules.js 对应定义在结构快照、多组入参出参和函数源码行上字节级一致；`shared.test.js` 另断言 rules.js re-export 是同一绑定 | 本次执行 |
+| 权限可见性浏览器抽样 | 2026-09-28 | 本地 Chromium `localhost:4321`（ESM 链 rules.js→shared/* 正常解析）：邵老板导航含零售/报表且头部有系统管理入口；切美娇（仅开单员）后零售/报表导航消失、无系统管理入口；切卓老板后恢复；美娇访问 `/admin` 显示“当前身份不能进入系统后台”拒绝页 | 本次页面操作通过 |
 | 持久化迁移链等价性 | 2026-09-28 | `migrations.js` 抽取前与 `app.js` 旧实现（逐字拷贝至临时模块）在新鲜/营业中/旧格式三组夹具上 JSON 字节级一致；旧格式迁移幂等 | 本次执行 |
 | 持久化浏览器验收 | 2026-09-28 | 本地 Chromium `localhost:4321`：UI 开房 V01 后 `jbhh-demo-v1` 写入订单且房态营业中；刷新重载后订单与房态保留；手工写入损坏 JSON 后重载，原 key 内容未变、`jbhh-demo-v1-recovery` 保存原文、页面提示新练习 | 本次页面操作通过；验证后已清理测试数据 |
 | 真实浏览器验收 | 2026-09-28 | 在本地 Chromium 的 `127.0.0.1:4173` 演示来源：后台创建验收小吃（¥5／包），未建账零售被拒且保持 0 单；期初 10 包审核通过后独立零售 1 包现金 ¥5，333 房增购 1 包；库存余 8 包且两笔各有 -1 包流水；日报列房间 ¥295、零售 ¥5、全部账单 ¥300，分类 ¥10，销售归属分别 ¥5；之后将商品改名并把现价调至 ¥6，旧零售和房间明细仍显示原名称及 ¥5，新零售显示新名称及 ¥6，日报账单合计 ¥306 | 本次页面操作通过；这是演示状态，非真实收款 |
