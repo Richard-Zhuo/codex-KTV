@@ -1,261 +1,18 @@
-import { OTHER_CHARGE_CATEGORIES, USERS, USER_ALIASES, PERMISSION_ROLES, PERMISSION_DEFINITIONS, PERMISSION_IDS, defaultPermissions, defaultCapabilities, permissionsForRoles, effectiveUser, hasPermission, businessReviewSections, RESERVATION_SOURCES, OPENING_SOURCES, PAYMENT_METHODS, EXPENSE_NATURES, EXPENSE_TYPES, EXPENSE_APPROVAL_THRESHOLD, INCIDENT_TYPES, ROOM_ISSUE_TYPES, visibleExpenses, visibleProcurements, visibleIncidents, pendingIncidentReminders, money, slot, cents, quote, initialState, total, outstanding, collected, collectableCharges, nextCollectCharge, transact, canExchange, bonusAllowance, reservationReminder, reservationActiveAt, searchDeposits, hasRole } from './rules.js';
-import { mergeCatalog, findProduct, saleOptions, sellableProducts, inventoryProducts, consumableProducts, productIdOf, categoryLabel, migrateLegacyOrderPricing } from './catalog.js';
-const KEY = 'jbhh-demo-v1';
+import { OTHER_CHARGE_CATEGORIES, USERS, PERMISSION_DEFINITIONS, effectiveUser, hasPermission, businessReviewSections, RESERVATION_SOURCES, OPENING_SOURCES, PAYMENT_METHODS, EXPENSE_NATURES, EXPENSE_TYPES, EXPENSE_APPROVAL_THRESHOLD, INCIDENT_TYPES, ROOM_ISSUE_TYPES, visibleExpenses, visibleProcurements, visibleIncidents, pendingIncidentReminders, money, slot, cents, quote, initialState, total, outstanding, collected, collectableCharges, nextCollectCharge, transact, canExchange, bonusAllowance, reservationReminder, reservationActiveAt, searchDeposits, hasRole } from './rules.js';
+import { findProduct, saleOptions, sellableProducts, productIdOf, categoryLabel } from './catalog.js';
+import { createDemoPersistence, DEMO_STATE_KEY } from './persistence.js';
 const APP_ENTRY = document.body.dataset.appEntry === 'admin' ? 'admin' : 'staff';
 const REQUESTED_STAFF_PAGE = new URLSearchParams(window.location.search).get('page');
 const DEFAULT_PAGE = APP_ENTRY === 'admin' ? 'manage' : REQUESTED_STAFF_PAGE === 'tasks' ? 'tasks' : 'rooms';
 let state, storageProblem = '';
 const product = id => findProduct(state.catalog, id);
+const persistence = createDemoPersistence({ storage: localStorage });
 try {
-  const raw = localStorage.getItem(KEY);
-  state = raw ? JSON.parse(raw) : initialState();
-  if (state.version !== 1 || !Array.isArray(state.rooms) || !state.inventory) throw Error();
-  state.catalog = mergeCatalog(state.catalog);
-  const fresh = initialState();
-  for (const item of inventoryProducts(state.catalog)) state.inventory[item.id] ??= { count: null, threshold: item.inventoryThreshold ?? 10, unit: item.baseUnit };
-  state.consumables ??= structuredClone(fresh.consumables);
-  for (const [id, item] of Object.entries(fresh.consumables)) state.consumables[id] ??= item;
-  for (const order of state.orders) {
-    order.sales ??= [];
-    order.otherCharges ??= [];
-    order.payments ??= [];
-    order.exchanges ??= [];
-    order.bonusGifts ??= [];
-    order.giftRequests ??= [];
-    order.openedBy ??= order.person || '';
-    order.recordedBy ??= order.person || '';
-    order.employeeId ??= '';
-    order.openSource ??= '线下';
-    order.reservedBy ??= '';
-    order.reservationSource ??= '';
-    order.rounding ??= 0;
-    order.roundingType ??= order.rounding ? '免零' : '';
-    order.roundingNote ??= '';
-    order.roundingReview ??= null;
-    if (order.credit) order.credit.openSource ??= order.openSource;
-    for (const gift of order.bonusGifts) {
-      gift.id ??= ++state.serial;
-      gift.drinks ??= gift.bottles ? [{ id: ++state.serial, product: gift.product, count: gift.bottles }] : [];
-    }
-    for (const sale of order.sales) {
-      sale.id ??= ++state.serial;
-      const multiplier = sale.spec === 'dozen' ? 12 : sale.spec === 'half' ? 6 : 1;
-      sale.bottles ??= Number(sale.count || 0) * multiplier;
-      sale.drinks ??= sale.bottles ? [{ id: ++state.serial, product: sale.product, count: sale.bottles }] : [];
-    }
-  }
-  for (const room of state.rooms) {
-    if (room.status === '已预订' && !room.order && !state.reservations.some(reservation => reservation.room === room.id && reservationActiveAt(reservation, state.clock))) room.status = '空闲';
-  }
+  const loaded = persistence.load();
+  state = loaded.state;
+  storageProblem = loaded.problem;
 }
-catch { state = initialState(); storageProblem = '本机练习记录无法读取，已进入新练习。'; }
-function legacyOrderProductSnapshot(record, baseQuantity = null) {
-  const id = productIdOf(record);
-  return {
-    productId: id,
-    productNameSnapshot: record?.productNameSnapshot ?? null,
-    categorySnapshot: record?.categorySnapshot ?? null,
-    categoryLabelSnapshot: record?.categoryLabelSnapshot ?? null,
-    baseUnitSnapshot: record?.baseUnitSnapshot ?? null,
-    baseQuantity,
-    snapshotStatus: record?.snapshotStatus || 'legacy'
-  };
-}
-function migrateLegacyCatalogFacts(next) {
-  next.catalog = mergeCatalog(next.catalog);
-  next.orders = migrateLegacyOrderPricing(next.orders);
-  const fresh = initialState();
-  const oldConsumables = next.consumables && typeof next.consumables === 'object' ? next.consumables : {};
-  const aliases = { nuts: 'cons_nuts', ice: 'cons_ice', tissue: 'cons_tissue', straw: 'cons_straw' };
-  for (const [oldId, newId] of Object.entries(aliases)) if (!oldConsumables[newId] && oldConsumables[oldId]) oldConsumables[newId] = oldConsumables[oldId];
-  next.inventory = Object.fromEntries(inventoryProducts(next.catalog).map(item => [item.id, { count: null, ...(next.inventory?.[item.id] || fresh.inventory[item.id] || {}), unit: item.baseUnit, threshold: next.inventory?.[item.id]?.threshold ?? item.inventoryThreshold ?? 10 }]));
-  next.consumables = Object.fromEntries(consumableProducts(next.catalog).map(item => [item.id, { ...(oldConsumables[item.id] || fresh.consumables[item.id]), unit: item.baseUnit, threshold: oldConsumables[item.id]?.threshold ?? item.inventoryThreshold ?? 10 }]));
-  for (const order of next.orders || []) {
-    order.kind ??= 'room';
-    order.createdAt ??= order.time;
-    order.packageId ??= null;
-    order.packageNameSnapshot ??= null;
-    order.packageBaseCents ??= Number.isSafeInteger(order.base) ? order.base : null;
-    order.packageGiftValueCents ??= Number.isSafeInteger(order.gift) ? order.gift : null;
-    order.packageReferenceGiftValueCents ??= Number.isSafeInteger(order.gift) ? order.gift : null;
-    order.packagePriceCents ??= Number.isSafeInteger(order.base) && Number.isSafeInteger(order.gift) ? order.base + order.gift : null;
-    order.openingGiftReferenceValueCents ??= Number.isSafeInteger(order.gift) ? order.gift : null;
-    order.resolvedComponents ??= [
-      ...(order.drinks || []).map(line => ({ ...legacyOrderProductSnapshot(line, Number.isSafeInteger(line.count) ? line.count : null), kind: 'opening-drink', totalBaseQuantity: Number.isSafeInteger(line.count) ? line.count : null })),
-      ...(order.extras || []).map(line => ({ ...legacyOrderProductSnapshot(line, Number.isSafeInteger(line.count) ? line.count : null), kind: 'package-component', totalBaseQuantity: Number.isSafeInteger(line.count) ? line.count : null }))
-    ];
-    for (const line of order.drinks || []) {
-      line.productId ??= line.product || '';
-      line.productNameSnapshot ??= null;
-      line.baseUnitSnapshot ??= null;
-      line.totalBaseQuantity ??= line.count ?? null;
-      line.snapshotStatus ??= 'legacy';
-    }
-    for (const extra of order.extras || []) extra.productId ??= extra.product || '';
-    for (const sale of order.sales || []) {
-      sale.productId ??= sale.product || '';
-      sale.saleQuantity ??= sale.count ?? null;
-      sale.saleOptionId ??= sale.spec || null;
-      sale.saleOptionNameSnapshot ??= null;
-      sale.baseQuantityPerSaleUnit ??= sale.spec === 'dozen' ? 12 : sale.spec === 'half' ? 6 : sale.spec === 'single' ? 1 : null;
-      sale.totalBaseQuantity ??= sale.bottles ?? null;
-      sale.pricePerSaleUnitCents ??= null;
-      sale.amountCents ??= Number.isSafeInteger(sale.amount) ? sale.amount : null;
-      sale.productNameSnapshot ??= null;
-      sale.categorySnapshot ??= null;
-      sale.baseUnitSnapshot ??= null;
-      sale.snapshotStatus ??= 'legacy';
-      sale.drinks ??= sale.totalBaseQuantity ? [{ id: ++next.serial, product: sale.product, productId: sale.productId, count: sale.totalBaseQuantity, totalBaseQuantity: sale.totalBaseQuantity, productNameSnapshot: null, baseUnitSnapshot: null, snapshotStatus: 'legacy' }] : [];
-      for (const drink of sale.drinks || []) { drink.productId ??= drink.product || sale.productId; drink.totalBaseQuantity ??= drink.count ?? null; drink.productNameSnapshot ??= null; drink.baseUnitSnapshot ??= null; drink.snapshotStatus ??= 'legacy'; }
-    }
-    for (const gift of order.bonusGifts || []) {
-      gift.productId ??= gift.product || '';
-      gift.productNameSnapshot ??= null;
-      gift.categorySnapshot ??= null;
-      gift.baseUnitSnapshot ??= null;
-      gift.saleOptionId ??= 'half';
-      gift.saleOptionNameSnapshot ??= null;
-      gift.saleQuantity ??= gift.halves ?? null;
-      gift.baseQuantityPerSaleUnit ??= 6;
-      gift.totalBaseQuantity ??= gift.bottles ?? null;
-      gift.referenceValueCents ??= null;
-      gift.snapshotStatus ??= 'legacy';
-      gift.drinks ??= gift.bottles ? [{ id: ++next.serial, product: gift.product, productId: gift.productId, count: gift.bottles, totalBaseQuantity: gift.bottles, productNameSnapshot: null, baseUnitSnapshot: null, snapshotStatus: 'legacy' }] : [];
-      for (const drink of gift.drinks || []) { drink.productId ??= drink.product || gift.productId; drink.totalBaseQuantity ??= drink.count ?? null; drink.productNameSnapshot ??= null; drink.baseUnitSnapshot ??= null; drink.snapshotStatus ??= 'legacy'; }
-    }
-    for (const request of order.giftRequests || []) {
-      request.productId ??= request.product || '';
-      request.productNameSnapshot ??= null;
-      request.categorySnapshot ??= null;
-      request.baseUnitSnapshot ??= null;
-      request.referenceValueCents ??= null;
-      request.snapshotStatus ??= 'legacy';
-    }
-  }
-  return next;
-}
-function migrateDemoState(next) {
-  next = migrateLegacyCatalogFacts(next);
-  const userIdByName = name => Object.entries(USERS).find(([, user]) => user.name === name)?.[0] || '';
-  const capabilitySchemaVersion = Number(next.capabilitySchemaVersion || 0);
-  const defaults = defaultPermissions();
-  const raw = next.permissions && typeof next.permissions === 'object' ? next.permissions : {};
-  next.permissions = Object.fromEntries(Object.entries(defaults).map(([id, roles]) => {
-    const configured = raw[id];
-    const normalized = Array.isArray(configured) ? [...new Set(configured.filter(role => PERMISSION_ROLES.includes(role)))] : [...roles];
-    return [id, id === 'administrator' ? ['管理员'] : normalized];
-  }));
-  const capabilityDefaults = defaultCapabilities();
-  const rawCapabilities = next.capabilities && typeof next.capabilities === 'object' ? next.capabilities : {};
-  next.capabilities = Object.fromEntries(Object.entries(capabilityDefaults).map(([id, permissions]) => {
-    const configured = rawCapabilities[id];
-    const legacyRoles = next.permissions[id];
-    const fallback = Array.isArray(legacyRoles) ? permissionsForRoles(legacyRoles) : permissions;
-    if (id === 'administrator') return [id, [...PERMISSION_IDS]];
-    const normalized = Array.isArray(configured) ? [...new Set(configured.filter(permission => PERMISSION_IDS.includes(permission)))] : [...fallback];
-    const added = ['expense.view', 'expense.create', 'expense.viewAll', 'expense.approve', 'identity.manage', 'staff.record', 'retail.sale', 'procurement.create', 'procurement.viewAll', 'incident.create', 'incident.viewAll', 'incident.resolve', 'incident.resolve.approve', 'room.issue', 'room.issue.approve', 'credit.repay.approve', 'inventory.approve'];
-    const configuredBase = normalized.filter(permission => !added.includes(permission));
-    const fallbackBase = fallback.filter(permission => !added.includes(permission));
-    const matchesRoleDefaults = configuredBase.length === fallbackBase.length && fallbackBase.every(permission => configuredBase.includes(permission));
-    const dualReviewPermissions = capabilitySchemaVersion < 2 ? fallback.filter(permission => ['credit.repay.approve', 'inventory.approve', 'incident.resolve.approve'].includes(permission)) : [];
-    return [id, matchesRoleDefaults ? [...new Set([...normalized, ...fallback.filter(permission => added.includes(permission)), ...dualReviewPermissions])] : [...new Set([...normalized, ...dualReviewPermissions])]];
-  }));
-  next.capabilitySchemaVersion = 4;
-  for (const order of next.orders || []) {
-    order.otherCharges ??= [];
-    for (const extra of order.extras || []) extra.served ??= false;
-    for (const request of order.giftRequests || []) {
-      request.requestedById ??= userIdByName(request.requestedBy);
-      request.submittedAt ??= request.time || order.time || next.clock;
-      request.decisionNote ??= '';
-      request.selfReviewAuthorized ??= false;
-    }
-    if (order.roundingReview) {
-      order.roundingReview.submittedById ??= userIdByName(order.roundingReview.submittedBy);
-      order.roundingReview.decisionNote ??= '';
-      order.roundingReview.selfReviewAuthorized ??= false;
-      if (order.roundingReview.status === '已审核') order.roundingReview.status = '已批准';
-    }
-    if (order.credit) {
-      order.credit.repayments ??= [];
-      order.credit.repaymentRequests ??= [];
-      for (const request of order.credit.repaymentRequests) {
-        request.submittedById ??= userIdByName(request.submittedBy);
-        request.decisionNote ??= '';
-        request.selfReviewAuthorized ??= false;
-      }
-    }
-  }
-  next.handovers = Array.isArray(next.handovers) ? next.handovers : [];
-  for (const handover of next.handovers) handover.drawerCash ??= null;
-  next.expenses = Array.isArray(next.expenses) ? next.expenses : [];
-  for (const expense of next.expenses) {
-    expense.type ??= '支出';
-    expense.status ??= '已记录';
-    expense.approver ??= '';
-    expense.approvedAt ??= '';
-  }
-  const fresh = initialState();
-  next.consumables = next.consumables && typeof next.consumables === 'object' ? next.consumables : structuredClone(fresh.consumables);
-  for (const [id, item] of Object.entries(fresh.consumables)) next.consumables[id] ??= item;
-  next.procurements = Array.isArray(next.procurements) ? next.procurements : [];
-  next.incidents = Array.isArray(next.incidents) ? next.incidents : [];
-  next.roomIssueReviews = Array.isArray(next.roomIssueReviews) ? next.roomIssueReviews : [];
-  next.inventoryReviews = Array.isArray(next.inventoryReviews) ? next.inventoryReviews : [];
-  for (const incident of next.incidents) {
-    incident.status ??= incident.result ? '已完成' : '待处理';
-    incident.result ??= '';
-    incident.note ??= '';
-    incident.lastReminderDate ??= '';
-    incident.resolutionReviews = Array.isArray(incident.resolutionReviews) ? incident.resolutionReviews : [];
-    for (const request of incident.resolutionReviews) {
-      request.submittedById ??= userIdByName(request.submittedBy);
-      request.decisionNote ??= '';
-      request.selfReviewAuthorized ??= false;
-    }
-  }
-  for (const request of next.inventoryReviews) {
-    request.submittedById ??= userIdByName(request.submittedBy);
-    request.decisionNote ??= '';
-    request.selfReviewAuthorized ??= false;
-  }
-  for (const room of next.rooms || []) {
-    if (['V05', 'V06'].includes(room.id)) room.type = '中房';
-    room.issueType ??= '';
-    room.issueNote ??= '';
-    room.issueAt ??= '';
-    room.issueBy ??= '';
-    room.issueApprovedBy ??= '';
-    room.issueEvidencePhoto ??= '';
-    room.issueEvidencePhotoName ??= '';
-  }
-  for (const request of next.roomIssueReviews) {
-    request.selfReviewAuthorized ??= false;
-    if (request.status !== '待审核' || request.requestedStatus !== '故障/维护中') continue;
-    const room = (next.rooms || []).find(item => item.id === request.room);
-    if (room && room.status === request.fromStatus) {
-      room.status = '故障/维护中';
-      room.issueType = request.issueType || '故障';
-      room.issueNote = request.evidenceText || '已提交照片凭证';
-      room.issueAt = request.submittedAt || next.clock;
-      room.issueBy = request.submittedBy || '';
-      room.issueApprovedBy = '';
-      room.issueEvidencePhoto = request.evidencePhoto || '';
-      room.issueEvidencePhotoName = request.evidencePhotoName || '';
-      request.status = '无需审核';
-      request.decidedAt = request.submittedAt || next.clock;
-      request.decisionNote = '规则更新：故障／维护标记提交后立即生效';
-    } else {
-      request.status = '已失效';
-      request.decidedAt = next.clock;
-      request.decisionNote = '房间状态已变化，旧标记申请自动失效';
-    }
-  }
-  return next;
-}
-state = migrateDemoState(state);
-state.user = USER_ALIASES[state.user] || state.user;
-if (!USERS[state.user] || USERS[state.user].legacy) state.user = 'shaoBoss';
+catch { state = initialState(); storageProblem = '本机存储不可用，已进入新练习。'; }
 let page = DEFAULT_PAGE, filter = '全部', searchTerm = '', category = 'beer', reportPeriod = 'day', busy = false, controlSequence = 0;
 const app = document.querySelector('#app'), modal = document.querySelector('#modal');
 const esc = v => String(v ?? '').replace(/[&<>"']/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]));
@@ -381,7 +138,7 @@ function reservationListMarkup(roomId) {
   if (!rows.length) return '';
   return `<div class="panel reservation-list"><b>未来预订</b>${rows.map(reservation=>`<div class="bill-line"><span>${date(reservation.at)} · ${esc(reservation.sessionLabel || '')}<br><small>${esc(reservation.source || '未记录')} · ${esc(reservation.person || '未记录')}</small></span>${allowedPermission('room.reserve')?btn('取消这笔','cancelReservation',`data-room="${roomId}" data-reservation="${reservation.id}"`,'quiet'):'<span class="badge">无预订权限</span>'}</div>`).join('')}</div>`;
 }
-function persist(next) { try { localStorage.setItem(KEY, JSON.stringify(next)); state = next; } catch { throw Error('本机保存失败，操作未完成。请检查浏览器存储空间后重试。'); } }
+function persist(next) { try { persistence.save(next); state = next; } catch { throw Error('本机保存失败，操作未完成。请检查浏览器存储空间后重试。'); } }
 function toast(text) { const el = document.querySelector('#toast'); el.textContent = text; el.classList.add('show'); clearTimeout(toast.timer); toast.timer=setTimeout(()=>el.classList.remove('show'),4500); }
 function openDialog(title, content, submitLabel, action, hidden={}) {
   if (modal.open) modal.close();
@@ -1155,5 +912,5 @@ document.addEventListener('submit',e=>{
   finally{busy=false;if(submit)submit.disabled=false;}
 });
 window.addEventListener('online',render);window.addEventListener('offline',render);
-window.addEventListener('storage',e=>{if(e.key===KEY){try{state=migrateDemoState(e.newValue?JSON.parse(e.newValue):initialState());state.user=USER_ALIASES[state.user]||state.user;if(!USERS[state.user]||USERS[state.user].legacy)state.user='shaoBoss';modal.close();render();toast('另一标签页更新了演示，请重新操作');}catch{toast('读取其他标签页记录失败，请刷新');}}});
+window.addEventListener('storage',e=>{if(e.key===DEMO_STATE_KEY){try{state=persistence.loadExternal(e.newValue);modal.close();render();toast('另一标签页更新了演示，请重新操作');}catch{toast('读取其他标签页记录失败，请刷新');}}});
 render();

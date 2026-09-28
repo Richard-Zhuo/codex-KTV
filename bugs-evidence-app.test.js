@@ -1,17 +1,19 @@
-// Phase 0：app.js 层现存缺陷与启动迁移链的源码级证据（沿 entry.test.js 既有模式，
-// 对 app.js 做源文本断言——app.js 为 DOM 绑定脚本，无法在 Node 直接 import，
-// 行为级测试需等 Phase 6 抽取后补上）。
+// Phase 1 后：app.js 层持久化证据测试（原 BUG#6/#7/#8 证据文件的更新版）。
 //
-// 覆盖：BUG#6 存酒页用当前目录名、BUG#7 报表聚合 credit 布尔（源码位置证据，
-// 行为级冻结见 characterization-report.test.js）、BUG#8 损坏 localStorage
-// 静默回退 initialState（覆盖风险）、以及启动迁移链关键步骤的锚点。
+// 变化：Phase 1 建立 persistence/migration 边界后，Bug #8 的「损坏
+// localStorage 静默覆盖」已在结构上被修复（失败不覆盖 + 原文备份到
+// jbhh-demo-v1-recovery，见 persistence.test.js 的行为级测试）。
+// 本文件相应改写为「回归保护」断言：确保 app.js 不再内嵌旧的风险模式。
+// Bug #6（存酒页当前目录名）与 #7（报表 credit 布尔）未修复，证据保留。
+// 迁移链锚点改为验证 app.js 只通过 persistence 模块读写账本。
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 
 const app = readFileSync(new URL('./app.js', import.meta.url), 'utf8');
+const server = readFileSync(new URL('./server.js', import.meta.url), 'utf8');
 
-test('BUG#6 证据：存酒页取当前目录名而非存酒时的名称快照', () => {
+test('BUG#6 证据（未修复）：存酒页取当前目录名而非存酒时的名称快照', () => {
   // 存酒记录 d 本身写入 productNameSnapshot（rules.js deposit），但渲染时未使用
   const start = app.indexOf('客人的酒，记得清楚');
   const end = app.indexOf('function repaymentReviewMarkup', start);
@@ -22,23 +24,33 @@ test('BUG#6 证据：存酒页取当前目录名而非存酒时的名称快照',
   assert.ok(app.includes("核对并取酒',`<p>${product(d.product).name} · 余 ${d.count} 支"), '取酒对话框也用当前目录名（缺陷）');
 });
 
-test('BUG#7 证据：同房多单报表聚合把 credit 压缩成单个布尔值', () => {
+test('BUG#7 证据（未修复）：同房多单报表聚合把 credit 压缩成单个布尔值', () => {
   assert.match(app, /credit:orders\.some\(order=>order\.credit\)/, '聚合行 credit 为 some() 布尔（缺陷：丢失每笔挂账详情）');
 });
 
-test('BUG#8 证据：损坏的 localStorage 静默回退 initialState，原始数据面临被覆盖', () => {
-  // 启动读取：JSON.parse 或结构校验失败 → catch 静默换成 initialState
-  assert.match(app, /catch \{ state = initialState\(\); storageProblem = '本机练习记录无法读取，已进入新练习。'; \}/);
-  assert.doesNotMatch(app, /本机练习记录无法读取[\s\S]{0,200}raw/, '未保留原始损坏数据供恢复');
-  // 之后 persist() 会把新状态写回同一 key → 原始数据被覆盖
-  assert.match(app, /function persist\(next\) \{ try \{ localStorage\.setItem\(KEY, JSON\.stringify\(next\)\)/);
-  assert.doesNotMatch(app, /persist[\s\S]{0,80}storageProblem/, 'persist 不区分「数据曾被判损坏」的场景');
+test('回归保护（原 BUG#8，Phase 1 已修）：损坏数据不再静默覆盖，原文有备份出口', () => {
+  // app.js 不再内联 JSON.parse + catch initialState 的旧模式
+  assert.doesNotMatch(app, /catch \{ state = initialState\(\); storageProblem = '本机练习记录无法读取，已进入新练习。'; \}/, '旧的静默回落模式已移除');
+  // 唯一载入入口是 persistence.load()
+  assert.match(app, /const persistence = createDemoPersistence\(\{ storage: localStorage \}\)/);
+  assert.match(app, /const loaded = persistence\.load\(\)/);
+  // 保存唯一经 persistence.save
+  assert.match(app, /persistence\.save\(next\)/);
+  assert.doesNotMatch(app, /localStorage\.setItem\(KEY/, '不得再直接写账本 key');
+  assert.doesNotMatch(app, /localStorage\.getItem\(KEY/, '不得再直接读账本 key');
 });
 
-test('启动迁移链锚点：目录合并、历史订单定价迁移、能力模式升级按顺序执行', () => {
-  assert.match(app, /state\.catalog = mergeCatalog\(state\.catalog\)/);
-  assert.match(app, /next\.orders = migrateLegacyOrderPricing\(next\.orders\)/);
-  assert.match(app, /state = migrateDemoState\(state\)/);
-  assert.match(app, /if \(state\.version !== 1 \|\| !Array\.isArray\(state\.rooms\) \|\| !state\.inventory\) throw Error\(\)/);
-  assert.match(app, /for \(const item of inventoryProducts\(state\.catalog\)\) state\.inventory\[item\.id\] \?\?= \{ count: null, threshold: item\.inventoryThreshold \?\? 10, unit: item\.baseUnit \}/);
+test('持久化边界结构：迁移链移入 migrations.js，app.js 不再内嵌迁移实现', () => {
+  // 旧的迁移函数已不在 app.js
+  for (const symbol of ['legacyOrderProductSnapshot', 'migrateLegacyCatalogFacts', 'migrateDemoState']) {
+    assert.doesNotMatch(app, new RegExp(`function ${symbol}`), `${symbol} 不应再定义在 app.js`);
+  }
+  // 跨标签页事件改经 persistence.loadExternal
+  assert.match(app, /persistence\.loadExternal\(e\.newValue\)/);
+  assert.match(app, /e\.key===DEMO_STATE_KEY/);
+});
+
+test('server.js 静态映射提供新模块', () => {
+  assert.match(server, /'\/migrations\.js': \['migrations\.js', 'text\/javascript'\]/);
+  assert.match(server, /'\/persistence\.js': \['persistence\.js', 'text\/javascript'\]/);
 });

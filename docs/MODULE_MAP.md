@@ -4,9 +4,10 @@
 
 | 改动目标 | 入口文件／稳定符号 | 相关测试 | 对应契约 | 关联边界 |
 |---|---|---|---|---|
-| 员工／系统管理入口和静态路由 | `index.html`、`admin.html` 的 `data-app-entry`；`server.js` 的静态 `files` 映射（含 `catalog.js`） | `entry.test.js` | [需求：身份、入口与权限](./REQUIREMENTS.md#已确认身份入口与权限) | `/` 承载日常营业；`/admin` 只承载系统管理；服务器没有 API |
+| 员工／系统管理入口和静态路由 | `index.html`、`admin.html` 的 `data-app-entry`；`server.js` 的静态 `files` 映射（含 `catalog.js`、`migrations.js`、`persistence.js`） | `entry.test.js`、`bugs-evidence-app.test.js` | [需求：身份、入口与权限](./REQUIREMENTS.md#已确认身份入口与权限) | `/` 承载日常营业；`/admin` 只承载系统管理；服务器没有 API |
+| 本机持久化与旧状态迁移 | `persistence.js`：`createDemoPersistence`、`DEMO_STATE_KEY`、`DEMO_BACKUP_KEY`；`migrations.js`：`validateDemoState`、`migrateStartupState`、`migrateDemoState`、`normalizeDemoUser` | `persistence.test.js`、`bugs-evidence-app.test.js` | [架构：数据流](./ARCHITECTURE.md#数据流与事务边界) | 唯一读写账本 key 的模块；载入失败先备份原文再进入新练习，不覆盖；未知历史价格保持 null |
 | 商品目录、销售规格和套餐定义 | `catalog.js`：`DEFAULT_CATALOG`、`mergeCatalog`、`findProduct`、`roomPackage`、`saleOption`、`migrateLegacyOrderPricing` | `catalog.test.js` | [需求：商品、套餐与价格模型](./REQUIREMENTS.md#已确认商品套餐与价格模型) | `DEFAULT_CATALOG` 只用于初始化、迁移和 DEMO 恢复；运行时唯一来源是 `state.catalog`；不维护重复 `sku` |
-| 页面导航、待办、零售、目录维护、报表与本机状态 | `app.js`：`render`、`retailPage`、`retailDialog`、`saleDialog`、`reportPage`、`catalogCreateDialog`、`migrateDemoState`、`persist`、`commit` | `entry.test.js`、`retail.test.js`；浏览器验收页面流程 | [架构：数据流](./ARCHITECTURE.md#数据流与事务边界) | 零售与房间商品选择共用表单；报表读取销售行快照，独立列零售明细 |
+| 页面导航、待办、零售、目录维护、报表与本机状态 | `app.js`：`render`、`retailPage`、`retailDialog`、`saleDialog`、`reportPage`、`catalogCreateDialog`、`persist`、`commit`（载入／保存仅经 `persistence.js` 装配） | `entry.test.js`、`retail.test.js`、`characterization-report.test.js`、`characterization-core.test.js`、`bugs-evidence.test.js`；浏览器验收页面流程 | [架构：数据流](./ARCHITECTURE.md#数据流与事务边界) | 零售与房间商品选择共用表单；报表读取销售行快照，独立列零售明细 |
 | 房型报价、普通商品、统一订单和销售事务 | `rules.js`：`initialState`、`quote`、`prepareSaleRows`、`appendSaleRows`、`transact`（`createCatalogProduct`、`sale`、`retailSale`） | `rules.test.js`、`retail.test.js` | [需求：普通商品与独立零售](./REQUIREMENTS.md#已确认普通商品与独立零售) | 金额用整数分；库存按基础单位；零售付款与订单、销售行、流水原子写入，失败不回写原状态 |
 | 身份与具体权限 | `rules.js`：`PERMISSION_DEFINITIONS`、`defaultCapabilities`、`effectiveUser`、`hasPermission`、`businessReviewSections` | `rules.test.js` | [需求：身份、入口与权限](./REQUIREMENTS.md#已确认身份入口与权限) | `backend.view` 不授予业务审核；`review.self` 只是自审附加条件 |
 | 主题与自动切换 | `theme.js`：`refresh`、`window.ktvAppearance`；`style.css` 主题选择器 | `theme.test.js` | [需求：报表、主题与数据边界](./REQUIREMENTS.md#已确认报表主题与数据边界) | 使用设备时间和独立键 `jbhh-appearance-v1`，不跟随练习时间 |
@@ -25,6 +26,12 @@
 3. 读 `rules.js` 中对应事务分支和领域函数。
 4. 读 `rules.test.js` 中同一行为的测试。
 5. 只有界面输入或展示变化时再读 `app.js` 和 `style.css`。
+
+### 改持久化或旧数据迁移
+
+1. 先读 `persistence.js` 与 `persistence.test.js`，确认账本 key 只在此读写。
+2. 旧字段补值或版本升级读 `migrations.js` 及其测试；未知历史价格必须保持 null。
+3. 载入失败策略（备份、不覆盖）属于数据安全边界，改动需同步更新 `bugs-evidence-app.test.js` 的回归保护断言。
 
 ### 改入口或权限
 
