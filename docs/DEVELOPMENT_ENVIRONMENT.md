@@ -23,13 +23,13 @@
 | 使用其他端口（PowerShell） | `$env:PORT = 4174; npm start` | 配置确认 | `server.js` 读取 `PORT`，本轮未执行 |
 | 完整自动测试 | `npm test` | 配置确认 | `package.json` 映射到 `node --test` |
 | 2026-09-28 历史替代测试 | `$env:NODE_OPTIONS = '--test-isolation=none'; pnpm test` | 历史执行 | 历史记录为 73/73；不能当作本轮结果 |
-| 本轮同脚本自动测试 | `node --test` | 本次执行 | 2026-09-29 浏览器验收及标题修整后共 223 项，217 通过、6 条已知问题复现跳过、0 失败、退出码 0；与 `package.json` 的 test 脚本相同。初始集成及最新原始输出见 [阶段记录](./CURRENT_STAGE.md) |
+| 本次同脚本自动测试 | `node --test` | 本次执行 | 2026-09-29 P0-1 只读预检器后共 235 项，229 通过、6 条已知问题复现跳过、0 失败、退出码 0；与 `package.json` 的 test 脚本相同。本次 `npm test` 因 PowerShell 找不到 npm 命令而未启动；此前 223 项是历史证据，见 [阶段记录](./CURRENT_STAGE.md) |
 | 隔离浏览器恢复演练 | `node docs/verification/browser-recovery-harness.mjs` | 本次执行 | 仅绑定 `127.0.0.1` 的随机端口；打开打印出的 `/__seed`，用合成已付款订单走停写、复制、人工修正及显式重检，结果见 [浏览器记录](./verification/track-a-b-browser-recovery-2026-09-29.md) |
 | 单文件语法诊断 | `node --check app.js` 等 | 历史使用／诊断 | 不能替代 `npm test` |
 | 初始化数据库基线 | `psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f database/schema.sql` | 仅契约命令 | 项目运行时尚未连接 PostgreSQL，本轮未执行 |
 | 写入主数据 | `psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f database/seed.sql` | 仅契约命令 | 只应在明确的目标数据库和授权下执行 |
 
-修改 JavaScript 后，项目约定的正式自动验证命令是 `npm test`。本轮 PowerShell 无法启动 `npm`；`pnpm test` 回退包装器因尝试写临时文件报 EPERM，因此直接执行同一脚本 `node --test`。这些结果均在阶段记录中分别标明。
+修改 JavaScript 后，项目约定的正式自动验证命令是 `npm test`。2026-09-29 P0-1 预检器任务已实际尝试该命令，但 PowerShell 找不到 `npm`，进程未启动；随后实际运行同一脚本 `node --test` 并取得上表结果。此前 `pnpm test` 回退包装器因尝试写临时文件报 EPERM 属历史执行情况，不是本次测试结果。
 
 ## 入口与端口
 

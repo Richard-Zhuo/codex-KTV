@@ -6,6 +6,12 @@
 
 Track A＋B 集成提交 `81e1a4c` 已在 `main`；下方“隔离集成候选尚未合并 main”的文字是当时的历史记录，不再代表当前 Git 状态。本轮收到门店对完整营业职责、≤5 元免零和超额审批自批限制、暂定 06:00 营业日、订单营业额与逐笔付款资金分日归属、平台券先核销和无固定备用金的明确确认，已更新 [REQUIREMENTS](./REQUIREMENTS.md)、[OFFSITE_CONTRACTS](./OFFSITE_CONTRACTS.md)、[OPEN BUSINESS DECISIONS](./OPEN_BUSINESS_DECISIONS.md) 与 [P0 矩阵](./OFFSITE_P0_MATRIX.md)。这些是目标契约纠偏，当前演示代码并未因此实现新规则；K01、K05、K07 仍见 [KNOWN_ISSUES](./KNOWN_ISSUES.md)。真人与历史演示账号 ID 的映射继续待确认。
 
+## P0-1 原始快照只读预检器（2026-09-29）
+
+已新增 `snapshot-preflight.js:preflightDemoSnapshot(raw)` 和 `snapshot-preflight.test.js`。输入为复制出的 `jbhh-demo-v1` 原始 JSON 字符串，按 UTF-8 字节计算 SHA-256；仅在深拷贝上调用现有 `migrations.js` 链，输出订单 room/retail、逐笔/逐渠道付款、挂账回款关联、库存 `count:null` 与 0、计账/未计账流水及房态引用的核对摘要。未知历史名称、规格、单价、基础数量或赠酒参考值保持未知，并返回明确 ambiguity/error；损坏输入不进入可写状态。`ok` 仅表示此预检覆盖项未发现问题，不构成正式导入批准。该模块没有 localStorage、UI、HTTP 或数据库写入口，生产业务规则未改。
+
+本次修改 JavaScript 后按约定尝试 `npm test`，PowerShell 报 `The term npm is not recognized`，npm 进程未启动。实际运行 `package.json` 对应的 `node --test`：235 项、229 通过、0 失败、6 项已知问题复现跳过，退出码 0；新增预检器测试 12/12 通过。以上是本次执行证据，不沿用此前 217/6/0 的历史结果；没有浏览器或 PostgreSQL 验收。
+
 ## 本轮隔离集成候选（2026-09-29）
 
 来源：用户交付的 `jbhh-ktv-full.zip`，基线 `ca726b2`；纯重构检查点 `74c3f55`；业务修复终点 `6aa01ba`。Track B 来源为 `codex/offsite-contracts@3193635`。候选位于独立工作树的 `codex/track-a-integration`，主工作区未提交内容保留；未合并 `main`、未推送。
@@ -142,7 +148,7 @@ Track A＋B 集成提交 `81e1a4c` 已在 `main`；下方“隔离集成候选�
 
 ## 下一步
 
-当前按 P0-1 先实施只读 `jbhh-demo-v1` 快照预检器与契约测试，保护原始记录并报告迁移歧义；本阶段不接入 PostgreSQL 生产账本、真人认证或客户端 API。正式营业日和班次规则已确认的部分见 [REQUIREMENTS](./REQUIREMENTS.md)，运行实现仍属后续任务。
+只读 `jbhh-demo-v1` 快照预检器与契约测试已完成；后续 P0-1 的 PostgreSQL 生产账本、真人认证和客户端 API 切换均未开始，本轮不推进。正式营业日和班次规则已确认的部分见 [REQUIREMENTS](./REQUIREMENTS.md)，运行实现仍属后续任务。
 
 ## 阶段停止条件
 
