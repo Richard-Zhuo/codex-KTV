@@ -10,7 +10,7 @@
 |---|---|---|---|---|
 | Phase 0 | 行为冻结：新增 27 项 characterization 与缺陷重现证据测试（73→100） | 2026-09-28 | `npm test`（`NODE_OPTIONS=--test-isolation=none`）100/100；Bug #1-#8 均有证据（bugs-evidence*.test.js） | `e6d0fed` |
 | Phase 1 | 单一 persistence/migration 边界：迁移链抽入 `migrations.js`，`persistence.js` 成为唯一读写账本 key 的模块；损坏数据先备份不覆盖 | 2026-09-28 | 112/112；抽取前与 app.js 旧代码字节级等价比对通过；浏览器验证开房→重载保留、损坏→备份不覆盖 | `1e6de59` |
-| Phase 2 | 共同基础：金额／时段／身份与权限选择器抽入 `shared/money.js`、`shared/time.js`、`shared/identity.js`；`rules.js` 改为 re-export facade，取整、日期、默认岗位、`backend.view`／`review.self` 语义未变 | 2026-09-28 | 前测（金额＋全身份×39权限矩阵，13 项）先冻结 rules.js 行为；后测改测 shared/* 并断言 facade 同绑定；127/127；shared 三模块与 HEAD rules.js 字节级等价比对通过；浏览器抽样权限可见性（邵老板全入口、美娇无零售/报表/后台、卓老板恢复、美娇访问 /admin 被拒） | 待提交（本阶段 commit） |
+| Phase 2 | 共同基础：金额／时段／身份与权限选择器抽入 `shared/money.js`、`shared/time.js`、`shared/identity.js`；`rules.js` 改为 re-export facade，取整、日期、默认岗位、`backend.view`／`review.self` 语义未变 | 2026-09-28 | 前测（金额＋全身份×39权限矩阵，13 项）先冻结 rules.js 行为；后测改测 shared/* 并断言 facade 同绑定；127/127；shared 三模块与 HEAD rules.js 字节级等价比对通过；浏览器抽样权限可见性（邵老板全入口、美娇无零售/报表/后台、卓老板恢复、美娇访问 /admin 被拒） | `9290110` |
 
 未开始：Phase 3-9。原审计报告 Bug #1-#7、#9 未修复（仅 #8 由 Phase 1 结构性解决）；修复需另立任务。
 
