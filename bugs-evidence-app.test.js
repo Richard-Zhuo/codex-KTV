@@ -12,6 +12,8 @@ import { readFileSync } from 'node:fs';
 
 const app = readFileSync(new URL('./app.js', import.meta.url), 'utf8');
 const server = readFileSync(new URL('./server.js', import.meta.url), 'utf8');
+// Phase 6 起报表聚合迁至 reporting.js；Bug #6/#7 的缺陷代码随迁，证据断言指向新 owner 模块。
+const reporting = readFileSync(new URL('./reporting.js', import.meta.url), 'utf8');
 
 test('BUG#6 证据（未修复）：存酒页取当前目录名而非存酒时的名称快照', () => {
   // 存酒记录 d 本身写入 productNameSnapshot（rules.js deposit），但渲染时未使用
@@ -25,7 +27,9 @@ test('BUG#6 证据（未修复）：存酒页取当前目录名而非存酒时�
 });
 
 test('BUG#7 证据（未修复）：同房多单报表聚合把 credit 压缩成单个布尔值', () => {
-  assert.match(app, /credit:orders\.some\(order=>order\.credit\)/, '聚合行 credit 为 some() 布尔（缺陷：丢失每笔挂账详情）');
+  // Phase 6 起 reportOrder 迁入 reporting.js，缺陷代码逐字随迁
+  assert.match(reporting, /credit:orders\.some\(order=>order\.credit\)/, '聚合行 credit 为 some() 布尔（缺陷：丢失每笔挂账详情）');
+  assert.doesNotMatch(app, /credit:orders\.some\(order=>order\.credit\)/, 'app.js 不再内嵌报表聚合（Phase 6 抽取完成）');
 });
 
 test('回归保护（原 BUG#8，Phase 1 已修）：损坏数据不再静默覆盖，原文有备份出口', () => {
@@ -53,4 +57,5 @@ test('持久化边界结构：迁移链移入 migrations.js，app.js 不再内�
 test('server.js 静态映射提供新模块', () => {
   assert.match(server, /'\/migrations\.js': \['migrations\.js', 'text\/javascript'\]/);
   assert.match(server, /'\/persistence\.js': \['persistence\.js', 'text\/javascript'\]/);
+  assert.match(server, /'\/reporting\.js': \['reporting\.js', 'text\/javascript'\]/);
 });

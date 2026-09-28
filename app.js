@@ -2,6 +2,8 @@ import { OTHER_CHARGE_CATEGORIES, USERS, PERMISSION_DEFINITIONS, effectiveUser, 
 import { findProduct, saleOptions, sellableProducts, inventoryProducts, consumableProducts, productIdOf, categoryLabel } from './catalog.js';
 // 审核收件箱投影（待办汇总与展示分离，Phase 5）：只读汇总各领域待审/已审记录，不决定业务状态。
 import { pendingBusinessReviewCount as inboxPendingCount, reviewHistoryRows as inboxHistoryRows } from './reviewInbox.js';
+// 报表 selectors 与 view models（Phase 6）：报表聚合只存在于 reporting.js，app.js 仅做模板渲染。
+import { reportViewModel, reportMoney, reportGiftDetails, reportSaleDetails, reportOtherDetails, reportGiftPerson, reportPaymentMethods, reportNotes, reservationDate } from './reporting.js';
 import { createDemoPersistence, DEMO_STATE_KEY } from './persistence.js';
 const APP_ENTRY = document.body.dataset.appEntry === 'admin' ? 'admin' : 'staff';
 const REQUESTED_STAFF_PAGE = new URLSearchParams(window.location.search).get('page');
@@ -44,93 +46,19 @@ const permissionDefinition = id => PERMISSION_DEFINITIONS.find(permission => per
 const permissionSummary = user => (user.permissions || []).map(id => permissionDefinition(id)?.label).filter(Boolean);
 function pendingReservations(roomId) { return state.reservations.filter(reservation => reservation.room === roomId && reservation.status === '已预订').sort((a,b)=>Date.parse(a.at)-Date.parse(b.at)); }
 function pendingRoomIssueReview(roomId) { return (state.roomIssueReviews || []).find(request => request.room === roomId && request.status === '待审核'); }
-function reservationDate(time) { return new Date(time).toLocaleDateString('zh-CN',{month:'numeric',day:'numeric'}); }
 function reservationSessionName(reservation) { return reservation.session === 'afternoon' ? '下午场' : reservation.session === 'night' ? '夜间场' : String(reservation.sessionLabel || '').split('（')[0]; }
 function displayRoomStatus(room) { return room.status === '空闲' && pendingReservations(room.id).length ? '已预订' : room.status; }
 function roomMatchesFilter(room) { return filter === '全部' ? true : filter === '已预订' ? room.status === '已预订' || pendingReservations(room.id).length > 0 : filter === '异常' ? room.status === '故障/维护中' || Boolean(pendingRoomIssueReview(room.id)) : filter === '空闲' ? displayRoomStatus(room) === '空闲' && !pendingRoomIssueReview(room.id) : displayRoomStatus(room) === filter; }
-const reportMoney = centsValue => money(Number(centsValue || 0));
-const reportQuantity = value => Number(value || 0).toFixed(2).replace(/\.00$/,'').replace(/(\.\d)0$/,'$1');
-const reportDateKey = value => { const d = new Date(value); return `${d.getFullYear()}-${d.getMonth()+1}-${d.getDate()}`; };
-function reportPeriodMatch(order) {
-  if (!order) return false;
-  const current = new Date(state.clock), time = new Date(order.time);
-  if (reportPeriod === 'month') return current.getFullYear()===time.getFullYear() && current.getMonth()===time.getMonth();
-  if (reportPeriod === 'week') { const start = new Date(current); start.setHours(0,0,0,0); const day=(start.getDay()+6)%7; start.setDate(start.getDate()-day); const end=new Date(start); end.setDate(start.getDate()+7); return time>=start && time<end; }
-  return reportDateKey(state.clock) === reportDateKey(order.time);
-}
-function reportOrder(roomId) {
-  const orders = state.orders.filter(order=>order.kind!=='retail' && order.room===roomId && reportPeriodMatch(order)).sort((a,b)=>Date.parse(a.time)-Date.parse(b.time));
-  if (!orders.length) return null;
-  const base=orders.reduce((sum,order)=>sum+Number(order.packageBaseCents ?? order.base ?? 0),0), gift=orders.reduce((sum,order)=>sum+Number(order.packageGiftValueCents ?? order.gift ?? 0),0);
-  return { ...orders.at(-1), periodOrders:orders, packageBaseCents:base, packageGiftValueCents:gift, base, gift, drinks:orders.flatMap(order=>order.drinks||[]), extras:orders.flatMap(order=>order.extras||[]), sales:orders.flatMap(order=>order.sales||[]), otherCharges:orders.flatMap(order=>order.otherCharges||[]), bonusGifts:orders.flatMap(order=>order.bonusGifts||[]), payments:orders.flatMap(order=>order.payments||[]), rounding:orders.reduce((sum,order)=>sum+Number(order.rounding||0),0), status:orders.at(-1).status, credit:orders.some(order=>order.credit), voucher:orders.find(order=>order.voucher)?.voucher };
-}
-function reportGiftAmount(order) { return (order?.bonusGifts || []).reduce((sum,gift)=>sum + (Number.isSafeInteger(gift.referenceValueCents) ? gift.referenceValueCents : 0),0); }
-function reportGiftDetails(order) {
-  return (order?.bonusGifts || []).flatMap(gift=>(gift.drinks||[]).filter(line=>line.count).map(line=>`${reportQuantity(line.totalBaseQuantity ?? line.count)}${line.baseUnitSnapshot || gift.baseUnitSnapshot || '基础单位'}${line.productNameSnapshot || gift.productNameSnapshot || `历史商品（${productIdOf(line)}）`}`));
-}
-function reportSaleDetails(order) {
-  return (order?.sales || []).map(line=>`${line.categoryLabelSnapshot || line.categorySnapshot || '历史未分类'} · ${line.productNameSnapshot || `历史商品（${productIdOf(line)}）`} × ${line.saleQuantity ?? line.count}（${line.saleOptionNameSnapshot || line.baseUnitSnapshot || '规格未记录'}） ${money(line.amountCents ?? line.amount ?? 0)}`);
-}
-function reportOtherDetails(order) {
-  return (order?.otherCharges || []).map(line=>`${line.category === '其他' ? line.item : line.category} ${money(line.amountCents ?? line.amount ?? 0)}`);
-}
-function reportBreakdown(orders, key) {
-  const totals=new Map();
-  for (const line of orders.flatMap(order=>order.sales||[])) {
-    const label=key==='category' ? (line.categoryLabelSnapshot || line.categorySnapshot || '历史未分类') : (line.person || '归属未记录');
-    totals.set(label,(totals.get(label)||0)+Number(line.amountCents ?? line.amount ?? 0));
-  }
-  return [...totals.entries()];
-}
-function reportTotals(orders) {
-  return orders.reduce((sum,order)=>{sum.base+=Number(order.packageBaseCents ?? order.base ?? 0);sum.sales+=(order.sales||[]).reduce((n,line)=>n+Number(line.amountCents ?? line.amount ?? 0),0)+Number(order.packageGiftValueCents ?? order.gift ?? 0);sum.gift+=reportGiftAmount(order);sum.total+=total(order);sum.rounding+=Number(order.rounding||0);return sum;},{base:0,sales:0,gift:0,total:0,rounding:0});
-}
-function reportGiftPerson(order) {
-  if (!order) return '';
-  const people = (order.bonusGifts || []).map(gift=>gift.requestedBy).filter(Boolean);
-  return [...new Set(people)].join('、');
-}
-function reportPaymentMethods(order) {
-  if (!order) return '';
-  const totals = new Map();
-  for (const payment of order.payments || []) {
-    if (!payment.method) continue;
-    totals.set(payment.method, (totals.get(payment.method) || 0) + Number(payment.amount || 0));
-  }
-  const methods = [...totals.entries()];
-  if (!methods.length) return outstanding(order) ? '未收' : '';
-  const hasNonWechat = methods.some(([method]) => method !== '微信');
-  return methods.map(([method, amount]) => hasNonWechat ? `${method}${money(amount)}` : method).join('+');
-}
-function reportNotes(order) {
-  if (!order) return [];
-  const repaymentSuffix = item => {
-    const credit = item?.credit;
-    const fullyRepaid = item?.status === '已回款' || (credit && typeof credit === 'object' && Number(credit.remaining || 0) === 0);
-    return credit && fullyRepaid ? ' 已回款' : '';
-  };
-  if (reportPeriod !== 'day') {
-    return [...(order.periodOrders || [])]
-      .filter(item=>item.credit)
-      .sort((a,b)=>Date.parse(b.credit.submittedAt || b.time)-Date.parse(a.credit.submittedAt || a.time))
-      .map(item=>`${reservationDate(item.credit.submittedAt || item.time)} 挂账${reportMoney(item.credit.amount)}${repaymentSuffix(item)}`);
-  }
-  return [order.credit?`挂账${repaymentSuffix(order)}`:'', order.voucher?`${order.voucher.provider}待验券`:'', order.status==='已结账'?'已结账':''].filter(Boolean);
-}
+// 报表 selectors／view models（reportMoney…reportNotes 与视图模型聚合）已迁至 reporting.js（Phase 6）；
+// 函数体逐字保留，仅闭包→参数机械转换（reportPeriodMatch(order,clock,period)、reportOrder(state,roomId,period)、reportNotes(order,period)）。
 function reportPage() {
   if (!allowedPermission('report.view')) return '<p>当前身份没有报表权限，请切换管理员或由管理员分配“查看经营报表”权限。</p>';
-  const periodOrders=state.orders.filter(reportPeriodMatch), roomOrders=periodOrders.filter(order=>order.kind!=='retail'), retailOrders=periodOrders.filter(order=>order.kind==='retail');
-  const rows=state.rooms.map(room=>({room,order:reportOrder(room.id)})).filter(row=>row.order);
-  const totals=reportTotals(periodOrders), roomTotals=reportTotals(roomOrders);
-  const roomSales=roomOrders.flatMap(order=>order.sales||[]).reduce((sum,line)=>sum+Number(line.amountCents ?? line.amount ?? 0),0);
-  const roomOther=roomOrders.flatMap(order=>order.otherCharges||[]).reduce((sum,line)=>sum+Number(line.amountCents ?? line.amount ?? 0),0);
-  const roomBody=rows.length?rows.map(({room,order})=>{
-    const sales=(order.sales||[]).reduce((sum,line)=>sum+Number(line.amountCents ?? line.amount ?? 0),0), other=(order.otherCharges||[]).reduce((sum,line)=>sum+Number(line.amountCents ?? line.amount ?? 0),0);
-    const gifts=reportGiftDetails(order), saleDetails=reportSaleDetails(order), otherDetails=reportOtherDetails(order), notes=reportNotes(order);
+  const { rows, totals, roomTotals, roomSales, roomOther, retailOrders, categoryRows, sellerRows } = reportViewModel(state, reportPeriod);
+  const roomBody=rows.length?rows.map(({room,order,sales,other})=>{
+    const gifts=reportGiftDetails(order), saleDetails=reportSaleDetails(order), otherDetails=reportOtherDetails(order), notes=reportNotes(order, reportPeriod);
     return `<tr class="has-order"><th scope="row"><strong>${esc(room.id)}</strong><small>${esc(room.type)}</small></th><td class="money-cell">${reportMoney(order.base)}</td><td class="money-cell">${reportMoney(order.gift)}</td><td class="money-cell emphasis">${reportMoney(sales)}</td><td class="money-cell">${reportMoney(other)}</td><td>${esc(reportPaymentMethods(order)||'—')}</td><td class="detail-cell">${gifts.length?gifts.map(esc).join('<br>'):'—'}</td><td>${esc(reportGiftPerson(order)||'—')}</td><td class="detail-cell">${saleDetails.length?saleDetails.map(esc).join('<br>'):'—'}</td><td class="detail-cell">${otherDetails.length?otherDetails.map(esc).join('<br>'):'—'}</td><td class="money-cell">${reportMoney(order.rounding)}</td><td class="money-cell total-cell">${reportMoney(total(order))}</td><td class="note-cell">${notes.length?notes.map(esc).join('<br>'):'—'}</td></tr>`;
   }).join(''):'<tr class="empty-period"><td colspan="13">本统计周期暂无开房记录</td></tr>';
   const retailBody=retailOrders.length?retailOrders.map(order=>`<tr><th scope="row">${esc(order.id)}</th><td>${date(order.createdAt||order.time)}</td><td class="detail-cell">${reportSaleDetails(order).map(esc).join('<br>')}</td><td>${esc([...new Set((order.sales||[]).map(line=>line.person||'归属未记录'))].join('、'))}</td><td>${esc(reportPaymentMethods(order)||'—')}</td><td class="money-cell total-cell">${reportMoney(total(order))}</td></tr>`).join(''):'<tr class="empty-period"><td colspan="6">本统计周期暂无独立零售交易</td></tr>';
-  const categoryRows=reportBreakdown(periodOrders,'category'), sellerRows=reportBreakdown(periodOrders,'seller');
   const breakdown=rows=>rows.length?rows.map(([label,amount])=>`<div class="bill-line"><span>${esc(label)}</span><b>${reportMoney(amount)}</b></div>`).join(''):'<p class="muted">暂无商品销售。</p>';
   const periodLabel = reportPeriod==='day'?'日报':reportPeriod==='week'?'周报':'月报';
   return `<p class="eyebrow">经营数据</p><div class="report-heading"><div><h1>营业${periodLabel}</h1><p class="muted">${reportPeriod==='day'?'按当天':reportPeriod==='week'?'按本周':'按本月'}演示记录汇总 · ${date(state.clock)} · 金额单位：元</p></div><label class="report-period">统计范围<select id="report-period"><option value="day" ${reportPeriod==='day'?'selected':''}>日报</option><option value="week" ${reportPeriod==='week'?'selected':''}>周报</option><option value="month" ${reportPeriod==='month'?'selected':''}>月报</option></select></label></div><section class="summary report-summary"><div><strong>${rows.length}</strong><span>有消费房间</span></div><div><strong>${retailOrders.length}</strong><span>独立零售交易</span></div><div><strong>${reportMoney(totals.total)}</strong><span>全部账单合计</span></div></section><div class="report-total-strip"><span>商品销售及套餐赠饮 <b>${reportMoney(totals.sales)}</b></span><span>后续赠酒参考值 <b>${reportMoney(totals.gift)}</b></span><span>免零金额 <b>${reportMoney(totals.rounding)}</b></span></div><div class="report-table-wrap"><table class="report-table"><caption><strong>房间消费明细</strong><span>左右滑动查看完整报表</span></caption><thead><tr><th scope="col">房号</th><th scope="col">房费</th><th scope="col">套餐赠饮</th><th scope="col">商品销售</th><th scope="col">其他消费</th><th scope="col">买单方式</th><th scope="col">后续赠酒</th><th scope="col">赠送人</th><th scope="col">商品销售明细</th><th scope="col">其他明细</th><th scope="col">免零</th><th scope="col">合计</th><th scope="col">备注</th></tr></thead><tbody>${roomBody}</tbody><tfoot><tr><th scope="row">房间合计</th><td>${reportMoney(roomTotals.base)}</td><td>${reportMoney(roomTotals.sales-roomSales)}</td><td>${reportMoney(roomSales)}</td><td>${reportMoney(roomOther)}</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>${reportMoney(roomTotals.rounding)}</td><td>${reportMoney(roomTotals.total)}</td><td>—</td></tr></tfoot></table></div><div class="report-table-wrap"><table class="report-table retail-report-table"><caption><strong>独立零售明细</strong><span>无需房间，成交后立即结清</span></caption><thead><tr><th scope="col">零售单号</th><th scope="col">成交时间</th><th scope="col">商品明细</th><th scope="col">销售归属</th><th scope="col">付款方式</th><th scope="col">合计</th></tr></thead><tbody>${retailBody}</tbody></table></div><section class="report-breakdowns"><div class="panel"><h2>商品分类销售</h2>${breakdown(categoryRows)}</div><div class="panel"><h2>销售人员归属</h2>${breakdown(sellerRows)}</div></section><p class="muted report-note">商品销售按订单中的成交价、名称和分类快照汇总；零售与房间订单都计入账单合计。统计周期沿用现有订单日期口径，正式营业日与班次留待后续设计。</p>`;
