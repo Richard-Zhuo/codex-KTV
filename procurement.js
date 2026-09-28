@@ -29,7 +29,7 @@ export function submitProcurement(s, data, person, time) {
   s.expenses ??= [];
   const needsApproval = type === '报销' && data.amount > EXPENSE_APPROVAL_THRESHOLD;
   const expenseId = ++s.serial;
-  s.expenses.push({ id: expenseId, date: procurementDate, type, amount: data.amount, method: data.method, nature: data.nature, description, proof: '', proofName: '', status: needsApproval ? '待老板审批' : '已记录', approver: '', approvedAt: '', person, time, source: '采购' });
+  s.expenses.push({ id: expenseId, date: procurementDate, type, amount: data.amount, method: data.method, nature: data.nature, description, proof: '', proofName: '', status: needsApproval ? '待老板审批' : '已记录', approver: '', approvedAt: '', submittedById: s.user, person, time, source: '采购' });
   s.procurements ??= [];
   s.procurements.push({ id: ++s.serial, date: procurementDate, item, quantity: data.quantity, unit, amount: data.amount, method: data.method, type, nature: data.nature, description, expenseId, status: needsApproval ? '报销待老板审批' : '已关联支出', person, time });
 }

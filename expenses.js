@@ -34,12 +34,15 @@ export function submitExpense(s, data, person, time) {
   if (proof && (!proof.startsWith('data:image/') || proof.length > 800000)) throw Error('图片凭证格式或大小无效');
   s.expenses ??= [];
   const needsApproval = type === '报销' && data.amount > EXPENSE_APPROVAL_THRESHOLD;
-  s.expenses.push({ id: ++s.serial, date: expenseDate, type, amount: data.amount, method: data.method, nature: data.nature, description, proof, proofName: String(data.proofName || '').trim().slice(0, 120), status: needsApproval ? '待老板审批' : '已记录', approver: '', approvedAt: '', person, time });
+  s.expenses.push({ id: ++s.serial, date: expenseDate, type, amount: data.amount, method: data.method, nature: data.nature, description, proof, proofName: String(data.proofName || '').trim().slice(0, 120), status: needsApproval ? '待老板审批' : '已记录', approver: '', approvedAt: '', submittedById: s.user, person, time });
 }
-export function decideExpense(s, action, data, person, time) {
+export function decideExpense(s, action, data, person, time, authorizeReviewer) {
   need(s, ['老板'], 'expense.approve');
   const expense = (s.expenses || []).find(item => item.id === Number(data.id));
   if (!expense || expense.status !== '待老板审批') throw Error('这笔报销不在待审批状态');
+  if (!effectiveUser(s).roles.includes('老板')) throw Error('这笔报销需要老板岗位审批');
+  const selfReview = authorizeReviewer(expense.submittedById);
+  expense.selfReviewAuthorized = selfReview;
   expense.status = action === 'approveExpense' ? '已审批' : '已驳回';
   expense.approver = person;
   expense.approvedAt = time;

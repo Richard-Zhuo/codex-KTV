@@ -194,11 +194,11 @@ export function applyCredit(s, order, data, person, time) {
   const note = String(data.note || '').trim().slice(0,200); if (!note) throw Error('请填写挂账备注');
   if (typeof data.signature !== 'string' || !data.signature.startsWith('data:image/png;base64,') || data.signature.length < 100) throw Error('请由经办员工本人手写签字');
   const amount = outstanding(order); if (!amount) throw Error('本单已经收清，无需挂账');
-  order.credit = { amount, remaining: amount, phone: phoneValue, name, note, person, openedBy: order.openedBy || order.person || '未记录', openSource: order.openSource || '线下', reservedBy: order.reservedBy || '', reservationSource: order.reservationSource || '', signature: data.signature, submittedAt: time, due: new Date(Date.parse(time)+86400000).toISOString(), approver: amount>100000 ? '老板' : '店长', repayments: [], repaymentRequests: [] };
+  order.credit = { id: ++s.serial, amount, remaining: amount, phone: phoneValue, name, note, person, submittedById: s.user, openedBy: order.openedBy || order.person || '未记录', openSource: order.openSource || '线下', reservedBy: order.reservedBy || '', reservationSource: order.reservationSource || '', signature: data.signature, submittedAt: time, due: new Date(Date.parse(time)+86400000).toISOString(), approver: amount>100000 ? '老板' : '店长', repayments: [], repaymentRequests: [] };
   order.status = '待审批挂账';
   return { release: true };
 }
-export function decideCredit(s, order, action, person, time) {
+export function decideCredit(s, order, action, person, time, authorizeReviewer) {
   if (!order || order.status !== '待审批挂账') throw Error('审批已处理'); need(s, [order.credit.approver], 'credit.approve');
   // Bug #1 修复：指定审批人是硬性岗位限制，need 的管理员岗位穿透不再适用于此分支。
   // 层级语义：店长级挂账可由店长或老板批准，老板级挂账只能由老板批准；
@@ -206,9 +206,18 @@ export function decideCredit(s, order, action, person, time) {
   const roles = effectiveUser(s).roles || [];
   const allowedRoles = order.credit.approver === '店长' ? ['店长', '老板'] : [order.credit.approver];
   if (!roles.some(role => allowedRoles.includes(role))) throw Error(`这笔挂账需要${order.credit.approver}岗位审批`);
-  order.credit.decisionAt = time; order.credit.decisionBy = person; order.status = action === 'approve' ? '已挂账' : '营业中';
-  // 驳回只恢复账单，不重新占用已经释放或被新客使用的房间。
-  if (action === 'reject') order.credit = null;
+  const selfReview = authorizeReviewer(order.credit.submittedById);
+  order.credit.decisionAt = time;
+  order.credit.decisionBy = person;
+  order.credit.selfReviewAuthorized = selfReview;
+  order.credit.decisionStatus = action === 'approve' ? '已批准' : '已驳回';
+  order.status = action === 'approve' ? '已挂账' : '营业中';
+  // 驳回保留原申请和决定；原房间可能已有新客，不重新占房。
+  if (action === 'reject') {
+    order.creditHistory ??= [];
+    order.creditHistory.push(structuredClone(order.credit));
+    order.credit = null;
+  }
   return { release: false };
 }
 export function submitRepay(s, order, data, person, time) {

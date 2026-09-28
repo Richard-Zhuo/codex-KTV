@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 
 const schema = readFileSync(new URL('./database/schema.sql', import.meta.url), 'utf8');
-const seed = readFileSync(new URL('./database/seed.sql', import.meta.url), 'utf8');
+const seed = readFileSync(new URL('./database/seed.sql', import.meta.url), 'utf8').replace(/\r\n/g, '\n');
 const mapping = readFileSync(new URL('./database/kdocs-import.md', import.meta.url), 'utf8');
 const dailyTemplate = readFileSync(new URL('./database/templates/kdocs-daily-report.csv', import.meta.url), 'utf8').trim();
 const expenseTemplate = readFileSync(new URL('./database/templates/kdocs-expense-report.csv', import.meta.url), 'utf8').trim();

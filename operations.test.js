@@ -294,7 +294,7 @@ test('后测·领域命令直连：不经 transact 也可用（同一克隆约�
   // 直连费用命令 + 审批命令（报销审批需老板身份）
   submitExpense(s, { date: '2026-09-28', amount: 90000, method: '支付宝', type: '报销', nature: '一次性支出', description: '垫付' }, '陈姐', at('20'));
   s.user = 'zhuBoss';
-  decideExpense(s, 'rejectExpense', { id: s.expenses[0].id }, '卓老板', at('21'));
+  decideExpense(s, 'rejectExpense', { id: s.expenses[0].id }, '卓老板', at('21'), () => false);
   assert.equal(s.expenses[0].status, '已驳回');
   // 直连采购/客诉/交班命令（采购需采购类权限）
   s.user = 'shaoBoss';

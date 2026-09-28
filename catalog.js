@@ -220,6 +220,15 @@ export function mergeCatalog(raw) {
   };
 }
 
+export function assertCatalogPackagePrices(catalog) {
+  for (const item of catalog?.packages || []) {
+    const base = item?.basePriceCents, included = item?.includedValueCents, price = item?.priceCents;
+    if (![base, included, price].every(value => Number.isSafeInteger(value) && value >= 0) || price !== base + included) {
+      throw Error(`套餐 ${item?.id || '未知'} 价格不一致，已停止使用`);
+    }
+  }
+}
+
 export function findProduct(catalog, id) {
   const source = catalog?.products || DEFAULT_CATALOG.products;
   const item = source.find(product => product.id === id);

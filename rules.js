@@ -5,7 +5,7 @@
 // Phase 8 起移除全部 facade re-export：调用方直接从 owner 模块导入；
 // rules.js 仅导出 OTHER_CHARGE_CATEGORIES／bonusAllowance／initialState／transact，
 // 并保留订单内联分支（otherCharge／gift／exchange／serveExtra）与身份/目录命令。
-import { DEFAULT_CATALOG, cloneCatalog, mergeCatalog, product, saleOption, inventoryProducts, consumableProducts, categoryLabel, productIdOf } from './catalog.js';
+import { DEFAULT_CATALOG, cloneCatalog, mergeCatalog, assertCatalogPackagePrices, product, saleOption, inventoryProducts, consumableProducts, categoryLabel, productIdOf } from './catalog.js';
 import { need, recordInventoryChange, submitStock, submitConsumableStock, decideInventory } from './inventory.js';
 import { submitSale, submitRetailSale, collectPayment, settleOrder, payOrder, decideRounding, applyCredit, decideCredit, submitRepay, decideRepayment } from './sales.js';
 import { canExchange, release, openRoom, reserveRoom, cancelReservation, cleanRoom, markRoomIssue, clearRoomIssue, decideRoomIssue } from './rooms.js';
@@ -64,6 +64,7 @@ export function transact(original, action, data = {}, key) {
   if (original.processed.includes(key)) return original;
   const s = structuredClone(original);
   s.catalog = mergeCatalog(s.catalog);
+  assertCatalogPackagePrices(s.catalog);
   const time = s.clock, operator = effectiveUser(s).name;
   let person = operator;
   const room = s.rooms.find(r => r.id === data.room);
@@ -232,7 +233,7 @@ export function transact(original, action, data = {}, key) {
     applyCredit(s, order, data, person, time);
     release(s, order);
   } else if (action === 'approve' || action === 'reject') {
-    decideCredit(s, order, action, person, time);
+    decideCredit(s, order, action, person, time, authorizeReviewer);
   } else if (action === 'repay') {
     submitRepay(s, order, data, person, time);
   } else if (action === 'approveRepayment' || action === 'rejectRepayment') {
@@ -275,7 +276,7 @@ export function transact(original, action, data = {}, key) {
     decideIncidentResolution(s, action, data, person, time, authorizeReviewer);
   } else if (action === 'approveExpense' || action === 'rejectExpense') {
     // 命令体已迁至 expenses.js：decideExpense（Phase 5），逐字节保留。
-    decideExpense(s, action, data, person, time);
+    decideExpense(s, action, data, person, time, authorizeReviewer);
   } else throw Error('未知操作');
   s.processed.push(key); return s;
 }

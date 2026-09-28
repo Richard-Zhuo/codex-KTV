@@ -7,7 +7,7 @@
 import { initialState } from './rules.js';
 import { USERS, USER_ALIASES, PERMISSION_ROLES, PERMISSION_IDS, defaultPermissions, defaultCapabilities, permissionsForRoles } from './shared/identity.js';
 import { reservationActiveAt } from './rooms.js';
-import { mergeCatalog, inventoryProducts, consumableProducts, productIdOf } from './catalog.js';
+import { mergeCatalog, assertCatalogPackagePrices, inventoryProducts, consumableProducts, productIdOf } from './catalog.js';
 
 // 旧订单只补充可从原记录确定的金额和数量；缺失的历史商品元数据与参考价值保持未知，绝不读取迁移当天的当前售价。
 export function migrateLegacyOrderPricing(orders) {
@@ -44,8 +44,9 @@ export function migrateLegacyOrderPricing(orders) {
 }
 
 // 启动结构校验：版本不是 1 或核心结构缺失即视为不可读（与原 app.js try 块首行一致）。
-export function validateDemoState(state) {
-  if (state.version !== 1 || !Array.isArray(state.rooms) || !state.inventory) throw Error('演示记录结构无效');
+export function validateDemoState(state, { checkPackagePrices = true } = {}) {
+  if (!state || state.version !== 1 || !Array.isArray(state.rooms) || !state.inventory) throw Error('演示记录结构无效');
+  if (checkPackagePrices) assertCatalogPackagePrices(mergeCatalog(state.catalog));
 }
 
 // 启动补值（原 app.js try 块）：目录合并、库存/消耗品补位、旧订单字段回填、失效预订房复位。
@@ -221,7 +222,11 @@ export function migrateDemoState(next) {
       order.roundingReview.selfReviewAuthorized ??= false;
       if (order.roundingReview.status === '已审核') order.roundingReview.status = '已批准';
     }
+    order.creditHistory = Array.isArray(order.creditHistory) ? order.creditHistory : [];
     if (order.credit) {
+      order.credit.id ??= ++next.serial;
+      order.credit.submittedById ??= userIdByName(order.credit.person);
+      order.credit.selfReviewAuthorized ??= false;
       order.credit.repayments ??= [];
       order.credit.repaymentRequests ??= [];
       for (const request of order.credit.repaymentRequests) {
@@ -239,6 +244,8 @@ export function migrateDemoState(next) {
     expense.status ??= '已记录';
     expense.approver ??= '';
     expense.approvedAt ??= '';
+    expense.submittedById ??= userIdByName(expense.person);
+    expense.selfReviewAuthorized ??= false;
   }
   const fresh = initialState();
   next.consumables = next.consumables && typeof next.consumables === 'object' ? next.consumables : structuredClone(fresh.consumables);

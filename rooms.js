@@ -6,7 +6,7 @@
 // 恢复审核行为不变；失败不提交由 transact 的克隆-校验-提交边界继续保证。
 // 权限闸门与自审授权经参数注入（need／authorizeReviewer），避免对 rules.js 的循环依赖。
 // productSnapshot／quantity／delegatedEmployee 为模块私有副本（Phase 4 sales.js 同先例）。
-import { DEFAULT_CATALOG, roomPackage, product, saleOptions, productIdOf, categoryLabel } from './catalog.js';
+import { DEFAULT_CATALOG, roomPackage, assertCatalogPackagePrices, product, saleOptions, productIdOf, categoryLabel } from './catalog.js';
 import { need, recordInventoryChange } from './inventory.js';
 import { slot } from './shared/time.js';
 import { USERS, effectiveUser } from './shared/identity.js';
@@ -35,6 +35,7 @@ export function platformVoucher(source, amount) {
 }
 export function quote(type, time, beer = 'bw', openSource = '', catalog = DEFAULT_CATALOG) {
   const period = slot(time); if (period === 'closed') throw Error('现在仅接受预订，请选择营业时段到店');
+  assertCatalogPackagePrices(catalog);
   const packageItem = roomPackage(catalog, type, period);
   if (period === 'day') {
     const voucher = platformVoucher(openSource, packageItem.priceCents);

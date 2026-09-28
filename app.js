@@ -24,12 +24,9 @@ const APP_ENTRY = document.body.dataset.appEntry === 'admin' ? 'admin' : 'staff'
 const REQUESTED_STAFF_PAGE = new URLSearchParams(window.location.search).get('page');
 const DEFAULT_PAGE = APP_ENTRY === 'admin' ? 'manage' : REQUESTED_STAFF_PAGE === 'tasks' ? 'tasks' : 'rooms';
 const persistence = createDemoPersistence({ storage: localStorage });
-try {
-  const loaded = persistence.load();
-  ctx.state = loaded.state;
-  ctx.storageProblem = loaded.problem;
-}
-catch { ctx.state = initialState(); ctx.storageProblem = '本机存储不可用，已进入新练习。'; }
+const loaded = persistence.load();
+ctx.state = loaded.state;
+ctx.storageProblem = loaded.problem;
 const app = document.querySelector('#app'), modal = document.querySelector('#modal');
 ctx.APP_ENTRY = APP_ENTRY; ctx.DEFAULT_PAGE = DEFAULT_PAGE; ctx.page = DEFAULT_PAGE;
 ctx.persistence = persistence; ctx.modal = modal; ctx.app = app;
@@ -83,6 +80,7 @@ document.addEventListener('click',e=>{
   e.preventDefault(); const a=target.dataset.action, id=target.dataset.id;
   try {
     if(a==='close'){ctx.modal.close();return;}
+    if(a==='retryRecovery'){const loaded=ctx.persistence.load();ctx.state=loaded.state;ctx.storageProblem=loaded.problem;render();return;}
     if(a==='toggleTheme'||a==='autoTheme'){
       const preference = a==='autoTheme' ? 'auto' : window.ktvAppearance.theme==='dark' ? 'light' : 'dark';
       const saved = window.ktvAppearance.setPreference(preference);
@@ -297,5 +295,5 @@ document.addEventListener('submit',e=>{
   finally{ctx.busy=false;if(submit)submit.disabled=false;}
 });
 window.addEventListener('online',render);window.addEventListener('offline',render);
-window.addEventListener('storage',e=>{if(e.key===DEMO_STATE_KEY){try{ctx.state=ctx.persistence.loadExternal(e.newValue);ctx.modal.close();render();toast('另一标签页更新了演示，请重新操作');}catch{toast('读取其他标签页记录失败，请刷新');}}});
+window.addEventListener('storage',e=>{if(e.key===DEMO_STATE_KEY){try{ctx.state=ctx.persistence.loadExternal(e.newValue);ctx.storageProblem=ctx.persistence.recoveryRecord()?.problem||'';ctx.modal.close();render();if(!ctx.persistence.isWriteBlocked())toast('另一标签页更新了演示，请重新操作');}catch{toast('当前记录已停写，请先核对原文');}}});
 render();

@@ -108,7 +108,7 @@ test('persistence：载入-迁移-保存全链路，保存后可无损重载', (
   assert.equal(reloaded.rooms.find(r => r.id === 'V01').status, '营业中');
 });
 
-test('persistence：损坏 JSON 不覆盖原文，先备份再进入新练习', () => {
+test('persistence：损坏 JSON 不覆盖原文，备份后仍保持停写', () => {
   const storage = new Map([[DEMO_STATE_KEY, '{corrupted json']]);
   const adapter = createDemoPersistence({ storage });
   const result = adapter.load();
@@ -117,7 +117,11 @@ test('persistence：损坏 JSON 不覆盖原文，先备份再进入新练习', 
   // 原始数据仍可取证
   assert.equal(storage.get(DEMO_STATE_KEY), '{corrupted json', '原文未被覆盖');
   assert.equal(storage.get(DEMO_BACKUP_KEY), '{corrupted json', '原始数据已备份到独立 key');
-  assert.match(result.problem, /无法读取/);
+  assert.equal(result.readOnly, true);
+  assert.equal(adapter.isWriteBlocked(), true);
+  assert.throws(() => adapter.save(initialState()), /已停止写入/);
+  assert.equal(storage.get(DEMO_STATE_KEY), '{corrupted json');
+  assert.equal(adapter.recoveryRecord().raw, '{corrupted json');
 });
 
 test('persistence：结构非法同样保留原文并备份', () => {
@@ -161,4 +165,137 @@ test('persistence：旧格式真实保存值经 load 完成整条迁移链', () 
   assert.equal(state.capabilitySchemaVersion, 4);
   // 身份归一化已执行
   assert.equal(state.user, 'zhuBoss');
+});
+
+test('persistence：备份失败或成功都停写，原记录修正并重检后才可保存', () => {
+  const raw = '{broken';
+  const values = new Map([[DEMO_STATE_KEY, raw]]);
+  let failBackup = true;
+  const adapter = createDemoPersistence({ storage: {
+    getItem: key => values.get(key) ?? null,
+    setItem: (key, value) => {
+      if (key === DEMO_BACKUP_KEY && failBackup) throw Error('QuotaExceededError');
+      values.set(key, value);
+    }
+  } });
+  const failed = adapter.load();
+  assert.equal(failed.readOnly, true);
+  assert.equal(adapter.isWriteBlocked(), true);
+  assert.match(failed.problem, /独立备份失败/);
+  assert.throws(() => adapter.save(initialState()), /已停止写入/);
+  assert.equal(values.get(DEMO_STATE_KEY), raw);
+  assert.equal(values.has(DEMO_BACKUP_KEY), false);
+  failBackup = false;
+  const retried = adapter.load();
+  assert.equal(retried.readOnly, true);
+  assert.equal(values.get(DEMO_BACKUP_KEY), raw);
+  assert.throws(() => adapter.save(retried.state), /已停止写入/);
+  assert.equal(values.get(DEMO_STATE_KEY), raw);
+  values.set(DEMO_STATE_KEY, JSON.stringify(initialState())); // 人工修正主记录后显式重检
+  const restored = adapter.load();
+  assert.equal(restored.recovered, true);
+  assert.equal(adapter.isWriteBlocked(), false);
+  adapter.save(restored.state);
+});
+
+test('persistence：旧套餐不等式进入只读核对，历史订单与付款不会被新练习覆盖', () => {
+  let oldState = initialState();
+  oldState.clock = at('20:00');
+  oldState.user = 'shaoBoss';
+  oldState = apply(oldState, 'open', { room: 'V01', beer: 'bw' });
+  oldState = apply(oldState, 'pay', {
+    order: oldState.orders[0].id, payments: [{ method: '现金', amount: 16800 }]
+  });
+  const originalOrder = structuredClone(oldState.orders[0]);
+  const brokenPackage = oldState.catalog.packages.find(item => item.id === 'room.small.night');
+  brokenPackage.priceCents = 100;
+  const raw = JSON.stringify(oldState);
+  const storage = new Map([[DEMO_STATE_KEY, raw]]);
+  const adapter = createDemoPersistence({ storage });
+  const loaded = adapter.load();
+  assert.equal(loaded.recovered, false);
+  assert.equal(loaded.readOnly, true);
+  assert.equal(adapter.isWriteBlocked(), true);
+  assert.match(loaded.problem, /套餐价格不一致.*停止写入/);
+  assert.equal(loaded.state.catalog.packages.find(item => item.id === brokenPackage.id).priceCents, 100);
+  assert.equal(loaded.state.orders.length, 1);
+  assert.equal(loaded.state.orders[0].id, originalOrder.id);
+  assert.equal(loaded.state.orders[0].packagePriceCents, originalOrder.packagePriceCents);
+  assert.deepEqual(loaded.state.orders[0].payments, originalOrder.payments);
+  assert.equal(adapter.recoveryRecord().raw, raw);
+  assert.equal(adapter.recoveryRecord().readable, true);
+  assert.equal(storage.get(DEMO_BACKUP_KEY), raw);
+  assert.throws(() => apply(loaded.state, 'open', { room: 'V02', beer: 'bw' }), /价格不一致/);
+  assert.throws(() => adapter.save({ ...loaded.state, orders: [] }), /已停止写入/);
+  assert.throws(() => adapter.loadExternal(JSON.stringify(initialState())), /已停写/);
+  assert.equal(storage.get(DEMO_STATE_KEY), raw);
+  const reloaded = createDemoPersistence({ storage }).load();
+  assert.deepEqual(reloaded.state.orders[0].payments, originalOrder.payments);
+  assert.equal(reloaded.state.orders[0].packagePriceCents, originalOrder.packagePriceCents);
+  assert.equal(storage.get(DEMO_STATE_KEY), raw);
+  storage.delete(DEMO_STATE_KEY); // 外部清空主键也不能把停写变成全新练习
+  const missing = adapter.load();
+  assert.equal(missing.readOnly, true);
+  assert.equal(adapter.isWriteBlocked(), true);
+  assert.deepEqual(missing.state.orders[0].payments, originalOrder.payments);
+  assert.equal(adapter.recoveryRecord().raw, raw);
+  assert.throws(() => adapter.save(initialState()), /已停止写入/);
+  const repaired = structuredClone(oldState);
+  repaired.catalog.packages.find(item => item.id === brokenPackage.id).priceCents =
+    brokenPackage.basePriceCents + brokenPackage.includedValueCents;
+  storage.set(DEMO_STATE_KEY, JSON.stringify(repaired)); // 人工仅修当前套餐配置
+  const restored = adapter.load();
+  assert.equal(restored.recovered, true);
+  assert.equal(adapter.isWriteBlocked(), false);
+  assert.deepEqual(restored.state.orders[0].payments, originalOrder.payments);
+  assert.equal(restored.state.orders[0].packagePriceCents, originalOrder.packagePriceCents);
+  adapter.save(restored.state);
+  assert.deepEqual(JSON.parse(storage.get(DEMO_STATE_KEY)).orders[0].payments, originalOrder.payments);
+  assert.equal(JSON.parse(storage.get(DEMO_STATE_KEY)).orders[0].packagePriceCents, originalOrder.packagePriceCents);
+  assert.equal(storage.get(DEMO_BACKUP_KEY), raw, '原始异常记录副本仍保留');
+});
+
+
+test('persistence：已有不同恢复副本不会被新的异常记录覆盖', () => {
+  const oldBackup = '{"earlier":"record"}';
+  const currentRaw = '{broken-current';
+  const storage = new Map([[DEMO_STATE_KEY, currentRaw], [DEMO_BACKUP_KEY, oldBackup]]);
+  const adapter = createDemoPersistence({ storage });
+  const loaded = adapter.load();
+  assert.equal(loaded.readOnly, true);
+  assert.equal(adapter.recoveryRecord().raw, currentRaw);
+  assert.equal(adapter.recoveryRecord().backupSaved, false);
+  assert.equal(storage.get(DEMO_BACKUP_KEY), oldBackup);
+  assert.equal(storage.get(DEMO_STATE_KEY), currentRaw);
+  assert.throws(() => adapter.save(initialState()), /已停止写入/);
+});
+
+
+test('persistence：另一标签页写入异常旧记录时，本页立即停写并保留付款', () => {
+  const storage = new Map([[DEMO_STATE_KEY, JSON.stringify(initialState())]]);
+  const adapter = createDemoPersistence({ storage });
+  assert.equal(adapter.load().recovered, true);
+  const previous = initialState();
+  previous.orders = [{ id: 'history-1', room: 'V01', status: '已结账', base: 5000, gift: 11800,
+    sales: [], drinks: [], payments: [{ method: '现金', amount: 16800 }] }];
+  previous.catalog.packages.find(item => item.id === 'room.small.night').priceCents = 100;
+  const raw = JSON.stringify(previous);
+  storage.set(DEMO_STATE_KEY, raw); // 模拟跨标签页存储事件已写入的新值
+  const visible = adapter.loadExternal(raw);
+  assert.equal(adapter.isWriteBlocked(), true);
+  assert.equal(visible.orders[0].payments[0].amount, 16800);
+  assert.throws(() => adapter.save(initialState()), /已停止写入/);
+  assert.equal(storage.get(DEMO_STATE_KEY), raw);
+});
+
+
+test('persistence：主键存在但原文为空也不当作首次练习覆盖', () => {
+  const storage = new Map([[DEMO_STATE_KEY, '']]);
+  const adapter = createDemoPersistence({ storage });
+  const loaded = adapter.load();
+  assert.equal(loaded.readOnly, true);
+  assert.equal(adapter.isWriteBlocked(), true);
+  assert.equal(adapter.recoveryRecord().raw, '');
+  assert.throws(() => adapter.save(initialState()), /已停止写入/);
+  assert.equal(storage.get(DEMO_STATE_KEY), '');
 });

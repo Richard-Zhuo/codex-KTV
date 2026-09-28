@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync, readdirSync, existsSync } from 'node:fs';
 
-const read = p => readFileSync(new URL(p, import.meta.url), 'utf8');
+const read = p => readFileSync(new URL(p, import.meta.url), 'utf8').replace(/\r\n/g, '\n');
 const index = read('./index.html');
 const admin = read('./admin.html');
 const server = read('./server.js');
@@ -89,7 +89,7 @@ test('Phase 7 前测：点击事件动作清单完整冻结', () => {
   const clickBody = sources.slice(clickStart, submitStart);
   const actions = new Set();
   for (const m of clickBody.matchAll(/a==='([a-zA-Z]+)'/g)) actions.add(m[1]);
-  const expected = ['close','toggleTheme','autoTheme','nav','home','goReviewTasks','expenses','procurement','incidents','backMine','addExpense','addProcurement','addIncident','approveExpense','rejectExpense','reviewRoomIssue','rejectRoomIssueDialog','filter','room','markRoomIssueMenu','requestRoomRecovery','open','openDirty','reserve','reserveFuture','cancelReservation','order','sale','startRetail','staffBooking','staffSale','otherCharge','gift','exchange','serveExtra','collect','checkout','credit','clearSignature','step','addInitialMix','removeInitialMix','addSaleItem','removeSaleItem','addCatalogSaleOption','removeCatalogSaleOption','addPayment','removePayment','addDepositItem','removeDepositItem','identity','clock','deposit','withdraw','editPermissions','editCatalogProduct','createCatalogProduct','editCatalogPackage','resolveIncident','reviewIncidentResolution','rejectIncidentResolutionDialog','approveGift','rejectGift','reviewRounding','rejectRoundingDialog','review','reject','repay','reviewRepayment','rejectRepaymentDialog','inventory','stock','consumableStock','reviewInventory','rejectInventoryDialog','handover','guide','reset'];
+  const expected = ['close','retryRecovery','toggleTheme','autoTheme','nav','home','goReviewTasks','expenses','procurement','incidents','backMine','addExpense','addProcurement','addIncident','approveExpense','rejectExpense','reviewRoomIssue','rejectRoomIssueDialog','filter','room','markRoomIssueMenu','requestRoomRecovery','open','openDirty','reserve','reserveFuture','cancelReservation','order','sale','startRetail','staffBooking','staffSale','otherCharge','gift','exchange','serveExtra','collect','checkout','credit','clearSignature','step','addInitialMix','removeInitialMix','addSaleItem','removeSaleItem','addCatalogSaleOption','removeCatalogSaleOption','addPayment','removePayment','addDepositItem','removeDepositItem','identity','clock','deposit','withdraw','editPermissions','editCatalogProduct','createCatalogProduct','editCatalogPackage','resolveIncident','reviewIncidentResolution','rejectIncidentResolutionDialog','approveGift','rejectGift','reviewRounding','rejectRoundingDialog','review','reject','repay','reviewRepayment','rejectRepaymentDialog','inventory','stock','consumableStock','reviewInventory','rejectInventoryDialog','handover','guide','reset'];
   assert.deepEqual([...actions].sort(), [...expected].sort(), '点击动作集合必须逐项一致');
 });
 
@@ -154,7 +154,10 @@ test('Phase 7 前测：change/window 监听与外观联动冻结', () => {
   assert.match(changeBody, /toast\('图片读取失败，请重新选择'\)/);
   // window 监听：在线状态重渲染 + 跨标签页同步
   assert.match(sources, /window\.addEventListener\('online',render\);window\.addEventListener\('offline',render\)/);
-  assert.match(sources, /window\.addEventListener\('storage',e=>\{if\(e\.key===DEMO_STATE_KEY\)\{try\{(?:ctx\.)?state=(?:ctx\.)?persistence\.loadExternal\(e\.newValue\);(?:ctx\.)?modal\.close\(\);render\(\);toast\('另一标签页更新了演示，请重新操作'\);\}catch\{toast\('读取其他标签页记录失败，请刷新'\);\}\}\}\)/);
+  assert.match(sources, /window\.addEventListener\('storage',e=>\{if\(e\.key===DEMO_STATE_KEY\)/);
+  assert.match(sources, /ctx\.state=ctx\.persistence\.loadExternal\(e\.newValue\)/);
+  assert.match(sources, /ctx\.storageProblem=ctx\.persistence\.recoveryRecord\(\)\?\.problem\|\|''/);
+  assert.match(sources, /ctx\.modal\.close\(\);render\(\)/);
   assert.match(sources, /window\.addEventListener\('appearancechange', syncAppearanceControls\)/);
 });
 
@@ -172,7 +175,6 @@ test('Phase 7 前测：权限错误与提示文案冻结', () => {
     '当前身份不能进入系统后台', '仅管理员可以调整身份权限',
     '审核本人申请需要“允许审核本人申请”权限', '已保存 · 仅为演示记录',
     '已恢复，开始新一轮练习', '另一标签页更新了演示，请重新操作',
-    '本机保存失败，操作未完成。请检查浏览器存储空间后重试。',
     '请由经办员工本人在框内手写签字', '本单没有待收费用', '本单已经收清，无需挂账',
     '请先增购酒水，再登记赠送', '没有可换出的酒水，瓶装水不能继续换出',
     '当前没有可销售商品', '至少保留一种商品', '至少保留一种酒', '至少保留一笔付款',
@@ -186,7 +188,7 @@ test('Phase 7 前测：权限错误与提示文案冻结', () => {
     '故障标记无需审核，只有恢复为空房需要审核', '这笔报销不在待审批状态',
     '赠酒水申请已处理', '这笔特殊差额已经处理', '这笔回款申请已经处理',
     '这项客诉／异常恢复申请已经处理', '这笔库存盘点已经处理',
-    '全部欠款已有回款申请待审核', '本机存储不可用，已进入新练习。',
+    '全部欠款已有回款申请待审核', '本机记录需要核对',
     '当前没有可用操作', '需要服务员或老板取酒',
   ];
   for (const message of messages) assert.ok(sources.includes(message), `文案缺失：${message}`);
@@ -226,7 +228,7 @@ test('Phase 7 前测：DEMO 练习工具与对话框骨架冻结', () => {
   assert.match(sources, /if \((?:ctx\.)?modal\.open\) (?:ctx\.)?modal\.close\(\);/);
   assert.match(sources, /const el = document\.querySelector\('#toast'\); el\.textContent = text; el\.classList\.add\('show'\); clearTimeout\(toast\.timer\); toast\.timer=setTimeout\(\(\)=>el\.classList\.remove\('show'\),4500\)/);
   // persist / commit 边界
-  assert.match(sources, /try \{ (?:ctx\.)?persistence\.save\(next\); (?:ctx\.)?state = next; \} catch \{ throw Error\('本机保存失败，操作未完成。请检查浏览器存储空间后重试。'\); \}/);
+  assert.match(sources, /function persist\(next\) \{ (?:ctx\.)?persistence\.save\(next\); (?:ctx\.)?state = next; \}/);
   assert.match(sources, /function commit\(action, data, key\) \{ const next=transact\((?:ctx\.)?state,action,data,key\); persist\(next\); (?:ctx\.)?modal\.close\(\); render\(\); toast\('已保存 · 仅为演示记录'\); \}/);
   // 启动装配：持久化唯一入口
   assert.match(sources, /const persistence = createDemoPersistence\(\{ storage: localStorage \}\)/);

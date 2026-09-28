@@ -11,11 +11,15 @@
 3. 与任务相关的 [需求](./REQUIREMENTS.md)、数据库契约或操作手册。
 4. 需要读代码时，再沿 [模块地图](./MODULE_MAP.md) 进入最少的代码和测试。
 
+## 脱岗 MVP 契约入口
+
+[29 项 P0 业务矩阵](./OFFSITE_P0_MATRIX.md) 列目标与停止点；[OFFSITE_CONTRACTS](./OFFSITE_CONTRACTS.md) 列跨模块不变量；[KNOWN_ISSUES](./KNOWN_ISSUES.md) 区分错误复现与已修项；[OPEN BUSINESS DECISIONS](./OPEN_BUSINESS_DECISIONS.md) 留门店待确认规则。Track B `3193635` 的正向测试现已适配 Track A 集成候选，状态以 [CURRENT_STAGE](./CURRENT_STAGE.md) 为准。
+
 ## 要做什么 → 读哪里
 
 | 任务 | 必读 | 按需补充 |
 |---|---|---|
-| 修改业务行为或权限 | [REQUIREMENTS](./REQUIREMENTS.md)、[CURRENT_STAGE](./CURRENT_STAGE.md) | [MODULE_MAP](./MODULE_MAP.md)、相关测试 |
+| 修改业务行为或权限 | [REQUIREMENTS](./REQUIREMENTS.md)、[CURRENT_STAGE](./CURRENT_STAGE.md) | [OFFSITE_CONTRACTS](./OFFSITE_CONTRACTS.md)、[KNOWN_ISSUES](./KNOWN_ISSUES.md)、[MODULE_MAP](./MODULE_MAP.md)、相关测试 |
 | 修改页面入口、状态或主题 | [CURRENT_STAGE](./CURRENT_STAGE.md)、[MODULE_MAP](./MODULE_MAP.md) | [ARCHITECTURE](./ARCHITECTURE.md)、[店员练习手册](../店员练习手册.md) |
 | 修改运行、测试或构建方式 | [DEVELOPMENT_ENVIRONMENT](./DEVELOPMENT_ENVIRONMENT.md) | `package.json`、`server.js` |
 | 修改数据库或历史导入 | [数据库说明](../database/README.md)、[导入映射](../database/kdocs-import.md) | [ARCHITECTURE](./ARCHITECTURE.md)、`database/schema.sql` |

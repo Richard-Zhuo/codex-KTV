@@ -15,7 +15,7 @@ import { minePage } from './pages/mine.js';
 import { transact } from '../rules.js';
 import { slot } from '../shared/time.js';
 
-function persist(next) { try { ctx.persistence.save(next); ctx.state = next; } catch { throw Error('本机保存失败，操作未完成。请检查浏览器存储空间后重试。'); } }
+function persist(next) { ctx.persistence.save(next); ctx.state = next; }
 
 function toast(text) { const el = document.querySelector('#toast'); el.textContent = text; el.classList.add('show'); clearTimeout(toast.timer); toast.timer=setTimeout(()=>el.classList.remove('show'),4500); }
 
@@ -27,7 +27,20 @@ function openDialog(title, content, submitLabel, action, hidden={}) {
 
 function commit(action, data, key) { const next=transact(ctx.state,action,data,key); persist(next); ctx.modal.close(); render(); toast('已保存 · 仅为演示记录'); }
 
+function recoveryPage(record, state) {
+  const orders = record?.readable && Array.isArray(state?.orders) ? state.orders : null;
+  const payments = orders?.reduce((count, order) => count + (Array.isArray(order.payments) ? order.payments.length : 0), 0);
+  const rawView = record?.raw == null
+    ? '<p>当前无法读取原文。请检查此浏览器的站点数据权限，暂勿清除站点数据。</p>'
+    : `<details class="panel"><summary>查看并复制原始记录</summary><p class="muted">以下内容只读，来自本机原始记录；复制时请完整保留。</p><textarea readonly rows="12" aria-label="原始记录">${esc(record.raw)}</textarea></details>`;
+  return `<header class="topbar"><div class="brand"><span class="brand-mark">金</span><span>金碧辉煌<small>KTV · 记录核对</small></span></div></header><main id="main"><section class="panel"><p class="eyebrow">本机记录需要核对</p><h1>已暂停保存</h1><p class="notice">${esc(record?.problem || '记录异常，已停止写入。')}</p>${orders ? `<p>可读取的历史订单 ${orders.length} 笔，付款 ${payments} 笔；这些记录仍在本机，当前仅供核对。</p>` : '<p>当前无法安全解析业务明细；原始记录仍可在下方查看。</p>'}<p>请先复制原始记录，交由维护人员核对当前套餐配置。修正本机主记录后再点“重新检查”。历史成交金额和付款不得按现价重算。</p><p class="muted">主记录：${esc(record?.key || '')}；${record?.backupSaved ? `另有恢复副本：${esc(record.backupKey)}` : record?.raw == null ? '当前无法读取主记录，仍禁止写入' : '独立副本未确认保存，主记录保持原样'}。</p>${btn('重新检查本机记录','retryRecovery','','primary')}</section>${rawView}</main>`;
+}
+
 function render() {
+  if (ctx.persistence?.isWriteBlocked()) {
+    ctx.app.innerHTML = recoveryPage(ctx.persistence.recoveryRecord(), ctx.state);
+    return;
+  }
   const canManage = allowedPermission('backend.view');
   const adminPages = ['manage'];
   if (ctx.APP_ENTRY === 'admin' && !adminPages.includes(ctx.page)) ctx.page = 'manage';
@@ -50,5 +63,6 @@ export {
   toast,
   openDialog,
   commit,
+  recoveryPage,
   render
 };

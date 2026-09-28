@@ -84,7 +84,7 @@ test('权限矩阵：need() 给定 permission 时只查权限、忽略岗位角�
   assert.equal(hasPermission(boss, 'credit.approve'), true);
 });
 
-test('挂账审批人按金额分级（≤1000元店长、>1000元老板），跨级审批当前被放行（bug 证据详见 bugs 文件）', () => {
+test('挂账申请按金额指定审批岗位（≤1000元店长、>1000元老板）', () => {
   let s = stocked(initialState());
   s.clock = at('20:00');
   s.user = 'shaoBoss';
@@ -134,7 +134,7 @@ test('review.self：无权限者不能审核自己提交的申请，管理员持
   assert.equal(s3.inventoryReviews.at(-1).selfReviewAuthorized, false);
 });
 
-test('多笔付款：分次收钱累计、结账差额免零上限、付款之和不得超收', () => {
+test('多笔付款：分次收钱累计、结账免零记录与超收拒绝', () => {
   let s = stocked(initialState());
   s.clock = at('20:00');
   s.user = 'shaoBoss';

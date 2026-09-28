@@ -22,19 +22,21 @@
 | 直接启动 | `node server.js` | 配置确认 | 默认监听 `0.0.0.0:4173` |
 | 使用其他端口（PowerShell） | `$env:PORT = 4174; npm start` | 配置确认 | `server.js` 读取 `PORT`，本轮未执行 |
 | 完整自动测试 | `npm test` | 配置确认 | `package.json` 映射到 `node --test` |
-| 当前 Codex 环境的测试调用 | `$env:NODE_OPTIONS = '--test-isolation=none'; pnpm test` | 本次执行 | 2026-09-28 当前环境无 `npm` 命令，默认子进程隔离遇到 `EPERM`；同一 `node --test` 测试集合在进程内隔离模式下通过 73 项 |
+| 2026-09-28 历史替代测试 | `$env:NODE_OPTIONS = '--test-isolation=none'; pnpm test` | 历史执行 | 历史记录为 73/73；不能当作本轮结果 |
+| 本轮同脚本自动测试 | `node --test` | 本次执行 | 2026-09-29 浏览器验收及标题修整后共 223 项，217 通过、6 条已知问题复现跳过、0 失败、退出码 0；与 `package.json` 的 test 脚本相同。初始集成及最新原始输出见 [阶段记录](./CURRENT_STAGE.md) |
+| 隔离浏览器恢复演练 | `node docs/verification/browser-recovery-harness.mjs` | 本次执行 | 仅绑定 `127.0.0.1` 的随机端口；打开打印出的 `/__seed`，用合成已付款订单走停写、复制、人工修正及显式重检，结果见 [浏览器记录](./verification/track-a-b-browser-recovery-2026-09-29.md) |
 | 单文件语法诊断 | `node --check app.js` 等 | 历史使用／诊断 | 不能替代 `npm test` |
 | 初始化数据库基线 | `psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f database/schema.sql` | 仅契约命令 | 项目运行时尚未连接 PostgreSQL，本轮未执行 |
 | 写入主数据 | `psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f database/seed.sql` | 仅契约命令 | 只应在明确的目标数据库和授权下执行 |
 
-修改 JavaScript 后，项目约定的正式自动验证命令是 `npm test`。若当前执行环境没有 `npm`，可用上表的 `pnpm` 调用同一脚本，并如实记录 `npm test` 未能执行及替代命令的测试结果。
+修改 JavaScript 后，项目约定的正式自动验证命令是 `npm test`。本轮 PowerShell 无法启动 `npm`；`pnpm test` 回退包装器因尝试写临时文件报 EPERM，因此直接执行同一脚本 `node --test`。这些结果均在阶段记录中分别标明。
 
 ## 入口与端口
 
 - 员工系统：`http://localhost:4173/`
 - 系统管理后台：`http://localhost:4173/admin`
 - 局域网访问：`http://<电脑局域网IPv4>:4173/`
-- `server.js` 仅允许 `index.html`、`admin.html`、`app.js`、`rules.js`、`theme.js` 和 `style.css` 等白名单静态路径，不提供业务 API。
+- `server.js` 仅允许入口、`app.js`、各领域与 `ui/` 模块、主题与样式等白名单静态路径，不提供业务 API。
 
 `localhost` 与局域网 IP 是不同浏览器来源，对应的 `localStorage` 数据不会自动共享。
 
