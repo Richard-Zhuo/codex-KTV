@@ -21,6 +21,8 @@ function quantity(n) { if (!Number.isSafeInteger(n) || n <= 0) throw Error('数�
 
 export const total = order => (order.packageBaseCents ?? order.base ?? 0) + (order.packageGiftValueCents ?? order.gift ?? 0) + (order.sales || []).reduce((sum, line) => sum + (line.amountCents ?? line.amount ?? 0), 0) + (order.otherCharges || []).reduce((sum, line) => sum + (line.amountCents ?? line.amount ?? 0), 0);
 export const outstanding = order => Math.max(0, total(order) - (order.payments || []).reduce((sum, payment) => sum + payment.amount, 0));
+// collected（实收汇总）自 rules.js 迁入（Phase 5）：payments 口径的跨订单汇总选择器，供交班与报表使用。
+export const collected = state => state.orders.reduce((sum, o) => sum + (o.payments || []).reduce((n,p) => n+p.amount, 0), 0);
 export function collectableCharges(order, catalog = DEFAULT_CATALOG) {
   const paidFor = chargeId => (order.payments || []).filter(payment => payment.chargeId === chargeId).reduce((sum, payment) => sum + payment.amount, 0);
   const opening = { id: 'open', kind: 'open', label: '开房费用（含套餐赠饮）', amount: (order.packageBaseCents ?? order.base ?? 0) + (order.packageGiftValueCents ?? order.gift ?? 0) };

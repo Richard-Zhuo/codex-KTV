@@ -1,5 +1,7 @@
 import { OTHER_CHARGE_CATEGORIES, USERS, PERMISSION_DEFINITIONS, effectiveUser, hasPermission, businessReviewSections, RESERVATION_SOURCES, OPENING_SOURCES, PAYMENT_METHODS, EXPENSE_NATURES, EXPENSE_TYPES, EXPENSE_APPROVAL_THRESHOLD, INCIDENT_TYPES, ROOM_ISSUE_TYPES, visibleExpenses, visibleProcurements, visibleIncidents, pendingIncidentReminders, money, slot, cents, quote, initialState, total, outstanding, collected, collectableCharges, nextCollectCharge, transact, canExchange, bonusAllowance, reservationReminder, reservationActiveAt, searchDeposits, hasRole } from './rules.js';
 import { findProduct, saleOptions, sellableProducts, inventoryProducts, consumableProducts, productIdOf, categoryLabel } from './catalog.js';
+// 审核收件箱投影（待办汇总与展示分离，Phase 5）：只读汇总各领域待审/已审记录，不决定业务状态。
+import { pendingBusinessReviewCount as inboxPendingCount, reviewHistoryRows as inboxHistoryRows } from './reviewInbox.js';
 import { createDemoPersistence, DEMO_STATE_KEY } from './persistence.js';
 const APP_ENTRY = document.body.dataset.appEntry === 'admin' ? 'admin' : 'staff';
 const REQUESTED_STAFF_PAGE = new URLSearchParams(window.location.search).get('page');
@@ -284,30 +286,12 @@ function myTaskCards(rows=myPendingIncidentTasks()) {
   return rows.map(incident=>`<article class="panel"><div class="split"><h3>${esc(incident.room)} · ${esc(incident.type)}</h3><span class="badge">等待处理</span></div><p>${esc(incident.description)}</p><p class="muted">${esc(incident.date)} · 负责人 ${esc(incident.assignee)}</p>${allowedPermission('incident.resolve')?btn('填写处理结果','resolveIncident',`data-id="${incident.id}"`,'primary full'):'<span class="badge">需要客诉／异常处理权限</span>'}</article>`).join('')||'<p class="muted">当前没有分配给你的业务待办。</p>';
 }
 function pendingBusinessReviewCount(section) {
-  if(section==='creditApproval')return state.orders.filter(order=>order.status==='待审批挂账').length;
-  if(section==='creditRepayment')return state.orders.reduce((sum,order)=>sum+(order.credit?.repaymentRequests||[]).filter(request=>request.status==='待审核').length,0);
-  if(section==='rounding')return state.orders.filter(order=>order.roundingReview?.status==='待审核').length;
-  if(section==='gift')return state.orders.reduce((sum,order)=>sum+(order.giftRequests||[]).filter(request=>request.status==='待确认').length,0);
-  if(section==='roomRecovery')return (state.roomIssueReviews||[]).filter(request=>request.status==='待审核').length;
-  if(section==='inventory')return (state.inventoryReviews||[]).filter(request=>request.status==='待审核').length;
-  if(section==='incident')return (state.incidents||[]).reduce((sum,incident)=>sum+(incident.resolutionReviews||[]).filter(request=>request.status==='待审核').length,0);
-  if(section==='expense')return (state.expenses||[]).filter(expense=>expense.status==='待老板审批').length;
-  return 0;
+  // 命令体已迁至 reviewInbox.js（Phase 5），逐字节保留；此处仅绑定当前状态。
+  return inboxPendingCount(state, section);
 }
 function reviewHistoryRows() {
-  const reviewer=currentUser().name, visibleSections=new Set(businessReviewSections(currentUser())), rows=[];
-  const add=(section,title,status,time,note='',selfReviewAuthorized=false)=>{if(visibleSections.has(section)&&time)rows.push({section,title,status,time,note,selfReviewAuthorized});};
-  for(const request of state.roomIssueReviews||[])if(request.decidedBy===reviewer)add('roomRecovery',`${request.room} · 房间恢复`,request.status,request.decidedAt,request.decisionNote,request.selfReviewAuthorized);
-  for(const order of state.orders){
-    if(order.credit?.decisionBy===reviewer)add('creditApproval',`${order.room} · 挂账审批`,'已批准',order.credit.decisionAt);
-    if(order.roundingReview?.decidedBy===reviewer)add('rounding',`${order.room} · 特殊差额`,order.roundingReview.status,order.roundingReview.decidedAt,order.roundingReview.decisionNote,order.roundingReview.selfReviewAuthorized);
-    for(const request of order.giftRequests||[])if(request.decidedBy===reviewer)add('gift',`${order.room} · ${request.productNameSnapshot || product(request.productId || request.product).name}赠酒`,request.status,request.decidedAt,request.decisionNote,request.selfReviewAuthorized);
-    for(const request of order.credit?.repaymentRequests||[])if(request.decidedBy===reviewer)add('creditRepayment',`${order.room} · 回款${money(request.amount)}`,request.status,request.decidedAt,request.decisionNote,request.selfReviewAuthorized);
-  }
-  for(const request of state.inventoryReviews||[])if(request.decidedBy===reviewer){const label=state.catalog.products.find(item=>item.id===request.product)?.name||request.product;add('inventory',`${label} · 库存盘点`,request.status,request.decidedAt,request.decisionNote,request.selfReviewAuthorized);}
-  for(const incident of state.incidents||[])for(const request of incident.resolutionReviews||[])if(request.decidedBy===reviewer)add('incident',`${incident.room} · ${incident.type}`,request.status,request.decidedAt,request.decisionNote,request.selfReviewAuthorized);
-  for(const expense of state.expenses||[])if(expense.approver===reviewer)add('expense',`${expense.description} · 报销`,expense.status,expense.approvedAt);
-  return rows.sort((a,b)=>Date.parse(b.time)-Date.parse(a.time)).slice(0,12);
+  // 命令体已迁至 reviewInbox.js（Phase 5），逐字节保留；此处仅绑定当前状态与当前身份。
+  return inboxHistoryRows(state, currentUser());
 }
 function reviewHistoryCards(rows=reviewHistoryRows()) {
   return rows.map(row=>`<article class="panel"><div class="split"><h3>${esc(row.title)}</h3><span class="badge">${esc(row.status)}</span></div><p class="muted">${date(row.time)}${row.selfReviewAuthorized?' · 已授权自审':''}</p>${row.note?`<p>${esc(row.note)}</p>`:''}</article>`).join('')||'<p class="muted">当前身份暂无已处理审核记录。</p>';
