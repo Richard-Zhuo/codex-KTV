@@ -1,6 +1,10 @@
 // 只承载演示业务：整数分计价、事务式状态变更，不依赖 DOM。
 // 商品与套餐的运行时唯一来源是 state.catalog。DEFAULT_CATALOG 只由目录模块负责初始化、迁移和恢复演示数据。
-import { DEFAULT_CATALOG, cloneCatalog, mergeCatalog, findProduct, roomPackage, saleOption, saleOptions, inventoryProducts, consumableProducts, productIdOf, categoryLabel } from './catalog.js';
+import { DEFAULT_CATALOG, cloneCatalog, mergeCatalog, findProduct, roomPackage, saleOption, saleOptions, inventoryProducts, consumableProducts, productIdOf, categoryLabel, product } from './catalog.js';
+// 库存领域（记账、盘点与审核命令）已迁至 inventory.js；rules.js 的事务分支委托调用，行为不变。
+import { need, pendingInventoryReview, recordInventoryChange, submitStock, submitConsumableStock, decideInventory } from './inventory.js';
+// product 查询包装已迁至 catalog.js（Phase 3）；re-export 保持 rules.js 既有导入路径兼容（facade，Phase 8 再清理）。
+export { product };
 // 共同基础（金额、时段、身份与权限选择器）已迁移到 shared/*；此处 re-export 保持既有导入路径兼容（facade，Phase 8 再清理）。
 import { money, cents } from './shared/money.js';
 import { slot } from './shared/time.js';
@@ -17,7 +21,7 @@ export const EXPENSE_TYPES = ['支出', '报销'];
 export const EXPENSE_APPROVAL_THRESHOLD = 50000;
 export const ROOM_ISSUE_TYPES = ['故障', '维护中'];
 export const INCIDENT_TYPES = ['客诉', '设备异常', '卫生异常', '库存异常', '员工交接', '其他'];
-export const product = (id, catalog = DEFAULT_CATALOG) => findProduct(catalog, id);
+// product 查询包装已迁至 catalog.js（Phase 3）；此处保留导入使用。
 export function productSnapshot(catalog, id, baseQuantity, extra = {}) {
   const p = product(id, catalog);
   return { productId: p.id, productNameSnapshot: p.name, categorySnapshot: p.category, categoryLabelSnapshot: categoryLabel(p), baseUnitSnapshot: p.baseUnit, baseQuantity, ...extra };
@@ -141,7 +145,6 @@ export function pendingIncidentReminders(stateOrRows, now = new Date().toISOStri
   const today = `${current.getFullYear()}-${String(current.getMonth()+1).padStart(2,'0')}-${String(current.getDate()).padStart(2,'0')}`;
   return rows.filter(row => row?.status !== '已完成' && row?.date && row.date <= today && row?.lastReminderDate !== today);
 }
-function need(state, roles, permission = '') { const user = effectiveUser(state); if (permission ? !hasPermission(user, permission) : !hasRole(user, roles)) throw Error('当前身份没有操作权限，请切换到对应演示身份'); }
 function delegatedEmployee(state, data) {
   const id = String(data.employee || '').trim();
   if (!id) return null;
@@ -150,15 +153,7 @@ function delegatedEmployee(state, data) {
   if (!employee || employee.legacy || id === 'administrator') throw Error('请选择有效的演示员工');
   return { id, name: employee.name, recordedBy: effectiveUser(state).name };
 }
-function inventory(state, id, delta, source, time, related = {}) {
-  const catalogProduct = product(id, state.catalog);
-  if (!catalogProduct.inventoryManaged) return;
-  const item = state.inventory[id];
-  if (!item) throw Error(`${catalogProduct.name}没有建立库存账`);
-  if (item.count !== null && item.count + delta < 0) throw Error(`${catalogProduct.name}库存不足，请减少数量或先核对库存`);
-  state.ledger.push({ id: ++state.serial, product: id, productId: id, productNameSnapshot: catalogProduct.name, baseUnitSnapshot: catalogProduct.baseUnit, delta, baseQuantityDelta: delta, source, ...related, counted: item.count !== null, time, person: effectiveUser(state).name });
-  if (item.count !== null) item.count += delta;
-}
+// 库存记账函数已迁至 inventory.js：recordInventoryChange（Phase 3），函数体逐字节保留。
 function normalizeSaleOptions(options, sellable) {
   if (!Array.isArray(options) || (sellable && !options.length)) throw Error('可售商品至少需要一种销售规格');
   const ids = new Set();
@@ -198,14 +193,14 @@ function appendSaleRows(state, order, rows, person, operator, employeeId, time, 
   const batch = ++state.serial;
   for (const row of rows) {
     const saleId = ++state.serial;
-    inventory(state, row.p.id, -row.totalBaseQuantity, source, time, { orderId: order.id, saleLineId: saleId });
+    recordInventoryChange(state, row.p.id, -row.totalBaseQuantity, source, time, { orderId: order.id, saleLineId: saleId });
     const snapshot = productSnapshot(state.catalog, row.p.id, row.totalBaseQuantity, { saleOptionId: row.option.id, saleOptionNameSnapshot: row.option.name, saleQuantity: row.saleQuantity, baseQuantityPerSaleUnit: row.option.baseQuantity, totalBaseQuantity: row.totalBaseQuantity, pricePerSaleUnitCents: row.pricePerSaleUnitCents, amountCents: row.amountCents, snapshotStatus: 'current' });
     order.sales.push({ id: saleId, batch, product: row.p.id, productId: row.p.id, count: row.saleQuantity, spec: row.option.id, bottles: row.totalBaseQuantity, amount: row.amountCents, ...snapshot, drinks: [{ id: ++state.serial, product: row.p.id, productId: row.p.id, productNameSnapshot: row.p.name, baseUnitSnapshot: row.p.baseUnit, count: row.totalBaseQuantity, totalBaseQuantity: row.totalBaseQuantity }], person, recordedBy: operator, employeeId, time });
   }
 }
 function grantBonus(state, order, productId, halves, source, time, requestedBy) {
   const bottles = halves * 6;
-  inventory(state, productId, -bottles, source, time);
+  recordInventoryChange(state, productId, -bottles, source, time);
   order.bonusGifts ??= [];
   const giftId = ++state.serial;
   const p = product(productId, state.catalog);
@@ -254,7 +249,7 @@ export function transact(original, action, data = {}, key) {
     return { evidenceText, evidencePhoto, evidencePhotoName };
   };
   const pendingRoomIssueReview = roomId => (s.roomIssueReviews ||= []).find(request => request.room === roomId && request.status === '待审核');
-  const pendingInventoryReview = (kind, productId) => (s.inventoryReviews ||= []).find(request => request.kind === kind && request.product === productId && request.status === '待审核');
+  // pendingInventoryReview 已迁至 inventory.js（Phase 3），模块函数直接使用。
   const authorizeReviewer = submittedById => {
     if (!submittedById) throw Error('申请缺少提交人，不能审核');
     const selfReview = submittedById === s.user;
@@ -394,10 +389,10 @@ export function transact(original, action, data = {}, key) {
       }
       if ([...merged.values()].reduce((sum, count) => sum + count, 0) !== q.bottles) throw Error(`首次配酒水合计必须是${q.bottles}支`);
       drinks = [...merged].map(([productId, count]) => ({ id: ++s.serial, product: productId, productId, ...productSnapshot(s.catalog, productId, count), count }));
-      for (const line of drinks) inventory(s, line.product, -line.count, '开房首次配酒水', time);
+      for (const line of drinks) recordInventoryChange(s, line.product, -line.count, '开房首次配酒水', time);
     } else if (q.bottles) {
       drinks = [{ id: ++s.serial, product: data.beer, productId: data.beer, ...productSnapshot(s.catalog, data.beer, q.bottles), count: q.bottles }];
-      inventory(s, data.beer, -q.bottles, '开房赠饮', time);
+      recordInventoryChange(s, data.beer, -q.bottles, '开房赠饮', time);
     }
     const resolvedComponents = [
       ...drinks.map(line => productSnapshot(s.catalog, productIdOf(line), line.count, { kind: 'opening-drink', totalBaseQuantity: line.count })),
@@ -491,7 +486,7 @@ export function transact(original, action, data = {}, key) {
     }
     if (!line || line.count < data.count) throw Error('超过可换数量');
     if (!canExchange(productIdOf(line), data.product, s.catalog)) throw Error('只能换同级或更低级商品，瓶装水不能换出');
-    inventory(s, productIdOf(line), data.count, '换购退回', time); inventory(s, data.product, -data.count, '换购领取', time);
+    recordInventoryChange(s, productIdOf(line), data.count, '换购退回', time); recordInventoryChange(s, data.product, -data.count, '换购领取', time);
     line.count -= data.count;
     const target = lines.find(drink => productIdOf(drink) === data.product);
     if (target) target.count += data.count; else lines.push({ id: ++s.serial, product: data.product, count: data.count });
@@ -592,44 +587,14 @@ export function transact(original, action, data = {}, key) {
     if (!d || !identity || (!phoneMatch && !nameMatch)) throw Error('请输入登记手机号尾号（至少4位）或姓名核对'); if (data.count > d.count) throw Error('取酒不能超过剩余数量');
     d.count -= data.count; s.withdrawals.push({ id: ++s.serial, deposit: d.id, count: data.count, time, person });
   } else if (action === 'stock') {
-    const item = s.inventory[data.product]; if (!item) throw Error('该商品不管理库存');
-    need(s, item.count === null ? ['店长','老板','采购'] : ['店长','老板','库管','采购'], item.count === null ? 'inventory.opening' : 'inventory.adjust');
-    if (!Number.isSafeInteger(data.count) || data.count < 0) throw Error('实际库存应为非负整数');
-    const reason = String(data.reason || '').trim().slice(0, 300); if (!reason) throw Error('请填写调整原因');
-    if (pendingInventoryReview('drink', data.product)) throw Error('该商品已有库存盘点待审核');
-    const before = item.count;
-    s.inventoryReviews.push({ id: ++s.serial, kind: 'drink', product: data.product, before, after: data.count, reason, source: before === null ? '期初建账' : '盘点调整', status: '待审核', submittedBy: person, submittedById: s.user, submittedAt: time, decidedBy: '', decidedAt: '', decisionNote: '' });
+    // 命令体已迁至 inventory.js：submitStock（Phase 3），逐字节保留。
+    submitStock(s, data, person, time);
   } else if (action === 'consumableStock') {
-    const item = s.consumables?.[data.product]; if (!item) throw Error('该消耗品不在库存管理中');
-    const permission = item.count === null ? 'inventory.opening' : 'inventory.adjust';
-    need(s, [], permission);
-    if (!Number.isSafeInteger(data.count) || data.count < 0 || !Number.isSafeInteger(data.opened) || data.opened < 0) throw Error('消耗品数量应为非负整数');
-    const reason = String(data.reason || '').trim().slice(0, 300); if (!reason) throw Error('请填写调整原因');
-    if (pendingInventoryReview('consumable', data.product)) throw Error('该消耗品已有库存盘点待审核');
-    const before = item.count, beforeOpened = item.opened || 0;
-    s.inventoryReviews.push({ id: ++s.serial, kind: 'consumable', product: data.product, before, after: data.count, openedBefore: beforeOpened, openedAfter: data.opened, reason, source: before === null ? '消耗品期初建账' : '消耗品盘点调整', status: '待审核', submittedBy: person, submittedById: s.user, submittedAt: time, decidedBy: '', decidedAt: '', decisionNote: '' });
+    // 命令体已迁至 inventory.js：submitConsumableStock（Phase 3），逐字节保留。
+    submitConsumableStock(s, data, person, time);
   } else if (action === 'approveInventory' || action === 'rejectInventory') {
-    need(s, [], 'inventory.approve');
-    const request = (s.inventoryReviews || []).find(item => item.id === Number(data.request));
-    if (!request || request.status !== '待审核') throw Error('这笔库存盘点已经处理');
-    const selfReview = authorizeReviewer(request.submittedById);
-    const decisionNote = String(data.decisionNote || '').trim().slice(0, 300);
-    if (action === 'rejectInventory' && !decisionNote) throw Error('请填写驳回原因');
-    if (action === 'approveInventory') {
-      if (request.kind === 'consumable') {
-        const item = s.consumables?.[request.product];
-        if (!item || item.count !== request.before || (item.opened || 0) !== request.openedBefore) throw Error('消耗品库存已经变化，请驳回后重新盘点');
-        s.ledger.push({ id: ++s.serial, kind: 'consumable', product: request.product, delta: request.after-(request.before ?? 0), before: request.before, after: request.after, openedBefore: request.openedBefore, openedAfter: request.openedAfter, reason: request.reason, source: request.source, counted: true, person: request.submittedBy, reviewedBy: person, time });
-        item.count = request.after; item.opened = request.openedAfter; if (request.before === null) item.openedAt = time;
-      } else {
-        const item = s.inventory[request.product];
-        if (!item || item.count !== request.before) throw Error('商品库存已经变化，请驳回后重新盘点');
-        s.ledger.push({ id: ++s.serial, product: request.product, delta: request.after-(request.before ?? 0), before: request.before, after: request.after, reason: request.reason, source: request.source, counted: true, person: request.submittedBy, reviewedBy: person, time });
-        item.count = request.after; if (request.before === null) item.openedAt = time;
-      }
-      s.notices.push({ id: ++s.serial, kind: request.kind, product: request.product, unit: request.kind === 'consumable' ? (s.consumables?.[request.product]?.unit || '份') : (s.inventory[request.product]?.unit || product(request.product, s.catalog).baseUnit), before: request.before, after: request.after, openedBefore: request.openedBefore, openedAfter: request.openedAfter, reason: request.reason, person: request.submittedBy, reviewedBy: person, time });
-    }
-    request.status = action === 'approveInventory' ? '已批准' : '已驳回'; request.decidedBy = person; request.decidedAt = time; request.decisionNote = decisionNote; request.selfReviewAuthorized = selfReview;
+    // 命令体已迁至 inventory.js：decideInventory（Phase 3），逐字节保留；authorizeReviewer 经参数注入保持原闭包语义。
+    decideInventory(s, action, data, person, time, authorizeReviewer);
   } else if (action === 'handover') {
     need(s, ['收银员','财务','店长','老板'], 'handover');
     if (!Number.isSafeInteger(data.actual) || data.actual < 0) throw Error('请输入有效实点金额');

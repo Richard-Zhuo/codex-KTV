@@ -4,9 +4,10 @@
 
 | 改动目标 | 入口文件／稳定符号 | 相关测试 | 对应契约 | 关联边界 |
 |---|---|---|---|---|
-| 员工／系统管理入口和静态路由 | `index.html`、`admin.html` 的 `data-app-entry`；`server.js` 的静态 `files` 映射（含 `catalog.js`、`migrations.js`、`persistence.js`） | `entry.test.js`、`bugs-evidence-app.test.js` | [需求：身份、入口与权限](./REQUIREMENTS.md#已确认身份入口与权限) | `/` 承载日常营业；`/admin` 只承载系统管理；服务器没有 API |
-| 本机持久化与旧状态迁移 | `persistence.js`：`createDemoPersistence`、`DEMO_STATE_KEY`、`DEMO_BACKUP_KEY`；`migrations.js`：`validateDemoState`、`migrateStartupState`、`migrateDemoState`、`normalizeDemoUser` | `persistence.test.js`、`bugs-evidence-app.test.js` | [架构：数据流](./ARCHITECTURE.md#数据流与事务边界) | 唯一读写账本 key 的模块；载入失败先备份原文再进入新练习，不覆盖；未知历史价格保持 null |
-| 商品目录、销售规格和套餐定义 | `catalog.js`：`DEFAULT_CATALOG`、`mergeCatalog`、`findProduct`、`roomPackage`、`saleOption`、`migrateLegacyOrderPricing` | `catalog.test.js` | [需求：商品、套餐与价格模型](./REQUIREMENTS.md#已确认商品套餐与价格模型) | `DEFAULT_CATALOG` 只用于初始化、迁移和 DEMO 恢复；运行时唯一来源是 `state.catalog`；不维护重复 `sku` |
+| 员工／系统管理入口和静态路由 | `index.html`、`admin.html` 的 `data-app-entry`；`server.js` 的静态 `files` 映射（含 `catalog.js`、`packages.js`、`inventory.js`、`migrations.js`、`persistence.js`） | `entry.test.js`、`bugs-evidence-app.test.js` | [需求：身份、入口与权限](./REQUIREMENTS.md#已确认身份入口与权限) | `/` 承载日常营业；`/admin` 只承载系统管理；服务器没有 API |
+| 本机持久化与旧状态迁移 | `persistence.js`：`createDemoPersistence`、`DEMO_STATE_KEY`、`DEMO_BACKUP_KEY`；`migrations.js`：`validateDemoState`、`migrateStartupState`、`migrateDemoState`、`normalizeDemoUser`、`migrateLegacyOrderPricing` | `persistence.test.js`、`catalog.test.js`、`bugs-evidence-app.test.js` | [架构：数据流](./ARCHITECTURE.md#数据流与事务边界) | 唯一读写账本 key 的模块；载入失败先备份原文再进入新练习，不覆盖；未知历史价格保持 null；目录模块不迁移订单（Phase 3） |
+| 商品目录与销售规格 | `catalog.js`：`DEFAULT_CATALOG`、`mergeCatalog`、`findProduct`、`product`、`saleOption`、`inventoryProducts`、`consumableProducts`；`packages.js`：`DEFAULT_PACKAGES`（房间套餐构造唯一来源，Phase 3） | `catalog.test.js`、`inventory.test.js` | [需求：商品、套餐与价格模型](./REQUIREMENTS.md#已确认商品套餐与价格模型) | `DEFAULT_CATALOG` 只用于初始化、迁移和 DEMO 恢复；运行时唯一来源是 `state.catalog`；不维护重复 `sku`；`product` 查询包装也在此（`rules.js` 为 facade re-export） |
+| 库存记账、盘点与审核 | `inventory.js`：`need`、`pendingInventoryReview`、`recordInventoryChange`、`submitStock`、`submitConsumableStock`、`decideInventory`（Phase 3 起 `state.inventory`／`state.consumables`／`state.inventoryReviews` 与库存流水的唯一 owner） | `inventory.test.js`、`rules.test.js` | [需求：库存与盘点审核](./REQUIREMENTS.md) | 审核前不改账面；`counted` 区分建账前流水；未建账禁售；`decideInventory` 的自审校验由 `rules.js` 注入 `authorizeReviewer` 以避免循环依赖 |
 | 页面导航、待办、零售、目录维护、报表与本机状态 | `app.js`：`render`、`retailPage`、`retailDialog`、`saleDialog`、`reportPage`、`catalogCreateDialog`、`persist`、`commit`（载入／保存仅经 `persistence.js` 装配） | `entry.test.js`、`retail.test.js`、`characterization-report.test.js`、`characterization-core.test.js`、`bugs-evidence.test.js`；浏览器验收页面流程 | [架构：数据流](./ARCHITECTURE.md#数据流与事务边界) | 零售与房间商品选择共用表单；报表读取销售行快照，独立列零售明细 |
 | 房型报价、普通商品、统一订单和销售事务 | `rules.js`：`initialState`、`quote`、`prepareSaleRows`、`appendSaleRows`、`transact`（`createCatalogProduct`、`sale`、`retailSale`） | `rules.test.js`、`retail.test.js` | [需求：普通商品与独立零售](./REQUIREMENTS.md#已确认普通商品与独立零售) | 金额用整数分；库存按基础单位；零售付款与订单、销售行、流水原子写入，失败不回写原状态 |
 | 身份与具体权限 | `shared/identity.js`：`USERS`、`PERMISSION_DEFINITIONS`、`permissionsForRoles`、`defaultCapabilities`、`effectiveUser`、`hasPermission`、`businessReviewSections`（`rules.js` 目前作 facade re-export，Phase 8 再清理） | `rules.test.js`、`shared.test.js` | [需求：身份、入口与权限](./REQUIREMENTS.md#已确认身份入口与权限) | `backend.view` 不授予业务审核；`review.self` 只是自审附加条件 |
@@ -35,10 +36,11 @@
 ### 改业务规则
 
 1. 在 `REQUIREMENTS.md` 找到已确认行为。
-2. 商品、销售规格或套餐变化先读 `catalog.js` 和 `catalog.test.js`，确认运行时只从 `state.catalog` 读取。
-3. 读 `rules.js` 中对应事务分支和领域函数。
-4. 读 `rules.test.js` 中同一行为的测试。
-5. 只有界面输入或展示变化时再读 `app.js` 和 `style.css`。
+2. 商品、销售规格变化先读 `catalog.js` 和 `catalog.test.js`，房间套餐构造读 `packages.js`（`DEFAULT_PACKAGES`），确认运行时只从 `state.catalog` 读取。
+3. 库存记账、盘点或审核读 `inventory.js` 和 `inventory.test.js`；`rules.js` 的 `transact` 分支只做委托。
+4. 读 `rules.js` 中对应事务分支和领域函数。
+5. 读 `rules.test.js` 中同一行为的测试。
+6. 只有界面输入或展示变化时再读 `app.js` 和 `style.css`。
 
 ### 改持久化或旧数据迁移
 

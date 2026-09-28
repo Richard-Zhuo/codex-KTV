@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { DEFAULT_CATALOG, cloneCatalog, mergeCatalog, findProduct, roomPackage, saleOption, inventoryProducts, consumableProducts, migrateLegacyOrderPricing } from './catalog.js';
+import { DEFAULT_CATALOG, cloneCatalog, mergeCatalog, findProduct, roomPackage, saleOption, inventoryProducts, consumableProducts } from './catalog.js';
+import { migrateLegacyOrderPricing } from './migrations.js';
 
 test('默认目录使用稳定商品 ID、销售规格和基础库存单位', () => {
   const bw = findProduct(DEFAULT_CATALOG, 'bw');

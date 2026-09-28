@@ -1,5 +1,5 @@
 import { OTHER_CHARGE_CATEGORIES, USERS, PERMISSION_DEFINITIONS, effectiveUser, hasPermission, businessReviewSections, RESERVATION_SOURCES, OPENING_SOURCES, PAYMENT_METHODS, EXPENSE_NATURES, EXPENSE_TYPES, EXPENSE_APPROVAL_THRESHOLD, INCIDENT_TYPES, ROOM_ISSUE_TYPES, visibleExpenses, visibleProcurements, visibleIncidents, pendingIncidentReminders, money, slot, cents, quote, initialState, total, outstanding, collected, collectableCharges, nextCollectCharge, transact, canExchange, bonusAllowance, reservationReminder, reservationActiveAt, searchDeposits, hasRole } from './rules.js';
-import { findProduct, saleOptions, sellableProducts, productIdOf, categoryLabel } from './catalog.js';
+import { findProduct, saleOptions, sellableProducts, inventoryProducts, consumableProducts, productIdOf, categoryLabel } from './catalog.js';
 import { createDemoPersistence, DEMO_STATE_KEY } from './persistence.js';
 const APP_ENTRY = document.body.dataset.appEntry === 'admin' ? 'admin' : 'staff';
 const REQUESTED_STAFF_PAGE = new URLSearchParams(window.location.search).get('page');

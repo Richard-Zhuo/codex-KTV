@@ -1,9 +1,7 @@
 // 目录默认值和纯目录 helper。
 // 运行时业务必须使用 state.catalog；DEFAULT_CATALOG 只用于初始化、迁移和恢复演示数据。
-
-const OPENING_GIFT_PRODUCTS = ['bw', 'xl', 'qd', 'redqd', 'lm', 'lm_can', 'jbw', 'drink'];
-const MIXABLE_OPENING_PRODUCTS = ['drink0', 'drink1', 'drink2', 'drink3', 'bw', 'xl', 'qd', 'redqd', 'soda0', 'soda1', 'soda2', 'soda3', 'water'];
-const HIGH_END_PRODUCTS = new Set(['lm', 'lm_can', 'jbw']);
+// 套餐默认值构造在 packages.js；旧订单价格迁移在 migrations.js（目录不迁移订单）。
+import { DEFAULT_PACKAGES } from './packages.js';
 
 const createSaleOptions = (single, half, dozen) => [
   { id: 'single', name: '单支', baseQuantity: 1, priceCents: single },
@@ -45,52 +43,6 @@ const singleProduct = (id, name, category, categoryLabel, sortOrder, priceCents,
   sortOrder,
   ...options
 });
-
-const openingGiftQuantityByProduct = Object.fromEntries(
-  OPENING_GIFT_PRODUCTS.map(id => [id, HIGH_END_PRODUCTS.has(id) ? 10 : 12])
-);
-
-const createRoomPackage = (id, name, roomType, period, basePriceCents, giftDozens, fruit, nuts, sortOrder) => {
-  const includedValueCents = giftDozens * 11800;
-  const packageValue = basePriceCents + includedValueCents;
-  const openingGift = giftDozens ? {
-    allowedProductIds: [...OPENING_GIFT_PRODUCTS],
-    baseQuantityByProduct: Object.fromEntries(OPENING_GIFT_PRODUCTS.map(productId => [
-      productId,
-      openingGiftQuantityByProduct[productId] * giftDozens
-    ])),
-    mixedSelectionProductId: 'drink',
-    mixedAllowedProductIds: [...MIXABLE_OPENING_PRODUCTS]
-  } : null;
-  return {
-    id,
-    name,
-    kind: 'room-package',
-    roomType,
-    period,
-    priceCents: packageValue,
-    basePriceCents,
-    includedValueCents,
-    giftSaleQuantity: giftDozens,
-    components: [
-      ...(openingGift ? [{
-        id: 'opening-drink',
-        kind: 'choice',
-        name: '开房赠饮',
-        baseUnit: '支',
-        allowedProductIds: [...openingGift.allowedProductIds],
-        baseQuantityByProduct: { ...openingGift.baseQuantityByProduct },
-        mixedSelectionProductId: openingGift.mixedSelectionProductId,
-        mixedAllowedProductIds: [...openingGift.mixedAllowedProductIds]
-      }] : []),
-      { id: 'fruit', kind: 'fixed', productId: 'fruit', baseQuantity: fruit, baseUnit: '份' },
-      { id: 'nuts', kind: 'fixed', productId: 'nuts', baseQuantity: nuts, baseUnit: '份' }
-    ],
-    openingGift,
-    active: true,
-    sortOrder
-  };
-};
 
 export const DEFAULT_CATALOG = {
   schemaVersion: 1,
@@ -229,16 +181,7 @@ export const DEFAULT_CATALOG = {
       kind: 'consumable'
     }
   ],
-  packages: [
-    createRoomPackage('room.small.day', '小房白天纯唱', '小房', 'day', 6800, 0, 0, 0, 10),
-    createRoomPackage('room.medium.day', '中房白天纯唱', '中房', 'day', 6800, 0, 0, 0, 20),
-    createRoomPackage('room.large.day', '大房白天纯唱', '大房', 'day', 8800, 0, 0, 0, 30),
-    createRoomPackage('room.vip.day', 'VIP房白天纯唱', 'VIP房', 'day', 10800, 0, 0, 0, 40),
-    createRoomPackage('room.small.night', '小房夜间套餐', '小房', 'night', 5000, 1, 1, 1, 50),
-    createRoomPackage('room.medium.night', '中房夜间套餐', '中房', 'night', 5000, 1, 1, 1, 60),
-    createRoomPackage('room.large.night', '大房夜间套餐', '大房', 'night', 5400, 2, 1, 2, 70),
-    createRoomPackage('room.vip.night', 'VIP房夜间套餐', 'VIP房', 'night', 8400, 2, 2, 2, 80)
-  ]
+  packages: DEFAULT_PACKAGES
 };
 
 export function cloneCatalog(catalog = DEFAULT_CATALOG) {
@@ -327,36 +270,9 @@ export function productIdOf(record) {
   return record?.productId || record?.product || '';
 }
 
+// 商品查询包装：按当前 state.catalog 查找商品（原 rules.js 定义，Phase 3 迁入目录模块）。
+export const product = (id, catalog = DEFAULT_CATALOG) => findProduct(catalog, id);
+
 // 旧订单只补充可从原记录确定的金额和数量；缺失的历史商品元数据与参考价值保持未知，绝不读取迁移当天的当前售价。
-export function migrateLegacyOrderPricing(orders) {
-  const migrated = structuredClone(Array.isArray(orders) ? orders : []);
-  for (const order of migrated) {
-    order.packageBaseCents ??= Number.isSafeInteger(order.base) ? order.base : null;
-    order.packageGiftValueCents ??= Number.isSafeInteger(order.gift) ? order.gift : null;
-    order.packageReferenceGiftValueCents ??= Number.isSafeInteger(order.gift) ? order.gift : null;
-    order.packagePriceCents ??= Number.isSafeInteger(order.base) && Number.isSafeInteger(order.gift) ? order.base + order.gift : null;
-    for (const sale of order.sales || []) {
-      sale.productId ??= sale.product || '';
-      sale.saleQuantity ??= sale.count ?? null;
-      sale.saleOptionId ??= sale.spec || null;
-      sale.saleOptionNameSnapshot ??= null;
-      sale.baseQuantityPerSaleUnit ??= sale.spec === 'dozen' ? 12 : sale.spec === 'half' ? 6 : sale.spec === 'single' ? 1 : null;
-      sale.totalBaseQuantity ??= sale.bottles ?? null;
-      sale.pricePerSaleUnitCents ??= null;
-      sale.amountCents ??= Number.isSafeInteger(sale.amount) ? sale.amount : null;
-      sale.productNameSnapshot ??= null;
-      sale.categorySnapshot ??= null;
-      sale.baseUnitSnapshot ??= null;
-      sale.snapshotStatus ??= 'legacy';
-    }
-    for (const gift of order.bonusGifts || []) {
-      gift.productId ??= gift.product || '';
-      gift.productNameSnapshot ??= null;
-      gift.categorySnapshot ??= null;
-      gift.baseUnitSnapshot ??= null;
-      gift.referenceValueCents ??= null;
-      gift.snapshotStatus ??= 'legacy';
-    }
-  }
-  return migrated;
-}
+// migrateLegacyOrderPricing 已迁至 migrations.js（Phase 3：目录不迁移订单）。
+

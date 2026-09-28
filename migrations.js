@@ -3,8 +3,43 @@
 // migrateLegacyCatalogFacts、migrateDemoState、用户身份归一化。
 // 行为与迁移前逐字一致：未知历史价格保持 null（不用当前价格填补），
 // 旧字段只做 ??= 补值，不做删改。
+// Phase 3：migrateLegacyOrderPricing 自 catalog.js 迁入（目录不迁移订单），函数体逐字保留。
 import { USERS, USER_ALIASES, PERMISSION_ROLES, PERMISSION_IDS, defaultPermissions, defaultCapabilities, permissionsForRoles, initialState, reservationActiveAt } from './rules.js';
-import { mergeCatalog, migrateLegacyOrderPricing, inventoryProducts, consumableProducts, productIdOf } from './catalog.js';
+import { mergeCatalog, inventoryProducts, consumableProducts, productIdOf } from './catalog.js';
+
+// 旧订单只补充可从原记录确定的金额和数量；缺失的历史商品元数据与参考价值保持未知，绝不读取迁移当天的当前售价。
+export function migrateLegacyOrderPricing(orders) {
+  const migrated = structuredClone(Array.isArray(orders) ? orders : []);
+  for (const order of migrated) {
+    order.packageBaseCents ??= Number.isSafeInteger(order.base) ? order.base : null;
+    order.packageGiftValueCents ??= Number.isSafeInteger(order.gift) ? order.gift : null;
+    order.packageReferenceGiftValueCents ??= Number.isSafeInteger(order.gift) ? order.gift : null;
+    order.packagePriceCents ??= Number.isSafeInteger(order.base) && Number.isSafeInteger(order.gift) ? order.base + order.gift : null;
+    for (const sale of order.sales || []) {
+      sale.productId ??= sale.product || '';
+      sale.saleQuantity ??= sale.count ?? null;
+      sale.saleOptionId ??= sale.spec || null;
+      sale.saleOptionNameSnapshot ??= null;
+      sale.baseQuantityPerSaleUnit ??= sale.spec === 'dozen' ? 12 : sale.spec === 'half' ? 6 : sale.spec === 'single' ? 1 : null;
+      sale.totalBaseQuantity ??= sale.bottles ?? null;
+      sale.pricePerSaleUnitCents ??= null;
+      sale.amountCents ??= Number.isSafeInteger(sale.amount) ? sale.amount : null;
+      sale.productNameSnapshot ??= null;
+      sale.categorySnapshot ??= null;
+      sale.baseUnitSnapshot ??= null;
+      sale.snapshotStatus ??= 'legacy';
+    }
+    for (const gift of order.bonusGifts || []) {
+      gift.productId ??= gift.product || '';
+      gift.productNameSnapshot ??= null;
+      gift.categorySnapshot ??= null;
+      gift.baseUnitSnapshot ??= null;
+      gift.referenceValueCents ??= null;
+      gift.snapshotStatus ??= 'legacy';
+    }
+  }
+  return migrated;
+}
 
 // 启动结构校验：版本不是 1 或核心结构缺失即视为不可读（与原 app.js try 块首行一致）。
 export function validateDemoState(state) {
