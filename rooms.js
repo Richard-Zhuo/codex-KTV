@@ -6,6 +6,7 @@
 // 恢复审核行为不变；失败不提交由 transact 的克隆-校验-提交边界继续保证。
 // 权限闸门与自审授权经参数注入（need／authorizeReviewer），避免对 rules.js 的循环依赖。
 // productSnapshot／quantity／delegatedEmployee 为模块私有副本（Phase 4 sales.js 同先例）。
+import { BusinessRejection } from './shared/business-error.js';
 import { DEFAULT_CATALOG, roomPackage, assertCatalogPackagePrices, product, saleOptions, productIdOf, categoryLabel } from './catalog.js';
 import { need, recordInventoryChange } from './inventory.js';
 import { slot } from './shared/time.js';
@@ -20,13 +21,13 @@ function productSnapshot(catalog, id, baseQuantity, extra = {}) {
   const p = product(id, catalog);
   return { productId: p.id, productNameSnapshot: p.name, categorySnapshot: p.category, categoryLabelSnapshot: categoryLabel(p), baseUnitSnapshot: p.baseUnit, baseQuantity, ...extra };
 }
-function quantity(n) { if (!Number.isSafeInteger(n) || n <= 0) throw Error('数量必须是大于零的整数'); }
+function quantity(n) { if (!Number.isSafeInteger(n) || n <= 0) throw new BusinessRejection('数量必须是大于零的整数'); }
 function delegatedEmployee(state, data) {
   const id = String(data.employee || '').trim();
   if (!id) return null;
   need(state, [], 'staff.record');
   const employee = USERS[id];
-  if (!employee || employee.legacy || id === 'administrator') throw Error('请选择有效的演示员工');
+  if (!employee || employee.legacy || id === 'administrator') throw new BusinessRejection('请选择有效的演示员工');
   return { id, name: employee.name, recordedBy: effectiveUser(state).name };
 }
 export function platformVoucher(source, amount) {
@@ -34,7 +35,7 @@ export function platformVoucher(source, amount) {
   return PLATFORM_OPENING_SOURCES.includes(provider) ? { provider, status: '待验券', covered: amount, interface: 'platform-voucher-scan' } : null;
 }
 export function quote(type, time, beer = 'bw', openSource = '', catalog = DEFAULT_CATALOG) {
-  const period = slot(time); if (period === 'closed') throw Error('现在仅接受预订，请选择营业时段到店');
+  const period = slot(time); if (period === 'closed') throw new BusinessRejection('现在仅接受预订，请选择营业时段到店');
   assertCatalogPackagePrices(catalog);
   const packageItem = roomPackage(catalog, type, period);
   if (period === 'day') {
@@ -43,7 +44,7 @@ export function quote(type, time, beer = 'bw', openSource = '', catalog = DEFAUL
   }
   const p = product(beer, catalog);
   const giftRule = packageItem.openingGift;
-  if (!p.openingGiftEligible || !giftRule?.allowedProductIds?.includes(p.id)) throw Error('请选择可用于开房赠饮的酒水');
+  if (!p.openingGiftEligible || !giftRule?.allowedProductIds?.includes(p.id)) throw new BusinessRejection('请选择可用于开房赠饮的酒水');
   const dozen = packageItem.giftSaleQuantity || 0;
   const gift = packageItem.includedValueCents || 0;
   const voucher = platformVoucher(openSource, packageItem.priceCents);
@@ -53,12 +54,12 @@ export function quote(type, time, beer = 'bw', openSource = '', catalog = DEFAUL
 export function canExchange(from, to, catalog = DEFAULT_CATALOG) { const a = product(from, catalog), b = product(to, catalog); return a.id !== b.id && !b.selectionOnly && saleOptions(b).length > 0 && a.exchangeLevel && b.exchangeLevel && a.exchangeLevel !== 4 && b.exchangeLevel >= a.exchangeLevel; }
 export function reservationTarget(baseTime, dayOffset, session) {
   const offset = Number(dayOffset);
-  if (!Number.isInteger(offset) || offset < 0 || offset > 30) throw Error('预订日期只能选择今天至30天后');
-  if (!['afternoon', 'night'].includes(session)) throw Error('请选择下午场或夜间场');
+  if (!Number.isInteger(offset) || offset < 0 || offset > 30) throw new BusinessRejection('预订日期只能选择今天至30天后');
+  if (!['afternoon', 'night'].includes(session)) throw new BusinessRejection('请选择下午场或夜间场');
   const target = new Date(baseTime);
   target.setDate(target.getDate() + offset);
   target.setHours(session === 'afternoon' ? 14 : 20, 0, 0, 0);
-  if (target <= new Date(baseTime)) throw Error('该场次已经开始，请选择后面的场次或日期');
+  if (target <= new Date(baseTime)) throw new BusinessRejection('该场次已经开始，请选择后面的场次或日期');
   return target.toISOString();
 }
 export function reservationReminder(reservation, now) {
@@ -79,8 +80,8 @@ function roomIssueEvidence(data) {
   const evidenceText = String(data.evidenceText ?? data.issueNote ?? '').trim().slice(0, 500);
   const evidencePhoto = String(data.evidencePhoto || '').trim();
   const evidencePhotoName = String(data.evidencePhotoName || '').trim().slice(0, 120);
-  if (!evidenceText && !evidencePhoto) throw Error('请提交照片或文字说明供审核');
-  if (evidencePhoto && (!evidencePhoto.startsWith('data:image/') || evidencePhoto.length > 700000)) throw Error('审核照片格式无效或超过500KB');
+  if (!evidenceText && !evidencePhoto) throw new BusinessRejection('请提交照片或文字说明供审核');
+  if (evidencePhoto && (!evidencePhoto.startsWith('data:image/') || evidencePhoto.length > 700000)) throw new BusinessRejection('审核照片格式无效或超过500KB');
   return { evidenceText, evidencePhoto, evidencePhotoName };
 }
 function pendingRoomIssueReview(s, roomId) { return (s.roomIssueReviews ||= []).find(request => request.room === roomId && request.status === '待审核'); }
@@ -91,24 +92,24 @@ export function release(s, order) { const r = s.rooms.find(r => r.order === orde
 export function openRoom(s, room, data, person, operator, time) {
   const delegated = delegatedEmployee(s, data);
   if (delegated) person = delegated.name; else need(s, ['开单员','老板'], 'room.open');
-  if (!room || !['空闲','待清洁','已预订'].includes(room.status)) throw Error('房间已在使用');
-  if (pendingRoomIssueReview(s, room.id)) throw Error('房间恢复申请正在审核，暂不能开房');
-  if (room.status === '待清洁' && !data.acceptDirty) throw Error('请先确认房间可以接待客人');
+  if (!room || !['空闲','待清洁','已预订'].includes(room.status)) throw new BusinessRejection('房间已在使用');
+  if (pendingRoomIssueReview(s, room.id)) throw new BusinessRejection('房间恢复申请正在审核，暂不能开房');
+  if (room.status === '待清洁' && !data.acceptDirty) throw new BusinessRejection('请先确认房间可以接待客人');
   const openSource = String(data.openSource ?? '').trim();
-  if (!OPENING_SOURCES.includes(openSource)) throw Error('请选择有效的开房渠道');
+  if (!OPENING_SOURCES.includes(openSource)) throw new BusinessRejection('请选择有效的开房渠道');
   const q = quote(room.type, time, data.beer, openSource, s.catalog);
   const booking = s.reservations.find(r => r.room === room.id && reservationActiveAt(r, time));
   const id = `D${++s.serial}`;
   let drinks = [];
   if (q.bottles && data.beer === 'drink') {
-    if (!Array.isArray(data.initialMix) || !data.initialMix.length) throw Error('请选择首次配给客人的酒水种类和支数');
+    if (!Array.isArray(data.initialMix) || !data.initialMix.length) throw new BusinessRejection('请选择首次配给客人的酒水种类和支数');
     const merged = new Map();
     for (const item of data.initialMix) {
       quantity(item.count);
-      if (!canExchange('drink', item.product, s.catalog)) throw Error('首次配酒水只能选择同级或更低级商品');
+      if (!canExchange('drink', item.product, s.catalog)) throw new BusinessRejection('首次配酒水只能选择同级或更低级商品');
       merged.set(item.product, (merged.get(item.product) || 0) + item.count);
     }
-    if ([...merged.values()].reduce((sum, count) => sum + count, 0) !== q.bottles) throw Error(`首次配酒水合计必须是${q.bottles}支`);
+    if ([...merged.values()].reduce((sum, count) => sum + count, 0) !== q.bottles) throw new BusinessRejection(`首次配酒水合计必须是${q.bottles}支`);
     drinks = [...merged].map(([productId, count]) => ({ id: ++s.serial, product: productId, productId, ...productSnapshot(s.catalog, productId, count), count }));
     for (const line of drinks) recordInventoryChange(s, line.product, -line.count, '开房首次配酒水', time);
   } else if (q.bottles) {
@@ -126,33 +127,33 @@ export function openRoom(s, room, data, person, operator, time) {
 export function reserveRoom(s, room, data, person, operator, time) {
   const delegated = delegatedEmployee(s, data);
   if (delegated) person = delegated.name; else need(s, ['开单员','老板'], 'room.reserve');
-  if (!room || !['空闲','营业中','待清洁','已预订'].includes(room.status)) throw Error('当前房间状态不能预订');
-  if (pendingRoomIssueReview(s, room.id)) throw Error('房间恢复申请正在审核，暂不能预订');
-  if (!RESERVATION_SOURCES.includes(data.source)) throw Error('请选择预订方式');
+  if (!room || !['空闲','营业中','待清洁','已预订'].includes(room.status)) throw new BusinessRejection('当前房间状态不能预订');
+  if (pendingRoomIssueReview(s, room.id)) throw new BusinessRejection('房间恢复申请正在审核，暂不能预订');
+  if (!RESERVATION_SOURCES.includes(data.source)) throw new BusinessRejection('请选择预订方式');
   const at = reservationTarget(time, data.dayOffset, data.session);
-  if (s.reservations.some(r => r.room === room.id && r.status === '已预订' && Date.parse(r.at) === Date.parse(at))) throw Error('该房间该场次已经有预订');
+  if (s.reservations.some(r => r.room === room.id && r.status === '已预订' && Date.parse(r.at) === Date.parse(at))) throw new BusinessRejection('该房间该场次已经有预订');
   const sessionLabel = data.session === 'afternoon' ? '下午场（14:00—18:00）' : '夜间场（20:00—次日02:00）';
   s.reservations.push({ id: ++s.serial, room: room.id, at, dayOffset: Number(data.dayOffset), session: data.session, sessionLabel, source: data.source, note: String(data.note || '').slice(0,100), status: '已预订', person, employeeId: delegated?.id || '', recordedBy: operator });
 }
 export function cancelReservation(s, room, data, time) {
-  need(s, ['开单员','老板'], 'room.reserve'); if (!room) throw Error('房间状态已变化');
+  need(s, ['开单员','老板'], 'room.reserve'); if (!room) throw new BusinessRejection('房间状态已变化');
   const pending = s.reservations.filter(r => r.room === room.id && r.status === '已预订');
   const reservationId = data.id === undefined || data.id === '' ? null : Number(data.id);
   const booking = reservationId === null ? (pending.length === 1 ? pending[0] : null) : pending.find(r => r.id === reservationId);
-  if (!booking) throw Error('预订状态已变化，请重新查看房间');
+  if (!booking) throw new BusinessRejection('预订状态已变化，请重新查看房间');
   booking.status = '已取消';
   if (room.status === '已预订' && !pending.some(r => r.id !== booking.id && reservationActiveAt(r, time))) room.status = '空闲';
 }
 export function cleanRoom(s, room) {
-  need(s, ['服务员','老板'], 'room.clean'); if (!room || room.status !== '待清洁') throw Error('房间状态已变化'); room.status = '空闲';
+  need(s, ['服务员','老板'], 'room.clean'); if (!room || room.status !== '待清洁') throw new BusinessRejection('房间状态已变化'); room.status = '空闲';
 }
 export function markRoomIssue(s, room, data, person, time) {
   need(s, [], 'room.issue');
-  if (!room) throw Error('请选择有效房间');
-  if (!['空闲', '待清洁'].includes(room.status)) throw Error('营业中的房间不能直接标记为故障或维护中');
-  if (pendingRoomIssueReview(s, room.id)) throw Error('该房间已有恢复申请待审核');
+  if (!room) throw new BusinessRejection('请选择有效房间');
+  if (!['空闲', '待清洁'].includes(room.status)) throw new BusinessRejection('营业中的房间不能直接标记为故障或维护中');
+  if (pendingRoomIssueReview(s, room.id)) throw new BusinessRejection('该房间已有恢复申请待审核');
   const issueType = String(data.issueType || '').trim();
-  if (!ROOM_ISSUE_TYPES.includes(issueType)) throw Error('请选择故障或维护中状态');
+  if (!ROOM_ISSUE_TYPES.includes(issueType)) throw new BusinessRejection('请选择故障或维护中状态');
   const evidence = roomIssueEvidence(data);
   const fromStatus = room.status;
   room.status = '故障/维护中';
@@ -167,20 +168,20 @@ export function markRoomIssue(s, room, data, person, time) {
 }
 export function clearRoomIssue(s, room, data, person, time) {
   need(s, [], 'room.issue');
-  if (!room || room.status !== '故障/维护中') throw Error('房间异常状态已经变化');
-  if (pendingRoomIssueReview(s, room.id)) throw Error('该房间已有恢复申请待审核');
+  if (!room || room.status !== '故障/维护中') throw new BusinessRejection('房间异常状态已经变化');
+  if (pendingRoomIssueReview(s, room.id)) throw new BusinessRejection('该房间已有恢复申请待审核');
   const evidence = roomIssueEvidence(data);
   s.roomIssueReviews.push({ id: ++s.serial, room: room.id, change: '恢复空房', fromStatus: room.status, requestedStatus: '空闲', issueType: room.issueType || '故障', ...evidence, status: '待审核', submittedBy: person, submittedById: s.user, submittedAt: time, decidedBy: '', decidedAt: '', decisionNote: '' });
 }
 export function decideRoomIssue(s, action, data, person, time, authorizeReviewer) {
   need(s, [], 'room.issue.approve');
   const request = (s.roomIssueReviews || []).find(item => item.id === Number(data.request));
-  if (!request || request.status !== '待审核') throw Error('该房间恢复申请已经处理');
-  if (request.requestedStatus !== '空闲') throw Error('只有恢复为空房的申请需要审核');
+  if (!request || request.status !== '待审核') throw new BusinessRejection('该房间恢复申请已经处理');
+  if (request.requestedStatus !== '空闲') throw new BusinessRejection('只有恢复为空房的申请需要审核');
   const selfReview = authorizeReviewer(request.submittedById);
   if (action === 'approveRoomIssue') {
     const targetRoom = s.rooms.find(item => item.id === request.room);
-    if (!targetRoom || targetRoom.status !== request.fromStatus) throw Error('房间状态已经变化，请驳回后重新提交');
+    if (!targetRoom || targetRoom.status !== request.fromStatus) throw new BusinessRejection('房间状态已经变化，请驳回后重新提交');
     targetRoom.status = '空闲';
     targetRoom.issueType = '';
     targetRoom.issueNote = '';
@@ -196,7 +197,7 @@ export function decideRoomIssue(s, action, data, person, time, authorizeReviewer
     request.selfReviewAuthorized = selfReview;
   } else {
     const decisionNote = String(data.decisionNote || '').trim().slice(0, 300);
-    if (!decisionNote) throw Error('请填写驳回原因');
+    if (!decisionNote) throw new BusinessRejection('请填写驳回原因');
     request.status = '已驳回';
     request.decidedBy = person;
     request.decidedAt = time;

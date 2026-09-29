@@ -28,6 +28,12 @@ Track A＋B 集成提交 `81e1a4c` 已在 `main`；下方“隔离集成候选�
 
 本轮修改 JavaScript 后已尝试 `npm test`，PowerShell 找不到 npm，命令未启动。实际运行 `package.json` 对应的 `node --test`：252 项、246 通过、0 失败、6 项已知问题复现跳过，退出码 0；Stage 1A.1 所在 `ledger/application.test.js` 定向 17/17 通过。没有数据库、跨进程或真人认证验收。
 
+## P0-1 Stage 1A.2：预期业务拒绝类型（2026-09-29）
+
+`shared/business-error.js:BusinessRejection` 是明确的业务拒绝类型；现有领域校验的显式拒绝改为该类型，判断条件与原提示不变。`ledger/application.js` 仅捕获该类型并保存 `business-rejected` 终态；未知普通 `Error` 或其他异常向外传播，内存原子边界不保存状态、revision、操作结果或成功审计。故障修复后同一 actor 可用原 operationKey 和原请求重试；既有成功、过期 revision 与 actor 冲突协议不变。静态服务白名单加入该共享模块以维持浏览器演示加载。
+
+修改 JavaScript 后已尝试 `npm test`，环境找不到 npm，命令未启动。实际运行 `package.json` 对应的 `node --test`：253 项、247 通过、0 失败、6 项已知问题复现跳过；定向 ledger 测试 18/18 通过。当前仅为单实例协议证据，未取得 PostgreSQL 集成证据。
+
 ## 本轮隔离集成候选（2026-09-29）
 
 来源：用户交付的 `jbhh-ktv-full.zip`，基线 `ca726b2`；纯重构检查点 `74c3f55`；业务修复终点 `6aa01ba`。Track B 来源为 `codex/offsite-contracts@3193635`。候选位于独立工作树的 `codex/track-a-integration`，主工作区未提交内容保留；未合并 `main`、未推送。

@@ -5,6 +5,7 @@
 // Phase 8 起移除全部 facade re-export：调用方直接从 owner 模块导入；
 // rules.js 仅导出 OTHER_CHARGE_CATEGORIES／bonusAllowance／initialState／transact，
 // 并保留订单内联分支（otherCharge／gift／exchange／serveExtra）与身份/目录命令。
+import { BusinessRejection } from './shared/business-error.js';
 import { DEFAULT_CATALOG, cloneCatalog, mergeCatalog, assertCatalogPackagePrices, product, saleOption, inventoryProducts, consumableProducts, categoryLabel, productIdOf } from './catalog.js';
 import { need, recordInventoryChange, submitStock, submitConsumableStock, decideInventory } from './inventory.js';
 import { submitSale, submitRetailSale, collectPayment, settleOrder, payOrder, decideRounding, applyCredit, decideCredit, submitRepay, decideRepayment } from './sales.js';
@@ -22,7 +23,7 @@ function productSnapshot(catalog, id, baseQuantity, extra = {}) {
   const p = product(id, catalog);
   return { productId: p.id, productNameSnapshot: p.name, categorySnapshot: p.category, categoryLabelSnapshot: categoryLabel(p), baseUnitSnapshot: p.baseUnit, baseQuantity, ...extra };
 }
-function quantity(n) { if (!Number.isSafeInteger(n) || n <= 0) throw Error('数量必须是大于零的整数'); }
+function quantity(n) { if (!Number.isSafeInteger(n) || n <= 0) throw new BusinessRejection('数量必须是大于零的整数'); }
 export function bonusAllowance(order, productId) {
   const purchased = (order?.sales || []).filter(line => productIdOf(line) === productId).reduce((sum, line) => sum + (line.totalBaseQuantity ?? line.bottles ?? 0), 0);
   const entitledHalves = Math.floor(purchased / 24);
@@ -49,18 +50,18 @@ function grantBonus(state, order, productId, halves, source, time, requestedBy) 
 }
 // normalizeSaleOptions 服务 createCatalogProduct/updateCatalogProduct 分支（目录命令，暂留 rules.js），函数体自 HEAD 逐字保留。
 function normalizeSaleOptions(options, sellable) {
-  if (!Array.isArray(options) || (sellable && !options.length)) throw Error('可售商品至少需要一种销售规格');
+  if (!Array.isArray(options) || (sellable && !options.length)) throw new BusinessRejection('可售商品至少需要一种销售规格');
   const ids = new Set();
   return options.map(option => {
     const id = String(option?.id || '').trim(), name = String(option?.name || '').trim();
-    if (!/^[A-Za-z][A-Za-z0-9._-]{0,39}$/.test(id) || ids.has(id) || !name || name.length > 30 || !Number.isSafeInteger(option.baseQuantity) || option.baseQuantity <= 0 || !Number.isSafeInteger(option.priceCents) || option.priceCents < 0 || (sellable && option.priceCents === 0)) throw Error('销售规格 ID、基础数量或价格无效，且 ID 不得重复');
+    if (!/^[A-Za-z][A-Za-z0-9._-]{0,39}$/.test(id) || ids.has(id) || !name || name.length > 30 || !Number.isSafeInteger(option.baseQuantity) || option.baseQuantity <= 0 || !Number.isSafeInteger(option.priceCents) || option.priceCents < 0 || (sellable && option.priceCents === 0)) throw new BusinessRejection('销售规格 ID、基础数量或价格无效，且 ID 不得重复');
     ids.add(id);
     return { id, name, baseQuantity: option.baseQuantity, priceCents: option.priceCents };
   });
 }
 // 先修改克隆，全部校验成功才返回；失败不产生部分扣库或半张账单。
 export function transact(original, action, data = {}, key) {
-  if (!key) throw Error('缺少操作编号');
+  if (!key) throw new BusinessRejection('缺少操作编号');
   if (original.processed.includes(key)) return original;
   const s = structuredClone(original);
   s.catalog = mergeCatalog(s.catalog);
@@ -69,23 +70,23 @@ export function transact(original, action, data = {}, key) {
   let person = operator;
   const room = s.rooms.find(r => r.id === data.room);
   const order = s.orders.find(o => o.id === data.order);
-  const active = () => { if (!order || order.status !== '营业中') throw Error('账单已变化，请返回房间重新查看'); };
+  const active = () => { if (!order || order.status !== '营业中') throw new BusinessRejection('账单已变化，请返回房间重新查看'); };
   const authorizeReviewer = submittedById => {
-    if (!submittedById) throw Error('申请缺少提交人，不能审核');
+    if (!submittedById) throw new BusinessRejection('申请缺少提交人，不能审核');
     const selfReview = submittedById === s.user;
-    if (selfReview && !hasPermission(effectiveUser(s), 'review.self')) throw Error('审核本人申请需要“允许审核本人申请”权限');
+    if (selfReview && !hasPermission(effectiveUser(s), 'review.self')) throw new BusinessRejection('审核本人申请需要“允许审核本人申请”权限');
     return selfReview;
   };
   if (action === 'setPermissions') {
     need(s, ['管理员']);
     const target = String(data.user || '');
-    if (!USERS[target] || USERS[target].legacy || target === 'administrator') throw Error('只能调整其他演示身份的权限');
+    if (!USERS[target] || USERS[target].legacy || target === 'administrator') throw new BusinessRejection('只能调整其他演示身份的权限');
     if (data.permissions !== undefined) {
-      if (!Array.isArray(data.permissions) || data.permissions.some(permission => !PERMISSION_IDS.includes(permission))) throw Error('具体权限选项无效');
+      if (!Array.isArray(data.permissions) || data.permissions.some(permission => !PERMISSION_IDS.includes(permission))) throw new BusinessRejection('具体权限选项无效');
       s.capabilities ??= defaultCapabilities();
       s.capabilities[target] = [...new Set(data.permissions)];
     } else {
-      if (!Array.isArray(data.roles) || data.roles.some(role => !PERMISSION_ROLES.includes(role))) throw Error('岗位权限选项无效');
+      if (!Array.isArray(data.roles) || data.roles.some(role => !PERMISSION_ROLES.includes(role))) throw new BusinessRejection('岗位权限选项无效');
       s.permissions ??= defaultPermissions();
       s.capabilities ??= defaultCapabilities();
       s.permissions[target] = [...new Set(data.roles)];
@@ -94,9 +95,9 @@ export function transact(original, action, data = {}, key) {
   } else if (action === 'createCatalogProduct') {
     need(s, [], 'catalog.manage');
     const id = String(data.id || '').trim(), name = String(data.name || '').trim(), category = String(data.category || '').trim(), baseUnit = String(data.baseUnit || '').trim();
-    if (!/^[a-z][a-z0-9._-]{0,39}$/.test(id) || s.catalog.products.some(item => item.id === id)) throw Error('商品 ID 无效或已存在');
-    if (!name || name.length > 80 || !category || category.length > 40 || !baseUnit || baseUnit.length > 20) throw Error('请填写有效的商品名称、分类和基础单位');
-    if (!Number.isSafeInteger(data.sortOrder)) throw Error('排序必须是整数');
+    if (!/^[a-z][a-z0-9._-]{0,39}$/.test(id) || s.catalog.products.some(item => item.id === id)) throw new BusinessRejection('商品 ID 无效或已存在');
+    if (!name || name.length > 80 || !category || category.length > 40 || !baseUnit || baseUnit.length > 20) throw new BusinessRejection('请填写有效的商品名称、分类和基础单位');
+    if (!Number.isSafeInteger(data.sortOrder)) throw new BusinessRejection('排序必须是整数');
     const sellable = Boolean(data.sellable), inventoryManaged = Boolean(data.inventoryManaged);
     const options = normalizeSaleOptions(data.saleOptions || [], sellable);
     s.catalog.products.push({ id, name, category, categoryLabel: category, baseUnit, saleOptions: options, inventoryManaged, inventoryThreshold: 10, sellable, manualPriceAllowed: false, exchangeLevel: null, openingGiftEligible: false, active: data.active !== false, sortOrder: data.sortOrder });
@@ -106,11 +107,11 @@ export function transact(original, action, data = {}, key) {
     const id = String(data.id || '').trim();
     const current = product(id, s.catalog);
     const name = String(data.name ?? current.name).trim().slice(0, 80);
-    if (!name) throw Error('商品名称不能为空');
+    if (!name) throw new BusinessRejection('商品名称不能为空');
     const next = { ...current, name };
     for (const field of ['active', 'sellable', 'manualPriceAllowed']) if (data[field] !== undefined) next[field] = Boolean(data[field]);
     if (data.sortOrder !== undefined) {
-      if (!Number.isSafeInteger(data.sortOrder)) throw Error('排序必须是整数');
+      if (!Number.isSafeInteger(data.sortOrder)) throw new BusinessRejection('排序必须是整数');
       next.sortOrder = data.sortOrder;
     }
     if (data.saleOptions !== undefined) next.saleOptions = normalizeSaleOptions(data.saleOptions, next.sellable);
@@ -120,16 +121,16 @@ export function transact(original, action, data = {}, key) {
     need(s, [], 'catalog.manage');
     const id = String(data.id || '').trim();
     const current = s.catalog.packages.find(item => item.id === id);
-    if (!current) throw Error('套餐不存在');
+    if (!current) throw new BusinessRejection('套餐不存在');
     const next = { ...current, name: String(data.name ?? current.name).trim().slice(0, 80) };
-    if (!next.name) throw Error('套餐名称不能为空');
+    if (!next.name) throw new BusinessRejection('套餐名称不能为空');
     for (const field of ['priceCents', 'basePriceCents', 'includedValueCents', 'sortOrder']) if (data[field] !== undefined) {
-      if (!Number.isSafeInteger(data[field]) || data[field] < 0) throw Error('套餐金额或排序无效');
+      if (!Number.isSafeInteger(data[field]) || data[field] < 0) throw new BusinessRejection('套餐金额或排序无效');
       next[field] = data[field];
     }
     // Bug #2 修复：总价只有一个来源——基础房费＋赠饮参考值；提交不一致直接拒绝，
     // 开房报价、订单快照与账单 total 不再出现两个总价口径。
-    if (next.priceCents !== next.basePriceCents + (next.includedValueCents || 0)) throw Error('套餐总价必须等于基础房费加赠饮参考值');
+    if (next.priceCents !== next.basePriceCents + (next.includedValueCents || 0)) throw new BusinessRejection('套餐总价必须等于基础房费加赠饮参考值');
     if (data.active !== undefined) next.active = Boolean(data.active);
     s.catalog.packages = s.catalog.packages.map(item => item.id === id ? next : item);
   } else if (action === 'markRoomIssue') {
@@ -158,20 +159,20 @@ export function transact(original, action, data = {}, key) {
   } else if (action === 'otherCharge') {
     need(s, ['开单员','服务员','老板'], 'order.sale'); active();
     const category = String(data.category || '').trim();
-    if (!OTHER_CHARGE_CATEGORIES.includes(category)) throw Error('请选择有效的其他消费类别');
-    if (!Number.isSafeInteger(data.amount) || data.amount <= 0) throw Error('金额应为大于零的金额');
+    if (!OTHER_CHARGE_CATEGORIES.includes(category)) throw new BusinessRejection('请选择有效的其他消费类别');
+    if (!Number.isSafeInteger(data.amount) || data.amount <= 0) throw new BusinessRejection('金额应为大于零的金额');
     const customItem = String(data.item || '').trim().slice(0, 50);
-    if (category === '其他' && !customItem) throw Error('请填写其他消费项目');
+    if (category === '其他' && !customItem) throw new BusinessRejection('请填写其他消费项目');
     const batch = ++s.serial;
     order.otherCharges ??= [];
     order.otherCharges.push({ id: ++s.serial, batch, category, item: category === '其他' ? customItem : category, amount: data.amount, person, time });
   } else if (action === 'gift') {
     need(s, ['开单员','服务员','店长','老板'], 'order.gift'); active(); quantity(data.halves);
     const p = product(data.productId || data.product, s.catalog);
-    if (!p.openingGiftEligible || p.selectionOnly) throw Error('该商品不参与赠酒水规则');
+    if (!p.openingGiftEligible || p.selectionOnly) throw new BusinessRejection('该商品不参与赠酒水规则');
     const halfOption = saleOption(p, 'half');
     const allowance = bonusAllowance(order, p.id);
-    if (!allowance.purchased) throw Error('请先增购对应酒水');
+    if (!allowance.purchased) throw new BusinessRejection('请先增购对应酒水');
     order.giftRequests ??= [];
     const directHalves = Math.min(data.halves, allowance.availableHalves);
     const excessHalves = data.halves - directHalves;
@@ -180,10 +181,10 @@ export function transact(original, action, data = {}, key) {
   } else if (action === 'approveGift' || action === 'rejectGift') {
     need(s, ['店长','老板'], 'gift.approve'); active();
     const request = (order.giftRequests || []).find(item => item.id === data.request);
-    if (!request || request.status !== '待确认') throw Error('赠酒水申请已处理');
+    if (!request || request.status !== '待确认') throw new BusinessRejection('赠酒水申请已处理');
     const selfReview = authorizeReviewer(request.requestedById);
     const decisionNote = String(data.decisionNote || '').trim().slice(0, 300);
-    if (action === 'rejectGift' && !decisionNote) throw Error('请填写驳回原因');
+    if (action === 'rejectGift' && !decisionNote) throw new BusinessRejection('请填写驳回原因');
     request.status = action === 'approveGift' ? '已批准' : '已驳回'; request.decidedBy = person; request.decidedAt = time; request.decisionNote = decisionNote; request.selfReviewAuthorized = selfReview;
     if (action === 'approveGift') grantBonus(s, order, request.product, request.halves, '老板／店长确认赠送', time, request.requestedBy);
   } else if (action === 'exchange') {
@@ -202,8 +203,8 @@ export function transact(original, action, data = {}, key) {
       const id = Number(source.startsWith('gift:') ? source.slice(5) : source);
       lines = order.drinks; line = lines.find(drink => drink.id === id); scope = '套餐';
     }
-    if (!line || line.count < data.count) throw Error('超过可换数量');
-    if (!canExchange(productIdOf(line), data.product, s.catalog)) throw Error('只能换同级或更低级商品，瓶装水不能换出');
+    if (!line || line.count < data.count) throw new BusinessRejection('超过可换数量');
+    if (!canExchange(productIdOf(line), data.product, s.catalog)) throw new BusinessRejection('只能换同级或更低级商品，瓶装水不能换出');
     recordInventoryChange(s, productIdOf(line), data.count, '换购退回', time); recordInventoryChange(s, data.product, -data.count, '换购领取', time);
     line.count -= data.count;
     const target = lines.find(drink => productIdOf(drink) === data.product);
@@ -216,8 +217,8 @@ export function transact(original, action, data = {}, key) {
   } else if (action === 'serveExtra') {
     need(s, ['开单员','服务员','老板'], 'order.serveExtra'); active();
     const extra = (order.extras || []).find(item => item.product === data.product);
-    if (!extra) throw Error('该账单没有这项配品');
-    if (extra.served) throw Error('这项配品已经标记已上');
+    if (!extra) throw new BusinessRejection('该账单没有这项配品');
+    if (extra.served) throw new BusinessRejection('这项配品已经标记已上');
     extra.served = true; extra.servedAt = time; extra.servedBy = person;
   } else if (action === 'collect') {
     active();
@@ -277,6 +278,6 @@ export function transact(original, action, data = {}, key) {
   } else if (action === 'approveExpense' || action === 'rejectExpense') {
     // 命令体已迁至 expenses.js：decideExpense（Phase 5），逐字节保留。
     decideExpense(s, action, data, person, time, authorizeReviewer);
-  } else throw Error('未知操作');
+  } else throw new BusinessRejection('未知操作');
   s.processed.push(key); return s;
 }

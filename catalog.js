@@ -1,6 +1,7 @@
 // 目录默认值和纯目录 helper。
 // 运行时业务必须使用 state.catalog；DEFAULT_CATALOG 只用于初始化、迁移和恢复演示数据。
 // 套餐默认值构造在 packages.js；旧订单价格迁移在 migrations.js（目录不迁移订单）。
+import { BusinessRejection } from './shared/business-error.js';
 import { DEFAULT_PACKAGES } from './packages.js';
 
 const createSaleOptions = (single, half, dozen) => [
@@ -224,7 +225,7 @@ export function assertCatalogPackagePrices(catalog) {
   for (const item of catalog?.packages || []) {
     const base = item?.basePriceCents, included = item?.includedValueCents, price = item?.priceCents;
     if (![base, included, price].every(value => Number.isSafeInteger(value) && value >= 0) || price !== base + included) {
-      throw Error(`套餐 ${item?.id || '未知'} 价格不一致，已停止使用`);
+      throw new BusinessRejection(`套餐 ${item?.id || '未知'} 价格不一致，已停止使用`);
     }
   }
 }
@@ -232,20 +233,20 @@ export function assertCatalogPackagePrices(catalog) {
 export function findProduct(catalog, id) {
   const source = catalog?.products || DEFAULT_CATALOG.products;
   const item = source.find(product => product.id === id);
-  if (!item) throw Error('商品不存在');
+  if (!item) throw new BusinessRejection('商品不存在');
   return item;
 }
 
 export function findPackage(catalog, id) {
   const source = catalog?.packages || DEFAULT_CATALOG.packages;
   const item = source.find(packageItem => packageItem.id === id);
-  if (!item) throw Error('套餐不存在');
+  if (!item) throw new BusinessRejection('套餐不存在');
   return item;
 }
 
 export function roomPackage(catalog, roomType, period) {
   const item = (catalog?.packages || DEFAULT_CATALOG.packages).find(packageItem => packageItem.roomType === roomType && packageItem.period === period && packageItem.active !== false);
-  if (!item) throw Error('当前房型没有可用套餐');
+  if (!item) throw new BusinessRejection('当前房型没有可用套餐');
   return item;
 }
 
@@ -255,7 +256,7 @@ export function saleOptions(product) {
 
 export function saleOption(product, id = 'single') {
   const option = saleOptions(product).find(item => item.id === id);
-  if (!option) throw Error('该商品不支持所选销售规格');
+  if (!option) throw new BusinessRejection('该商品不支持所选销售规格');
   return option;
 }
 

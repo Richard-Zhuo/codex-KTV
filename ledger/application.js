@@ -1,6 +1,7 @@
 // Stage 1A application protocol. No browser storage, transport, login, or database binding.
 import { createHash } from 'node:crypto';
 import { transact } from '../rules.js';
+import { BusinessRejection } from '../shared/business-error.js';
 
 const plainObject = value => value !== null && typeof value === 'object' && (Object.getPrototypeOf(value) === Object.prototype || Object.getPrototypeOf(value) === null);
 
@@ -82,9 +83,8 @@ export function createLedgerApplication({ store, principal, transactCommand = tr
         try {
           nextState = transactCommand(state, request.action, request.payload, request.operationKey);
         } catch (error) {
-          // Existing domain rules signal expected business rejections with plain Error.
-          // Unexpected error types leave the key unreserved for incident recovery.
-          if (error?.constructor !== Error) throw error;
+          // Only explicit domain rejections reserve the key; unknown failures roll back.
+          if (!(error instanceof BusinessRejection)) throw error;
           return finishRejected({ status: 'business-rejected', ledgerId, actorId, operationKey: request.operationKey, expectedRevision: request.expectedRevision, currentRevision, reason: error.message });
         }
         if (nextState === state || !Array.isArray(nextState?.processed) || !nextState.processed.includes(request.operationKey)) {

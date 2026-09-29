@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { initialState, transact } from '../rules.js';
 import { createLedgerApplication } from './application.js';
 import { createMemoryLedgerStore } from './memory-store.js';
+import { BusinessRejection } from '../shared/business-error.js';
 
 const committedAt = '2026-09-29T12:00:00.000Z';
 const ledgerId = 'store-1';
@@ -170,7 +171,7 @@ test('领域在局部修改后业务拒绝，仅原子保存拒绝终态', async
   const { store, app } = fixture({ transactCommand: state => {
     state.orders.push({ id: 'half-order', payments: [{ amount: 1 }] });
     state.inventory.bw.count = 0;
-    throw Error('业务条件不满足');
+    throw new BusinessRejection('业务条件不满足');
   } });
   const before = await store.read();
   const result = await app.execute(sale('partial-rejected', 0));
@@ -180,6 +181,32 @@ test('领域在局部修改后业务拒绝，仅原子保存拒绝终态', async
   assert.deepEqual(after.state, before.state);
   assert.deepEqual(after.audit, before.audit);
   assert.deepEqual(after.operationResults.get('partial-rejected').result, result);
+});
+
+test('unknown plain Error rolls back and leaves the same key available after repair', async () => {
+  let broken = true;
+  const { store, app } = fixture({ transactCommand: (...args) => {
+    if (broken) {
+      args[0].orders.push({ id: 'partial' });
+      args[0].inventory.bw.count = 0;
+      throw Error('unexpected program fault');
+    }
+    return transact(...args);
+  } });
+  const command = sale('repairable', 0);
+  const before = await store.read();
+  await assert.rejects(app.execute(command), /unexpected program fault/);
+  assert.deepEqual(await store.read(), before);
+  assert.equal((await store.read()).operationResults.has('repairable'), false);
+  broken = false;
+  const result = await app.execute(command);
+  const after = await store.read();
+  assert.equal(result.status, 'committed');
+  assert.equal(after.revision, 1);
+  assert.equal(after.audit.length, 1);
+  assert.equal(after.operationResults.size, 1);
+  assert.deepEqual(await app.execute(command), result);
+  assert.equal((await store.read()).state.orders.length, 1);
 });
 
 test('同一旧 revision 的两个不同操作键竞争，最多一笔成功', async () => {
