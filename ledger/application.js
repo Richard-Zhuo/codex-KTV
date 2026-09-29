@@ -91,7 +91,7 @@ export function createLedgerApplication({ store, principal, transactCommand = tr
           throw Error('领域事务未确认操作键，停止提交');
         }
         const revision = currentRevision + 1;
-        const committedAt = now();
+        const committedAt = await (transaction.commitTimestamp?.() ?? now());
         if (typeof committedAt !== 'string' || !/T.+(?:Z|[+-]\d{2}:\d{2})$/.test(committedAt) || !Number.isFinite(Date.parse(committedAt))) throw TypeError('成功审计时间无效');
         const result = {
           status: 'committed', ledgerId, actorId, operationKey: request.operationKey, requestFingerprint: request.requestFingerprint,

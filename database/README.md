@@ -1,27 +1,36 @@
-# 关系型数据库基线
+# 数据库边界
 
-本目录把当前浏览器演示中的业务状态拆成 PostgreSQL 关系表，供正式后端和历史报表导入使用。现有页面仍使用 localStorage；这些 SQL 不会自动迁移或覆盖浏览器里的演示数据。
+正式数据库方向现为 MySQL 8.4 LTS + InnoDB。既有 `schema.sql`、`seed.sql` 和历史导入映射保留为旧 PostgreSQL 关系型设计参考，不作为当前可执行的正式数据库结构。现有页面仍使用 localStorage；本目录 SQL 不会自动迁移或覆盖演示数据。
+
+## 当前方向：MySQL 8.4 LTS／InnoDB 过渡账本
+
+`migrations/001_mysql_ledger_core.sql` 只建立 `ledger_heads`、`ledger_operations`、`ledger_success_audit`，三表均指定 `ENGINE=InnoDB`。`ledger/mysql-store.js:createMySqlLedgerStore` 由可信调用方显式注入 `mysql2` promise Pool、稳定 ledgerId 和已迁移的数据库名，沿用 Stage 1A 的 `runAtomic` 端口。当前没有 HTTP、真人认证、UI 切换或正式数据导入；已有静态演示仍只用浏览器 localStorage。
+
+`ledger_heads.state_json` 保存版本化 MySQL JSON 快照，`state_checksum` 是按 JSON 值规范化后的 SHA-256；读回会核对。MySQL JSON 会调整文本表示，它和原始 `jbhh-demo-v1` 文本不是同一备份。未来正式导入必须另存原始 JSON 字节和原文校验和，本阶段不执行导入。此过渡账本不代表最终领域关系模型已完成。
+
+Migration 只能在已核实的空目标数据库执行一次。MySQL DDL 每条语句独立提交，三表脚本不能当作单个可回滚事务；重复执行会因首表已存在而失败，部分失败需停下核查后处理。集成测试仅在明确配置 `LEDGER_MYSQL_TEST_URL` 的专用测试库上创建唯一 `ledger_test_run_...` 数据库，结束时只删除它自己创建的数据库；未配置时明确跳过。
 
 ## 文件
 
-- `schema.sql`：业务表、约束、索引，以及金山日报和支出表的原始暂存区。
-- `seed.sql`：当前门店、9 个房间、员工岗位说明、具体权限、商品与库存项目。
-- `kdocs-import.md`：金山文档字段与正式业务表的映射和导入规则。
+- `migrations/001_mysql_ledger_core.sql`：当前 MySQL 过渡账本三表。
+- `schema.sql`：旧 PostgreSQL 关系型业务表、约束、索引，以及金山日报和支出表的原始暂存区。
+- `seed.sql`：旧 PostgreSQL 草案中的当前门店、9 个房间、员工岗位说明、具体权限、商品与库存项目。
+- `kdocs-import.md`：旧关系型草案中的金山文档字段映射；正式 MySQL 导入尚未设计。
 - `templates/kdocs-daily-report.csv`：后续导出日报时使用的 UTF-8 表头模板。
 - `templates/kdocs-expense-report.csv`：支出对账表表头模板。
 
-## 执行顺序
+## 旧 PostgreSQL 设计基线（历史参考，不是当前执行入口）
 
-目标数据库为 PostgreSQL 16 或更高版本：
+下面的 psql 命令只是旧基线当时的设计示例，不用于当前 MySQL 方向：
 
 ```sh
 psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f database/schema.sql
 psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f database/seed.sql
 ```
 
-项目目前没有数据库运行时依赖，也没有把静态服务器改造成正式 API。接入后端时，必须在服务端事务中执行房态、账单、库存和幂等校验，不能直接信任浏览器提交的数据。
+当前仅为独立账本适配器增加 `mysql2` 生产依赖；静态服务器仍未改造成正式 API。接入后端时，必须在服务端事务中执行房态、账单、库存和幂等校验，不能直接信任浏览器提交的数据。
 
-## 核心关系
+## 旧关系型草案
 
 ```text
 stores
@@ -48,9 +57,9 @@ import_batches
 
 金额字段都以 `_cents` 结尾并存整数分。营业记录同时保存 `business_date` 与实际时间，避免凌晨结账被错误归到下一自然日。历史订单使用 `历史已结` 状态，不改变当前房态。
 
-审批行为以 [当前需求](../docs/REQUIREMENTS.md) 为准。本 schema 在数据库层为房间恢复、挂账回款、特殊差额、超额赠酒水、库存盘点和客诉／异常恢复保留 `self_review_authorized` 约束：审核人等于提交人时该值必须为 `true`，且非本人审核不能误记为自审。房间故障／维护标记与恢复证据分别写入 `room_issues` 和 `room_issue_change_requests`。
+审批行为以 [当前需求](../docs/REQUIREMENTS.md) 为准。旧 schema 在数据库层为房间恢复、挂账回款、特殊差额、超额赠酒水、库存盘点和客诉／异常恢复保留 `self_review_authorized` 约束：审核人等于提交人时该值必须为 `true`，且非本人审核不能误记为自审。房间故障／维护标记与恢复证据分别写入 `room_issues` 和 `room_issue_change_requests`。
 
-## 历史导入流程
+## 旧历史导入草案（未实施）
 
 1. 从金山文档分别导出“日报”和“支出对账表”为 CSV 或 XLSX，原文件计算 SHA-256。
 2. 建立一条 `import_batches`，将每个单元格原文写入对应暂存表，金额暂不做浮点转换。

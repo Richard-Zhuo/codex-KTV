@@ -34,6 +34,14 @@ Track A＋B 集成提交 `81e1a4c` 已在 `main`；下方“隔离集成候选�
 
 修改 JavaScript 后已尝试 `npm test`，环境找不到 npm，命令未启动。实际运行 `package.json` 对应的 `node --test`：253 项、247 通过、0 失败、6 项已知问题复现跳过；定向 ledger 测试 18/18 通过。当前仅为单实例协议证据，未取得 PostgreSQL 集成证据。
 
+## P0-1 Stage 1B-MySQL：原子过渡账本（2026-09-29）
+
+从 `47133b4` 新建 `codex/p0-1-mysql-ledger`；原 PostgreSQL 实验 `codex/p0-1-trusted-ledger@7d3c23c` 留作历史，未获得真实 PostgreSQL 集成验收，也未推送或部署。当前分支未继承其 `pg` 依赖，只以项目首选 pnpm 加入已批准的 `mysql2@3.24.4`，没有 ORM。
+
+新增 `ledger/mysql-store.js:createMySqlLedgerStore`、`ledger/mysql-snapshot.js` 和 `database/migrations/001_mysql_ledger_core.sql`。三表均指定 InnoDB；状态使用 MySQL JSON，账本行附语义快照 SHA-256。适配器在单个池连接与事务内锁定 ledger head，保存同键终态；成功同事务更新 state、revision、operation 和审计，明确拒绝只写 operation，未知异常回滚。现有 `ledger/application.js` 仅增加可选数据库时间钩子，内存端口与业务语义不变；`rules.js:transact`、UI、HTTP、真人认证及正式数据导入未变。MySQL JSON 快照不是原始 localStorage 文本，未来导入仍须保留原文与原文校验和。
+
+数据库无关单元测试 9/9 通过，覆盖快照、幂等、冲突、房／零售、库存、故障回滚与提交结果不明。集成测试要求显式 `LEDGER_MYSQL_TEST_URL` 指向独立 `ledger_test_` 数据库，内部创建并仅清理本轮唯一数据库；本机未发现明确测试实例，当前该项 1 项跳过，**未取得真实 MySQL 8.4 集成测试证据**。Migration 未实际执行，行锁竞争和重启持久性尚未验证。修改 JavaScript 后尝试 `npm test`，本机找不到 npm；实际运行同一脚本 `node --test`：263 项、256 通过、0 失败、7 跳过（原 6 项 Known Issues 加 1 项 MySQL 环境门槛）。
+
 ## 本轮隔离集成候选（2026-09-29）
 
 来源：用户交付的 `jbhh-ktv-full.zip`，基线 `ca726b2`；纯重构检查点 `74c3f55`；业务修复终点 `6aa01ba`。Track B 来源为 `codex/offsite-contracts@3193635`。候选位于独立工作树的 `codex/track-a-integration`，主工作区未提交内容保留；未合并 `main`、未推送。
@@ -170,7 +178,7 @@ Track A＋B 集成提交 `81e1a4c` 已在 `main`；下方“隔离集成候选�
 
 ## 下一步
 
-只读快照预检器、Stage 1A 核心协议及 Stage 1A.1 硬化已完成；Stage 1B 仅输出 PostgreSQL 适配设计，正式持久存储、真人认证和客户端 API 切换均未开始。正式营业日和班次规则已确认的部分见 [REQUIREMENTS](./REQUIREMENTS.md)，运行实现仍属后续任务。
+只读快照预检器、Stage 1A／1A.1／1A.2 协议及 Stage 1B-MySQL 适配器代码已完成；下步先在明确隔离的 MySQL 8.4 测试库取得真实 migration、行锁、回滚和重连证据，再讨论服务端正式接入。真人认证和客户端 API 切换均未开始。正式营业日和班次规则已确认的部分见 [REQUIREMENTS](./REQUIREMENTS.md)，运行实现仍属后续任务。
 
 ## 阶段停止条件
 

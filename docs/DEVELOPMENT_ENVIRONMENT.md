@@ -9,10 +9,10 @@
 ## 工具链
 
 - Node.js，ES module 项目（`package.json` 的 `type` 为 `module`）。
-- 原生 HTML、CSS、JavaScript；没有生产依赖，也没有框架构建步骤。
+- 原生 HTML、CSS、JavaScript；Stage 1B-MySQL 只有一个直接生产依赖 `mysql2`，没有框架构建步骤。
 - 测试使用 Node 内置 `node:test`，由 `node --test` 自动发现测试文件。
 - 新增依赖时优先使用 `pnpm`；新增生产依赖必须先取得用户确认。
-- 当前仓库含 `pnpm-lock.yaml`，但现有运行和测试不要求先安装项目依赖。
+- 当前仓库含 `pnpm-lock.yaml`；运行 MySQL 适配器及其测试需要先安装锁定依赖，静态演示本身未接账本。
 
 ## 命令
 
@@ -23,13 +23,14 @@
 | 使用其他端口（PowerShell） | `$env:PORT = 4174; npm start` | 配置确认 | `server.js` 读取 `PORT`，本轮未执行 |
 | 完整自动测试 | `npm test` | 配置确认 | `package.json` 映射到 `node --test` |
 | 2026-09-28 历史替代测试 | `$env:NODE_OPTIONS = '--test-isolation=none'; pnpm test` | 历史执行 | 历史记录为 73/73；不能当作本轮结果 |
-| 本次同脚本自动测试 | `node --test` | 本次执行 | 2026-09-29 Stage 1A.2 后共 253 项，247 通过、6 条已知问题复现跳过、0 失败、退出码 0；与 `package.json` 的 test 脚本相同。本次 `npm test` 因 PowerShell 找不到 npm 命令而未启动；此前 252 项是 Stage 1A.1 证据，见 [阶段记录](./CURRENT_STAGE.md) |
+| 本次同脚本自动测试 | `node --test` | 本次执行 | 2026-09-29 Stage 1B-MySQL 后共 263 项，256 通过、7 跳过（原 6 条已知问题及 1 条未配置 MySQL 测试库）、0 失败、退出码 0；与 `package.json` 的 test 脚本相同。本次 `npm test` 因 PowerShell 找不到 npm 命令而未启动；此前 253 项是 Stage 1A.2 证据，见 [阶段记录](./CURRENT_STAGE.md) |
+| MySQL 账本集成测试 | `LEDGER_MYSQL_TEST_URL` 明确指向 `ledger_test_` 专用库后运行 `node --test ledger/mysql-store.integration.test.js` | 本次跳过 | 测试创建唯一数据库并仅删除该库；未配置时不连接任何数据库，不得当作集成通过 |
 | 隔离浏览器恢复演练 | `node docs/verification/browser-recovery-harness.mjs` | 历史执行 | 上轮仅绑定 `127.0.0.1` 的随机端口，使用合成已付款订单演练停写、复制、人工修正及显式重检；本轮未重跑，见 [浏览器记录](./verification/track-a-b-browser-recovery-2026-09-29.md) |
 | 单文件语法诊断 | `node --check app.js` 等 | 历史使用／诊断 | 不能替代 `npm test` |
-| 初始化数据库基线 | `psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f database/schema.sql` | 仅契约命令 | 项目运行时尚未连接 PostgreSQL，本轮未执行 |
-| 写入主数据 | `psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f database/seed.sql` | 仅契约命令 | 只应在明确的目标数据库和授权下执行 |
+| 旧 PostgreSQL 基线命令 | `psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f database/schema.sql` | 历史参考 | 不是当前 MySQL 方向的执行入口；不要对正式库运行 |
+| 旧 PostgreSQL seed 命令 | `psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f database/seed.sql` | 历史参考 | 不适用于 MySQL 过渡账本 |
 
-修改 JavaScript 后，项目约定的正式自动验证命令是 `npm test`。2026-09-29 Stage 1A.2 已实际尝试该命令，但 PowerShell 找不到 `npm`，进程未启动；随后实际运行同一脚本 `node --test` 并取得上表结果。此前 Stage 1A.1 的 252 项、Stage 1A 的 249 项、只读预检器的 235 项和 `pnpm test` 回退包装器的 EPERM 均属历史执行情况，不是本次测试结果。
+修改 JavaScript 后，项目约定的正式自动验证命令是 `npm test`。2026-09-29 Stage 1B-MySQL 已实际尝试该命令，但 PowerShell 找不到 `npm`，进程未启动；随后实际运行同一脚本 `node --test` 并取得上表结果。此前 Stage 1A.2 的 253 项、Stage 1A.1 的 252 项、Stage 1A 的 249 项、只读预检器的 235 项和 `pnpm test` 回退包装器的 EPERM 均属历史执行情况，不是本次测试结果。
 
 ## 入口与端口
 
@@ -46,7 +47,8 @@
 |---|---|---|
 | 演示业务状态 | 浏览器 `localStorage`：`jbhh-demo-v1` | 订单、房态、库存、权限等；恢复演示或清理站点数据会丢失 |
 | 主题偏好 | 浏览器 `localStorage`：`jbhh-appearance-v1` | 独立于业务状态 |
-| 数据库设计 | `database/schema.sql`、`database/seed.sql` | 设计基线，非当前运行数据 |
+| MySQL 过渡账本 | `database/migrations/001_mysql_ledger_core.sql` | 当前独立适配器结构，未接客户端且无真实 MySQL 验收 |
+| 旧关系型草案 | `database/schema.sql`、`database/seed.sql` | PostgreSQL 历史设计参考，非当前运行数据 |
 | 历史导入模板 | `database/templates/` | CSV 表头模板，不是已导入结果 |
 | 测试文件 | 根目录 `*.test.js` | Node 内置测试 |
 | 本机依赖／缓存 | `node_modules/`、`.pnpm-store/` | 已被 `.gitignore` 排除；没有清理要求时保留 |

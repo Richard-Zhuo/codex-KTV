@@ -7,7 +7,7 @@
 ## 01 共享可信账本
 
 - 业务能力：共享可信账本
-- 当前行为：server.js 只供静态页面；营业状态在单浏览器 localStorage。Stage 1A 已有独立 Node 账本事务协议和仅供测试的内存适配器，尚未连接运行时或形成共享持久账本。
+- 当前行为：server.js 只供静态页面；营业状态在单浏览器 localStorage。Stage 1A／1A.2 已有独立 Node 协议与内存适配器；Stage 1B-MySQL 已有 InnoDB 过渡账本适配器和 migration，但未接运行时，也没有真实 MySQL 集成证据。
 - 脱岗目标行为：现场与远程读取同一可信账本；版本冲突、重复命令及并发开房由受信任事务裁决。
 - 前置条件：正式数据源、网络及迁移核对完成。
 - 允许操作人：已认证且拥有动作权限的账号。
@@ -23,8 +23,8 @@
 - 报表影响：只读已提交事件和快照。
 - 需要的审批：动作本身有审批要求时执行。
 - 异常停止点：账本不可读或状态不明时停止新交易。
-- 当前代码是否已经支持：Stage 1A／1A.1 的 revision、可信 actor 绑定、成功／拒绝终态和原子回执协议有单进程测试；共享持久账本仍否，SQL 仍是设计基线。
-- 现有测试覆盖：ledger/application.test.js 验 actor 隔离、三类终态、重试和单实例并发；entry.test.js、database.test.js 只查静态边界；offsite.contract.test.js 测本机操作键。
+- 当前代码是否已经支持：Stage 1A／1A.1／1A.2 的 actor、错误分类与终态协议有单进程测试；MySQL 适配器单元测试已覆盖控制流，但真实数据库事务未验证，共享运行账本仍未接入。
+- 现有测试覆盖：ledger/application.test.js 验 actor、终态和重试；mysql-store.test.js 验数据库无关控制流，mysql-store.integration.test.js 因无专用库跳过；entry.test.js、database.test.js 只查静态边界。
 - 缺失测试：双设备一致性、跨进程／数据库并发冲突、重启后的持久幂等、断线重试与迁移核对。
 
 ## 02 真人账号与最小权限

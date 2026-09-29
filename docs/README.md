@@ -22,7 +22,7 @@
 | 修改业务行为或权限 | [REQUIREMENTS](./REQUIREMENTS.md)、[CURRENT_STAGE](./CURRENT_STAGE.md) | [OFFSITE_CONTRACTS](./OFFSITE_CONTRACTS.md)、[KNOWN_ISSUES](./KNOWN_ISSUES.md)、[MODULE_MAP](./MODULE_MAP.md)、相关测试 |
 | 修改页面入口、状态或主题 | [CURRENT_STAGE](./CURRENT_STAGE.md)、[MODULE_MAP](./MODULE_MAP.md) | [ARCHITECTURE](./ARCHITECTURE.md)、[店员练习手册](../店员练习手册.md) |
 | 修改运行、测试或构建方式 | [DEVELOPMENT_ENVIRONMENT](./DEVELOPMENT_ENVIRONMENT.md) | `package.json`、`server.js` |
-| 修改数据库或历史导入 | [数据库说明](../database/README.md)、[导入映射](../database/kdocs-import.md) | [ARCHITECTURE](./ARCHITECTURE.md)、`database/schema.sql` |
+| 修改数据库或历史导入 | [数据库说明](../database/README.md)、[导入映射](../database/kdocs-import.md) | [ARCHITECTURE](./ARCHITECTURE.md)、`database/migrations/001_mysql_ledger_core.sql`、旧 `database/schema.sql` |
 | 规划正式系统 | [CURRENT_STAGE](./CURRENT_STAGE.md)、[ARCHITECTURE](./ARCHITECTURE.md) | [REQUIREMENTS](./REQUIREMENTS.md)、数据库说明 |
 | 执行多任务协作 | [总控职责](./roles/PROJECT_CONTROLLER.md) 或 [模块负责人职责](./roles/MODULE_OWNER.md) | [启动模板](./roles/TASK_START_PROMPTS.md) |
 | 查过去做过什么 | [历史记录](./archive/README.md) | 对应日期的交付或验证快照 |
@@ -36,7 +36,7 @@
 | 文件入口、稳定符号、相关测试和改动边界 | [MODULE_MAP.md](./MODULE_MAP.md) |
 | 工具链、命令、端口、数据路径和验证层级 | [DEVELOPMENT_ENVIRONMENT.md](./DEVELOPMENT_ENVIRONMENT.md) |
 | 系统边界、依赖、数据流和状态所有权 | [ARCHITECTURE.md](./ARCHITECTURE.md) |
-| PostgreSQL 表结构和历史导入契约 | [`database/`](../database/README.md) |
+| 当前 MySQL 过渡账本与旧关系型历史基线 | [`database/`](../database/README.md) |
 | 员工练习步骤 | [店员练习手册](../店员练习手册.md) |
 | 已结束阶段和过去的验证结果 | [archive/](./archive/README.md) |
 | 所有 AI 任务共同规则 | [AGENTS.md](../AGENTS.md) |
