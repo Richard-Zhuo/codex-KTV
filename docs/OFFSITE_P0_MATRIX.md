@@ -7,7 +7,7 @@
 ## 01 共享可信账本
 
 - 业务能力：共享可信账本
-- 当前行为：server.js 只供静态页面；营业状态在单浏览器 localStorage。Stage 1A／1A.2 已有独立 Node 协议与内存适配器；Stage 1B-MySQL 已有 InnoDB 过渡账本适配器和 migration，但未接运行时，也没有真实 MySQL 集成证据。
+- 当前行为：server.js 只供静态页面；营业状态在单浏览器 localStorage。Stage 1A／1A.2 已有独立 Node 协议与内存适配器；Stage 1B-MySQL 已有 InnoDB 过渡账本适配器和 migration，已在专用 MySQL 8.4.11 测试库取得真实集成证据，但尚未接入当前运行时。
 - 脱岗目标行为：现场与远程读取同一可信账本；版本冲突、重复命令及并发开房由受信任事务裁决。
 - 前置条件：正式数据源、网络及迁移核对完成。
 - 允许操作人：已认证且拥有动作权限的账号。

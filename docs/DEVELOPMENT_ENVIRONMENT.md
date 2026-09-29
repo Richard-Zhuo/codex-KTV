@@ -23,14 +23,14 @@
 | 使用其他端口（PowerShell） | `$env:PORT = 4174; npm start` | 配置确认 | `server.js` 读取 `PORT`，本轮未执行 |
 | 完整自动测试 | `npm test` | 配置确认 | `package.json` 映射到 `node --test` |
 | 2026-09-28 历史替代测试 | `$env:NODE_OPTIONS = '--test-isolation=none'; pnpm test` | 历史执行 | 历史记录为 73/73；不能当作本轮结果 |
-| 本次同脚本自动测试 | `node --test` | 本次执行 | 2026-09-29 Stage 1B-MySQL 后共 263 项，256 通过、7 跳过（原 6 条已知问题及 1 条未配置 MySQL 测试库）、0 失败、退出码 0；与 `package.json` 的 test 脚本相同。本次 `npm test` 因 PowerShell 找不到 npm 命令而未启动；此前 253 项是 Stage 1A.2 证据，见 [阶段记录](./CURRENT_STAGE.md) |
-| MySQL 账本集成测试 | `LEDGER_MYSQL_TEST_URL` 明确指向 `jbhh_ktv_test` 后运行 `node --test ledger/mysql-store.integration.test.js` | 配置确认，尚未重跑 | 先核对实际数据库、MySQL 8.4 与默认 InnoDB；只清理该库三张已知账本表，不创建或删除数据库；未配置时不连接数据库，不得当作集成通过 |
+| 本次完整自动测试 | `node --test --test-isolation=none` | 本次执行 | Stage 1B.1 共 273 项、267 通过、0 失败、6 项既有跳过；直接 `node --test` 因测试子进程 `spawn EPERM` 未取得有效结果，详见 [阶段记录](./CURRENT_STAGE.md) |
+| MySQL 账本集成测试 | `LEDGER_MYSQL_TEST_URL` 明确指向 `jbhh_ktv_test` 后运行 `node --test --test-isolation=none ledger/mysql-store.integration.test.js` | 本次执行 | MySQL 8.4.11／InnoDB 真实验收 11/11；仅清理该库三张已知账本表，不创建或删除数据库；未配置时跳过且不得当作集成通过 |
 | 隔离浏览器恢复演练 | `node docs/verification/browser-recovery-harness.mjs` | 历史执行 | 上轮仅绑定 `127.0.0.1` 的随机端口，使用合成已付款订单演练停写、复制、人工修正及显式重检；本轮未重跑，见 [浏览器记录](./verification/track-a-b-browser-recovery-2026-09-29.md) |
 | 单文件语法诊断 | `node --check app.js` 等 | 历史使用／诊断 | 不能替代 `npm test` |
 | 旧 PostgreSQL 基线命令 | `psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f database/schema.sql` | 历史参考 | 不是当前 MySQL 方向的执行入口；不要对正式库运行 |
 | 旧 PostgreSQL seed 命令 | `psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f database/seed.sql` | 历史参考 | 不适用于 MySQL 过渡账本 |
 
-修改 JavaScript 后，项目约定的正式自动验证命令是 `npm test`。2026-09-29 Stage 1B-MySQL 已实际尝试该命令，但 PowerShell 找不到 `npm`，进程未启动；随后实际运行同一脚本 `node --test` 并取得上表结果。此前 Stage 1A.2 的 253 项、Stage 1A.1 的 252 项、Stage 1A 的 249 项、只读预检器的 235 项和 `pnpm test` 回退包装器的 EPERM 均属历史执行情况，不是本次测试结果。
+修改 JavaScript 后，项目约定的正式自动验证命令是 `npm test`。Stage 1B.1 已实际尝试，但 PowerShell 找不到 `npm`，进程未启动；直接 `node --test` 因受限环境 `spawn EPERM` 无法启动各测试文件。本次使用 `--test-isolation=none` 执行相同 Node 测试集合，结果见上表。此前 Stage 1B 初次提交的 263 项及更早阶段记录均是历史证据。
 
 ## 入口与端口
 
@@ -47,7 +47,7 @@
 |---|---|---|
 | 演示业务状态 | 浏览器 `localStorage`：`jbhh-demo-v1` | 订单、房态、库存、权限等；恢复演示或清理站点数据会丢失 |
 | 主题偏好 | 浏览器 `localStorage`：`jbhh-appearance-v1` | 独立于业务状态 |
-| MySQL 过渡账本 | `database/migrations/001_mysql_ledger_core.sql` | 当前独立适配器结构，未接客户端且无真实 MySQL 验收 |
+| MySQL 过渡账本 | `database/migrations/001_mysql_ledger_core.sql` | 独立适配器已获专用 MySQL 8.4.11 集成测试证据，仍未接客户端 |
 | 旧关系型草案 | `database/schema.sql`、`database/seed.sql` | PostgreSQL 历史设计参考，非当前运行数据 |
 | 历史导入模板 | `database/templates/` | CSV 表头模板，不是已导入结果 |
 | 测试文件 | 根目录 `*.test.js` | Node 内置测试 |

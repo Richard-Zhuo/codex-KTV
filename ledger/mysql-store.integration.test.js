@@ -63,7 +63,7 @@ test('MySQL 8.4 InnoDB ledger integration in jbhh_ktv_test',
       assert.equal(statements.length, 3);
       for (const statement of statements) await setupConnection.query(statement);
       const [engines] = await pool.query(
-        'SELECT table_name, engine FROM information_schema.tables WHERE table_schema = ? AND table_name IN (?, ?, ?)',
+        'SELECT table_name AS table_name, engine AS engine FROM information_schema.tables WHERE table_schema = ? AND table_name IN (?, ?, ?)',
         [database, 'ledger_heads', 'ledger_operations', 'ledger_success_audit']);
       assert.equal(engines.length, 3);
       assert.ok(engines.every(row => row.engine === 'InnoDB'));
@@ -179,6 +179,46 @@ test('MySQL 8.4 InnoDB ledger integration in jbhh_ktv_test',
         assert.equal(actual.head.state.inventory.bw.count, 24);
         assert.equal(actual.operations.length, 0);
         assert.equal(actual.audit.length, 0);
+      });
+
+      await t.test('two independent connections can initialize one ledger head only once', async () => {
+        const first = await mysql.createConnection(testUrl);
+        const second = await mysql.createConnection(testUrl);
+        try {
+          const [[[firstId]], [[secondId]]] = await Promise.all([
+            first.query('SELECT CONNECTION_ID() AS id'),
+            second.query('SELECT CONNECTION_ID() AS id')
+          ]);
+          assert.notEqual(firstId.id, secondId.id);
+          const initialize = async (connection, clock) => {
+            const state = initialState();
+            state.clock = clock;
+            const encoded = encodeLedgerSnapshot(state);
+            await connection.beginTransaction();
+            try {
+              await connection.execute('INSERT INTO ' + qualified('ledger_heads') +
+                ' (ledger_id, revision, state_schema_version, state_json, state_checksum) VALUES (?, 0, ?, ?, ?)',
+              ['initialization-race', state.version, encoded.json, encoded.checksum]);
+              await connection.commit();
+              return clock;
+            } catch (error) {
+              await connection.rollback();
+              throw error;
+            }
+          };
+          const outcomes = await Promise.allSettled([
+            initialize(first, '2026-09-29T20:00:00+08:00'),
+            initialize(second, '2026-09-29T21:00:00+08:00')
+          ]);
+          assert.equal(outcomes.filter(outcome => outcome.status === 'fulfilled').length, 1);
+          assert.equal(outcomes.filter(outcome => outcome.status === 'rejected').length, 1);
+          assert.equal(outcomes.find(outcome => outcome.status === 'rejected').reason.code, 'ER_DUP_ENTRY');
+          const actual = await inspect('initialization-race');
+          assert.equal(actual.head.revision, 0);
+          assert.equal(actual.head.state.clock, outcomes.find(outcome => outcome.status === 'fulfilled').value);
+          assert.equal(actual.operations.length, 0);
+          assert.equal(actual.audit.length, 0);
+        } finally { await first.end(); await second.end(); }
       });
 
       await t.test('two independent InnoDB connections competing on one revision yield one success', async () => {

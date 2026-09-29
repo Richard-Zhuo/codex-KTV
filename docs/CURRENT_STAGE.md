@@ -40,7 +40,15 @@ Track A＋B 集成提交 `81e1a4c` 已在 `main`；下方“隔离集成候选�
 
 新增 `ledger/mysql-store.js:createMySqlLedgerStore`、`ledger/mysql-snapshot.js` 和 `database/migrations/001_mysql_ledger_core.sql`。三表均指定 InnoDB；状态使用 MySQL JSON，账本行附语义快照 SHA-256。适配器在单个池连接与事务内锁定 ledger head，保存同键终态；成功同事务更新 state、revision、operation 和审计，明确拒绝只写 operation，未知异常回滚。现有 `ledger/application.js` 仅增加可选数据库时间钩子，内存端口与业务语义不变；`rules.js:transact`、UI、HTTP、真人认证及正式数据导入未变。MySQL JSON 快照不是原始 localStorage 文本，未来导入仍须保留原文与原文校验和。
 
-数据库无关单元测试 9/9 通过，覆盖快照、幂等、冲突、房／零售、库存、故障回滚与提交结果不明。集成测试要求显式 `LEDGER_MYSQL_TEST_URL` 指向独立 `ledger_test_` 数据库，内部创建并仅清理本轮唯一数据库；本机未发现明确测试实例，当前该项 1 项跳过，**未取得真实 MySQL 8.4 集成测试证据**。Migration 未实际执行，行锁竞争和重启持久性尚未验证。修改 JavaScript 后尝试 `npm test`，本机找不到 npm；实际运行同一脚本 `node --test`：263 项、256 通过、0 失败、7 跳过（原 6 项 Known Issues 加 1 项 MySQL 环境门槛）。
+数据库无关单元测试 9/9 通过，覆盖快照、幂等、冲突、房／零售、库存、故障回滚与提交结果不明。本次提交当时，集成测试要求显式 `LEDGER_MYSQL_TEST_URL` 指向独立 `ledger_test_` 数据库，内部创建并仅清理本轮唯一数据库；本机未发现明确测试实例，当前该项 1 项跳过，**未取得真实 MySQL 8.4 集成测试证据**。Migration 未实际执行，行锁竞争和重启持久性尚未验证。修改 JavaScript 后尝试 `npm test`，本机找不到 npm；实际运行同一脚本 `node --test`：263 项、256 通过、0 失败、7 跳过（原 6 项 Known Issues 加 1 项 MySQL 环境门槛）。
+
+## P0-1 Stage 1B.1-MySQL：真实集成验收（2026-09-29）
+
+测试外围已改为只允许 `LEDGER_MYSQL_TEST_URL` 指向 `jbhh_ktv_test`，且在任何清理前实际读取并核对 `DATABASE() = jbhh_ktv_test`、`VERSION() = 8.4.11`、默认引擎 `InnoDB`。开始和结束只按外键顺序清理该库三张账本测试表，不创建或删除数据库。验收后只读查询确认三表均已清理。
+
+`database/migrations/001_mysql_ledger_core.sql` 的三条 `CREATE TABLE` 在空账本表环境中真实成功，三表引擎均为 InnoDB；重复执行首条语句按约定返回 `ER_TABLE_EXISTS_ERROR`。真实集成测试 11/11 通过、0 失败、0 跳过：首次状态／revision／终态／审计提交，重连后同键回执复用，actor 与指纹冲突，旧 revision 与业务拒绝终态，未知异常及审计约束故障注入后的完整回滚，房单、零售无房、历史销售快照、付款及库存不重算、库存 `null` 与 0 区分。revision 竞争使用两个不同的 MySQL connection ID，结果恰为一笔成功和一笔 revision conflict；首次 head 初始化也使用两个独立 connection，恰有一次插入成功、另一次获 `ER_DUP_ENTRY`，持久化的 head 仍为 revision 0 且没有 operation 或审计。该初始化测试验证数据库唯一键语义，当前适配器仍要求可信调用方显式建立初始 head，不代表已实现正式初始化或导入流程。
+
+修改 JavaScript 后已尝试 `npm test`，但本机仍找不到 npm；直接 `node --test` 因受限环境 `spawn EPERM` 无法启动测试文件。实际运行 `node --test --test-isolation=none` 完整集合：273 项、267 通过、0 失败、6 项既有 Known Issues 跳过；集成测试包含在其中。生产 adapter、领域规则、UI、HTTP、真人认证和正式导入均未修改。
 
 ## 本轮隔离集成候选（2026-09-29）
 
@@ -167,7 +175,7 @@ Track A＋B 集成提交 `81e1a4c` 已在 `main`；下方“隔离集成候选�
 
 ## 其他既有缺口与待决定
 
-- 实际金山营业报表尚未导入，只有暂存结构、模板与字段映射；没有持续集成、自动部署、监控、告警、PostgreSQL 集成测试或多设备并发测试。
+- 实际金山营业报表尚未导入，只有暂存结构、模板与字段映射；没有持续集成、自动部署、监控、告警或客户端多设备并发测试。
 - 后续正式化仍需决定部署环境、身份来源、支付／验券、通知、附件、备份和历史数据导入验收口径。
 
 ## 负责人和任务索引
@@ -178,7 +186,7 @@ Track A＋B 集成提交 `81e1a4c` 已在 `main`；下方“隔离集成候选�
 
 ## 下一步
 
-只读快照预检器、Stage 1A／1A.1／1A.2 协议及 Stage 1B-MySQL 适配器代码已完成；下步先在明确隔离的 MySQL 8.4 测试库取得真实 migration、行锁、回滚和重连证据，再讨论服务端正式接入。真人认证和客户端 API 切换均未开始。正式营业日和班次规则已确认的部分见 [REQUIREMENTS](./REQUIREMENTS.md)，运行实现仍属后续任务。
+只读快照预检器、Stage 1A／1A.1／1A.2 协议及 Stage 1B-MySQL 适配器代码已完成，Stage 1B.1 已在专用 MySQL 8.4 测试库取得真实 migration、行锁、回滚、重连和初始 head 唯一性证据。服务端正式接入、真人认证和客户端 API 切换均未开始。正式营业日和班次规则已确认的部分见 [REQUIREMENTS](./REQUIREMENTS.md)，运行实现仍属后续任务。
 
 ## 阶段停止条件
 
