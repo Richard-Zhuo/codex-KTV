@@ -1,6 +1,5 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { randomUUID } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import mysql from 'mysql2/promise';
 import { initialState, transact } from '../rules.js';
@@ -9,6 +8,8 @@ import { encodeLedgerSnapshot } from './mysql-snapshot.js';
 import { createMySqlLedgerStore } from './mysql-store.js';
 
 const testUrl = process.env.LEDGER_MYSQL_TEST_URL;
+const database = 'jbhh_ktv_test';
+const ledgerTablesInDropOrder = ['ledger_success_audit', 'ledger_operations', 'ledger_heads'];
 const payload = () => ({ items: [{ product: 'bw', spec: 'dozen', count: 1 }],
   payments: [{ method: '微信', amount: 5000 }, { method: '现金', amount: 6800 }] });
 const sale = (key, expectedRevision, body = payload()) =>
@@ -17,36 +18,50 @@ const sale = (key, expectedRevision, body = payload()) =>
 function assertDedicatedTestTarget(raw) {
   const url = new URL(raw);
   const namedDatabase = decodeURIComponent(url.pathname.slice(1));
-  if (url.protocol !== 'mysql:' || !/^ledger_test_[a-z0-9_]+$/.test(namedDatabase) ||
+  if (url.protocol !== 'mysql:' || namedDatabase !== database ||
       raw === process.env.DATABASE_URL || !url.hostname) {
-    throw Error('LEDGER_MYSQL_TEST_URL 必须明确指向独立的 ledger_test_ 数据库');
+    throw Error('LEDGER_MYSQL_TEST_URL 必须明确指向 jbhh_ktv_test');
   }
 }
 
-test('MySQL 8.4 InnoDB ledger integration in a new test database',
+test('MySQL integration target guard rejects any other database', () => {
+  assert.throws(() => assertDedicatedTestTarget('mysql://localhost/ledger_test_other'), /jbhh_ktv_test/);
+  assert.throws(() => assertDedicatedTestTarget('mysql://localhost/mysql'), /jbhh_ktv_test/);
+});
+
+test('MySQL 8.4 InnoDB ledger integration in jbhh_ktv_test',
   { skip: !testUrl && '未配置 LEDGER_MYSQL_TEST_URL；未取得真实 MySQL 集成证据' },
   async t => {
     assertDedicatedTestTarget(testUrl);
-    const database = 'ledger_test_run_' + randomUUID().replaceAll('-', '');
     const quote = String.fromCharCode(96);
     const qualified = name => quote + database + quote + '.' + quote + name + quote;
-    const admin = await mysql.createConnection(testUrl);
-    let created = false;
+    const setupConnection = await mysql.createConnection(testUrl);
+    const dropLedgerTables = async () => {
+      for (const name of ledgerTablesInDropOrder) {
+        await setupConnection.query('DROP TABLE IF EXISTS ' + qualified(name));
+      }
+    };
+    let verifiedTarget = false;
     let pool = null;
     try {
-      const [versionRows] = await admin.query('SELECT VERSION() AS version');
-      assert.match(versionRows[0].version, /^8\.4\./, '必须使用 MySQL 8.4 LTS');
-      await admin.query('CREATE DATABASE ' + quote + database + quote +
-        ' CHARACTER SET utf8mb4 COLLATE utf8mb4_bin');
-      created = true;
+      const [[target]] = await setupConnection.query(
+        'SELECT DATABASE() AS database_name, VERSION() AS version, @@default_storage_engine AS default_engine');
+      assert.equal(target.database_name, database, '实际连接必须位于专用账本测试数据库');
+      assert.match(target.version, /^8\.4\./, '必须使用 MySQL 8.4 LTS');
+      assert.equal(target.default_engine.toLowerCase(), 'innodb', '默认存储引擎必须是 InnoDB');
+      verifiedTarget = true;
+      t.diagnostic(`MySQL ${target.version}; database ${target.database_name}; default engine ${target.default_engine}`);
+      await dropLedgerTables();
       const poolOptions = { uri: testUrl, database, waitForConnections: true,
         connectionLimit: 5, supportBigNumbers: true, bigNumberStrings: true };
       pool = mysql.createPool(poolOptions);
+      const [[poolTarget]] = await pool.query('SELECT DATABASE() AS database_name');
+      assert.equal(poolTarget.database_name, database, '账本连接池必须位于专用账本测试数据库');
       const migration = await readFile(new URL('../database/migrations/001_mysql_ledger_core.sql', import.meta.url), 'utf8');
       const statements = migration.split(/\r?\n/).filter(line => !line.trim().startsWith('--'))
         .join('\n').split(';').map(part => part.trim()).filter(Boolean);
       assert.equal(statements.length, 3);
-      for (const statement of statements) await pool.query(statement);
+      for (const statement of statements) await setupConnection.query(statement);
       const [engines] = await pool.query(
         'SELECT table_name, engine FROM information_schema.tables WHERE table_schema = ? AND table_name IN (?, ?, ?)',
         [database, 'ledger_heads', 'ledger_operations', 'ledger_success_audit']);
@@ -212,8 +227,8 @@ test('MySQL 8.4 InnoDB ledger integration in a new test database',
       try { if (pool) await pool.end(); }
       finally {
         try {
-          if (created) await admin.query('DROP DATABASE ' + quote + database + quote);
-        } finally { await admin.end(); }
+          if (verifiedTarget) await dropLedgerTables();
+        } finally { await setupConnection.end(); }
       }
     }
   });

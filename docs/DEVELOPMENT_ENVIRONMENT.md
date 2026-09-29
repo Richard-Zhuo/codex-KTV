@@ -24,7 +24,7 @@
 | 完整自动测试 | `npm test` | 配置确认 | `package.json` 映射到 `node --test` |
 | 2026-09-28 历史替代测试 | `$env:NODE_OPTIONS = '--test-isolation=none'; pnpm test` | 历史执行 | 历史记录为 73/73；不能当作本轮结果 |
 | 本次同脚本自动测试 | `node --test` | 本次执行 | 2026-09-29 Stage 1B-MySQL 后共 263 项，256 通过、7 跳过（原 6 条已知问题及 1 条未配置 MySQL 测试库）、0 失败、退出码 0；与 `package.json` 的 test 脚本相同。本次 `npm test` 因 PowerShell 找不到 npm 命令而未启动；此前 253 项是 Stage 1A.2 证据，见 [阶段记录](./CURRENT_STAGE.md) |
-| MySQL 账本集成测试 | `LEDGER_MYSQL_TEST_URL` 明确指向 `ledger_test_` 专用库后运行 `node --test ledger/mysql-store.integration.test.js` | 本次跳过 | 测试创建唯一数据库并仅删除该库；未配置时不连接任何数据库，不得当作集成通过 |
+| MySQL 账本集成测试 | `LEDGER_MYSQL_TEST_URL` 明确指向 `jbhh_ktv_test` 后运行 `node --test ledger/mysql-store.integration.test.js` | 配置确认，尚未重跑 | 先核对实际数据库、MySQL 8.4 与默认 InnoDB；只清理该库三张已知账本表，不创建或删除数据库；未配置时不连接数据库，不得当作集成通过 |
 | 隔离浏览器恢复演练 | `node docs/verification/browser-recovery-harness.mjs` | 历史执行 | 上轮仅绑定 `127.0.0.1` 的随机端口，使用合成已付款订单演练停写、复制、人工修正及显式重检；本轮未重跑，见 [浏览器记录](./verification/track-a-b-browser-recovery-2026-09-29.md) |
 | 单文件语法诊断 | `node --check app.js` 等 | 历史使用／诊断 | 不能替代 `npm test` |
 | 旧 PostgreSQL 基线命令 | `psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f database/schema.sql` | 历史参考 | 不是当前 MySQL 方向的执行入口；不要对正式库运行 |
