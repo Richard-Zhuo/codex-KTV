@@ -50,6 +50,12 @@ Track A＋B 集成提交 `81e1a4c` 已在 `main`；下方“隔离集成候选�
 
 修改 JavaScript 后已尝试 `npm test`，但本机仍找不到 npm；直接 `node --test` 因受限环境 `spawn EPERM` 无法启动测试文件。实际运行 `node --test --test-isolation=none` 完整集合：273 项、267 通过、0 失败、6 项既有 Known Issues 跳过；集成测试包含在其中。生产 adapter、领域规则、UI、HTTP、真人认证和正式导入均未修改。
 
+## P0-1 Stage 2A：可信命令策略（2026-09-29）
+
+从干净的 `main@cefd0e8` 建立 `codex/p0-1-stage2-command-policy`。新增 `ledger/command-policy.js` 的 `createTrustedPrincipal`、`authorizeCommand`、`createTrustedReviewFacts` 和 `authorizeReviewCommand`：以服务端显式注入的合成 principal 及具体权限，列出 45 个现有非演示领域 action 的正式入口资格；未知 action 默认拒绝，演示身份切换、练习时间、reset 和 `setPermissions` 明确拒绝。纯策略只返回所需权限、实际操作者 ID、尚未核实的销售归属员工 ID 与仍须在账本事务内验权的标记，不读取业务 state、不计算金额或改变领域事务。库存期初/调整、本人审核、超额免零特殊自批和员工名册都保留事务内事实核验；特殊自批以 `rounding.self.excess` 授权属性表达，不按姓名或演示 ID 猜真人。所有正式动作目前仅建立策略，不代表 HTTP、认证或正式写入已接通。
+
+`ledger/command-policy.test.js` 使用 synthetic ID 验证权限隔离、`backend.view` 与营业权限分离、`review.self` 叠加审核权、代登记操作者与销售归属分离、伪造客户端字段不能提升授权、演示动作拒绝及待事务核验条件。定向测试 13/13。修改 JavaScript 后尝试 `npm test`，PowerShell 找不到 `npm`，进程未启动；实际运行 `node --test --test-isolation=none`：286 项、280 通过、0 失败、6 项既有 Known Issues 跳过。MySQL 8.4.11／InnoDB 专用测试库集成 11/11 实际通过、0 跳过。基线测试为本轮改动前 273 项、267 通过、0 失败、6 跳过。原 `rules.js:transact`、Stage 1 ledger 协议、MySQL schema、HTTP、UI 均未修改；Stage 2B/2C/2D 未开始。
+
 ## 本轮隔离集成候选（2026-09-29）
 
 来源：用户交付的 `jbhh-ktv-full.zip`，基线 `ca726b2`；纯重构检查点 `74c3f55`；业务修复终点 `6aa01ba`。Track B 来源为 `codex/offsite-contracts@3193635`。候选位于独立工作树的 `codex/track-a-integration`，主工作区未提交内容保留；未合并 `main`、未推送。
@@ -186,7 +192,7 @@ Track A＋B 集成提交 `81e1a4c` 已在 `main`；下方“隔离集成候选�
 
 ## 下一步
 
-只读快照预检器、Stage 1A／1A.1／1A.2 协议及 Stage 1B-MySQL 适配器代码已完成，Stage 1B.1 已在专用 MySQL 8.4 测试库取得真实 migration、行锁、回滚、重连和初始 head 唯一性证据。服务端正式接入、真人认证和客户端 API 切换均未开始。正式营业日和班次规则已确认的部分见 [REQUIREMENTS](./REQUIREMENTS.md)，运行实现仍属后续任务。
+只读快照预检器、Stage 1A／1A.1／1A.2 协议、Stage 1B-MySQL 适配器及 Stage 2A 纯命令策略已完成；Stage 1B.1 已在专用 MySQL 8.4 测试库取得真实 migration、行锁、回滚、重连和初始 head 唯一性证据。Stage 2A 尚未接入 ledger 执行、真人认证、HTTP 或客户端；Stage 2B／2C／2D 未开始。正式营业日和班次规则已确认的部分见 [REQUIREMENTS](./REQUIREMENTS.md)，运行实现仍属后续任务。
 
 ## 阶段停止条件
 
