@@ -4,15 +4,24 @@
 
 ## 当前方向：MySQL 8.4 LTS／InnoDB 过渡账本
 
-`migrations/001_mysql_ledger_core.sql` 只建立 `ledger_heads`、`ledger_operations`、`ledger_success_audit`，三表均指定 `ENGINE=InnoDB`。`ledger/mysql-store.js:createMySqlLedgerStore` 由可信调用方显式注入 `mysql2` promise Pool、稳定 ledgerId 和已迁移的数据库名，沿用 Stage 1A 的 `runAtomic` 端口。当前没有 HTTP、真人认证、UI 切换或正式数据导入；已有静态演示仍只用浏览器 localStorage。
+`migrations/001_mysql_ledger_core.sql` 只建立 `ledger_heads`、`ledger_operations`、`ledger_success_audit`，三表均指定 `ENGINE=InnoDB`。`ledger/mysql-store.js:createMySqlLedgerStore` 由可信调用方显式注入 `mysql2` promise Pool、稳定 ledgerId 和已迁移的数据库名，沿用 Stage 1A 的 `runAtomic` 端口。当前没有 HTTP、真人认证接入、UI 切换或正式数据导入；已有静态演示仍只用浏览器 localStorage。
 
 `ledger_heads.state_json` 保存版本化 MySQL JSON 快照，`state_checksum` 是按 JSON 值规范化后的 SHA-256；读回会核对。MySQL JSON 会调整文本表示，它和原始 `jbhh-demo-v1` 文本不是同一备份。未来正式导入必须另存原始 JSON 字节和原文校验和，本阶段不执行导入。此过渡账本不代表最终领域关系模型已完成。
 
 Migration 只能在已核实的空目标数据库执行一次。MySQL DDL 每条语句独立提交，三表脚本不能当作单个可回滚事务；重复执行会因首表已存在而失败，部分失败需停下核查后处理。集成测试仅在 `LEDGER_MYSQL_TEST_URL` 明确指向 `jbhh_ktv_test`，且连接实际选中的数据库、MySQL 8.4 版本和默认 InnoDB 引擎均通过检查后运行。开始和结束时只按外键顺序清理该库的 `ledger_success_audit`、`ledger_operations`、`ledger_heads` 三张测试表；不会创建或删除数据库，也不会清理其他表。未配置连接 URL 时明确跳过。
 
+## Stage 2B：独立认证表
+
+`migrations/002_mysql_auth_core.sql` 依次建立 `auth_accounts`（稳定 principal ID、启用状态、凭据版本）、`auth_credentials`（唯一不透明登录标识、scrypt 版本、salt、派生值）、`auth_grants`（具体 permission）、`auth_sessions`（仅 token digest、凭据版本、闲置／绝对过期、撤销时间）和 `auth_events`（事件类型、主体／session 引用、数据库时间）。均指定 InnoDB；不插入真人账号或旧演示 ID。账号只停用，不提供删除和 ID 重用入口。`auth_events` 不保存密码、token、salt、派生值或业务 payload。
+
+`auth/mysql-store.js` 对组合写入使用一条连接和单个事务；凭据校验及成功 session／审计写入在此事务内完成，SQL 失败回滚。session 每次认证重读启用状态、凭据版本和 grants；权限不写入 token 或 session。`auth/rate-limit.js` 的单进程实现仅是显式限流 port 的当前实现，未来多进程 HTTP 入口须换共享限流器。正式登录标识、初始密码发放与恢复仍待门店决定。
+
+真实测试可使用 `AUTH_MYSQL_TEST_URL`，未设时复用已明确的 `LEDGER_MYSQL_TEST_URL`；连接必须实际选中 `jbhh_ktv_test`，且为 MySQL 8.4／默认 InnoDB。若 auth 表已存在，测试拒绝执行；测试只删除该次成功创建的五张 auth 表，不创建／删除数据库，不碰 ledger 表。DDL 每条独立提交，部分失败须检查后处理。
+
 ## 文件
 
 - `migrations/001_mysql_ledger_core.sql`：当前 MySQL 过渡账本三表。
+- `migrations/002_mysql_auth_core.sql`：独立认证与 session 基础五表；无真人 seed。
 - `schema.sql`：旧 PostgreSQL 关系型业务表、约束、索引，以及金山日报和支出表的原始暂存区。
 - `seed.sql`：旧 PostgreSQL 草案中的当前门店、9 个房间、员工岗位说明、具体权限、商品与库存项目。
 - `kdocs-import.md`：旧关系型草案中的金山文档字段映射；正式 MySQL 导入尚未设计。

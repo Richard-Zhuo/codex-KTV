@@ -56,6 +56,14 @@ Track A＋B 集成提交 `81e1a4c` 已在 `main`；下方“隔离集成候选�
 
 `ledger/command-policy.test.js` 使用 synthetic ID 验证权限隔离、`backend.view` 与营业权限分离、`review.self` 叠加审核权、代登记操作者与销售归属分离、伪造客户端字段不能提升授权、演示动作拒绝及待事务核验条件。定向测试 13/13。修改 JavaScript 后尝试 `npm test`，PowerShell 找不到 `npm`，进程未启动；实际运行 `node --test --test-isolation=none`：286 项、280 通过、0 失败、6 项既有 Known Issues 跳过。MySQL 8.4.11／InnoDB 专用测试库集成 11/11 实际通过、0 跳过。基线测试为本轮改动前 273 项、267 通过、0 失败、6 跳过。原 `rules.js:transact`、Stage 1 ledger 协议、MySQL schema、HTTP、UI 均未修改；Stage 2B/2C/2D 未开始。
 
+## P0-1 Stage 2B：真人账号、凭据与 Session 基础（2026-09-29）
+
+从干净 `main@04895be` 建立 `codex/p0-1-stage2-auth-session`。新增独立 MySQL migration 的五张 InnoDB auth 表及 `auth/` 下的密码、token、限流、存储与服务模块；没有预置真人或演示 ID 映射。账号 principal ID 由随机 UUID 生成，凭据使用异步 scrypt v1（N=16384、r=8、p=1、32 字节独立 salt／派生值），会话使用 32 字节随机 token 且数据库只存 SHA-256 digest。登录失败对外统一为 `invalid-credentials`；显式 rate-limit port 当前提供单进程 15 分钟／5 次失败实现，多进程正式入口须注入共享限流器。
+
+成功登录的 session 和审计、账号与凭据创建、账号停用与 session 撤销均在单连接事务中完成；数据库时间决定创建、活动、闲置／绝对过期和事件时间。每次 session 认证重读账号启用状态、凭据版本及 grants；轮换凭据使旧 session 失效，停用立即撤销全部 session。当前服务内部管理方法尚未经过 HTTP／命令授权，不能对客户端暴露；Stage 2A、ledger principal 协议、`rules.js`、UI 和旧 Known Issues 均未修改。真人账号、登录名、初始密码与恢复流程仍待决定。
+
+数据库无关定向测试 5/5；专用 MySQL 8.4.11／InnoDB 中 migration、重连、并发、过期、停用、凭据版本、实时 grants 和 SQL 中途失败回滚等真实集成测试 16/16，0 失败、0 跳过。修改 JavaScript 后按约定尝试 `npm test`，PowerShell 找不到 `npm`，进程未启动；实际运行 `node --test --test-isolation=none`：307 项、301 通过、0 失败、6 项原有 Known Issues 跳过。Stage 1 MySQL 账本集成测试单独复验 11/11，0 跳过。
+
 ## 本轮隔离集成候选（2026-09-29）
 
 来源：用户交付的 `jbhh-ktv-full.zip`，基线 `ca726b2`；纯重构检查点 `74c3f55`；业务修复终点 `6aa01ba`。Track B 来源为 `codex/offsite-contracts@3193635`。候选位于独立工作树的 `codex/track-a-integration`，主工作区未提交内容保留；未合并 `main`、未推送。
@@ -173,7 +181,7 @@ Track A＋B 集成提交 `81e1a4c` 已在 `main`；下方“隔离集成候选�
 
 ## 剩余限制
 
-- 浏览器 `localStorage` 不是生产账本；没有业务 API、服务端事务、真实认证、并发控制、多设备同步、真实支付或正式审计。零售原子性仅在单浏览器完整状态写回边界内成立。
+- 浏览器 `localStorage` 不是生产账本；当前页面没有业务 API、服务端账本或 Stage 2B 认证接入、多设备同步、真实支付或正式审计。零售原子性仅在单浏览器完整状态写回边界内成立；独立 MySQL 账本与认证模块尚未成为浏览器运行路径。
 - 未实现退款、撤单、冲正、零售挂账、找零、完整 POS、会员、优惠券、并房、换房、拆账、跨店、企业微信、正式班次和营业日关账。
 - 后台新增商品只覆盖销售闭环必需字段；未提供商品删除、供应商 SKU、条形码、品牌、已存在规格结构编辑或正式价格审批。没有预设具体香烟价格。
 - 内部瓜子、冰块、纸巾、吸管仍用 `state.consumables`；正式统一物料模型需另立任务。
@@ -192,7 +200,7 @@ Track A＋B 集成提交 `81e1a4c` 已在 `main`；下方“隔离集成候选�
 
 ## 下一步
 
-只读快照预检器、Stage 1A／1A.1／1A.2 协议、Stage 1B-MySQL 适配器及 Stage 2A 纯命令策略已完成；Stage 1B.1 已在专用 MySQL 8.4 测试库取得真实 migration、行锁、回滚、重连和初始 head 唯一性证据。Stage 2A 尚未接入 ledger 执行、真人认证、HTTP 或客户端；Stage 2B／2C／2D 未开始。正式营业日和班次规则已确认的部分见 [REQUIREMENTS](./REQUIREMENTS.md)，运行实现仍属后续任务。
+只读快照预检器、Stage 1A／1A.1／1A.2 协议、Stage 1B-MySQL 适配器、Stage 2A 纯命令策略及 Stage 2B 独立认证基础已完成；Stage 1B.1 和 Stage 2B 已分别在专用 MySQL 8.4 测试库取得真实验收证据。Stage 2A／2B 尚未接入 ledger 命令授权、HTTP 或客户端；Stage 2C／2D 未开始。正式营业日和班次规则已确认的部分见 [REQUIREMENTS](./REQUIREMENTS.md)，运行实现仍属后续任务。
 
 ## 阶段停止条件
 
