@@ -1,4 +1,5 @@
 import { EmployeeRosterError, EmployeeCommitOutcomeUnknown } from './errors.js';
+import { createTransactionBoundEmployeeResolver } from './employee-resolver.js';
 
 const dateFormat = "'%Y-%m-%dT%H:%i:%s.%fZ'";
 export function createMySqlEmployeeStore({ pool, database }) {
@@ -62,6 +63,23 @@ export function createMySqlEmployeeStore({ pool, database }) {
     }
   });
 
+  // Internal capability: caller must have an active transaction.
+  // Current shared employee read; no auth/principal lookup or lifecycle ownership.
+  function bindEmployeeResolver(connection) {
+    if (typeof connection?.execute !== 'function' || typeof connection?.query !== 'function' ||
+        typeof connection.getConnection === 'function') throw TypeError('必须提供当前 MySQL connection，不能提供 pool');
+    return createTransactionBoundEmployeeResolver({ port: {
+      async lockEmployeeForAttribution(employeeId) {
+        // DO 0 is read-only; its OK packet reports the active transaction bit.
+        const [status] = await connection.execute('DO 0');
+        if (!Number.isInteger(status.serverStatus) || !(status.serverStatus & 1)) throw Error('employee resolver 必须位于调用方已开启的事务内');
+        await assertDatabase(connection);
+        const [[row]] = await connection.execute('SELECT employee_id, display_name, enabled FROM ' + employees + ' WHERE employee_id = ? FOR SHARE', [employeeId]);
+        return row ? { employeeId:row.employee_id, displayName:row.display_name, enabled:row.enabled === 1 } : null;
+      }
+    } });
+  }
+
   async function runTransaction(work) {
     if (typeof work !== 'function') throw TypeError('employee transaction 回调无效');
     const connection = await pool.getConnection();
@@ -90,5 +108,5 @@ export function createMySqlEmployeeStore({ pool, database }) {
       return employeeRow(row);
     } finally { connection.release(); }
   }
-  return Object.freeze({ runTransaction, readEmployee });
+  return Object.freeze({ runTransaction, readEmployee, bindEmployeeResolver });
 }

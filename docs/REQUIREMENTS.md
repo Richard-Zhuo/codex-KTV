@@ -54,6 +54,7 @@
 - 可选 principal_id 唯一关联 auth_accounts；只能显式关联／解除，不按姓名或旧 USERS 自动推断，改关联对象前先解除原关联。
 - 名册变更与审计同事务；记录 employee、实际审计操作者及关联前后 principal，使用数据库 UTC 时间，不复制密码、token、权限或业务 payload。
 - actualActorPrincipalId 与 creditedEmployeeId／客诉负责人身份独立。保留历史姓名与旧演示 ID，不因名册建立、改关联或停用改写历史。
+- 新业务归属只接受显式 creditedEmployeeId，在调用方现有事务内确认员工存在且 enabled；无账号员工可用，同名员工按 UUID 区分。返回 employeeId／displayName 可信快照，显示名不是身份键，不按 principal、姓名或旧 USERS 猜测归属。解析不负责事务生命周期，也不开放业务 action。
 - 本阶段只建立独立内部名册接口，不创建真人账号／员工、不导入旧名单，不接业务 action、HTTP 或 UI；真实人员配置仍属待决定项。
 
 ## 已确认：房间、时段与房态

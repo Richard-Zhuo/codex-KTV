@@ -4,13 +4,14 @@ import { createMySqlEmployeeStore } from './mysql-store.js';
 import { EmployeeRosterError, EmployeeCommitOutcomeUnknown } from './errors.js';
 
 const id = '00000000-0000-4000-8000-000000000001';
-function fixture({ target = 'jbhh_ktv_test', failSql = false, failCommit = false, failRollback = false, duplicate = false } = {}) {
+function fixture({ target = 'jbhh_ktv_test', failSql = false, failCommit = false, failRollback = false, duplicate = false, active = true } = {}) {
   const calls = [];
   const connection = {
     async query(sql) { calls.push(['query',sql]); return [[{database_name: target}]]; },
     async execute(sql, params) {
       calls.push(['sql',sql,params]);
       if (failSql || duplicate) throw Object.assign(Error('synthetic SQL failure'), { code: duplicate ? 'ER_DUP_ENTRY' : 'SQL_FAULT' });
+      if (sql === 'DO 0') return [{serverStatus:active ? 3 : 2}];
       if (sql.startsWith('SELECT employee_id')) return [[{employee_id:id,display_name:'Synthetic',enabled:1,principal_id:null,created_at:'DB-created',updated_at:'DB-updated'}]];
       if (sql.startsWith('SELECT principal_id')) return [[{principal_id:id,enabled:1}]];
       return [{affectedRows:1}];
@@ -21,7 +22,7 @@ function fixture({ target = 'jbhh_ktv_test', failSql = false, failCommit = false
     release() { calls.push(['release']); }, destroy() { calls.push(['destroy']); }
   };
   const pool = { async getConnection() { calls.push(['connection']); return connection; } };
-  return { store:createMySqlEmployeeStore({pool,database:'jbhh_ktv_test'}),calls };
+  return { store:createMySqlEmployeeStore({pool,database:'jbhh_ktv_test'}),calls,connection };
 }
 
 test('employee MySQL store rejects implicit database or unsafe identifiers', () => {
@@ -85,4 +86,30 @@ test('employee rollback failure destroys connection and preserves original unkno
   const f = fixture({failRollback:true}), error = Error('original fault');
   await assert.rejects(f.store.runTransaction(()=>{throw error;}), value=>value===error);
   assert.ok(f.calls.some(row=>row[0]==='destroy')); assert.ok(!f.calls.some(row=>row[0]==='release'));
+});
+
+test('employee binder uses only caller connection and a current shared ID lookup',async()=>{
+  const f=fixture(), result=await f.store.bindEmployeeResolver(f.connection).resolveCreditedEmployeeInTransaction({creditedEmployeeId:id});
+  assert.deepEqual(result,{employeeId:id,displayName:'Synthetic'});
+  assert.deepEqual(f.calls.map(call=>call[0]),['sql','query','sql']);assert.equal(f.calls[0][1],'DO 0');
+  assert.equal(f.calls[1][1],'SELECT DATABASE() AS database_name');
+  assert.ok(f.calls[2][1].startsWith('SELECT employee_id, display_name, enabled FROM '));
+  assert.ok(f.calls[2][1].endsWith(' WHERE employee_id = ? FOR SHARE'));
+  assert.deepEqual(f.calls[2][2],[id]);assert.ok(!f.calls[2][1].includes('principal_id'));
+});
+test('employee binder refuses missing connection or inactive transaction without fallback',async()=>{
+  const f=fixture({active:false});
+  for(const connection of [null,{}, {execute(){}},{execute(){},query(){},getConnection(){assert.fail('must not acquire a connection');}}]) assert.throws(()=>f.store.bindEmployeeResolver(connection),TypeError);
+  await assert.rejects(f.store.bindEmployeeResolver(f.connection).resolveCreditedEmployeeInTransaction({creditedEmployeeId:id}),/已开启的事务/);
+  assert.deepEqual(f.calls.map(call=>call[0]),['sql']);assert.equal(f.calls[0][1],'DO 0');
+});
+test('bound employee resolver checks actual database and never manages lifecycle',async()=>{
+  const f=fixture({target:'unknown'});
+  await assert.rejects(f.store.bindEmployeeResolver(f.connection).resolveCreditedEmployeeInTransaction({creditedEmployeeId:id}),/目标不一致/);
+  assert.deepEqual(f.calls.map(call=>call[0]),['sql','query']);
+});
+test('bound employee SQL failure belongs to caller with no rollback or release',async()=>{
+  const f=fixture({failSql:true});
+  await assert.rejects(f.store.bindEmployeeResolver(f.connection).resolveCreditedEmployeeInTransaction({creditedEmployeeId:id}),error=>error.code==='SQL_FAULT'&&!(error instanceof EmployeeRosterError));
+  assert.deepEqual(f.calls.map(call=>call[0]),['sql']);
 });

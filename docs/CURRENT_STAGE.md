@@ -1,6 +1,6 @@
 # 当前阶段
 
-更新日期：2026-10-03。本文件是当前进度的唯一汇总入口。
+更新日期：2026-10-04。本文件是当前进度的唯一汇总入口。
 
 ## 当前基线与业务契约纠偏（2026-09-29）
 
@@ -174,6 +174,20 @@ Stage 1 MySQL ledger 集成独立复验 11 total／11 pass／0 fail／0 skip，m
 
 auth、ledger、rules.js、领域模块、UI／HTTP、旧 SQL／migration、历史快照及依赖均未修改；业务 action 的员工解析 port 仍未接入。仅本批一个提交，当前停止在员工名册基础，不进入业务迁移、不 push 或部署。
 
+## Transaction-bound employee resolver（2026-10-04）
+
+本轮实际核实 clean main = origin/main = 509add9e798e8e6050529ed47bb84e1033ce2eca；从该 main 建立 codex/p0-1-employee-resolver，创建后再次读取 HEAD／main 相等。测试 URL 可读取但未输出，实际数据库为 MySQL 8.4.11／jbhh_ktv_test／InnoDB。
+
+只新增 createTransactionBoundEmployeeResolver 与 MySQL bindEmployeeResolver(connection)，提供 resolveCreditedEmployeeInTransaction({creditedEmployeeId}) → 冻结 employeeId／displayName。显式 UUID、调用方活动事务、employee_id 的 FOR SHARE 当前读确认存在且 enabled；无 principal 员工合法、同名员工 ID 独立。显式拒绝 pool 参数，DO 0 事务状态位及实际库校验 fail closed；不猜 principal／姓名／USERS，不改变 actual actor，不借连接、不 BEGIN／COMMIT／ROLLBACK／release，不更新活动或审计。业务 action 尚未调用此接口，ledger／auth／rules／领域、schema、依赖及 trusted-enabled 九动作未修改。
+
+新增 10 项 resolver 单元与 4 项 adapter 绑定契约；定向 node --test --test-isolation=none employees/employee-resolver.test.js employees/mysql-store.test.js employees/roster.test.js 实际 32 total／32 pass／0 fail／0 skip。原员工七表 fixture 新增 12 项真实 MySQL resolver 子用例，保留原 16 项；员工定向集成实际 30 total／30 pass／0 fail／0 skip（含 guard／suite），不扩大建表／清理范围，不 CREATE／DROP database。
+
+真实用例覆盖 enabled／disabled／不存在、无账号、同名 UUID、actor／关联 principal 与归属独立、冻结显示快照、缺少活动事务、仅调用方 connection 和生命周期、调用方回滚、实际 SQL 故障后先前写入回滚。REPEATABLE READ 非锁定读取仍见旧 enabled 时，resolver 当前读明确拒绝已提交停用。两种锁竞争分别核对独立 CONNECTION_ID；用真实 InnoDB 行锁等待超时证明 resolver 共享锁阻塞 disable、disable 排他锁阻塞 resolver；先持锁事务结束后得到确定结果，不使用假并发或额外权限。
+
+首轮并发用例在主体通过后，恢复 session 超时变量因 mysql2 返回 bigint 字符串而报类型错误；仅将测试保存值转换为 Number，重新验收全部通过，生产 resolver 未因此修改。JS 修改及测试修正后均实际尝试 npm test，PowerShell 报 The term 'npm' is not recognized，进程未启动；不宣称 npm 通过。
+
+完整 node --test --test-isolation=none 实际 552 total／546 pass／0 fail／6 skip，退出码 0。auth 29 项（含 revalidation 13）、ledger 11 项、所有既有 trusted MySQL 子用例及新增 resolver 全部实际执行；原六项 Known Issues 继续 skip。结束后只读核实十张已知 fixture 表均已清理。本轮一个独立提交，停止在 resolver 基础，不创建真人配置，不接新业务 action，不 push 或部署。
+
 ## 本轮隔离集成候选（2026-09-29）
 
 来源：用户交付的 `jbhh-ktv-full.zip`，基线 `ca726b2`；纯重构检查点 `74c3f55`；业务修复终点 `6aa01ba`。Track B 来源为 `codex/offsite-contracts@3193635`。候选位于独立工作树的 `codex/track-a-integration`，主工作区未提交内容保留；未合并 `main`、未推送。
@@ -310,7 +324,7 @@ auth、ledger、rules.js、领域模块、UI／HTTP、旧 SQL／migration、历�
 
 ## 下一步
 
-只读快照预检器、Stage 1A／1A.1／1A.2 协议、Stage 1B-MySQL 适配器、Stage 2A 纯命令策略及 Stage 2B 独立认证基础已完成；Stage 1B.1 和 Stage 2B 已分别在专用 MySQL 8.4 测试库取得真实验收证据。Stage 2C.1 同事务认证、2C.2 clean 及 2C.3 房间异常、目录维护、取消预约、存取酒已通过真实数据库验收；各批及线性整合验收见上节；员工名册及关联审计基础已真实验收，业务事务内人员解析尚未接入，其余正式 action 和审核尚未迁移，HTTP／客户端及 2D 未开始，当前停止在本批。正式营业日和班次规则已确认的部分见 [REQUIREMENTS](./REQUIREMENTS.md)，运行实现仍属后续任务。
+只读快照预检器、Stage 1A／1A.1／1A.2 协议、Stage 1B-MySQL 适配器、Stage 2A 纯命令策略及 Stage 2B 独立认证基础已完成；Stage 1B.1 和 Stage 2B 已分别在专用 MySQL 8.4 测试库取得真实验收证据。Stage 2C.1 同事务认证、2C.2 clean 及 2C.3 房间异常、目录维护、取消预约、存取酒已通过真实数据库验收；各批及线性整合验收见上节；员工名册、关联审计与事务内归属解析已真实验收，resolver 尚未接业务 action，其余正式 action 和审核尚未迁移，HTTP／客户端及 2D 未开始，当前停止在本批。正式营业日和班次规则已确认的部分见 [REQUIREMENTS](./REQUIREMENTS.md)，运行实现仍属后续任务。
 
 ## 阶段停止条件
 

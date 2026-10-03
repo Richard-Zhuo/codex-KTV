@@ -28,8 +28,8 @@
 | 2C.2／2C.3 trusted 命令定向测试 | `node --test --test-isolation=none ledger/trusted-clean.test.js ledger/trusted-clean.integration.test.js` | 配置确认 | 单元与受保护 MySQL fixture；目录、取消预约及存取酒 helper 均保留，本轮分开执行的实际结果见 CURRENT_STAGE |
 | 存取酒单元与原领域回归 | `node --test --test-isolation=none ledger/trusted-clean.test.js operations.test.js` | 本次执行 | 新存取酒 trusted 契约与原业务矩阵；不连接数据库 |
 | trusted 命令 MySQL 集成测试 | `node --test --test-isolation=none ledger/trusted-clean.integration.test.js` | 本次执行 | 新存取酒 helper 与既有房间／目录用例共用同一专用库八表 fixture；不扩大清理范围 |
-| 员工名册定向单元测试 | `node --test --test-isolation=none employees/roster.test.js employees/mysql-store.test.js` | 本次执行 | UUID、显式关联、独立停用、审计及 connection／rollback／提交结果不明；不连接数据库 |
-| 员工名册 MySQL 集成测试 | `LEDGER_MYSQL_TEST_URL` 指向专用库后运行 `node --test --test-isolation=none employees/mysql-roster.integration.test.js` | 本次执行 | 仅本轮创建的七张 auth／employee 表；migration、UTC、唯一／FK、真实双连接和 SQL 回滚；未配置不得宣称通过 |
+| 员工名册定向单元测试 | `node --test --test-isolation=none employees/employee-resolver.test.js employees/mysql-store.test.js employees/roster.test.js` | 本次执行 | UUID、关联／停用／审计、事务内 resolver、connection 所有权和 rollback／提交结果不明；不连接数据库 |
+| 员工名册 MySQL 集成测试 | `LEDGER_MYSQL_TEST_URL` 指向专用库后运行 `node --test --test-isolation=none employees/mysql-roster.integration.test.js` | 本次执行 | 仅本轮创建的七张 auth／employee 表；原 migration／关联用例及 resolver 当前读取、调用方回滚、双连接停用锁竞争；未配置不得宣称通过 |
 | MySQL 账本集成测试 | `LEDGER_MYSQL_TEST_URL` 明确指向 `jbhh_ktv_test` 后运行 `node --test --test-isolation=none ledger/mysql-store.integration.test.js` | 本次执行 | 本轮真实复验结果见 [CURRENT_STAGE](./CURRENT_STAGE.md)；仅清理该库三张已知账本表，不创建或删除数据库；未配置时跳过且不得当作集成通过 |
 | MySQL 认证／重验集成测试 | `AUTH_MYSQL_TEST_URL` 或已确认的 `LEDGER_MYSQL_TEST_URL` 指向 `jbhh_ktv_test` 后运行 `node --test --test-isolation=none auth/mysql-auth.integration.test.js` | 本次执行 | 保留原 Stage 2B 16 项，并在同一 auth fixture 调用 2C.1 重验／锁竞争用例；本轮数据库证据见 CURRENT_STAGE。拒绝预存 auth 表，只删除本次创建的五张 auth 表，不动 ledger 表或数据库本身 |
 | 隔离浏览器恢复演练 | `node docs/verification/browser-recovery-harness.mjs` | 历史执行 | 上轮仅绑定 `127.0.0.1` 的随机端口，使用合成已付款订单演练停写、复制、人工修正及显式重检；本轮未重跑，见 [浏览器记录](./verification/track-a-b-browser-recovery-2026-09-29.md) |

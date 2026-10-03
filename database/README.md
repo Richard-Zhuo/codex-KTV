@@ -26,7 +26,7 @@ Stage 2C.1 另提供 `bindSessionRevalidation(connection)`，复用调用方已�
 
 `migrations/003_mysql_employee_core.sql` 在已存在 auth_accounts 的目标库新建 employees 与 employee_events，均 InnoDB；不含 seed。可同名／无账号员工使用稳定 UUID，nullable unique principal_id FK 支持可选一对一；显示名不是登录名或映射依据。created_at、updated_at 默认 UTC_TIMESTAMP(6)，store 更新显式使用同一数据库函数；audit occurred_at 默认数据库 UTC。关联前后 principal、操作者及 employee 均受 FK 保护，关联事件有 shape CHECK。只能运行一次，重复执行首表明确拒绝；DDL 部分失败需人工核查，不自动删表或猜测修复。
 
-内部接口及锁序见 [ARCHITECTURE](../docs/ARCHITECTURE.md)。关系变更和事件在一条 connection／事务提交；员工停用、账号停用互不联动，不提供硬删除或 ID 重用。事务内业务人员解析尚未接入，本阶段不改 ledger snapshot、历史姓名、旧 USERS 或业务 action。
+内部接口及锁序见 [ARCHITECTURE](../docs/ARCHITECTURE.md)。关系变更和事件在一条 connection／事务提交；员工停用、账号停用互不联动，不提供硬删除或 ID 重用。事务内归属解析已建立但尚未被业务 action 调用；bindEmployeeResolver(connection) 只在调用方活动事务内按 UUID 做 FOR SHARE 当前读取，返回启用员工的 ID／显示名快照，不读取 principal 关联或管理事务。接口、锁序与证据见 ARCHITECTURE／CURRENT_STAGE；本阶段不改 ledger snapshot、历史姓名、旧 USERS 或业务 action。
 
 真实名册 fixture 从 LEDGER_MYSQL_TEST_URL 取得已指定 jbhh_ktv_test，验证 URL／实际库／MySQL 8.4／InnoDB，拒绝预存的五张 auth 表及两张 employee 表。与原 fixture 共用具名测试锁，只清理本次创建的七表，按 employee_events → employees → auth_events → auth_sessions → auth_grants → auth_credentials → auth_accounts 顺序；不操作 ledger 三表，不 CREATE／DROP database。SQL 故障注入只将 employee_events INSERT 列名改为不存在列，实际数据库拒绝后验证此前 employee 写入回滚。证据见 [CURRENT_STAGE](../docs/CURRENT_STAGE.md)。
 

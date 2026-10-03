@@ -88,7 +88,11 @@ flowchart TD
 
 `employees/mysql-store.js:createMySqlEmployeeStore` 只操作新 employees／employee_events 和当前 auth_accounts 依赖；每次组合写入借一条连接、BEGIN／COMMIT，SQL／未知异常回滚。先非锁定定位员工旧关联，将 actor／旧 principal／目标 principal 按 UUID 升序锁住 account，再 FOR UPDATE 锁 employee 并复核关联；定位结果变化时拒绝，不在 employee 锁后追加 account 锁。重复同一关联、重复解除或重复停用返回 changed:false，不增加事件；不同目标需先解除，唯一 principal 碰撞明确拒绝。COMMIT 回执不明时销毁连接，错误带 employeeId 供核查，不能自动重新创建。
 
-`database/migrations/003_mysql_employee_core.sql` 新建两个 InnoDB 表，需先执行 auth migration。employees 只含稳定 employee_id、可同名 display_name、enabled、nullable unique principal_id FK、数据库 UTC created_at／updated_at。employee_events 追加 employee-created、employee-disabled、principal-linked、principal-unlinked，保存 actor 与关联前后 ID，event shape／FK 保证引用与事件类型一致；接口不提供硬删除、ID 重用或审计改写。停用员工保留关联且不改 auth；停用账号不自动停用员工。当前关联接口与 future transaction-bound 业务人员解析分开，真实员工及账号配置仍未创建，历史 state 的人员快照不改写。
+`database/migrations/003_mysql_employee_core.sql` 新建两个 InnoDB 表，需先执行 auth migration。employees 只含稳定 employee_id、可同名 display_name、enabled、nullable unique principal_id FK、数据库 UTC created_at／updated_at。employee_events 追加 employee-created、employee-disabled、principal-linked、principal-unlinked，保存 actor 与关联前后 ID，event shape／FK 保证引用与事件类型一致；接口不提供硬删除、ID 重用或审计改写。停用员工保留关联且不改 auth；停用账号不自动停用员工。关联管理与事务内归属解析分别提供独立接口，真实员工及账号配置仍未创建，历史 state 的人员快照不改写。
+
+事务内归属解析由 employees/employee-resolver.js:createTransactionBoundEmployeeResolver 定义数据库无关 port；MySQL store 的 bindEmployeeResolver(connection) 绑定调用方已开启的事务，提供 resolveCreditedEmployeeInTransaction({creditedEmployeeId}) → 冻结 {employeeId,displayName}。明确拒绝 pool 参数，先以 DO 0 的事务状态位拒绝非活动事务，并核实目标库；只按 employee_id 做 SELECT employee_id／display_name／enabled ... FOR SHARE 当前读取，不读取 principal 关联、actor、权限或演示数据。不存在／停用分别抛 EMPLOYEE_NOT_FOUND／EMPLOYEE_DISABLED，未知 SQL／port 异常原样传播，未接 ledger 终态分类。不会借连接、BEGIN／COMMIT／ROLLBACK／release，也不更新员工、审计或 session 活动。
+
+共享 employee 锁由调用方持有到提交／回滚：解析先取得锁时，disable 的 employee FOR UPDATE 必须等待；disable 先取得锁并提交后，解析看到停用并拒绝，旧 REPEATABLE READ 快照不能代替当前读取。resolver 不追加 account 锁；管理路径继续 account UUID 升序 → employee → event。未来 command 调用方需先完成 ledger／auth 前序锁，再解析 employee，不在 employee 锁后倒退加 auth 锁；本批未接任何业务 action，actualActorPrincipalId 仍独立于 creditedEmployeeId。
 
 ## P0-1 Stage 2C.1 同事务认证能力
 
