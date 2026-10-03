@@ -4,13 +4,14 @@
 // approveRounding+rejectRounding／credit／approve+reject／repay／
 // approveRepayment+rejectRepayment 命令，以及 total／outstanding／
 // collectableCharges／nextCollectCharge 金额查询。
-// 函数体逐字节保留：room/retail、无房零售、多笔付款、成交快照、销售人员、
-// 收款/抹零口径不变；失败不提交由 transact 的克隆-校验-提交边界继续保证。
+// room/retail、无房零售、多笔付款、成交快照、销售人员、
+// 收款/抹零口径不变；sale/retailSale 显式区分 demo 与 trusted 归属。
+// 失败不提交由 transact 的克隆-校验-提交边界继续保证。
 // 权限闸门与自审授权经参数注入（need／authorizeReviewer），避免对 rules.js 的循环依赖。
 import { BusinessRejection } from './shared/business-error.js';
 import { DEFAULT_CATALOG, product, saleOption, saleOptions, productIdOf, categoryLabel } from './catalog.js';
 import { recordInventoryChange, need } from './inventory.js';
-import { USERS, effectiveUser } from './shared/identity.js';
+import { USERS, effectiveUser, requireTrustedPermission } from './shared/identity.js';
 
 export const PAYMENT_METHODS = ['微信', '支付宝', '现金', '美团', '抖音'];
 
@@ -68,6 +69,27 @@ function delegatedEmployee(state, data) {
   if (!employee || employee.legacy || id === 'administrator') throw new BusinessRejection('请选择有效的演示员工');
   return { id, name: employee.name, recordedBy: effectiveUser(state).name };
 }
+// Identity only: leave product, amount, payment and inventory rules in their existing pipeline.
+function saleIdentity(state, data, person, operator, time, execution, retail) {
+  if (execution?.mode === 'trusted') {
+    const context = execution.context;
+    if (retail) requireTrustedPermission(context, 'retail.sale');
+    requireTrustedPermission(context, 'staff.record');
+    if (!context.creditedEmployeeId || typeof context.creditedEmployeeNameSnapshot !== 'string' ||
+        (data.creditedEmployeeId ?? data.employee) !== context.creditedEmployeeId ||
+        (data.employee !== undefined && data.employee !== context.creditedEmployeeId)) throw TypeError('缺少事务内可信销售员工快照');
+    return { person: context.creditedEmployeeNameSnapshot, operator: context.principalId,
+      employeeId: context.creditedEmployeeId, time: context.dbNow,
+      attribution: { actualActorPrincipalId: context.principalId, creditedEmployeeId: context.creditedEmployeeId,
+        creditedEmployeeNameSnapshot: context.creditedEmployeeNameSnapshot } };
+  }
+  if (execution?.mode !== 'demo') throw TypeError('销售执行模式无效');
+  if (retail) need(state, [], 'retail.sale');
+  const delegated = delegatedEmployee(state, data);
+  if (delegated) person = delegated.name;
+  else if (!retail) need(state, ['开单员','服务员','老板'], 'order.sale');
+  return { person, operator, employeeId: delegated?.id || state.user, time, attribution: {} };
+}
 function prepareSaleRows(state, data) {
   const items = Array.isArray(data.items) ? data.items : [{ product: data.product, spec: data.spec, count: data.count }];
   if (!items.length) throw new BusinessRejection('请至少添加一种商品');
@@ -93,13 +115,13 @@ function prepareSaleRows(state, data) {
   }
   return rows;
 }
-function appendSaleRows(state, order, rows, person, operator, employeeId, time, source) {
+function appendSaleRows(state, order, rows, person, operator, employeeId, time, source, attribution = {}, execution = { mode: 'demo' }) {
   const batch = ++state.serial;
   for (const row of rows) {
     const saleId = ++state.serial;
-    recordInventoryChange(state, row.p.id, -row.totalBaseQuantity, source, time, { orderId: order.id, saleLineId: saleId });
+    recordInventoryChange(state, row.p.id, -row.totalBaseQuantity, source, time, { orderId: order.id, saleLineId: saleId }, execution);
     const snapshot = productSnapshot(state.catalog, row.p.id, row.totalBaseQuantity, { saleOptionId: row.option.id, saleOptionNameSnapshot: row.option.name, saleQuantity: row.saleQuantity, baseQuantityPerSaleUnit: row.option.baseQuantity, totalBaseQuantity: row.totalBaseQuantity, pricePerSaleUnitCents: row.pricePerSaleUnitCents, amountCents: row.amountCents, snapshotStatus: 'current' });
-    order.sales.push({ id: saleId, batch, product: row.p.id, productId: row.p.id, count: row.saleQuantity, spec: row.option.id, bottles: row.totalBaseQuantity, amount: row.amountCents, ...snapshot, drinks: [{ id: ++state.serial, product: row.p.id, productId: row.p.id, productNameSnapshot: row.p.name, baseUnitSnapshot: row.p.baseUnit, count: row.totalBaseQuantity, totalBaseQuantity: row.totalBaseQuantity }], person, recordedBy: operator, employeeId, time });
+    order.sales.push({ id: saleId, batch, product: row.p.id, productId: row.p.id, count: row.saleQuantity, spec: row.option.id, bottles: row.totalBaseQuantity, amount: row.amountCents, ...snapshot, drinks: [{ id: ++state.serial, product: row.p.id, productId: row.p.id, productNameSnapshot: row.p.name, baseUnitSnapshot: row.p.baseUnit, count: row.totalBaseQuantity, totalBaseQuantity: row.totalBaseQuantity }], person, recordedBy: operator, employeeId, time, ...attribution });
   }
 }
 function validatePayments(payments, amount) {
@@ -126,24 +148,24 @@ function validateSettlementPayments(payments, amount, differenceType = '免零',
 
 // —— 命令层：由 rules.js 的 transact 分支委托调用，参数与原分支一致 ——
 
-export function submitSale(s, order, data, person, operator, time) {
-  const delegated = delegatedEmployee(s, data);
-  if (delegated) person = delegated.name; else need(s, ['开单员','服务员','老板'], 'order.sale');
-  appendSaleRows(s, order, prepareSaleRows(s, data), person, operator, delegated?.id || s.user, time, '加购销售');
+export function submitSale(s, order, data, person, operator, time, execution = { mode: 'demo' }) {
+  const identity = saleIdentity(s, data, person, operator, time, execution, false);
+  appendSaleRows(s, order, prepareSaleRows(s, data), identity.person, identity.operator, identity.employeeId,
+    identity.time, '加购销售', identity.attribution, execution);
 }
-export function submitRetailSale(s, data, person, operator, time) {
-  need(s, [], 'retail.sale');
-  const delegated = delegatedEmployee(s, data);
-  if (delegated) person = delegated.name;
+export function submitRetailSale(s, data, person, operator, time, execution = { mode: 'demo' }) {
+  const identity = saleIdentity(s, data, person, operator, time, execution, true);
+  ({ person, operator, time } = identity);
   const rows = prepareSaleRows(s, data);
   const amount = rows.reduce((sum, row) => sum + row.amountCents, 0);
   if (!Number.isSafeInteger(amount) || amount <= 0) throw new BusinessRejection('成交金额无效');
   const payments = validatePayments(data.payments, amount);
   const id = `D${++s.serial}`;
-  const retailOrder = { id, kind: 'retail', room: null, time, createdAt: time, paidAt: time, closedAt: time, person, recordedBy: operator, employeeId: delegated?.id || s.user, status: '已结账', packageId: null, packageNameSnapshot: null, packagePriceCents: 0, packageBaseCents: 0, packageGiftValueCents: 0, base: 0, gift: 0, drinks: [], resolvedComponents: [], extras: [], sales: [], otherCharges: [], bonusGifts: [], giftRequests: [], payments: [], rounding: 0, roundingType: '', roundingNote: '', roundingReview: null, credit: null, exchanges: [] };
+  const retailOrder = { id, kind: 'retail', room: null, time, createdAt: time, paidAt: time, closedAt: time, person, recordedBy: operator, employeeId: identity.employeeId, ...identity.attribution, status: '已结账', packageId: null, packageNameSnapshot: null, packagePriceCents: 0, packageBaseCents: 0, packageGiftValueCents: 0, base: 0, gift: 0, drinks: [], resolvedComponents: [], extras: [], sales: [], otherCharges: [], bonusGifts: [], giftRequests: [], payments: [], rounding: 0, roundingType: '', roundingNote: '', roundingReview: null, credit: null, exchanges: [] };
   s.orders.push(retailOrder);
-  appendSaleRows(s, retailOrder, rows, person, operator, delegated?.id || s.user, time, '零售销售');
-  retailOrder.payments.push(...payments.map(payment => ({ ...payment, chargeId: 'retail', time, person: operator })));
+  appendSaleRows(s, retailOrder, rows, person, operator, identity.employeeId, time, '零售销售', identity.attribution, execution);
+  retailOrder.payments.push(...payments.map(payment => ({ ...payment, chargeId: 'retail', time, person: operator,
+    ...(execution.mode === 'trusted' ? { actualActorPrincipalId: execution.context.principalId } : {}) })));
 }
 export function collectPayment(s, order, data, person, time) {
   need(s, ['收银员','老板'], 'payment.collect');

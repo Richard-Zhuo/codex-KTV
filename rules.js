@@ -108,7 +108,7 @@ function executeCatalogCommand(s, action, data, execution = { mode: 'demo' }) {
 export function transact(original, action, data = {}, key, execution = { mode: 'demo' }) {
   if (!execution || !['demo', 'trusted'].includes(execution.mode)) throw TypeError('事务执行模式无效');
   const context = execution.mode === 'trusted' ? assertTrustedExecutionContext(execution.context) : null;
-  if (context && !['clean', 'markRoomIssue', 'clearRoomIssue', ...CATALOG_COMMAND_ACTIONS, 'cancelReservation', 'deposit', 'withdraw', 'reserve'].includes(action)) throw new AuthorizationDenied('trusted-action-not-enabled');
+  if (context && !['clean', 'markRoomIssue', 'clearRoomIssue', ...CATALOG_COMMAND_ACTIONS, 'cancelReservation', 'deposit', 'withdraw', 'reserve', 'sale', 'retailSale'].includes(action)) throw new AuthorizationDenied('trusted-action-not-enabled');
   if (!key) throw new BusinessRejection('缺少操作编号');
   if (original.processed.includes(key)) return original;
   const s = structuredClone(original);
@@ -120,6 +120,11 @@ export function transact(original, action, data = {}, key, execution = { mode: '
     if (CATALOG_COMMAND_ACTIONS.includes(action)) executeCatalogCommand(s, action, data, execution);
     else if (action === 'deposit') submitDeposit(s, data, undefined, undefined, execution);
     else if (action === 'withdraw') withdrawDeposit(s, data, undefined, undefined, execution);
+    else if (action === 'sale') {
+      const order = s.orders.find(order => order.id === data.order);
+      if (!order || order.status !== '营业中') throw new BusinessRejection('账单已变化，请返回房间重新查看');
+      submitSale(s, order, data, undefined, undefined, undefined, execution);
+    } else if (action === 'retailSale') submitRetailSale(s, data, undefined, undefined, undefined, execution);
     else {
       const room = s.rooms.find(room => room.id === data.room);
       if (action === 'clean') cleanRoom(s, room, execution);

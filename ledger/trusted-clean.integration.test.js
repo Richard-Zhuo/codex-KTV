@@ -16,6 +16,7 @@ import { testTrustedCatalogCommands } from './trusted-catalog.integration.js';
 import { runTrustedCancelReservationIntegration } from './trusted-cancel-reservation.integration.js';
 import { testTrustedDeposits } from './trusted-deposits.integration.js';
 import { testTrustedReserve } from './trusted-reserve.integration.js';
+import { testTrustedSales } from './trusted-sales.integration.js';
 import { createMySqlEmployeeStore } from '../employees/mysql-store.js';
 import { createEmployeeService } from '../employees/service.js';
 
@@ -485,6 +486,8 @@ test('MySQL trusted clean vertical slice in jbhh_ktv_test',
       await testTrustedDeposits({ t, pool, setup, auth, table, provision, seed, inspect, application,
         assertUnchanged, wrapConnection, poolOptions, database });
       await testTrustedReserve({ t, pool, setup, auth, table, provision, seed, inspect, application, roster,
+        assertUnchanged, wrapConnection, poolOptions, database });
+      await testTrustedSales({ t, pool, setup, auth, table, provision, seed, inspect, application, roster,
         assertUnchanged, wrapConnection, poolOptions, database });
     } finally {
       try { if (pool) await pool.end(); }

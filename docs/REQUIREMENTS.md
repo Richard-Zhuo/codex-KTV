@@ -54,10 +54,11 @@
 - 可选 principal_id 唯一关联 auth_accounts；只能显式关联／解除，不按姓名或旧 USERS 自动推断，改关联对象前先解除原关联。
 - 名册变更与审计同事务；记录 employee、实际审计操作者及关联前后 principal，使用数据库 UTC 时间，不复制密码、token、权限或业务 payload。
 - actualActorPrincipalId 与 creditedEmployeeId／客诉负责人身份独立。保留历史姓名与旧演示 ID，不因名册建立、改关联或停用改写历史。
-- 新业务归属只接受显式 creditedEmployeeId，在调用方现有事务内确认员工存在且 enabled；无账号员工可用，同名员工按 UUID 区分。返回 employeeId／displayName 可信快照，显示名不是身份键，不按 principal、姓名或旧 USERS 猜测归属。解析不负责事务生命周期；当前仅 reserve 消费它，其他员工归属业务尚未迁移。
+- 新业务归属只接受显式 creditedEmployeeId，在调用方现有事务内确认员工存在且 enabled；无账号员工可用，同名员工按 UUID 区分。返回 employeeId／displayName 可信快照，显示名不是身份键，不按 principal、姓名或旧 USERS 猜测归属。解析不负责事务生命周期；当前仅 reserve／sale／retailSale 消费它，其他员工归属业务尚未迁移。
 - 名册管理仍是独立内部接口，不创建真人账号／员工、不导入旧名单、不接 HTTP 或 UI；真实人员配置仍属待决定项。
 
 - 正式 reserve 使用显式 creditedEmployeeId；原 data.employee 字段只允许作为稳定 employee UUID 的兼容别名，二者同时提供必须一致。保留原选择归属员工时的 staff.record 代录权限；不得借员工或其关联账号获得授权。新预约保存 actualActorPrincipalId、creditedEmployeeId 和 creditedEmployeeNameSnapshot，person／employeeId／recordedBy 分别保留相应快照／稳定 ID／实际 principal，不猜本人归属。预约场次与房态校验不变，以冻结 dbNow 为时间来源，不新增营业日规则。
+- 正式 sale／retailSale 同样必须显式选择员工 UUID，并保存 actualActorPrincipalId、creditedEmployeeId、creditedEmployeeNameSnapshot；销售归属和实际登记 principal 独立，旧姓名快照不改写。保留原代录权限：sale 使用 staff.record，retailSale 同时需要 retail.sale 与 staff.record；员工和其关联账号不授予 actor 权限。trusted 的销售／库存流水／零售付款时间只用冻结 dbNow；原房间增购、无房全额零售、多笔付款及基础单位库存规则不变。
 
 ## 已确认：房间、时段与房态
 

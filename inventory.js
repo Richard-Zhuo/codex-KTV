@@ -5,19 +5,23 @@
 // 权限闸门与自审授权经 ctx 注入（need／authorizeReviewer），避免对 rules.js 的循环依赖。
 import { BusinessRejection } from './shared/business-error.js';
 import { product } from './catalog.js';
-import { effectiveUser, hasPermission, hasRole } from './shared/identity.js';
+import { effectiveUser, hasPermission, hasRole, assertTrustedExecutionContext } from './shared/identity.js';
 
 export function need(state, roles, permission = '') { const user = effectiveUser(state); if (permission ? !hasPermission(user, permission) : !hasRole(user, roles)) throw new BusinessRejection('当前身份没有操作权限，请切换到对应演示身份'); }
 
 export function pendingInventoryReview(state, kind, productId) { return (state.inventoryReviews ||= []).find(request => request.kind === kind && request.product === productId && request.status === '待审核'); }
 
-export function recordInventoryChange(state, id, delta, source, time, related = {}) {
+export function recordInventoryChange(state, id, delta, source, time, related = {}, execution = { mode: 'demo' }) {
+  if (!execution || !['demo', 'trusted'].includes(execution.mode)) throw TypeError('库存流水执行模式无效');
+  const context = execution.mode === 'trusted' ? assertTrustedExecutionContext(execution.context) : null;
+  if (context) time = context.dbNow;
   const catalogProduct = product(id, state.catalog);
   if (!catalogProduct.inventoryManaged) return;
   const item = state.inventory[id];
   if (!item) throw new BusinessRejection(`${catalogProduct.name}没有建立库存账`);
   if (item.count !== null && item.count + delta < 0) throw new BusinessRejection(`${catalogProduct.name}库存不足，请减少数量或先核对库存`);
-  state.ledger.push({ id: ++state.serial, product: id, productId: id, productNameSnapshot: catalogProduct.name, baseUnitSnapshot: catalogProduct.baseUnit, delta, baseQuantityDelta: delta, source, ...related, counted: item.count !== null, time, person: effectiveUser(state).name });
+  state.ledger.push({ id: ++state.serial, product: id, productId: id, productNameSnapshot: catalogProduct.name, baseUnitSnapshot: catalogProduct.baseUnit, delta, baseQuantityDelta: delta, source, ...related, counted: item.count !== null, time, person: context ? context.principalId : effectiveUser(state).name,
+    ...(context ? { actualActorPrincipalId: context.principalId } : {}) });
   if (item.count !== null) item.count += delta;
 }
 

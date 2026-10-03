@@ -208,6 +208,24 @@ withTrustedCreditedEmployee 仅扩展已认证 branded context，保留 principa
 
 最终完整 node --test --test-isolation=none 实际 582 total／576 pass／0 fail／6 skip，退出码 0。auth 29／29（含 revalidation 13／13）、employee 30／30、ledger 11／11、trusted 97／97 全部真实执行；原六项 Known Issues 名称与 skip 结论保持。结束后只读核实十张已知 fixture 表均不存在。本批一个独立提交；main 保持本地前置 d4d8179，不继续下一批、不 push 或部署。
 
+## P0-1 Stage 2C.3 trusted sale／retailSale（2026-10-04）
+
+本轮开始重新核实 main = origin/main = d205f2d933e8cc58feaf283ff2f08fa51d065f0f、工作树 clean；从该 main 建立 codex/p0-1-stage2c-sales，分支起点与 main HEAD 严格一致。本批只新增 sale／retailSale 两个 trusted-enabled action，当前共十二个；其余 eligible action 继续 fail closed，不 push、不部署或进入下一批。
+
+原 reservation-attribution 模块扩成 ledger/employee-attribution.js，供 reserve／sale／retailSale 复用已有同事务 employee resolver；兼容 employee UUID 别名只进入 policy 视图，不改原请求／fingerprint。有效 session → existing operation → 当前 action policy → revision → employee FOR SHARE → trusted transact 的顺序保持。显式员工归属保留原 gate：sale 需要 staff.record；retailSale 还需要 retail.sale。员工的 principal 关联不能替实际 actor 授权，无账号与同名员工按 UUID 可用，未知／停用员工明确业务拒绝，不留半笔销售或库存。
+
+sales.js 为两个入口增加显式 trusted 分支，保存 actualActorPrincipalId、creditedEmployeeId 和 creditedEmployeeNameSnapshot；销售行／零售订单原 person、employeeId、recordedBy 分别为可信员工姓名快照、UUID 和 session principal。inventory.js:recordInventoryChange 仅在这些销售的显式 trusted 调用中用 context principal／dbNow 记录操作者与时间，其余调用默认保留 demo。零售原有付款字段用 context principal／dbNow，并附 actualActorPrincipalId，成交时仍必须全额多笔付款、room=null；room sale 不发起收款或结账。
+
+只读比较基线确认 prepareSaleRows、validatePayments／validateSettlementPayments、collectPayment 起之后的所有销售业务、submitStock 起之后的库存业务、rules demo 分支及账本请求 fingerprint 代码均保持。未改金额、规格基础数量、历史快照、付款／审核规则、schema、auth、员工 resolver 或 Known Issues；未创建真人员工或账号。
+
+新增销售单元 22 项与真实 MySQL 子用例 26 项。单元及原领域定向命令（见 DEVELOPMENT_ENVIRONMENT）实际 141 total／141 pass／0 fail／0 skip；trusted MySQL 定向实际 123 total／123 pass／0 fail／0 skip。首轮只发现新增测试夹具的权限前置、UUID 别名构造及零库存商品哨兵不正确；仅修正测试，生产业务未因此调整。JS 修改后实际多次尝试 npm test，PowerShell 报 The term 'npm' is not recognized，npm 未启动，未取得 npm 通过证据。
+
+实际只读确认环境变量可读取、MySQL 8.4.11／jbhh_ktv_test／InnoDB，不输出 URL 或密码。沿用 guarded 十表 fixture，仅本次创建／清理已授权表，不 CREATE／DROP database。新增真实测试确认同一调用方 connection、head → account → session → grants → operation → employee → domain／commit，单次冻结 DB 时间、不 touch session 活动；员工归属、篡改拒绝、不占键、五类 auth 失效、三类幂等冲突、旧 revision 终态、历史快照和 null／0 往返保持。撤权与员工改名／停用后，重新连接仍返回原终态，不重做 employee／销售／付款／库存；新 key 授权拒绝。两 action 的 revision／同 key 竞争均实际使用两个不同 CONNECTION_ID，最多提交一次。
+
+人为 employee SELECT 列错误、领域变更后未知 Error、在 head UPDATE／operation INSERT 后触发 audit CHECK 失败，都验证全事务 rollback；原 key 未消耗，修复故障可重试成功，库存／付款不重复。
+
+最终完整 node --test --test-isolation=none 实际 630 total／624 pass／0 fail／6 skip，退出码 0。真实 MySQL auth 29／29（含 revalidation 13／13）、employee 30／30、ledger 11／11、trusted 123／123（含新增销售 26／26）均实际执行且无 skip；原六项 Known Issues 名称与 skip 结论保持。结束后只读核实十张已知 fixture 表均不存在。本批一个独立提交，parent 为 d205f2d；未合入 main、未 push。
+
 ## 本轮隔离集成候选（2026-09-29）
 
 来源：用户交付的 `jbhh-ktv-full.zip`，基线 `ca726b2`；纯重构检查点 `74c3f55`；业务修复终点 `6aa01ba`。Track B 来源为 `codex/offsite-contracts@3193635`。候选位于独立工作树的 `codex/track-a-integration`，主工作区未提交内容保留；未合并 `main`、未推送。
@@ -344,7 +362,7 @@ withTrustedCreditedEmployee 仅扩展已认证 branded context，保留 principa
 
 ## 下一步
 
-只读快照预检器、Stage 1A／1A.1／1A.2 协议、Stage 1B-MySQL 适配器、Stage 2A 纯命令策略及 Stage 2B 独立认证基础已完成；Stage 1B.1 和 Stage 2B 已分别在专用 MySQL 8.4 测试库取得真实验收证据。Stage 2C.1 同事务认证、2C.2 clean 及 2C.3 房间异常、目录维护、取消预约、存取酒与 reserve 已通过真实数据库验收；各批及线性整合验收见上节；员工名册、关联审计与事务内归属解析已真实验收，resolver 已仅接 trusted reserve，其余正式 action 和审核尚未迁移，HTTP／客户端及 2D 未开始，当前停止在本批。正式营业日和班次规则已确认的部分见 [REQUIREMENTS](./REQUIREMENTS.md)，运行实现仍属后续任务。
+只读快照预检器、Stage 1A／1A.1／1A.2 协议、Stage 1B-MySQL 适配器、Stage 2A 纯命令策略及 Stage 2B 独立认证基础已完成；Stage 1B.1 和 Stage 2B 已分别在专用 MySQL 8.4 测试库取得真实验收证据。Stage 2C.1 同事务认证、2C.2 clean 及 2C.3 房间异常、目录维护、取消预约、存取酒、reserve 与 sale／retailSale 已通过真实数据库验收；各批及线性整合验收见上节；员工名册、关联审计与事务内归属解析已真实验收，resolver 已仅接 trusted reserve／sale／retailSale，其余正式 action 和审核尚未迁移，HTTP／客户端及 2D 未开始，当前停止在本批。正式营业日和班次规则已确认的部分见 [REQUIREMENTS](./REQUIREMENTS.md)，运行实现仍属后续任务。
 
 ## 阶段停止条件
 
