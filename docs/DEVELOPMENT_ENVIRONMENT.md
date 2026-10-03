@@ -23,9 +23,9 @@
 | 使用其他端口（PowerShell） | `$env:PORT = 4174; npm start` | 配置确认 | `server.js` 读取 `PORT`，本轮未执行 |
 | 完整自动测试 | `npm test` | 配置确认 | `package.json` 映射到 `node --test` |
 | 2026-09-28 历史替代测试 | `$env:NODE_OPTIONS = '--test-isolation=none'; pnpm test` | 历史执行 | 历史记录为 73/73；不能当作本轮结果 |
-| 本轮完整自动测试 | `node --test --test-isolation=none` | 本轮执行 | 2C.3 第一批房间异常提交及 clean、auth／revalidation、ledger 真实数据库回归的实际结果见 [阶段记录](./CURRENT_STAGE.md)；不沿用 Stage 2B 历史数量 |
+| 本轮完整自动测试 | `node --test --test-isolation=none` | 本轮执行 | 2C.3 第二批目录维护、既有房间 trusted 命令及 auth／revalidation、ledger 真实数据库回归的实际结果见 [阶段记录](./CURRENT_STAGE.md)；不沿用 Stage 2B 历史数量 |
 | 2C.1 定向单元测试 | `node --test --test-isolation=none auth/session-revalidation.test.js auth/auth.test.js ledger/command-policy.test.js ledger/mysql-store.test.js` | 本轮执行 | 同连接能力、可信 context、终态 replay 顺序和既有策略／适配器回归；不连接数据库 |
-| 2C.2／2C.3 第一批房间命令定向测试 | `node --test --test-isolation=none ledger/trusted-clean.test.js ledger/trusted-clean.integration.test.js` | 本次执行 | 单元加独立真实 MySQL fixture；实际本轮结果见 CURRENT_STAGE |
+| 2C.2／2C.3 房间与目录 trusted 定向测试 | `node --test --test-isolation=none ledger/trusted-clean.test.js ledger/trusted-clean.integration.test.js` | 本次执行 | 单元加独立真实 MySQL fixture；实际本轮结果见 CURRENT_STAGE |
 | MySQL 账本集成测试 | `LEDGER_MYSQL_TEST_URL` 明确指向 `jbhh_ktv_test` 后运行 `node --test --test-isolation=none ledger/mysql-store.integration.test.js` | 本次执行 | 本轮真实复验结果见 [CURRENT_STAGE](./CURRENT_STAGE.md)；仅清理该库三张已知账本表，不创建或删除数据库；未配置时跳过且不得当作集成通过 |
 | MySQL 认证／重验集成测试 | `AUTH_MYSQL_TEST_URL` 或已确认的 `LEDGER_MYSQL_TEST_URL` 指向 `jbhh_ktv_test` 后运行 `node --test --test-isolation=none auth/mysql-auth.integration.test.js` | 本次执行 | 保留原 Stage 2B 16 项，并在同一 auth fixture 调用 2C.1 重验／锁竞争用例；本轮数据库证据见 CURRENT_STAGE。拒绝预存 auth 表，只删除本次创建的五张 auth 表，不动 ledger 表或数据库本身 |
 | 隔离浏览器恢复演练 | `node docs/verification/browser-recovery-harness.mjs` | 历史执行 | 上轮仅绑定 `127.0.0.1` 的随机端口，使用合成已付款订单演练停写、复制、人工修正及显式重检；本轮未重跑，见 [浏览器记录](./verification/track-a-b-browser-recovery-2026-09-29.md) |

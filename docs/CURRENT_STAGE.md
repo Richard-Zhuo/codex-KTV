@@ -108,6 +108,18 @@ Stage 1 MySQL ledger 集成独立复验 11 total／11 pass／0 fail／0 skip，m
 
 完整 node --test --test-isolation=none：399 total／393 pass／0 fail／6 skip，退出码 0；auth 29／29（其中 revalidation 13／13）、ledger 11／11 和房间命令集成都真实执行。原六项 Known Issues 保持 skip。已实际尝试 npm test，环境仍报 npm 未识别，未取得 npm 运行证据。ledger application、MySQL store、auth、command-policy、schema／migration、HTTP／UI、依赖和历史业务快照规则未修改；本批仅一个提交，不进入下一批，不 push 或部署。
 
+## P0-1 Stage 2C.3 第二批：目录维护（2026-10-03）
+
+开始前核实工作树 clean，本地 main 与 origin/main 引用均为 94f1c00；从 main 建立 codex/p0-1-stage2c-catalog-slice。重跑基线 399 total／393 pass／0 fail／6 skip。实际 MySQL 8.4.11／jbhh_ktv_test／InnoDB，未输出连接 URL 或密码。
+
+只增加 createCatalogProduct、updateCatalogProduct、updateCatalogPackage 的 trusted enablement。审计确认三者只需 catalog.manage，不依赖 employee 映射、审批或尚未迁移的身份逻辑；原已修复套餐总价一致性校验保留，不涉及当前六项 skip。rules.js 将原三段命令体收拢为私有 executeCatalogCommand，demo／trusted 共用原校验；trusted 在演示身份／时钟求值前分流，只用可信权限。原目录记录没有业务操作者／时间字段，未新增该模型；actor 继续来自 session 并进入原 operation／audit，context 的 dbNow 保持数据库单次冻结。其他 39 个 eligible action 保持未迁移，未知与 demo 动作继续 fail closed。
+
+行为用例：合成有效 session＋catalog.manage＋正确 revision 成功提交；state／payload 的身份、角色、权限、时钟不能授权或改写可信事实；新库存商品仍未建账 count=null，既有 count=0 和 null 保持区别；当前目录更名／改价／规格维护不改写历史 room／retail、名称、价格、基础数量和套餐组成快照，历史未知仍未知。缺权限不占 key，授予权限后同 key 可用；撤权后新 pool 重连重放原终态，新 key 拒绝；actor／payload／expectedRevision 冲突保持；disabled／revoked／idle／absolute／凭据版本失效拒绝 old operation 访问。原业务拒绝与 revision conflict 保持 terminal；SQL 中途失败全回滚。
+
+新增 15 个单元契约、19 个真实 MySQL 子用例。复用原 ledger/trusted-clean.test.js 与八表集成 fixture；新增 ledger/trusted-catalog.integration.js 只组织目录用例、test-support/trusted-catalog-fixture.js 只提供合成数据，不改变 DDL／清理范围。定向 node --test --test-isolation=none ledger/trusted-clean.test.js ledger/trusted-clean.integration.test.js：88 total／88 pass／0 fail／0 skip（单元 39，MySQL suite 49，含 47 个真实子用例及 guard／suite）。另一次目录／零售加 trusted 单元定向为 49／49。三个动作撤权后重连均未再次执行 transact；audit CHECK 故障在 state／operation SQL 写入后触发，整体回滚、修复后原 key 可用；两个独立 CONNECTION_ID 验证不同动作竞争旧 revision 最多一成功，以及同 key 只执行一次。
+
+完整 node --test --test-isolation=none：433 total／427 pass／0 fail／6 skip，退出码 0；auth 29／29（含 revalidation 13／13）、ledger 11／11 及全部 trusted MySQL 回归真实执行。原六项 Known Issues 保持 skip。修改 JavaScript 后实际尝试 npm test，环境仍无法识别 npm，未取得 npm 运行证据。ledger application／store、auth、command-policy、schema／migration、HTTP／UI、依赖及其他领域文件均未修改，不建立真人账号、员工映射或审批模型；本批一个提交，不进入下一批，不 push 或部署。
+
 ## 本轮隔离集成候选（2026-09-29）
 
 来源：用户交付的 `jbhh-ktv-full.zip`，基线 `ca726b2`；纯重构检查点 `74c3f55`；业务修复终点 `6aa01ba`。Track B 来源为 `codex/offsite-contracts@3193635`。候选位于独立工作树的 `codex/track-a-integration`，主工作区未提交内容保留；未合并 `main`、未推送。
@@ -244,7 +256,7 @@ Stage 1 MySQL ledger 集成独立复验 11 total／11 pass／0 fail／0 skip，m
 
 ## 下一步
 
-只读快照预检器、Stage 1A／1A.1／1A.2 协议、Stage 1B-MySQL 适配器、Stage 2A 纯命令策略及 Stage 2B 独立认证基础已完成；Stage 1B.1 和 Stage 2B 已分别在专用 MySQL 8.4 测试库取得真实验收证据。Stage 2C.1 同事务认证、2C.2 clean 及 2C.3 第一批 markRoomIssue／clearRoomIssue 已通过真实数据库验收；其余正式 action 和审核尚未迁移，HTTP／客户端及 2D 未开始，当前停止在本批。正式营业日和班次规则已确认的部分见 [REQUIREMENTS](./REQUIREMENTS.md)，运行实现仍属后续任务。
+只读快照预检器、Stage 1A／1A.1／1A.2 协议、Stage 1B-MySQL 适配器、Stage 2A 纯命令策略及 Stage 2B 独立认证基础已完成；Stage 1B.1 和 Stage 2B 已分别在专用 MySQL 8.4 测试库取得真实验收证据。Stage 2C.1 同事务认证、2C.2 clean 及 2C.3 房间异常与目录维护两小批已通过真实数据库验收；其余正式 action 和审核尚未迁移，HTTP／客户端及 2D 未开始，当前停止在本批。正式营业日和班次规则已确认的部分见 [REQUIREMENTS](./REQUIREMENTS.md)，运行实现仍属后续任务。
 
 ## 阶段停止条件
 

@@ -12,6 +12,7 @@ import { createTrustedLedgerApplication } from './application.js';
 import { createMySqlLedgerStore } from './mysql-store.js';
 import { encodeLedgerSnapshot, decodeLedgerJson } from './mysql-snapshot.js';
 import { acquireMySqlFixtureLock } from '../test-support/mysql-fixture-lock.js';
+import { testTrustedCatalogCommands } from './trusted-catalog.integration.js';
 
 const testUrl = process.env.LEDGER_MYSQL_TEST_URL;
 const database = 'jbhh_ktv_test';
@@ -468,6 +469,8 @@ test('MySQL trusted clean vertical slice in jbhh_ktv_test',
           t.diagnostic('room issue races used two verified independent CONNECTION_ID values');
         } finally { try { await a.rollback(); await b.rollback(); } finally { a.release(); b.release(); } }
       });
+      await testTrustedCatalogCommands({ t, pool, setup, auth, table, provision, seed, inspect, application,
+        assertUnchanged, wrapConnection, poolOptions, database });
     } finally {
       try { if (pool) await pool.end(); }
       finally {

@@ -9,6 +9,7 @@ import { createMemoryLedgerStore } from './memory-store.js';
 import { createLedgerApplication, createTrustedLedgerApplication } from './application.js';
 import { FORMAL_COMMAND_ACTIONS, DEMO_ONLY_ACTIONS } from './command-policy.js';
 import { TRUSTED_ENABLED_ACTIONS } from './trusted-execution.js';
+import { CATALOG_TEST_ACTIONS, catalogTestPayload, seedCatalogHistory, invalidCatalogPayloads } from '../test-support/trusted-catalog-fixture.js';
 
 const dbNow = '2026-10-03T12:00:00.123456Z';
 const request = (key = 'clean-1', revision = 0, payload = { room: 'V01' }, action = 'clean') =>
@@ -92,14 +93,16 @@ test('trusted clean uses session actor and frozen DB context; all demo facts are
   assert.equal(f.context().policyAttributeIds, null);
 });
 
-test('trusted-enabled room commands are independent from all other eligible and demo actions', async () => {
-  assert.deepEqual(TRUSTED_ENABLED_ACTIONS, ['clean', 'markRoomIssue', 'clearRoomIssue']);
+test('trusted-enabled commands are independent from all other eligible and demo actions', async () => {
+  assert.deepEqual(TRUSTED_ENABLED_ACTIONS, ['clean', 'markRoomIssue', 'clearRoomIssue',
+    'createCatalogProduct', 'updateCatalogProduct', 'updateCatalogPackage']);
   assert.equal(Object.isFrozen(TRUSTED_ENABLED_ACTIONS), true);
   for (const action of [...FORMAL_COMMAND_ACTIONS.filter(action => !TRUSTED_ENABLED_ACTIONS.includes(action)), ...DEMO_ONLY_ACTIONS, 'unknown']) {
     const f = fixture({ permissions: [...PERMISSION_IDS] });
     await assert.rejects(f.app.execute(request('blocked', 0, {}, action), f.credential),
       error => denied(error) && error.reason === 'trusted-action-not-enabled');
     await emptyEffects(f); assert.equal(f.executions(), 0);
+    assert.throws(() => transact(f.state, action, {}, 'blocked', { mode: 'trusted', context: f.context() }), denied);
   }
 });
 
@@ -346,6 +349,72 @@ for (const action of issueActions) {
     const noGrant = issueFixture(action, { permissions: [] });
     await assert.rejects(noGrant.app.execute(request('context', 0, issuePayload(action), action), noGrant.credential), denied);
     assert.throws(() => fn(noGrant.state, noGrant.state.rooms[0], issuePayload(action), 'fake', 'fake',
+      { mode: 'trusted', context: noGrant.context() }), denied);
+  });
+}
+
+// Stage 2C.3 catalog batch: original mutations, session-only authority.
+for (const action of CATALOG_TEST_ACTIONS) {
+  const makeFixture = (options = {}) => fixture({ permissions: ['catalog.manage'], setup: seedCatalogHistory, ...options });
+  test(action + ': trusted authority ignores demo/payload facts and preserves original catalog/history semantics', async () => {
+    const f = makeFixture(), payload = { ...catalogTestPayload(action), actorId: 'administrator', principalId: 'fake',
+      permissions: ['*'], role: 'administrator', user: 'fake', clock: '1900-01-01', person: 'fake' };
+    const result = await f.app.execute(request('catalog-first', 0, payload, action), f.credential);
+    assert.equal(result.status, 'committed'); assert.equal(result.actorId, f.auth.principalId); assert.equal(result.revision, 1);
+    assert.equal(result.committedAt, dbNow); assert.equal(f.context().dbNow, dbNow);
+    assert.deepEqual(f.context().permissionIds, ['catalog.manage']);
+    const head = await f.memory.read();
+    const demo = structuredClone(f.state); demo.user = 'administrator'; demo.clock = dbNow;
+    const expected = transact(demo, action, payload, 'catalog-first'); expected.user = f.state.user; expected.clock = f.state.clock;
+    assert.deepEqual(head.state, expected, 'same domain behavior in both modes');
+    assert.deepEqual(head.state.orders, f.state.orders, 'known and unknown historical facts are immutable');
+    assert.equal(head.state.orders[1].room, null); assert.equal(head.state.inventory.bw.count, 0); assert.equal(head.state.inventory.qd.count, null);
+    if (action === 'createCatalogProduct') assert.deepEqual(head.state.inventory.synthetic_pack, { count: null, threshold: 10, unit: '包' });
+    else assert.deepEqual(head.state.inventory, f.state.inventory);
+    assert.equal(head.audit[0].actorId, f.auth.principalId); assert.equal(head.audit[0].action, action);
+  });
+
+  test(action + ': backend.view and forged permissions do not authorize; denied key remains available', async () => {
+    const f = makeFixture({ permissions: ['backend.view'] }), cmd = request('catalog-denied', 0,
+      { ...catalogTestPayload(action), permissions: ['catalog.manage'], role: 'administrator' }, action);
+    await assert.rejects(f.app.execute(cmd, f.credential), denied); await emptyEffects(f); assert.equal(f.executions(), 0);
+    f.auth.permissions = ['catalog.manage'];
+    assert.equal((await f.app.execute(cmd, f.credential)).status, 'committed'); assert.equal(f.executions(), 1);
+  });
+
+  test(action + ': replay after revoke is unchanged; new key denied; actor/request/revision conflicts preserved', async () => {
+    const f = makeFixture(), cmd = request('catalog-replay', 0, catalogTestPayload(action), action);
+    const first = await f.app.execute(cmd, f.credential), before = await f.memory.read(); f.auth.permissions = [];
+    assert.deepEqual(await f.app.execute(cmd, f.credential), first);
+    for (const changed of [{ ...cmd, expectedRevision: 1 }, { ...cmd, payload: { ...cmd.payload, name: 'changed' } }]) {
+      const result = await f.app.execute(changed, f.credential);
+      assert.equal(result.status, 'idempotency-conflict'); assert.equal(result.reason, 'request-mismatch');
+    }
+    f.auth.principalId = 'synthetic-other';
+    const other = await f.app.execute(cmd, f.credential); assert.equal(other.status, 'idempotency-conflict'); assert.equal(other.reason, 'actor-mismatch');
+    f.auth.principalId = first.actorId;
+    await assert.rejects(f.app.execute({ ...cmd, operationKey: 'new', expectedRevision: 1 }, f.credential), denied);
+    assert.equal(f.executions(), 1); assert.deepEqual(await f.memory.read(), before);
+  });
+
+  test(action + ': original invalid ID/name/spec/price rules reject atomically as persistent business terminals', async () => {
+    for (const payload of invalidCatalogPayloads(action)) {
+      const f = makeFixture(), cmd = request('catalog-business', 0, payload, action);
+      const result = await f.app.execute(cmd, f.credential); assert.equal(result.status, 'business-rejected');
+      const head = await f.memory.read(); assert.deepEqual(head.state, f.state); assert.equal(head.revision, 0);
+      assert.equal(head.operationResults.size, 1); assert.equal(head.audit.length, 0);
+      f.auth.permissions = []; assert.deepEqual(await f.app.execute(cmd, f.credential), result);
+      assert.deepEqual(await f.memory.read(), head);
+    }
+  });
+
+  test(action + ': direct trusted transact requires real context and current catalog.manage; no demo fallback', async () => {
+    const f = makeFixture(); await f.app.execute(request('context', 0, catalogTestPayload(action), action), f.credential);
+    for (const context of [null, structuredClone(f.context())]) assert.throws(() =>
+      transact(f.state, action, catalogTestPayload(action), 'direct', { mode: 'trusted', context }), TypeError);
+    const noGrant = makeFixture({ permissions: [] });
+    await assert.rejects(noGrant.app.execute(request('context', 0, catalogTestPayload(action), action), noGrant.credential), denied);
+    assert.throws(() => transact(noGrant.state, action, catalogTestPayload(action), 'direct',
       { mode: 'trusted', context: noGrant.context() }), denied);
   });
 }

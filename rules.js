@@ -15,7 +15,7 @@ import { submitExpense, decideExpense } from './expenses.js';
 import { submitProcurement } from './procurement.js';
 import { submitIncident, submitIncidentResolution, decideIncidentResolution } from './incidents.js';
 import { submitHandover } from './handover.js';
-import { USERS, PERMISSION_ROLES, PERMISSION_IDS, defaultPermissions, defaultCapabilities, permissionsForRoles, effectiveUser, hasPermission, assertTrustedExecutionContext, AuthorizationDenied } from './shared/identity.js';
+import { USERS, PERMISSION_ROLES, PERMISSION_IDS, defaultPermissions, defaultCapabilities, permissionsForRoles, effectiveUser, hasPermission, assertTrustedExecutionContext, requireTrustedPermission, AuthorizationDenied } from './shared/identity.js';
 
 export const OTHER_CHARGE_CATEGORIES = ['小吃', '热食', '烧鸡烤肉', '代驾', '其他'];
 
@@ -48,7 +48,7 @@ function grantBonus(state, order, productId, halves, source, time, requestedBy) 
   const snapshot = productSnapshot(state.catalog, productId, bottles, { saleOptionId: halfOption.id, saleOptionNameSnapshot: halfOption.name, saleQuantity: halves, baseQuantityPerSaleUnit: halfOption.baseQuantity, totalBaseQuantity: bottles, referenceValueCents: halves * halfOption.priceCents, snapshotStatus: 'current' });
   order.bonusGifts.push({ id: giftId, product: productId, productId, ...snapshot, halves, bottles, drinks: [{ id: ++state.serial, product: productId, productId, productNameSnapshot: snapshot.productNameSnapshot, baseUnitSnapshot: snapshot.baseUnitSnapshot, count: bottles, totalBaseQuantity: bottles }], source, person: effectiveUser(state).name, requestedBy: requestedBy || effectiveUser(state).name, time });
 }
-// normalizeSaleOptions 服务 createCatalogProduct/updateCatalogProduct 分支（目录命令，暂留 rules.js），函数体自 HEAD 逐字保留。
+// 目录命令的私有业务校验；demo 与 trusted 共用原规则。
 function normalizeSaleOptions(options, sellable) {
   if (!Array.isArray(options) || (sellable && !options.length)) throw new BusinessRejection('可售商品至少需要一种销售规格');
   const ids = new Set();
@@ -59,23 +59,71 @@ function normalizeSaleOptions(options, sellable) {
     return { id, name, baseQuantity: option.baseQuantity, priceCents: option.priceCents };
   });
 }
+const CATALOG_COMMAND_ACTIONS = Object.freeze(['createCatalogProduct', 'updateCatalogProduct', 'updateCatalogPackage']);
+function executeCatalogCommand(s, action, data, execution = { mode: 'demo' }) {
+  if (execution?.mode === 'trusted') requireTrustedPermission(execution.context, 'catalog.manage');
+  else if (execution?.mode === 'demo') need(s, [], 'catalog.manage');
+  else throw TypeError('目录执行模式无效');
+  if (action === 'createCatalogProduct') {
+    const id = String(data.id || '').trim(), name = String(data.name || '').trim(), category = String(data.category || '').trim(), baseUnit = String(data.baseUnit || '').trim();
+    if (!/^[a-z][a-z0-9._-]{0,39}$/.test(id) || s.catalog.products.some(item => item.id === id)) throw new BusinessRejection('商品 ID 无效或已存在');
+    if (!name || name.length > 80 || !category || category.length > 40 || !baseUnit || baseUnit.length > 20) throw new BusinessRejection('请填写有效的商品名称、分类和基础单位');
+    if (!Number.isSafeInteger(data.sortOrder)) throw new BusinessRejection('排序必须是整数');
+    const sellable = Boolean(data.sellable), inventoryManaged = Boolean(data.inventoryManaged);
+    const options = normalizeSaleOptions(data.saleOptions || [], sellable);
+    s.catalog.products.push({ id, name, category, categoryLabel: category, baseUnit, saleOptions: options, inventoryManaged, inventoryThreshold: 10, sellable, manualPriceAllowed: false, exchangeLevel: null, openingGiftEligible: false, active: data.active !== false, sortOrder: data.sortOrder });
+    if (inventoryManaged) s.inventory[id] = { count: null, threshold: 10, unit: baseUnit };
+  } else if (action === 'updateCatalogProduct') {
+    const id = String(data.id || '').trim();
+    const current = product(id, s.catalog);
+    const name = String(data.name ?? current.name).trim().slice(0, 80);
+    if (!name) throw new BusinessRejection('商品名称不能为空');
+    const next = { ...current, name };
+    for (const field of ['active', 'sellable', 'manualPriceAllowed']) if (data[field] !== undefined) next[field] = Boolean(data[field]);
+    if (data.sortOrder !== undefined) {
+      if (!Number.isSafeInteger(data.sortOrder)) throw new BusinessRejection('排序必须是整数');
+      next.sortOrder = data.sortOrder;
+    }
+    if (data.saleOptions !== undefined) next.saleOptions = normalizeSaleOptions(data.saleOptions, next.sellable);
+    else if (next.sellable) normalizeSaleOptions(next.saleOptions, true);
+    s.catalog.products = s.catalog.products.map(item => item.id === id ? next : item);
+  } else if (action === 'updateCatalogPackage') {
+    const id = String(data.id || '').trim();
+    const current = s.catalog.packages.find(item => item.id === id);
+    if (!current) throw new BusinessRejection('套餐不存在');
+    const next = { ...current, name: String(data.name ?? current.name).trim().slice(0, 80) };
+    if (!next.name) throw new BusinessRejection('套餐名称不能为空');
+    for (const field of ['priceCents', 'basePriceCents', 'includedValueCents', 'sortOrder']) if (data[field] !== undefined) {
+      if (!Number.isSafeInteger(data[field]) || data[field] < 0) throw new BusinessRejection('套餐金额或排序无效');
+      next[field] = data[field];
+    }
+    // Bug #2 修复：总价只有一个来源——基础房费＋赠饮参考值；提交不一致直接拒绝，
+    // 开房报价、订单快照与账单 total 不再出现两个总价口径。
+    if (next.priceCents !== next.basePriceCents + (next.includedValueCents || 0)) throw new BusinessRejection('套餐总价必须等于基础房费加赠饮参考值');
+    if (data.active !== undefined) next.active = Boolean(data.active);
+    s.catalog.packages = s.catalog.packages.map(item => item.id === id ? next : item);
+  } else throw TypeError('未知目录命令');
+}
 // 先修改克隆，全部校验成功才返回；失败不产生部分扣库或半张账单。
 export function transact(original, action, data = {}, key, execution = { mode: 'demo' }) {
   if (!execution || !['demo', 'trusted'].includes(execution.mode)) throw TypeError('事务执行模式无效');
   const context = execution.mode === 'trusted' ? assertTrustedExecutionContext(execution.context) : null;
-  if (context && !['clean', 'markRoomIssue', 'clearRoomIssue'].includes(action)) throw new AuthorizationDenied('trusted-action-not-enabled');
+  if (context && !['clean', 'markRoomIssue', 'clearRoomIssue', ...CATALOG_COMMAND_ACTIONS].includes(action)) throw new AuthorizationDenied('trusted-action-not-enabled');
   if (!key) throw new BusinessRejection('缺少操作编号');
   if (original.processed.includes(key)) return original;
   const s = structuredClone(original);
   s.catalog = mergeCatalog(s.catalog);
   assertCatalogPackagePrices(s.catalog);
   if (context) {
-    // Only migrated room commands; never evaluate demo identity or clock.
-    const room = s.rooms.find(room => room.id === data.room);
+    // Only migrated commands; never evaluate demo identity or clock.
     const execution = { mode: 'trusted', context };
-    if (action === 'clean') cleanRoom(s, room, execution);
-    else if (action === 'markRoomIssue') markRoomIssue(s, room, data, undefined, undefined, execution);
-    else clearRoomIssue(s, room, data, undefined, undefined, execution);
+    if (CATALOG_COMMAND_ACTIONS.includes(action)) executeCatalogCommand(s, action, data, execution);
+    else {
+      const room = s.rooms.find(room => room.id === data.room);
+      if (action === 'clean') cleanRoom(s, room, execution);
+      else if (action === 'markRoomIssue') markRoomIssue(s, room, data, undefined, undefined, execution);
+      else clearRoomIssue(s, room, data, undefined, undefined, execution);
+    }
     s.processed.push(key);
     return s;
   }
@@ -105,47 +153,8 @@ export function transact(original, action, data = {}, key, execution = { mode: '
       s.permissions[target] = [...new Set(data.roles)];
       s.capabilities[target] = permissionsForRoles(s.permissions[target]);
     }
-  } else if (action === 'createCatalogProduct') {
-    need(s, [], 'catalog.manage');
-    const id = String(data.id || '').trim(), name = String(data.name || '').trim(), category = String(data.category || '').trim(), baseUnit = String(data.baseUnit || '').trim();
-    if (!/^[a-z][a-z0-9._-]{0,39}$/.test(id) || s.catalog.products.some(item => item.id === id)) throw new BusinessRejection('商品 ID 无效或已存在');
-    if (!name || name.length > 80 || !category || category.length > 40 || !baseUnit || baseUnit.length > 20) throw new BusinessRejection('请填写有效的商品名称、分类和基础单位');
-    if (!Number.isSafeInteger(data.sortOrder)) throw new BusinessRejection('排序必须是整数');
-    const sellable = Boolean(data.sellable), inventoryManaged = Boolean(data.inventoryManaged);
-    const options = normalizeSaleOptions(data.saleOptions || [], sellable);
-    s.catalog.products.push({ id, name, category, categoryLabel: category, baseUnit, saleOptions: options, inventoryManaged, inventoryThreshold: 10, sellable, manualPriceAllowed: false, exchangeLevel: null, openingGiftEligible: false, active: data.active !== false, sortOrder: data.sortOrder });
-    if (inventoryManaged) s.inventory[id] = { count: null, threshold: 10, unit: baseUnit };
-  } else if (action === 'updateCatalogProduct') {
-    need(s, [], 'catalog.manage');
-    const id = String(data.id || '').trim();
-    const current = product(id, s.catalog);
-    const name = String(data.name ?? current.name).trim().slice(0, 80);
-    if (!name) throw new BusinessRejection('商品名称不能为空');
-    const next = { ...current, name };
-    for (const field of ['active', 'sellable', 'manualPriceAllowed']) if (data[field] !== undefined) next[field] = Boolean(data[field]);
-    if (data.sortOrder !== undefined) {
-      if (!Number.isSafeInteger(data.sortOrder)) throw new BusinessRejection('排序必须是整数');
-      next.sortOrder = data.sortOrder;
-    }
-    if (data.saleOptions !== undefined) next.saleOptions = normalizeSaleOptions(data.saleOptions, next.sellable);
-    else if (next.sellable) normalizeSaleOptions(next.saleOptions, true);
-    s.catalog.products = s.catalog.products.map(item => item.id === id ? next : item);
-  } else if (action === 'updateCatalogPackage') {
-    need(s, [], 'catalog.manage');
-    const id = String(data.id || '').trim();
-    const current = s.catalog.packages.find(item => item.id === id);
-    if (!current) throw new BusinessRejection('套餐不存在');
-    const next = { ...current, name: String(data.name ?? current.name).trim().slice(0, 80) };
-    if (!next.name) throw new BusinessRejection('套餐名称不能为空');
-    for (const field of ['priceCents', 'basePriceCents', 'includedValueCents', 'sortOrder']) if (data[field] !== undefined) {
-      if (!Number.isSafeInteger(data[field]) || data[field] < 0) throw new BusinessRejection('套餐金额或排序无效');
-      next[field] = data[field];
-    }
-    // Bug #2 修复：总价只有一个来源——基础房费＋赠饮参考值；提交不一致直接拒绝，
-    // 开房报价、订单快照与账单 total 不再出现两个总价口径。
-    if (next.priceCents !== next.basePriceCents + (next.includedValueCents || 0)) throw new BusinessRejection('套餐总价必须等于基础房费加赠饮参考值');
-    if (data.active !== undefined) next.active = Boolean(data.active);
-    s.catalog.packages = s.catalog.packages.map(item => item.id === id ? next : item);
+  } else if (CATALOG_COMMAND_ACTIONS.includes(action)) {
+    executeCatalogCommand(s, action, data);
   } else if (action === 'markRoomIssue') {
     // 命令体已迁至 rooms.js：markRoomIssue（Phase 5），逐字节保留。
     markRoomIssue(s, room, data, person, time);

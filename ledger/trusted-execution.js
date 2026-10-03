@@ -2,7 +2,8 @@
 import { authorizeCommand } from './command-policy.js';
 import { assertTrustedExecutionContext, AuthorizationDenied } from '../shared/identity.js';
 
-export const TRUSTED_ENABLED_ACTIONS = Object.freeze(['clean', 'markRoomIssue', 'clearRoomIssue']);
+export const TRUSTED_ENABLED_ACTIONS = Object.freeze(['clean', 'markRoomIssue', 'clearRoomIssue',
+  'createCatalogProduct', 'updateCatalogProduct', 'updateCatalogPackage']);
 const enabled = new Set(TRUSTED_ENABLED_ACTIONS);
 
 export class SessionAuthenticationRequired extends Error {
