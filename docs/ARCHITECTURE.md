@@ -82,6 +82,14 @@ flowchart TD
 
 `database/migrations/002_mysql_auth_core.sql` 的五张 InnoDB 表已在专用 MySQL 测试库中验证；脚本执行一次，重复执行首表报已存在。集成测试只在 URL、实际库名、MySQL 版本与默认引擎均符合条件且五张 auth 表预先不存在时建表，结束只删除本次建的 auth 表。测试证据见 [CURRENT_STAGE](./CURRENT_STAGE.md)。真人 account ID、登录标识与凭据发放等仍见 [OPEN BUSINESS DECISIONS](./OPEN_BUSINESS_DECISIONS.md)。
 
+## P0-1 员工名册基础（独立内部接口）
+
+`employees/service.js:createEmployeeService` 使用数据库无关名册 port，公开 createEmployee、getEmployee、disableEmployee、linkPrincipal、unlinkPrincipal。写方法的第二参数必须显式提供可信内部调用方的 actorPrincipalId；它只用于审计、需存在且账号启用，不从输入姓名、关联对象或演示身份推导。此能力尚未接 session／command 授权入口，不能向客户端直接暴露；不改变 existing command policy、trusted-enabled 或任何业务 action。
+
+`employees/mysql-store.js:createMySqlEmployeeStore` 只操作新 employees／employee_events 和当前 auth_accounts 依赖；每次组合写入借一条连接、BEGIN／COMMIT，SQL／未知异常回滚。先非锁定定位员工旧关联，将 actor／旧 principal／目标 principal 按 UUID 升序锁住 account，再 FOR UPDATE 锁 employee 并复核关联；定位结果变化时拒绝，不在 employee 锁后追加 account 锁。重复同一关联、重复解除或重复停用返回 changed:false，不增加事件；不同目标需先解除，唯一 principal 碰撞明确拒绝。COMMIT 回执不明时销毁连接，错误带 employeeId 供核查，不能自动重新创建。
+
+`database/migrations/003_mysql_employee_core.sql` 新建两个 InnoDB 表，需先执行 auth migration。employees 只含稳定 employee_id、可同名 display_name、enabled、nullable unique principal_id FK、数据库 UTC created_at／updated_at。employee_events 追加 employee-created、employee-disabled、principal-linked、principal-unlinked，保存 actor 与关联前后 ID，event shape／FK 保证引用与事件类型一致；接口不提供硬删除、ID 重用或审计改写。停用员工保留关联且不改 auth；停用账号不自动停用员工。当前关联接口与 future transaction-bound 业务人员解析分开，真实员工及账号配置仍未创建，历史 state 的人员快照不改写。
+
 ## P0-1 Stage 2C.1 同事务认证能力
 
 `auth/session-revalidation.js:revalidateSessionInTransaction({port, tokenDigest})` 是数据库无关的只读认证函数。MySQL 组合入口为 `authStore.bindSessionRevalidation(connection).revalidateSessionInTransaction({tokenDigest})`：只使用显式注入的当前连接，检查已有事务，绝不借新连接、BEGIN／COMMIT／ROLLBACK／release，也不更新 `last_seen_at` 或闲置期限。无效 session 返回 null；SQL／未知异常向调用方传播，由事务所有者回滚。普通 `authenticateSession` 仍管理独立事务并更新活动，不可用来替代此 port。
@@ -106,7 +114,7 @@ transact 第五参数显式区分 `{mode:'demo'}` 与 `{mode:'trusted', context}
 
 `deposit`／`withdraw` 经 `deposits.js:submitDeposit`／`withdrawDeposit` 的显式 trusted 模式，只从 context 检查 `deposit.manage`、取 `principalId` 与冻结 `dbNow`；存入／取出记录的原 `person` 字段保存该 principal ID，原 `time` 字段保存数据库时间，历史记录不改写。顾客 name／phone、存取酒 identity、房号、商品和数量继续是业务输入，不能授予权限或替代操作者。demo 保留原 need／person／time 调用；手机号或姓名至少一个、一次多酒、基础数量、取酒核对及余额规则原样保留，存取酒不扣商品库存。未建立 employee 映射，历史未知商品名称不从当前目录补造。
 
-context 的 WeakSet 标记和 permission guard 放在已存在的、浏览器兼容的 `shared/identity.js`，注册只在 Node auth revalidation 创建 Stage 2A principal 后发生；auth 保留原 guard 导出。JSON 复制不能生成标记，领域模块不用导入 Node crypto／auth，也无需修改静态 server 白名单。没有真人账号、员工映射、HTTP／cookie／UI 接入，也未迁移其他业务 action。
+context 的 WeakSet 标记和 permission guard 放在已存在的、浏览器兼容的 `shared/identity.js`，注册只在 Node auth revalidation 创建 Stage 2A principal 后发生；auth 保留原 guard 导出。JSON 复制不能生成标记，领域模块不用导入 Node crypto／auth，也无需修改静态 server 白名单。未配置真人账号或真实员工关联，独立名册接口见上文；没有 HTTP／cookie／UI 接入，也未迁移其他业务 action。
 
 ## 状态所有权
 
@@ -120,6 +128,7 @@ context 的 WeakSet 标记和 permission guard 放在已存在的、浏览器兼
 | 演示权限配置 | `shared/identity.js` 定义，状态中 `capabilities` 保存覆盖 | 同上；不是真实认证 |
 | 报表 | `reporting.js` 只读派生 | 不单独存第二份事实 |
 | MySQL 8.4／InnoDB | 独立 `ledger/mysql-store.js` 过渡账本 | 专用测试库已真实验收；当前页面未接入 |
+| 正式员工名册与关联审计 | 独立 `employees/` 服务与 MySQL store | employees／employee_events，独立内部能力，未接业务 action 或客户端 |
 | MySQL auth 账号、凭据、grants、session、事件 | 独立 `auth/` 服务与存储适配器 | 专用测试库已真实验收；已迁移九动作的 Node trusted 命令取 session 身份，浏览器尚未接入 |
 
 旧 PostgreSQL `database/schema.sql` 的 `room_orders.room_id` 仍要求非空，不能直接承载当前无房零售。正式系统需要受信任的 API、真实身份、服务端事务、审计、并发版本、支付与退款证据、可验证备份及数据库迁移。

@@ -22,10 +22,19 @@ Stage 2C.1 另提供 `bindSessionRevalidation(connection)`，复用调用方已�
 
 2C.2 建立的独立房间命令集成 fixture 复用以上两个 migration，2C.3 的房间异常、目录维护、取消预约和存取酒用例复用同一 fixture；目录用例由 ledger/trusted-catalog.integration.js 承载，取消预约用例由 ledger/trusted-cancel-reservation.integration.js 承载，存取酒用例由 ledger/trusted-deposits.integration.js 承载，三个 helper 均不负责 DDL／清理；严格验证 URL 与实际库为 `jbhh_ktv_test`、版本 8.4、引擎 InnoDB；拒绝预存 auth 表，结束仅按外键顺序删除本次创建的八张 auth／ledger 表。原 auth fixture 仍只操作其五表，原 ledger fixture 仍只操作其三表。三套 fixture 以 setup connection 的具名锁串行 DDL，连接结束释放；命令并发仍用真实 InnoDB 行锁，测试锁不进入生产 adapter。不创建／删除数据库，不操作其他表。
 
+## 员工名册与显式关联
+
+`migrations/003_mysql_employee_core.sql` 在已存在 auth_accounts 的目标库新建 employees 与 employee_events，均 InnoDB；不含 seed。可同名／无账号员工使用稳定 UUID，nullable unique principal_id FK 支持可选一对一；显示名不是登录名或映射依据。created_at、updated_at 默认 UTC_TIMESTAMP(6)，store 更新显式使用同一数据库函数；audit occurred_at 默认数据库 UTC。关联前后 principal、操作者及 employee 均受 FK 保护，关联事件有 shape CHECK。只能运行一次，重复执行首表明确拒绝；DDL 部分失败需人工核查，不自动删表或猜测修复。
+
+内部接口及锁序见 [ARCHITECTURE](../docs/ARCHITECTURE.md)。关系变更和事件在一条 connection／事务提交；员工停用、账号停用互不联动，不提供硬删除或 ID 重用。事务内业务人员解析尚未接入，本阶段不改 ledger snapshot、历史姓名、旧 USERS 或业务 action。
+
+真实名册 fixture 从 LEDGER_MYSQL_TEST_URL 取得已指定 jbhh_ktv_test，验证 URL／实际库／MySQL 8.4／InnoDB，拒绝预存的五张 auth 表及两张 employee 表。与原 fixture 共用具名测试锁，只清理本次创建的七表，按 employee_events → employees → auth_events → auth_sessions → auth_grants → auth_credentials → auth_accounts 顺序；不操作 ledger 三表，不 CREATE／DROP database。SQL 故障注入只将 employee_events INSERT 列名改为不存在列，实际数据库拒绝后验证此前 employee 写入回滚。证据见 [CURRENT_STAGE](../docs/CURRENT_STAGE.md)。
+
 ## 文件
 
 - `migrations/001_mysql_ledger_core.sql`：当前 MySQL 过渡账本三表。
 - `migrations/002_mysql_auth_core.sql`：独立认证与 session 基础五表；无真人 seed。
+- `migrations/003_mysql_employee_core.sql`：employees／employee_events 名册与关联审计；无员工或账号 seed。
 - `schema.sql`：旧 PostgreSQL 关系型业务表、约束、索引，以及金山日报和支出表的原始暂存区。
 - `seed.sql`：旧 PostgreSQL 草案中的当前门店、9 个房间、员工岗位说明、具体权限、商品与库存项目。
 - `kdocs-import.md`：旧关系型草案中的金山文档字段映射；正式 MySQL 导入尚未设计。

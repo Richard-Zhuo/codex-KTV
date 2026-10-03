@@ -156,6 +156,24 @@ Stage 1 MySQL ledger 集成独立复验 11 total／11 pass／0 fail／0 skip，m
 
 源码对照确认存取酒原业务命令体与其他 demo 分支保持；ledger application／MySQL store、auth、Stage 2A policy、fingerprint／revision／terminal 协议、schema、依赖、HTTP／UI、其他领域和 Known Issues 测试未修改。本批只做一个独立提交，不进入下一批，不 push 或部署。
 
+## P0-1 员工名册基础（2026-10-03）
+
+原独立批次开始时，main = origin/main = 15907357f3b26c8b958efffa72b70160d8e4bb6e；存取酒 7a02edf 当时仍保留在其独立分支，未合并或覆盖。从干净 main 建立 codex/p0-1-employee-roster，创建后 HEAD 与 main 再次一致。实跑修改前完整基线 459 total／453 pass／0 fail／6 skip；测试 URL 可读取，实际 MySQL 8.4.11／jbhh_ktv_test／InnoDB，未输出连接 URL 或秘密。
+
+新增 003_mysql_employee_core.sql 的 employees 与 employee_events（InnoDB）。employee_id 由服务端随机 UUID 生成，display_name 可同名；enabled 独立，principal_id nullable unique FK，允许无账号员工。独立 employees/service.js／mysql-store.js／errors.js 提供 createEmployee、getEmployee、disableEmployee、linkPrincipal、unlinkPrincipal；写接口显式接收可信内部审计 actor，不是面向客户端的认证／管理授权入口。没有创建真人账号或员工、导入 USERS、按姓名映射或扩展任何业务 action。
+
+关联变化与审计同 connection／事务；actor、旧关联和目标 account 按 UUID 排序加锁后锁 employee，重新核对非锁定定位的旧关联。唯一 principal 冲突与禁止静默替换明确拒绝，解除后才可显式关联其他账号；同值重复操作不新增 event。员工停用保留 ID／名字／关系，不改账号或 session；账号停用不改员工。新事件保存 actor／before／after principal 及数据库 UTC，四种 event type 与 FK／CHECK 保护元数据；不存密码、token、权限或业务 payload。
+
+定向 node --test --test-isolation=none employees/roster.test.js employees/mysql-store.test.js 为 18 total／18 pass／0 fail／0 skip；employee MySQL 定向为 18 total／18 pass／0 fail／0 skip（16 个真实子用例及 guard／suite）。首轮集成中引擎断言因 information_schema 元数据列名未显式 alias 而失败，最小修正测试查询后重新通过，生产 SQL／语义未因此改动。
+
+真实数据库验证 migration 两表成功执行、重复首表报已存在、空名单无 seed；同名及无账号员工、稳定 UUID、关联／解除前后审计、唯一约束、FK、员工／账号独立停用、重连持久性和非 UTC session 下的数据库 UTC 时间。两个实际不同 CONNECTION_ID 的 connection 争抢同一 principal，最多一人关联成功，另一人明确冲突；locator 期间关系改变后拒绝旧请求。
+
+创建／关联／解除／停用四条路径均在 employee SQL 写入后人为把 audit INSERT 列名改为不存在列，数据库实际报 ER_BAD_FIELD_ERROR 并整体回滚；employee 与事件行和 updated_at 全部保持。另在真实 audit INSERT 成功后注入未知 Error，确认两者同回滚。unit 单独验证 COMMIT 回执不明时销毁连接并返回 employeeId 供核对，不自动重复创建。
+
+最终完整 node --test --test-isolation=none 实际 495 total／489 pass／0 fail／6 skip，退出码 0；原 auth 29 项（含 revalidation 13）、ledger 11 项及全部既有 trusted MySQL 用例实际执行，未变成 skip。原六项 Known Issues 保持；npm test 在 JS 修改及最小测试修正后均已实际尝试，环境仍报 npm 未识别、进程未启动，没有 npm 通过证据。新 fixture 只清理自己创建七张 auth／employee 表，未创建／删除数据库或操作 ledger／其他表。
+
+auth、ledger、rules.js、领域模块、UI／HTTP、旧 SQL／migration、历史快照及依赖均未修改；业务 action 的员工解析 port 仍未接入。仅本批一个提交，当前停止在员工名册基础，不进入业务迁移、不 push 或部署。
+
 ## 本轮隔离集成候选（2026-09-29）
 
 来源：用户交付的 `jbhh-ktv-full.zip`，基线 `ca726b2`；纯重构检查点 `74c3f55`；业务修复终点 `6aa01ba`。Track B 来源为 `codex/offsite-contracts@3193635`。候选位于独立工作树的 `codex/track-a-integration`，主工作区未提交内容保留；未合并 `main`、未推送。
@@ -292,7 +310,7 @@ Stage 1 MySQL ledger 集成独立复验 11 total／11 pass／0 fail／0 skip，m
 
 ## 下一步
 
-只读快照预检器、Stage 1A／1A.1／1A.2 协议、Stage 1B-MySQL 适配器、Stage 2A 纯命令策略及 Stage 2B 独立认证基础已完成；Stage 1B.1 和 Stage 2B 已分别在专用 MySQL 8.4 测试库取得真实验收证据。Stage 2C.1 同事务认证、2C.2 clean 及 2C.3 房间异常、目录维护、取消预约、存取酒已通过真实数据库验收；各批及线性整合验收见上节，其余正式 action 和审核尚未迁移，HTTP／客户端及 2D 未开始，当前停止在本批。正式营业日和班次规则已确认的部分见 [REQUIREMENTS](./REQUIREMENTS.md)，运行实现仍属后续任务。
+只读快照预检器、Stage 1A／1A.1／1A.2 协议、Stage 1B-MySQL 适配器、Stage 2A 纯命令策略及 Stage 2B 独立认证基础已完成；Stage 1B.1 和 Stage 2B 已分别在专用 MySQL 8.4 测试库取得真实验收证据。Stage 2C.1 同事务认证、2C.2 clean 及 2C.3 房间异常、目录维护、取消预约、存取酒已通过真实数据库验收；各批及线性整合验收见上节；员工名册及关联审计基础已真实验收，业务事务内人员解析尚未接入，其余正式 action 和审核尚未迁移，HTTP／客户端及 2D 未开始，当前停止在本批。正式营业日和班次规则已确认的部分见 [REQUIREMENTS](./REQUIREMENTS.md)，运行实现仍属后续任务。
 
 ## 阶段停止条件
 
