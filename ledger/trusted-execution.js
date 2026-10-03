@@ -1,9 +1,10 @@
 // Migrated execution is a separate gate from Stage 2A eligibility.
 import { authorizeCommand } from './command-policy.js';
+import { reservationPolicyPayload } from './reservation-attribution.js';
 import { assertTrustedExecutionContext, AuthorizationDenied } from '../shared/identity.js';
 
 export const TRUSTED_ENABLED_ACTIONS = Object.freeze(['clean', 'markRoomIssue', 'clearRoomIssue',
-  'createCatalogProduct', 'updateCatalogProduct', 'updateCatalogPackage', 'cancelReservation', 'deposit', 'withdraw']);
+  'createCatalogProduct', 'updateCatalogProduct', 'updateCatalogPackage', 'cancelReservation', 'deposit', 'withdraw', 'reserve']);
 const enabled = new Set(TRUSTED_ENABLED_ACTIONS);
 
 export class SessionAuthenticationRequired extends Error {
@@ -40,7 +41,7 @@ export async function revalidateCommandSession(transaction, credential) {
 export function authorizeTrustedExecution(context, request) {
   assertTrustedExecutionContext(context);
   if (!enabled.has(request.action)) throw new AuthorizationDenied('trusted-action-not-enabled');
-  const policy = authorizeCommand({ principal: context.principal, action: request.action, payload: request.payload });
+  const policy = authorizeCommand({ principal: context.principal, action: request.action, payload: request.action === 'reserve' ? reservationPolicyPayload(request.payload) : request.payload });
   if (!policy.allowed) throw new AuthorizationDenied(policy.reason);
   return policy;
 }

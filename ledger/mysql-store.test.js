@@ -15,7 +15,7 @@ const retailPayload = () => ({
 const sale = (operationKey, expectedRevision, payload = retailPayload()) =>
   ({ operationKey, expectedRevision, action: 'retailSale', payload });
 
-function fixture({ failAt = '', bindSessionRevalidation } = {}) {
+function fixture({ failAt = '', bindSessionRevalidation, bindEmployeeResolver } = {}) {
   const state = initialState();
   state.user = 'shaoBoss';
   state.clock = '2026-09-29T20:00:00+08:00';
@@ -88,7 +88,7 @@ function fixture({ failAt = '', bindSessionRevalidation } = {}) {
       };
     }
   };
-  const store = createMySqlLedgerStore({ pool, ledgerId, database: 'ledger_unit_test', bindSessionRevalidation });
+  const store = createMySqlLedgerStore({ pool, ledgerId, database: 'ledger_unit_test', bindSessionRevalidation, bindEmployeeResolver });
   const app = (actor = actorId, transactCommand = transact) =>
     createLedgerApplication({ store, principal: { id: actor }, transactCommand,
       now: () => '1900-01-01T00:00:00.000Z' });
@@ -243,4 +243,32 @@ test('invalid optional revalidation capability rolls back ledger without busines
   await assert.rejects(db.store.runAtomic(() => assert.fail('must not dispatch callback')), /port/);
   assert.equal(db.rollbacks(), 1);
   assert.equal(db.data().head.revision, 0);
+});
+
+
+test('employee resolver capability is bound to the same ledger connection after head lock', async () => {
+  let bound;
+  const capability = { async resolveCreditedEmployeeInTransaction(input) {
+    assert.deepEqual(input, { creditedEmployeeId: 'synthetic-marker' });
+    return { employeeId: 'synthetic-marker', displayName: 'Synthetic' };
+  } };
+  const db = fixture({ bindEmployeeResolver(connection) {
+    assert.ok(db.calls.at(-1).includes('ledger_heads') && db.calls.at(-1).endsWith('FOR UPDATE'));
+    bound = connection; return capability;
+  } });
+  const result = await db.store.runAtomic(tx => {
+    assert.equal(tx.employeeResolver, capability); assert.equal(typeof bound.execute, 'function');
+    return tx.employeeResolver.resolveCreditedEmployeeInTransaction({ creditedEmployeeId: 'synthetic-marker' });
+  });
+  assert.equal(result.displayName, 'Synthetic'); assert.equal(db.connections(), 1);
+  assert.equal(db.rollbacks(), 1); assert.equal(db.data().head.revision, 0);
+  assert.equal(db.data().operations.size, 0); assert.equal(db.data().audit.length, 0);
+});
+
+test('invalid employee resolver binding fails closed and rolls back without dispatch', async () => {
+  const db = fixture({ bindEmployeeResolver: () => null });
+  await assert.rejects(db.store.runAtomic(() => assert.fail('no work allowed')), TypeError);
+  assert.equal(db.rollbacks(), 1); assert.equal(db.data().head.revision, 0);
+  assert.equal(db.data().operations.size, 0); assert.equal(db.data().audit.length, 0);
+  assert.throws(() => createMySqlLedgerStore({ pool: {getConnection() {}}, ledgerId, database:'ledger_unit_test', bindEmployeeResolver: true }), TypeError);
 });

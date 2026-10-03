@@ -15,11 +15,15 @@ import { acquireMySqlFixtureLock } from '../test-support/mysql-fixture-lock.js';
 import { testTrustedCatalogCommands } from './trusted-catalog.integration.js';
 import { runTrustedCancelReservationIntegration } from './trusted-cancel-reservation.integration.js';
 import { testTrustedDeposits } from './trusted-deposits.integration.js';
+import { testTrustedReserve } from './trusted-reserve.integration.js';
+import { createMySqlEmployeeStore } from '../employees/mysql-store.js';
+import { createEmployeeService } from '../employees/service.js';
 
 const testUrl = process.env.LEDGER_MYSQL_TEST_URL;
 const database = 'jbhh_ktv_test';
 const ledgerTables = ['ledger_heads', 'ledger_operations', 'ledger_success_audit'];
 const authTables = ['auth_accounts', 'auth_credentials', 'auth_grants', 'auth_sessions', 'auth_events'];
+const employeeTables = ['employees', 'employee_events'];
 const quote = String.fromCharCode(96);
 const table = name => quote + database + quote + '.' + quote + name + quote;
 const command = (key, revision = 0, payload = { room: 'V01' }, action = 'clean') =>
@@ -52,11 +56,11 @@ test('MySQL trusted clean vertical slice in jbhh_ktv_test',
       t.diagnostic('MySQL ' + target.version + '; database ' + database + '; engine ' + target.engine);
       await acquireMySqlFixtureLock(setup);
       const [existingAuth] = await setup.execute('SELECT table_name FROM information_schema.tables ' +
-        'WHERE table_schema = ? AND table_name IN (?, ?, ?, ?, ?)', [database, ...authTables]);
-      assert.equal(existingAuth.length, 0, '拒绝删除预存 auth 表');
+        'WHERE table_schema = ? AND table_name IN (?, ?, ?, ?, ?, ?, ?)', [database, ...authTables, ...employeeTables]);
+      assert.equal(existingAuth.length, 0, '拒绝删除预存 auth／employee 表');
       // The user explicitly designated these three ledger tables as disposable test tables.
       for (const name of [...ledgerTables].reverse()) await setup.query('DROP TABLE IF EXISTS ' + table(name));
-      for (const [file, names] of [['001_mysql_ledger_core.sql', ledgerTables], ['002_mysql_auth_core.sql', authTables]]) {
+      for (const [file, names] of [['001_mysql_ledger_core.sql', ledgerTables], ['002_mysql_auth_core.sql', authTables], ['003_mysql_employee_core.sql', employeeTables]]) {
         const sql = await readFile(new URL('../database/migrations/' + file, import.meta.url), 'utf8');
         const statements = sql.split(/\r?\n/).filter(line => !line.trim().startsWith('--'))
           .join('\n').split(';').map(part => part.trim()).filter(Boolean);
@@ -66,13 +70,15 @@ test('MySQL trusted clean vertical slice in jbhh_ktv_test',
         }
       }
       const [engines] = await setup.execute('SELECT engine FROM information_schema.tables WHERE table_schema = ? ' +
-        'AND table_name IN (?, ?, ?, ?, ?, ?, ?, ?)', [database, ...ledgerTables, ...authTables]);
-      assert.equal(engines.length, 8); assert.ok(engines.every(row => row.ENGINE === 'InnoDB' || row.engine === 'InnoDB'));
+        'AND table_name IN (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)', [database, ...ledgerTables, ...authTables, ...employeeTables]);
+      assert.equal(engines.length, 10); assert.ok(engines.every(row => row.ENGINE === 'InnoDB' || row.engine === 'InnoDB'));
       const poolOptions = { uri: testUrl, database, connectionLimit: 5, waitForConnections: true,
         supportBigNumbers: true, bigNumberStrings: true };
       pool = mysql.createPool(poolOptions);
       const authStore = createMySqlAuthStore({ pool, database });
       const auth = createAuthService({ store: authStore, rateLimiter: createMemoryLoginRateLimiter() });
+      const employeeStore = createMySqlEmployeeStore({ pool, database });
+      const roster = createEmployeeService({ store: employeeStore });
       let nextAccount = 0;
       const provision = async (permissions = ['room.clean']) => {
         const loginIdentifier = 'synthetic-clean-' + (++nextAccount);
@@ -123,10 +129,10 @@ test('MySQL trusted clean vertical slice in jbhh_ktv_test',
         destroy() { connection.destroy(); }
       });
       const application = (id, { connectionPool = pool, bind = authStore.bindSessionRevalidation,
-        transactCommand = transact, calls = [] } = {}) => {
+        employeeBind = employeeStore.bindEmployeeResolver, transactCommand = transact, calls = [] } = {}) => {
         let executions = 0, context;
         const watched = { async getConnection() { return wrapConnection(await connectionPool.getConnection(), calls); } };
-        const store = createMySqlLedgerStore({ pool: watched, ledgerId: id, database, bindSessionRevalidation: bind });
+        const store = createMySqlLedgerStore({ pool: watched, ledgerId: id, database, bindSessionRevalidation: bind, bindEmployeeResolver: employeeBind ?? undefined });
         const app = createTrustedLedgerApplication({ store, transactCommand: (...args) => {
           executions++; context = args[4].context; calls.push({ kind: 'transact' });
           return transactCommand(...args);
@@ -477,6 +483,8 @@ test('MySQL trusted clean vertical slice in jbhh_ktv_test',
         pool, poolOptions, setup, table, seed, provision, auth, application, inspect, assertUnchanged, wrapConnection
       });
       await testTrustedDeposits({ t, pool, setup, auth, table, provision, seed, inspect, application,
+        assertUnchanged, wrapConnection, poolOptions, database });
+      await testTrustedReserve({ t, pool, setup, auth, table, provision, seed, inspect, application, roster,
         assertUnchanged, wrapConnection, poolOptions, database });
     } finally {
       try { if (pool) await pool.end(); }

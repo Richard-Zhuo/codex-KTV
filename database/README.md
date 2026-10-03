@@ -4,7 +4,7 @@
 
 ## 当前方向：MySQL 8.4 LTS／InnoDB 过渡账本
 
-`migrations/001_mysql_ledger_core.sql` 只建立 `ledger_heads`、`ledger_operations`、`ledger_success_audit`，三表均指定 `ENGINE=InnoDB`。`ledger/mysql-store.js:createMySqlLedgerStore` 由可信调用方显式注入 `mysql2` promise Pool、稳定 ledgerId 和已迁移的数据库名，沿用 Stage 1A 的 `runAtomic` 端口。独立 Node trusted 入口只对已迁移房间四动作、目录三动作及存取酒两动作接入同事务 session 重验，具体集合见 [ARCHITECTURE](../docs/ARCHITECTURE.md)；没有真人账号、HTTP、UI 切换或正式数据导入，已有静态演示仍只用浏览器 localStorage。
+`migrations/001_mysql_ledger_core.sql` 只建立 `ledger_heads`、`ledger_operations`、`ledger_success_audit`，三表均指定 `ENGINE=InnoDB`。`ledger/mysql-store.js:createMySqlLedgerStore` 由可信调用方显式注入 `mysql2` promise Pool、稳定 ledgerId 和已迁移的数据库名，沿用 Stage 1A 的 `runAtomic` 端口。独立 Node trusted 入口只对已迁移房间五动作、目录三动作及存取酒两动作接入同事务 session 重验，具体集合见 [ARCHITECTURE](../docs/ARCHITECTURE.md)；没有真人账号、HTTP、UI 切换或正式数据导入，已有静态演示仍只用浏览器 localStorage。
 
 `ledger_heads.state_json` 保存版本化 MySQL JSON 快照，`state_checksum` 是按 JSON 值规范化后的 SHA-256；读回会核对。MySQL JSON 会调整文本表示，它和原始 `jbhh-demo-v1` 文本不是同一备份。未来正式导入必须另存原始 JSON 字节和原文校验和，本阶段不执行导入。此过渡账本不代表最终领域关系模型已完成。
 
@@ -20,13 +20,13 @@ Migration 只能在已核实的空目标数据库执行一次。MySQL DDL 每条
 
 Stage 2C.1 另提供 `bindSessionRevalidation(connection)`，复用调用方已开启的事务，不管理连接生命周期或活动更新时间；account-first 锁序、当前 grants、单次 DB UTC 时间和未配置属性的接口契约见 [ARCHITECTURE](../docs/ARCHITECTURE.md)。未新增表或 migration；已迁移房间、目录与存取酒动作已消费此能力，精确执行顺序与 demo 隔离见 [ARCHITECTURE](../docs/ARCHITECTURE.md)，真实验收状态见 [CURRENT_STAGE](../docs/CURRENT_STAGE.md)。
 
-2C.2 建立的独立房间命令集成 fixture 复用以上两个 migration，2C.3 的房间异常、目录维护、取消预约和存取酒用例复用同一 fixture；目录用例由 ledger/trusted-catalog.integration.js 承载，取消预约用例由 ledger/trusted-cancel-reservation.integration.js 承载，存取酒用例由 ledger/trusted-deposits.integration.js 承载，三个 helper 均不负责 DDL／清理；严格验证 URL 与实际库为 `jbhh_ktv_test`、版本 8.4、引擎 InnoDB；拒绝预存 auth 表，结束仅按外键顺序删除本次创建的八张 auth／ledger 表。原 auth fixture 仍只操作其五表，原 ledger fixture 仍只操作其三表。三套 fixture 以 setup connection 的具名锁串行 DDL，连接结束释放；命令并发仍用真实 InnoDB 行锁，测试锁不进入生产 adapter。不创建／删除数据库，不操作其他表。
+2C.2 建立的独立房间命令集成 fixture 原用以上两个 migration；2C.3 的房间异常、目录维护、取消预约、存取酒和 reserve 复用同一 fixture，现为 reserve 另执行 003_mysql_employee_core.sql；目录用例由 ledger/trusted-catalog.integration.js 承载，取消预约用例由 ledger/trusted-cancel-reservation.integration.js 承载，存取酒用例由 ledger/trusted-deposits.integration.js 承载，reserve 用例由 ledger/trusted-reserve.integration.js 承载；四个 helper 均不负责 DDL／清理；严格验证 URL 与实际库为 `jbhh_ktv_test`、版本 8.4、引擎 InnoDB；拒绝预存 auth／employee 表，结束仅按外键顺序删除本次创建的十张 auth／ledger／employee 表。原 auth fixture 仍只操作其五表，原 ledger fixture 仍只操作其三表。三套 fixture 以 setup connection 的具名锁串行 DDL，连接结束释放；命令并发仍用真实 InnoDB 行锁，测试锁不进入生产 adapter。不创建／删除数据库，不操作其他表。
 
 ## 员工名册与显式关联
 
 `migrations/003_mysql_employee_core.sql` 在已存在 auth_accounts 的目标库新建 employees 与 employee_events，均 InnoDB；不含 seed。可同名／无账号员工使用稳定 UUID，nullable unique principal_id FK 支持可选一对一；显示名不是登录名或映射依据。created_at、updated_at 默认 UTC_TIMESTAMP(6)，store 更新显式使用同一数据库函数；audit occurred_at 默认数据库 UTC。关联前后 principal、操作者及 employee 均受 FK 保护，关联事件有 shape CHECK。只能运行一次，重复执行首表明确拒绝；DDL 部分失败需人工核查，不自动删表或猜测修复。
 
-内部接口及锁序见 [ARCHITECTURE](../docs/ARCHITECTURE.md)。关系变更和事件在一条 connection／事务提交；员工停用、账号停用互不联动，不提供硬删除或 ID 重用。事务内归属解析已建立但尚未被业务 action 调用；bindEmployeeResolver(connection) 只在调用方活动事务内按 UUID 做 FOR SHARE 当前读取，返回启用员工的 ID／显示名快照，不读取 principal 关联或管理事务。接口、锁序与证据见 ARCHITECTURE／CURRENT_STAGE；本阶段不改 ledger snapshot、历史姓名、旧 USERS 或业务 action。
+内部接口及锁序见 [ARCHITECTURE](../docs/ARCHITECTURE.md)。关系变更和事件在一条 connection／事务提交；员工停用、账号停用互不联动，不提供硬删除或 ID 重用。事务内归属解析当前仅被 trusted reserve 调用；bindEmployeeResolver(connection) 只在调用方活动事务内按 UUID 做 FOR SHARE 当前读取，返回启用员工的 ID／显示名快照，不读取 principal 关联或管理事务。接口、锁序与证据见 ARCHITECTURE／CURRENT_STAGE；reserve 新记录的快照字段与精确链见 ARCHITECTURE；历史姓名、旧 USERS 及其他业务 action 保持。
 
 真实名册 fixture 从 LEDGER_MYSQL_TEST_URL 取得已指定 jbhh_ktv_test，验证 URL／实际库／MySQL 8.4／InnoDB，拒绝预存的五张 auth 表及两张 employee 表。与原 fixture 共用具名测试锁，只清理本次创建的七表，按 employee_events → employees → auth_events → auth_sessions → auth_grants → auth_credentials → auth_accounts 顺序；不操作 ledger 三表，不 CREATE／DROP database。SQL 故障注入只将 employee_events INSERT 列名改为不存在列，实际数据库拒绝后验证此前 employee 写入回滚。证据见 [CURRENT_STAGE](../docs/CURRENT_STAGE.md)。
 

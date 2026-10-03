@@ -97,7 +97,7 @@ test('trusted clean uses session actor and frozen DB context; all demo facts are
 
 test('trusted-enabled commands are independent from all other eligible and demo actions', async () => {
   assert.deepEqual(TRUSTED_ENABLED_ACTIONS, ['clean', 'markRoomIssue', 'clearRoomIssue',
-    'createCatalogProduct', 'updateCatalogProduct', 'updateCatalogPackage', 'cancelReservation', 'deposit', 'withdraw']);
+    'createCatalogProduct', 'updateCatalogProduct', 'updateCatalogPackage', 'cancelReservation', 'deposit', 'withdraw', 'reserve']);
   assert.equal(Object.isFrozen(TRUSTED_ENABLED_ACTIONS), true);
   for (const action of [...FORMAL_COMMAND_ACTIONS.filter(action => !TRUSTED_ENABLED_ACTIONS.includes(action)), ...DEMO_ONLY_ACTIONS, 'unknown']) {
     const f = fixture({ permissions: [...PERMISSION_IDS] });

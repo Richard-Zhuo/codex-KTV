@@ -2,6 +2,7 @@
 import { createHash } from 'node:crypto';
 import { transact } from '../rules.js';
 import { BusinessRejection } from '../shared/business-error.js';
+import { resolveReservationContext } from './reservation-attribution.js';
 import { prepareSessionCredential, revalidateCommandSession, authorizeTrustedExecution } from './trusted-execution.js';
 
 const plainObject = value => value !== null && typeof value === 'object' && (Object.getPrototypeOf(value) === Object.prototype || Object.getPrototypeOf(value) === null);
@@ -100,8 +101,12 @@ export function createLedgerApplication({ store, principal, executionMode = 'dem
         if (!Number.isSafeInteger(currentRevision + 1)) throw RangeError('revision 已达到安全整数上限');
         let nextState;
         try {
+          // New reserve only: resolve current employee after auth, replay lookup,
+          // policy and revision checks, on the same locked transaction.
+          const executionContext = trusted && request.action === 'reserve'
+            ? await resolveReservationContext(transaction, context, request.payload) : context;
           nextState = transactCommand(state, request.action, request.payload, request.operationKey,
-            trusted ? { mode: 'trusted', context } : { mode: 'demo' });
+            trusted ? { mode: 'trusted', context: executionContext } : { mode: 'demo' });
         } catch (error) {
           // Only explicit domain rejections reserve the key; unknown failures roll back.
           if (!(error instanceof BusinessRejection)) throw error;

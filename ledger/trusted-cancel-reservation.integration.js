@@ -219,10 +219,10 @@ export async function runTrustedCancelReservationIntegration(t, {
     } finally { try { await a.rollback(); await b.rollback(); } finally { a.release(); b.release(); } }
   });
 
-  await t.test(title('eligible reserve still fails closed instead of falling back to demo execution'), async () => {
+  await t.test(title('eligible open still fails closed instead of falling back to demo execution'), async () => {
     const login = await provision(['room.reserve']), id = 'cancel-not-reserve';
     await seed(id, prepare); const before = await inspect(id), run = application(id);
-    await assert.rejects(run.app.execute({ ...command('blocked'), action: 'reserve' }, login.credential),
+    await assert.rejects(run.app.execute({ ...command('blocked'), action: 'open' }, login.credential),
       error => denied(error) && error.reason === 'trusted-action-not-enabled');
     assert.equal(run.executions(), 0); await assertUnchanged(id, before);
   });

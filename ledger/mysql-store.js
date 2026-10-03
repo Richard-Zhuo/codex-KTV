@@ -65,11 +65,12 @@ export class LedgerCommitOutcomeUnknown extends Error {
   }
 }
 
-export function createMySqlLedgerStore({ pool, ledgerId, database, bindSessionRevalidation }) {
+export function createMySqlLedgerStore({ pool, ledgerId, database, bindSessionRevalidation, bindEmployeeResolver }) {
   if (typeof pool?.getConnection !== 'function' || typeof ledgerId !== 'string' ||
       !ledgerId || ledgerId.trim() !== ledgerId || ledgerId.length > 64 ||
       typeof database !== 'string' || !/^[a-z][a-z0-9_]{0,63}$/.test(database) ||
-      (bindSessionRevalidation !== undefined && typeof bindSessionRevalidation !== 'function')) {
+      (bindSessionRevalidation !== undefined && typeof bindSessionRevalidation !== 'function') ||
+      (bindEmployeeResolver !== undefined && typeof bindEmployeeResolver !== 'function')) {
     throw TypeError('MySQL 账本连接、标识或数据库名无效');
   }
   const quote = String.fromCharCode(96);
@@ -167,6 +168,13 @@ export function createMySqlLedgerStore({ pool, ledgerId, database, bindSessionRe
           throw TypeError('事务内 session revalidation port 无效');
         }
         transaction.sessionRevalidation = port;
+      }
+      if (bindEmployeeResolver) {
+        const port = bindEmployeeResolver(connection); // Binding does not read or lock employees.
+        if (typeof port?.resolveCreditedEmployeeInTransaction !== 'function') {
+          throw TypeError('事务内 employee resolver port 无效');
+        }
+        transaction.employeeResolver = port;
       }
       const response = await work(transaction);
       if (!proposed) {

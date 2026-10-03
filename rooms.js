@@ -124,16 +124,31 @@ export function openRoom(s, room, data, person, operator, time) {
   room.status = '营业中'; room.order = id;
   if (booking) booking.status = '已到店';
 }
-export function reserveRoom(s, room, data, person, operator, time) {
-  const delegated = delegatedEmployee(s, data);
-  if (delegated) person = delegated.name; else need(s, ['开单员','老板'], 'room.reserve');
+export function reserveRoom(s, room, data, person, operator, time, execution = { mode: 'demo' }) {
+  let delegated, attribution = {};
+  if (execution?.mode === 'trusted') {
+    const context = execution.context;
+    // Explicit employee attribution retains the original staff.record gate.
+    requireTrustedPermission(context, 'staff.record');
+    if (!context.creditedEmployeeId || typeof context.creditedEmployeeNameSnapshot !== 'string' ||
+        (data.creditedEmployeeId ?? data.employee) !== context.creditedEmployeeId ||
+        (data.employee !== undefined && data.employee !== context.creditedEmployeeId)) throw TypeError('缺少事务内可信预约员工快照');
+    person = context.creditedEmployeeNameSnapshot;
+    operator = context.principalId; time = context.dbNow;
+    delegated = { id: context.creditedEmployeeId };
+    attribution = { actualActorPrincipalId: context.principalId, creditedEmployeeId: context.creditedEmployeeId,
+      creditedEmployeeNameSnapshot: context.creditedEmployeeNameSnapshot };
+  } else if (execution?.mode === 'demo') {
+    delegated = delegatedEmployee(s, data);
+    if (delegated) person = delegated.name; else need(s, ['开单员','老板'], 'room.reserve');
+  } else throw TypeError('预约执行模式无效');
   if (!room || !['空闲','营业中','待清洁','已预订'].includes(room.status)) throw new BusinessRejection('当前房间状态不能预订');
   if (pendingRoomIssueReview(s, room.id)) throw new BusinessRejection('房间恢复申请正在审核，暂不能预订');
   if (!RESERVATION_SOURCES.includes(data.source)) throw new BusinessRejection('请选择预订方式');
   const at = reservationTarget(time, data.dayOffset, data.session);
   if (s.reservations.some(r => r.room === room.id && r.status === '已预订' && Date.parse(r.at) === Date.parse(at))) throw new BusinessRejection('该房间该场次已经有预订');
   const sessionLabel = data.session === 'afternoon' ? '下午场（14:00—18:00）' : '夜间场（20:00—次日02:00）';
-  s.reservations.push({ id: ++s.serial, room: room.id, at, dayOffset: Number(data.dayOffset), session: data.session, sessionLabel, source: data.source, note: String(data.note || '').slice(0,100), status: '已预订', person, employeeId: delegated?.id || '', recordedBy: operator });
+  s.reservations.push({ id: ++s.serial, room: room.id, at, dayOffset: Number(data.dayOffset), session: data.session, sessionLabel, source: data.source, note: String(data.note || '').slice(0,100), status: '已预订', person, employeeId: delegated?.id || '', recordedBy: operator, ...attribution });
 }
 export function cancelReservation(s, room, data, time, execution = { mode: 'demo' }) {
   if (execution?.mode === 'trusted') {

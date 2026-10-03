@@ -188,6 +188,26 @@ auth、ledger、rules.js、领域模块、UI／HTTP、旧 SQL／migration、历�
 
 完整 node --test --test-isolation=none 实际 552 total／546 pass／0 fail／6 skip，退出码 0。auth 29 项（含 revalidation 13）、ledger 11 项、所有既有 trusted MySQL 子用例及新增 resolver 全部实际执行；原六项 Known Issues 继续 skip。结束后只读核实十张已知 fixture 表均已清理。本轮一个独立提交，停止在 resolver 基础，不创建真人配置，不接新业务 action，不 push 或部署。
 
+## P0-1 Stage 2C.3 trusted reserve（2026-10-04）
+
+开始时只读核实 main = origin/main = 509add9，而 resolver 提交 d4d8179 尚未合入。用户明确确认后，本地 main 使用 ff-only 前进到 d4d81790c77f24ace6ce58b929396fbd86a6e105，无 merge commit；确认 clean 后从该 main 建立 codex/p0-1-stage2c-reserve，HEAD／main 再次一致。本地前置合入未 push；沿用 resolver 已有验收，不重复用其完整测试作为合入前置。
+
+本批仅将 reserve 加入 trusted-enabled，第十个已迁移动作。createMySqlLedgerStore 在 head 锁定后把同一 connection 的可选 bindEmployeeResolver 暴露为 transaction.employeeResolver；application 在认证、existing operation、当前 policy 与 revision 校验后，通过 resolveReservationContext 调用员工 resolver。data.employee 只作 UUID 别名，不改变原请求或 fingerprint；保留原显式员工归属的 staff.record 代录权限，room.reserve 本身不能绕过这一 gate。缺少显式员工 UUID、旧演示 ID、姓名或冲突别名均拒绝，不按 principal 推断本人。
+
+withTrustedCreditedEmployee 仅扩展已认证 branded context，保留 principal／permissionIds／dbNow，仅新增 resolver 返回的稳定 ID 与当时姓名。rooms.js:reserveRoom 的 trusted 分支只从此 context 取实际 actor、权限、时间与员工快照；保存 actualActorPrincipalId、creditedEmployeeId、creditedEmployeeNameSnapshot，原 person／employeeId／recordedBy 分别保存可信姓名／UUID／principal。无账号与同名员工可用，关联到其他停用账号也不替换实际 actor；未知或 disabled employee 明确拒绝。
+
+预约时段、0–30 天、未来场次、source、房态、待恢复审核和重复预约校验保持；房态／库存不因预约变化，历史 retail.room=null、count=null／0、名称／价格／规格／数量及付款事实保持。demo 分支原校验仍保留，不调用新 resolver。没有员工映射、真人账号、营业日、其他 business action、HTTP／UI、migration 或依赖扩展。
+
+有效 auth 先于原终态返回；旧 key 不重授权、不重查员工，撤权、员工停用或改名不能改写旧预约快照。新 key 用当前权限；authorization-denied 不占键。仅显式 EMPLOYEE_NOT_FOUND／EMPLOYEE_DISABLED 转为 BusinessRejection，业务拒绝／revision-conflict 仍占原键；未知 SQL／程序故障完整回滚、不占键，修复后可原 key 重试。
+
+新增 reserve 单元 12 项与 store binding 契约 2 项；定向 node --test --test-isolation=none ledger/trusted-reserve.test.js ledger/mysql-store.test.js ledger/trusted-clean.test.js rooms.test.js rules.test.js 实际 148 total／147 pass／0 fail／1 skip（该定向集合原平台券 Known Issue），不把 skip 当通过。npm test 在 JS 修改后及测试修正后均实际尝试，环境报 The term 'npm' is not recognized，进程未启动；未取得 npm 通过证据。
+
+实际只读连接确认 MySQL 8.4.11／jbhh_ktv_test／InnoDB，URL 可读取且未输出凭据。原 trusted fixture 为 reserve 增加本次创建的 employee 两表，实际执行 003 migration，共十张已知表；拒绝预存 auth／employee 表，只逆序清理本次创建表，不 CREATE／DROP database、不操作其他表。新增 16 个真实 reserve 子用例，全部 trusted 定向集成 97 total／97 pass／0 fail／0 skip。首轮一项新增测试给 logout 传错对象，导致没有真正撤销；仅修正为当前接口的 token 字符串并断言 logout 返回 true，生产认证代码未改变，随后全通过。
+
+同 connection、冻结一次 dbNow、无 session activity 更新、真实重连幂等、撤权拒绝新键、五类 auth 失效、employee 未知／停用、原领域校验、actor／payload／revision 冲突均实际验证。人为 employee SELECT 不存在列和 audit CHECK 中途失败都验证完整 rollback；后者确认 head 与 operation SQL 已执行后仍无 state／revision／result／audit 留存。未知 Error 在领域克隆变化后回滚。revision／同 key 竞争、reserve 先持 employee 共享锁、disable 先持 employee 排他锁三类竞争都核对两个不同 CONNECTION_ID；真实 InnoDB 等待／超时证明顺序，再验证提交或原 key 重试结果。
+
+最终完整 node --test --test-isolation=none 实际 582 total／576 pass／0 fail／6 skip，退出码 0。auth 29／29（含 revalidation 13／13）、employee 30／30、ledger 11／11、trusted 97／97 全部真实执行；原六项 Known Issues 名称与 skip 结论保持。结束后只读核实十张已知 fixture 表均不存在。本批一个独立提交；main 保持本地前置 d4d8179，不继续下一批、不 push 或部署。
+
 ## 本轮隔离集成候选（2026-09-29）
 
 来源：用户交付的 `jbhh-ktv-full.zip`，基线 `ca726b2`；纯重构检查点 `74c3f55`；业务修复终点 `6aa01ba`。Track B 来源为 `codex/offsite-contracts@3193635`。候选位于独立工作树的 `codex/track-a-integration`，主工作区未提交内容保留；未合并 `main`、未推送。
@@ -324,7 +344,7 @@ auth、ledger、rules.js、领域模块、UI／HTTP、旧 SQL／migration、历�
 
 ## 下一步
 
-只读快照预检器、Stage 1A／1A.1／1A.2 协议、Stage 1B-MySQL 适配器、Stage 2A 纯命令策略及 Stage 2B 独立认证基础已完成；Stage 1B.1 和 Stage 2B 已分别在专用 MySQL 8.4 测试库取得真实验收证据。Stage 2C.1 同事务认证、2C.2 clean 及 2C.3 房间异常、目录维护、取消预约、存取酒已通过真实数据库验收；各批及线性整合验收见上节；员工名册、关联审计与事务内归属解析已真实验收，resolver 尚未接业务 action，其余正式 action 和审核尚未迁移，HTTP／客户端及 2D 未开始，当前停止在本批。正式营业日和班次规则已确认的部分见 [REQUIREMENTS](./REQUIREMENTS.md)，运行实现仍属后续任务。
+只读快照预检器、Stage 1A／1A.1／1A.2 协议、Stage 1B-MySQL 适配器、Stage 2A 纯命令策略及 Stage 2B 独立认证基础已完成；Stage 1B.1 和 Stage 2B 已分别在专用 MySQL 8.4 测试库取得真实验收证据。Stage 2C.1 同事务认证、2C.2 clean 及 2C.3 房间异常、目录维护、取消预约、存取酒与 reserve 已通过真实数据库验收；各批及线性整合验收见上节；员工名册、关联审计与事务内归属解析已真实验收，resolver 已仅接 trusted reserve，其余正式 action 和审核尚未迁移，HTTP／客户端及 2D 未开始，当前停止在本批。正式营业日和班次规则已确认的部分见 [REQUIREMENTS](./REQUIREMENTS.md)，运行实现仍属后续任务。
 
 ## 阶段停止条件
 
