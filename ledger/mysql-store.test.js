@@ -15,7 +15,7 @@ const retailPayload = () => ({
 const sale = (operationKey, expectedRevision, payload = retailPayload()) =>
   ({ operationKey, expectedRevision, action: 'retailSale', payload });
 
-function fixture({ failAt = '' } = {}) {
+function fixture({ failAt = '', bindSessionRevalidation } = {}) {
   const state = initialState();
   state.user = 'shaoBoss';
   state.clock = '2026-09-29T20:00:00+08:00';
@@ -88,7 +88,7 @@ function fixture({ failAt = '' } = {}) {
       };
     }
   };
-  const store = createMySqlLedgerStore({ pool, ledgerId, database: 'ledger_unit_test' });
+  const store = createMySqlLedgerStore({ pool, ledgerId, database: 'ledger_unit_test', bindSessionRevalidation });
   const app = (actor = actorId, transactCommand = transact) =>
     createLedgerApplication({ store, principal: { id: actor }, transactCommand,
       now: () => '1900-01-01T00:00:00.000Z' });
@@ -211,5 +211,36 @@ test('ambiguous COMMIT destroys its connection and preserves the operation key f
   await assert.rejects(db.app().execute(sale('uncertain', 0)),
     error => error instanceof LedgerCommitOutcomeUnknown && error.operationKey === 'uncertain');
   assert.equal(db.destroyed(), 1);
+  assert.equal(db.data().head.revision, 0);
+});
+
+test('optional revalidation capability is bound to ledger connection after head lock', async () => {
+  let connection;
+  const capability = { async revalidateSessionInTransaction(input) {
+    assert.deepEqual(input, { tokenDigest: 'test-only-marker' });
+    return { principalId: 'synthetic', policyAttributesConfigured: false };
+  } };
+  const db = fixture({ bindSessionRevalidation(bound) {
+    assert.ok(db.calls.at(-1).includes('ledger_heads') && db.calls.at(-1).endsWith('FOR UPDATE'));
+    connection = bound;
+    return capability;
+  } });
+  const result = await db.store.runAtomic(async transaction => {
+    assert.equal(transaction.sessionRevalidation, capability);
+    assert.equal(typeof connection.execute, 'function');
+    return transaction.sessionRevalidation.revalidateSessionInTransaction({ tokenDigest: 'test-only-marker' });
+  });
+  assert.equal(result.principalId, 'synthetic');
+  assert.equal(db.connections(), 1);
+  assert.equal(db.rollbacks(), 1);
+  assert.equal(db.data().head.revision, 0);
+  assert.equal(db.data().operations.size, 0);
+  assert.equal(db.data().audit.length, 0);
+});
+
+test('invalid optional revalidation capability rolls back ledger without business execution', async () => {
+  const db = fixture({ bindSessionRevalidation: () => null });
+  await assert.rejects(db.store.runAtomic(() => assert.fail('must not dispatch callback')), /port/);
+  assert.equal(db.rollbacks(), 1);
   assert.equal(db.data().head.revision, 0);
 });

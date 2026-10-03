@@ -1,6 +1,6 @@
 # 当前阶段
 
-更新日期：2026-09-29。本文件是当前进度的唯一汇总入口。
+更新日期：2026-10-03。本文件是当前进度的唯一汇总入口。
 
 ## 当前基线与业务契约纠偏（2026-09-29）
 
@@ -63,6 +63,20 @@ Track A＋B 集成提交 `81e1a4c` 已在 `main`；下方“隔离集成候选�
 成功登录的 session 和审计、账号与凭据创建、账号停用与 session 撤销均在单连接事务中完成；数据库时间决定创建、活动、闲置／绝对过期和事件时间。每次 session 认证重读账号启用状态、凭据版本及 grants；轮换凭据使旧 session 失效，停用立即撤销全部 session。当前服务内部管理方法尚未经过 HTTP／命令授权，不能对客户端暴露；Stage 2A、ledger principal 协议、`rules.js`、UI 和旧 Known Issues 均未修改。真人账号、登录名、初始密码与恢复流程仍待决定。
 
 数据库无关定向测试 5/5；专用 MySQL 8.4.11／InnoDB 中 migration、重连、并发、过期、停用、凭据版本、实时 grants 和 SQL 中途失败回滚等真实集成测试 16/16，0 失败、0 跳过。修改 JavaScript 后按约定尝试 `npm test`，PowerShell 找不到 `npm`，进程未启动；实际运行 `node --test --test-isolation=none`：307 项、301 通过、0 失败、6 项原有 Known Issues 跳过。Stage 1 MySQL 账本集成测试单独复验 11/11，0 跳过。
+
+## P0-1 Stage 2C.1：同连接认证重验基础（2026-10-03，真实 MySQL 验收完成）
+
+从干净 `main = origin/main = dd20b5d` 建立 `codex/p0-1-stage2c-auth-revalidation`。新增数据库无关 `auth/session-revalidation.js:revalidateSessionInTransaction`，MySQL store 的 `bindSessionRevalidation(connection)` 在调用方已经开启的事务上提供只读认证能力；不会另借连接、管理事务或更新 session 活动。`ledger/mysql-store.js` 仅增加可选 binder，在 head 行锁之后向事务回调提供该能力，默认 Stage 1 路径与 `ledger/application.js` 未改。没有接入正式业务 action、HTTP 或 UI。
+
+非锁定 token 定位只作线索；权威读取统一为 account → session → 当前 grants 的 locking read，随后只取一次数据库 UTC 微秒时间判断两类过期。退出／撤销修正为 account-first；多 session 按稳定 ID 顺序读取，登录与凭据轮换也先锁 account／既存 session 后读取凭据。返回经 Stage 2A 工厂创建的 principal 与不可伪造的上下文；policy attributes 显式为未配置（false／null），需属性时拒绝。既有终态重试与撤权的顺序只通过合成执行器契约测试冻结，没有修改 production replay 流程。
+
+本阶段早先在 MySQL84 未运行时，修改前基线为 284 total／276 pass／2 fail／6 skip，修改后完整集合为 309 total／301 pass／2 fail／6 skip；两次失败都停在 `ECONNREFUSED`，不能当作数据库验收。服务恢复后，本轮重新连接实际核实 `LEDGER_MYSQL_TEST_URL` 可读取，MySQL 8.4.11／`jbhh_ktv_test`／InnoDB，未输出 URL 或密码。
+
+本轮真实 auth 集成 29 total／29 pass／0 fail／0 skip，其中原 Stage 2B 16 项完整保留执行，新增 2C.1 重验子集 13／13。调用方 connection／事务生命周期、account → session → grants 顺序、停用／撤销／两类过期／凭据版本、旧 REPEATABLE READ 快照之外的当前 grants、一次数据库 UTC 时间、属性 false／null 及不更新活动均实际验证。并发用例从池中取得两条连接并断言 `CONNECTION_ID()` 不同，以真实 `FOR UPDATE NOWAIT` 错误确认 account 锁；分别验证 grant／revoke、disable、revoke／logout 和双重验的先后结果，无死锁。人为查询不存在列触发 SQL 故障，port 向外传播且不自行回滚；调用方回滚后此前未提交的 grant 消失，session 数据不变。
+
+Stage 1 MySQL ledger 集成独立复验 11 total／11 pass／0 fail／0 skip，migration、重连幂等、双连接 revision／初始化竞争和 SQL 中途失败回滚继续真实执行。定向单元测试本阶段 52／52；本轮完整 `node --test --test-isolation=none` 实际为 345 total／339 pass／0 fail／6 skip，退出码 0，包含两套真实数据库用例。所有数字均取实际输出，不沿用连接失败时缺少子测试的数量。
+
+已再次实际尝试 `npm test`，环境仍找不到 npm，进程未启动。原 6 项 Known Issues 保持 skip；`rules.js`、演示身份／时钟、command-policy 清单、ledger fingerprint／revision／terminal 协议及数据库 migration 均未修改；没有新增依赖或真人账号。本阶段实现及验收纳入一个独立提交，不进入 2C.2，不 push 或部署。
 
 ## 本轮隔离集成候选（2026-09-29）
 
@@ -200,7 +214,7 @@ Track A＋B 集成提交 `81e1a4c` 已在 `main`；下方“隔离集成候选�
 
 ## 下一步
 
-只读快照预检器、Stage 1A／1A.1／1A.2 协议、Stage 1B-MySQL 适配器、Stage 2A 纯命令策略及 Stage 2B 独立认证基础已完成；Stage 1B.1 和 Stage 2B 已分别在专用 MySQL 8.4 测试库取得真实验收证据。Stage 2A／2B 尚未接入 ledger 命令授权、HTTP 或客户端；Stage 2C／2D 未开始。正式营业日和班次规则已确认的部分见 [REQUIREMENTS](./REQUIREMENTS.md)，运行实现仍属后续任务。
+只读快照预检器、Stage 1A／1A.1／1A.2 协议、Stage 1B-MySQL 适配器、Stage 2A 纯命令策略及 Stage 2B 独立认证基础已完成；Stage 1B.1 和 Stage 2B 已分别在专用 MySQL 8.4 测试库取得真实验收证据。Stage 2A／2B 尚未接入 ledger 命令授权、HTTP 或客户端；Stage 2C.1 同事务认证基础已实现并通过本轮真实数据库验收；2C.2／2D 未开始。正式营业日和班次规则已确认的部分见 [REQUIREMENTS](./REQUIREMENTS.md)，运行实现仍属后续任务。
 
 ## 阶段停止条件
 

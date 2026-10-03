@@ -18,6 +18,8 @@ Migration 只能在已核实的空目标数据库执行一次。MySQL DDL 每条
 
 真实测试可使用 `AUTH_MYSQL_TEST_URL`，未设时复用已明确的 `LEDGER_MYSQL_TEST_URL`；连接必须实际选中 `jbhh_ktv_test`，且为 MySQL 8.4／默认 InnoDB。若 auth 表已存在，测试拒绝执行；测试只删除该次成功创建的五张 auth 表，不创建／删除数据库，不碰 ledger 表。DDL 每条独立提交，部分失败须检查后处理。
 
+Stage 2C.1 另提供 `bindSessionRevalidation(connection)`，复用调用方已开启的事务，不管理连接生命周期或活动更新时间；account-first 锁序、当前 grants、单次 DB UTC 时间和未配置属性的接口契约见 [ARCHITECTURE](../docs/ARCHITECTURE.md)。未新增表或 migration，未接业务 action；本轮真实验收状态见 [CURRENT_STAGE](../docs/CURRENT_STAGE.md)。
+
 ## 文件
 
 - `migrations/001_mysql_ledger_core.sql`：当前 MySQL 过渡账本三表。

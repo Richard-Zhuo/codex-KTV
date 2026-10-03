@@ -6,6 +6,7 @@ import { createMySqlAuthStore } from './mysql-store.js';
 import { createAuthService } from './service.js';
 import { createMemoryLoginRateLimiter } from './rate-limit.js';
 import { digestSessionToken } from './session-token.js';
+import { verifySessionRevalidation } from './session-revalidation.integration.js';
 
 const testUrl = process.env.AUTH_MYSQL_TEST_URL || process.env.LEDGER_MYSQL_TEST_URL;
 const database = 'jbhh_ktv_test';
@@ -353,6 +354,7 @@ test('MySQL 8.4 InnoDB auth integration in jbhh_ktv_test',
           ' WHERE login_identifier = ?', ['synthetic-fault-account']);
         assert.equal(uncommitted.length, 0);
       });
+      await verifySessionRevalidation(t, { pool, database, qualified });
     } finally {
       try { if (pool) await pool.end(); }
       finally {

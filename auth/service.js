@@ -140,6 +140,7 @@ export function createAuthService({
     return store.runTransaction(async tx => {
       const account = await tx.lockAccount(principalId);
       if (!account || !account.enabled) throw Error('账号不可更新凭据');
+      await tx.listUnrevokedSessions(principalId);
       await tx.replaceCredential(principalId, credential);
       await tx.appendEvent({ principalId, eventType: 'credential-rotated' });
       return true;

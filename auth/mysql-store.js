@@ -1,4 +1,5 @@
-// MySQL persistence port for Stage 2B. All multi-row auth writes use one connection.
+// MySQL persistence port. Account is the first auth lock on every path.
+import { lockSessionForDigest, revalidateSessionInTransaction, sessionValidAt } from './session-revalidation.js';
 const tableNames = ['auth_accounts', 'auth_credentials', 'auth_grants', 'auth_sessions', 'auth_events'];
 
 export class AuthCommitOutcomeUnknown extends Error {
@@ -22,7 +23,8 @@ export function createMySqlAuthStore({ pool, database }) {
   const sessions = names.auth_sessions;
   const events = names.auth_events;
 
-  const transactionPort = connection => ({
+  const transactionPort = connection => {
+    const port = {
     async insertAccount({ principalId, loginIdentifier, credential }) {
       await connection.execute('INSERT INTO ' + accounts +
         ' (principal_id) VALUES (?)', [principalId]);
@@ -33,14 +35,18 @@ export function createMySqlAuthStore({ pool, database }) {
     },
 
     async findCredentialForLogin(loginIdentifier) {
+      const [[located]] = await connection.execute(
+        'SELECT principal_id FROM ' + credentials + ' WHERE login_identifier = ?', [loginIdentifier]);
+      if (!located) return null;
+      const account = await port.lockAccount(located.principal_id);
+      if (!account) return null;
+      await port.listUnrevokedSessions(account.principalId);
       const [[row]] = await connection.execute(
-        'SELECT a.principal_id, a.enabled, a.credential_version, c.password_algorithm, c.password_params_version, c.salt, c.derived_key FROM ' +
-        credentials + ' c JOIN ' + accounts +
-        ' a ON a.principal_id = c.principal_id WHERE c.login_identifier = ? FOR UPDATE',
-        [loginIdentifier]);
-      if (!row) return null;
-      return { principalId: row.principal_id, enabled: row.enabled === 1,
-        credentialVersion: String(row.credential_version),
+        'SELECT principal_id, password_algorithm, password_params_version, salt, derived_key FROM ' +
+        credentials + ' WHERE principal_id = ? AND login_identifier = ? FOR UPDATE',
+        [account.principalId, loginIdentifier]);
+      if (!row || row.principal_id !== account.principalId) return null;
+      return { ...account,
         credential: { algorithm: row.password_algorithm,
           paramsVersion: row.password_params_version, salt: row.salt, derivedKey: row.derived_key } };
     },
@@ -63,20 +69,41 @@ export function createMySqlAuthStore({ pool, database }) {
       if (result.affectedRows !== 1) throw Error('session 写入未完成');
     },
 
-    async findSessionByDigestForUpdate(digest) {
+    async locateSessionByDigest(digest) {
+      const [[row]] = await connection.execute('SELECT session_id, principal_id FROM ' + sessions +
+        ' WHERE token_digest = ?', [digest]);
+      return row && { sessionId: row.session_id, principalId: row.principal_id };
+    },
+
+    async lockSessionById(sessionId) {
       const [[row]] = await connection.execute(
-        'SELECT s.session_id, s.principal_id, s.credential_version AS session_version, ' +
-        's.revoked_at, a.enabled, a.credential_version AS account_version, ' +
-        '(s.idle_expires_at > UTC_TIMESTAMP(6)) AS idle_valid, ' +
-        '(s.absolute_expires_at > UTC_TIMESTAMP(6)) AS absolute_valid ' +
-        'FROM ' + sessions + ' s JOIN ' + accounts +
-        ' a ON a.principal_id = s.principal_id WHERE s.token_digest = ? FOR UPDATE',
-        [digest]);
-      if (!row) return null;
-      return { sessionId: row.session_id, principalId: row.principal_id,
-        sessionVersion: String(row.session_version), accountVersion: String(row.account_version),
-        enabled: row.enabled === 1, revoked: row.revoked_at !== null,
-        idleValid: Number(row.idle_valid) === 1, absoluteValid: Number(row.absolute_valid) === 1 };
+        'SELECT session_id, principal_id, token_digest, credential_version, revoked_at, ' +
+        "DATE_FORMAT(idle_expires_at, '%Y-%m-%dT%H:%i:%s.%fZ') AS idle_expiry, " +
+        "DATE_FORMAT(absolute_expires_at, '%Y-%m-%dT%H:%i:%s.%fZ') AS absolute_expiry FROM " +
+        sessions + ' WHERE session_id = ? FOR UPDATE', [sessionId]);
+      return row && { sessionId: row.session_id, principalId: row.principal_id,
+        tokenDigest: row.token_digest, credentialVersion: String(row.credential_version),
+        revoked: row.revoked_at !== null, idleExpiresAt: row.idle_expiry,
+        absoluteExpiresAt: row.absolute_expiry };
+    },
+
+    async readDbNow() {
+      const [[row]] = await connection.execute(
+        "SELECT DATE_FORMAT(UTC_TIMESTAMP(6), '%Y-%m-%dT%H:%i:%s.%fZ') AS db_now");
+      return row.db_now;
+    },
+
+    async findSessionByDigestForUpdate(digest) {
+      const locked = await lockSessionForDigest(port, digest);
+      if (!locked) return null;
+      const dbNow = await port.readDbNow();
+      // Validate DB time encoding, retaining the ordinary auth API and activity behavior.
+      sessionValidAt(locked, dbNow);
+      const { account, session } = locked;
+      return { sessionId: session.sessionId, principalId: session.principalId,
+        sessionVersion: session.credentialVersion, accountVersion: account.credentialVersion,
+        enabled: account.enabled, revoked: session.revoked,
+        idleValid: session.idleExpiresAt > dbNow, absoluteValid: session.absoluteExpiresAt > dbNow };
     },
 
     async touchSession(sessionId, idleSeconds) {
@@ -89,17 +116,20 @@ export function createMySqlAuthStore({ pool, database }) {
 
     async listGrants(principalId) {
       const [rows] = await connection.execute(
-        'SELECT permission_id FROM ' + grants + ' WHERE principal_id = ? ORDER BY permission_id',
+        'SELECT permission_id FROM ' + grants + ' WHERE principal_id = ? ORDER BY permission_id FOR UPDATE',
         [principalId]);
       return rows.map(row => row.permission_id);
     },
 
     async findSessionByIdForUpdate(sessionId) {
-      const [[row]] = await connection.execute(
-        'SELECT session_id, principal_id, revoked_at FROM ' + sessions +
-        ' WHERE session_id = ? FOR UPDATE', [sessionId]);
-      return row && { sessionId: row.session_id, principalId: row.principal_id,
-        revoked: row.revoked_at !== null };
+      const [[located]] = await connection.execute('SELECT session_id, principal_id FROM ' +
+        sessions + ' WHERE session_id = ?', [sessionId]);
+      if (!located) return null;
+      const account = await port.lockAccount(located.principal_id);
+      if (!account) return null;
+      const session = await port.lockSessionById(sessionId);
+      return session && session.sessionId === located.session_id &&
+        session.principalId === account.principalId ? session : null;
     },
 
     async revokeSession(sessionId) {
@@ -112,7 +142,7 @@ export function createMySqlAuthStore({ pool, database }) {
     async listUnrevokedSessions(principalId) {
       const [rows] = await connection.execute(
         'SELECT session_id FROM ' + sessions +
-        ' WHERE principal_id = ? AND revoked_at IS NULL FOR UPDATE', [principalId]);
+        ' WHERE principal_id = ? AND revoked_at IS NULL ORDER BY session_id FOR UPDATE', [principalId]);
       return rows.map(row => row.session_id);
     },
 
@@ -137,7 +167,7 @@ export function createMySqlAuthStore({ pool, database }) {
     async addGrant(principalId, permissionId) {
       const [rows] = await connection.execute(
         'SELECT permission_id FROM ' + grants +
-        ' WHERE principal_id = ? AND permission_id = ?', [principalId, permissionId]);
+        ' WHERE principal_id = ? AND permission_id = ? FOR UPDATE', [principalId, permissionId]);
       if (rows.length) return false;
       await connection.execute('INSERT INTO ' + grants +
         ' (principal_id, permission_id) VALUES (?, ?)', [principalId, permissionId]);
@@ -156,7 +186,25 @@ export function createMySqlAuthStore({ pool, database }) {
       [principalId, sessionId, eventType, reasonCode]);
       if (result.affectedRows !== 1) throw Error('认证审计未写入');
     }
-  });
+    };
+    return port;
+  };
+
+  // Trusted caller must supply its active connection; this capability owns no lifecycle.
+  function bindSessionRevalidation(connection) {
+    if (typeof connection?.execute !== 'function') throw TypeError('必须提供当前 MySQL connection');
+    const port = transactionPort(connection);
+    return Object.freeze({
+      async revalidateSessionInTransaction({ tokenDigest }) {
+        // DO 0 has no writes; its OK packet proves START TRANSACTION is still active.
+        const [status] = await connection.execute('DO 0');
+        if (!Number.isInteger(status.serverStatus) || !(status.serverStatus & 1)) {
+          throw Error('session revalidation 必须位于调用方已开启的事务内');
+        }
+        return revalidateSessionInTransaction({ port, tokenDigest });
+      }
+    });
+  }
 
   async function runTransaction(work) {
     if (typeof work !== 'function') throw TypeError('auth transaction 回调无效');
@@ -189,5 +237,5 @@ export function createMySqlAuthStore({ pool, database }) {
     }
   }
 
-  return Object.freeze({ runTransaction });
+  return Object.freeze({ runTransaction, bindSessionRevalidation });
 }
