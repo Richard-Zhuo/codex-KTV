@@ -104,11 +104,43 @@ function executeCatalogCommand(s, action, data, execution = { mode: 'demo' }) {
     s.catalog.packages = s.catalog.packages.map(item => item.id === id ? next : item);
   } else throw TypeError('未知目录命令');
 }
+// These two commands keep their original order rules in one demo/trusted body.
+const ORDER_ADDITION_ACTIONS = Object.freeze(['serveExtra', 'otherCharge']);
+function executeOrderAddition(s, action, data, person, time, execution = { mode: 'demo' }) {
+  if (!ORDER_ADDITION_ACTIONS.includes(action)) throw TypeError('未知配品／其他消费命令');
+  const permission = action === 'serveExtra' ? 'order.serveExtra' : 'order.sale';
+  let context = null;
+  if (execution?.mode === 'trusted') {
+    context = execution.context;
+    requireTrustedPermission(context, permission);
+    person = context.principalId; time = context.dbNow;
+  } else if (execution?.mode === 'demo') need(s, ['开单员','服务员','老板'], permission);
+  else throw TypeError('配品／其他消费执行模式无效');
+  const order = s.orders.find(order => order.id === data.order);
+  if (!order || order.status !== '营业中') throw new BusinessRejection('账单已变化，请返回房间重新查看');
+  if (action === 'otherCharge') {
+    const category = String(data.category || '').trim();
+    if (!OTHER_CHARGE_CATEGORIES.includes(category)) throw new BusinessRejection('请选择有效的其他消费类别');
+    if (!Number.isSafeInteger(data.amount) || data.amount <= 0) throw new BusinessRejection('金额应为大于零的金额');
+    const customItem = String(data.item || '').trim().slice(0, 50);
+    if (category === '其他' && !customItem) throw new BusinessRejection('请填写其他消费项目');
+    const batch = ++s.serial;
+    order.otherCharges ??= [];
+    order.otherCharges.push({ id: ++s.serial, batch, category, item: category === '其他' ? customItem : category, amount: data.amount, person, time,
+      ...(context ? { actualActorPrincipalId: context.principalId } : {}) });
+  } else {
+    const extra = (order.extras || []).find(item => item.product === data.product);
+    if (!extra) throw new BusinessRejection('该账单没有这项配品');
+    if (extra.served) throw new BusinessRejection('这项配品已经标记已上');
+    extra.served = true; extra.servedAt = time; extra.servedBy = person;
+    if (context) extra.servedByPrincipalId = context.principalId;
+  }
+}
 // 先修改克隆，全部校验成功才返回；失败不产生部分扣库或半张账单。
 export function transact(original, action, data = {}, key, execution = { mode: 'demo' }) {
   if (!execution || !['demo', 'trusted'].includes(execution.mode)) throw TypeError('事务执行模式无效');
   const context = execution.mode === 'trusted' ? assertTrustedExecutionContext(execution.context) : null;
-  if (context && !['clean', 'markRoomIssue', 'clearRoomIssue', ...CATALOG_COMMAND_ACTIONS, 'cancelReservation', 'deposit', 'withdraw', 'reserve', 'sale', 'retailSale'].includes(action)) throw new AuthorizationDenied('trusted-action-not-enabled');
+  if (context && !['clean', 'markRoomIssue', 'clearRoomIssue', ...CATALOG_COMMAND_ACTIONS, 'cancelReservation', 'deposit', 'withdraw', 'reserve', 'sale', 'retailSale', ...ORDER_ADDITION_ACTIONS].includes(action)) throw new AuthorizationDenied('trusted-action-not-enabled');
   if (!key) throw new BusinessRejection('缺少操作编号');
   if (original.processed.includes(key)) return original;
   const s = structuredClone(original);
@@ -125,6 +157,7 @@ export function transact(original, action, data = {}, key, execution = { mode: '
       if (!order || order.status !== '营业中') throw new BusinessRejection('账单已变化，请返回房间重新查看');
       submitSale(s, order, data, undefined, undefined, undefined, execution);
     } else if (action === 'retailSale') submitRetailSale(s, data, undefined, undefined, undefined, execution);
+    else if (ORDER_ADDITION_ACTIONS.includes(action)) executeOrderAddition(s, action, data, undefined, undefined, execution);
     else {
       const room = s.rooms.find(room => room.id === data.room);
       if (action === 'clean') cleanRoom(s, room, execution);
@@ -188,15 +221,7 @@ export function transact(original, action, data = {}, key, execution = { mode: '
   } else if (action === 'retailSale') {
     submitRetailSale(s, data, person, operator, time);
   } else if (action === 'otherCharge') {
-    need(s, ['开单员','服务员','老板'], 'order.sale'); active();
-    const category = String(data.category || '').trim();
-    if (!OTHER_CHARGE_CATEGORIES.includes(category)) throw new BusinessRejection('请选择有效的其他消费类别');
-    if (!Number.isSafeInteger(data.amount) || data.amount <= 0) throw new BusinessRejection('金额应为大于零的金额');
-    const customItem = String(data.item || '').trim().slice(0, 50);
-    if (category === '其他' && !customItem) throw new BusinessRejection('请填写其他消费项目');
-    const batch = ++s.serial;
-    order.otherCharges ??= [];
-    order.otherCharges.push({ id: ++s.serial, batch, category, item: category === '其他' ? customItem : category, amount: data.amount, person, time });
+    executeOrderAddition(s, action, data, person, time);
   } else if (action === 'gift') {
     need(s, ['开单员','服务员','店长','老板'], 'order.gift'); active(); quantity(data.halves);
     const p = product(data.productId || data.product, s.catalog);
@@ -246,11 +271,7 @@ export function transact(original, action, data = {}, key, execution = { mode: '
     }
     order.exchanges.push({ from: productIdOf(line), to: data.product, fromProductId: productIdOf(line), toProductId: data.product, count: data.count, scope, time, person });
   } else if (action === 'serveExtra') {
-    need(s, ['开单员','服务员','老板'], 'order.serveExtra'); active();
-    const extra = (order.extras || []).find(item => item.product === data.product);
-    if (!extra) throw new BusinessRejection('该账单没有这项配品');
-    if (extra.served) throw new BusinessRejection('这项配品已经标记已上');
-    extra.served = true; extra.servedAt = time; extra.servedBy = person;
+    executeOrderAddition(s, action, data, person, time);
   } else if (action === 'collect') {
     active();
     collectPayment(s, order, data, person, time);

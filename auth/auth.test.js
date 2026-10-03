@@ -72,3 +72,24 @@ test('auth service requires a rate-limit port and rejects wildcard administrator
     principalId: '00000000-0000-4000-8000-000000000001', permissionId: '*'
   }), /具体 permission/);
 });
+
+test('existing order.serveExtra grant is stored and revoked verbatim without accepting new mixed-case IDs', async () => {
+  const principalId = '00000000-0000-4000-8000-000000000001', calls = [];
+  const store = { runTransaction: async work => work({
+    lockAccount: async id => { calls.push(['account', id]); return { enabled: true }; },
+    addGrant: async (id, permission) => { calls.push(['grant', id, permission]); return true; },
+    removeGrant: async (id, permission) => { calls.push(['revoke', id, permission]); return true; },
+    appendEvent: async event => calls.push(['event', event.eventType])
+  }) };
+  const auth = createAuthService({ store, rateLimiter: createMemoryLoginRateLimiter() });
+  assert.equal(await auth.grantPermission({ principalId, permissionId: 'order.serveExtra' }), true);
+  assert.equal(await auth.revokePermission({ principalId, permissionId: 'order.serveExtra' }), true);
+  assert.deepEqual(calls, [['account', principalId], ['grant', principalId, 'order.serveExtra'], ['event', 'grant-added'],
+    ['account', principalId], ['revoke', principalId, 'order.serveExtra'], ['event', 'grant-removed']]);
+  const before = structuredClone(calls);
+  for (const permissionId of ['administrator', '*', 'order.*', 'Order.serveExtra', 'order.ServeExtra', 'order.serveExtra ', 'expense.viewAll']) {
+    await assert.rejects(auth.grantPermission({ principalId, permissionId }), /具体 permission/);
+    await assert.rejects(auth.revokePermission({ principalId, permissionId }), /具体 permission/);
+  }
+  assert.deepEqual(calls, before);
+});

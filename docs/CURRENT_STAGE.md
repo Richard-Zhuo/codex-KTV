@@ -226,6 +226,20 @@ sales.js 为两个入口增加显式 trusted 分支，保存 actualActorPrincipa
 
 最终完整 node --test --test-isolation=none 实际 630 total／624 pass／0 fail／6 skip，退出码 0。真实 MySQL auth 29／29（含 revalidation 13／13）、employee 30／30、ledger 11／11、trusted 123／123（含新增销售 26／26）均实际执行且无 skip；原六项 Known Issues 名称与 skip 结论保持。结束后只读核实十张已知 fixture 表均不存在。本批一个独立提交，parent 为 d205f2d；未合入 main、未 push。
 
+## P0-1 Stage 2C.3 trusted serveExtra／otherCharge（2026-10-04）
+
+本轮开始核实干净 main = origin/main = ca5c8722b02765949d07fb79efa83a92badbe979；从该 main 创建 codex/p0-1-stage2c-extra-charge，分支起点严格等于 main HEAD。仅这两个 action 新增 trusted-enabled，当前共十四个，其余 31 个 eligible action 继续 fail closed。基线销售批的 630／624／0／6 是此前验收证据，本轮结果如下。
+
+rules.js 私有 executeOrderAddition 共用原 demo／trusted 命令体，trusted 在演示身份／时间读取前分流；只从 branded context 取得具体 permission、session principal 和冻结 dbNow。serveExtra 沿用 order.serveExtra，只标记既有配品 served／servedBy／servedAt，附 servedByPrincipalId，不重查当前商品、重算套餐或再次扣库存。otherCharge 沿用 order.sale，保持类别、整数分金额、自定义项目和营业中账单校验；新行 person／time 由 context 提供并附 actualActorPrincipalId。两动作原本没有员工归属，不调用 employee resolver、不新增员工映射，历史套餐／商品／价格／规格／数量、库存 null／0、多渠道付款及 room／retail 事实保持。
+
+ledger application／MySQL store、Stage 2A policy、员工 resolver、sales／inventory 和其余领域模块均未修改。有效 session → existing operation → 原终态／actor／fingerprint 判断 → 新 key 当前权限／revision → trusted transact 的链沿用；授权拒绝不占键。首次真实测试发现 auth service 的全小写格式校验拒绝既有 order.serveExtra；仅放行这个准确 ID 的保存／撤销，保留其他校验，不改权限含义或重命名，新增单元回归。未改 schema／migration、依赖、HTTP／UI 或六项 Known Issues。
+
+新增两个动作单元 22 项、权限格式单元回归 1 项及真实 MySQL 子用例 24 项。最终定向 node --test --test-isolation=none ledger/trusted-order-additions.test.js auth/auth.test.js 实际 28 total／28 pass／0 fail／0 skip；guarded trusted MySQL 定向实际 147 total／147 pass／0 fail／0 skip，包含全部既有用例和新增 24 项。JS 修改和最小修复后实际尝试 npm test，PowerShell 报 The term 'npm' is not recognized，npm 进程未启动，未取得 npm 通过证据。
+
+只读连接核实 MySQL 8.4.11／jbhh_ktv_test／InnoDB，环境变量可读，未输出 URL 或密码。沿用十表 fixture，不 CREATE／DROP database，仅创建／清理已授权表。实际确认单 connection、head → account → session → grants → operation → domain／commit、一次冻结 DB 时间、不 touch session activity、篡改无效、不占键、五类 auth 失效和 actor／action／payload／revision 冲突。撤权后新 pool 重连仍返回原终态，不重新标记或收费；新 key 拒绝。每个 action 的 revision 和同 key 竞争均核对两个不同 CONNECTION_ID，最多执行／递增一次；unknown Error 在领域变更后及 audit CHECK 在 head UPDATE／operation INSERT 后故障都完整 rollback，无 state／revision／operation／audit 残留，修复后原 key 成功。
+
+最终完整 node --test --test-isolation=none 实际 677 total／671 pass／0 fail／6 skip，退出码 0。真实 MySQL auth 29／29（含 revalidation 13／13）、employee 30／30、ledger 11／11、trusted 147／147（新增 24／24）均执行且无 skip；原六项 Known Issues 名称与 skip 结论保持。本批只做一个提交，parent 为 ca5c872；main 不前进，不 push、不部署或进入下一批。
+
 ## 本轮隔离集成候选（2026-09-29）
 
 来源：用户交付的 `jbhh-ktv-full.zip`，基线 `ca726b2`；纯重构检查点 `74c3f55`；业务修复终点 `6aa01ba`。Track B 来源为 `codex/offsite-contracts@3193635`。候选位于独立工作树的 `codex/track-a-integration`，主工作区未提交内容保留；未合并 `main`、未推送。
@@ -362,7 +376,7 @@ sales.js 为两个入口增加显式 trusted 分支，保存 actualActorPrincipa
 
 ## 下一步
 
-只读快照预检器、Stage 1A／1A.1／1A.2 协议、Stage 1B-MySQL 适配器、Stage 2A 纯命令策略及 Stage 2B 独立认证基础已完成；Stage 1B.1 和 Stage 2B 已分别在专用 MySQL 8.4 测试库取得真实验收证据。Stage 2C.1 同事务认证、2C.2 clean 及 2C.3 房间异常、目录维护、取消预约、存取酒、reserve 与 sale／retailSale 已通过真实数据库验收；各批及线性整合验收见上节；员工名册、关联审计与事务内归属解析已真实验收，resolver 已仅接 trusted reserve／sale／retailSale，其余正式 action 和审核尚未迁移，HTTP／客户端及 2D 未开始，当前停止在本批。正式营业日和班次规则已确认的部分见 [REQUIREMENTS](./REQUIREMENTS.md)，运行实现仍属后续任务。
+只读快照预检器、Stage 1A／1A.1／1A.2 协议、Stage 1B-MySQL 适配器、Stage 2A 纯命令策略及 Stage 2B 独立认证基础已完成；Stage 1B.1 和 Stage 2B 已分别在专用 MySQL 8.4 测试库取得真实验收证据。Stage 2C.1 同事务认证、2C.2 clean 及 2C.3 房间异常、目录维护、取消预约、存取酒、reserve、sale／retailSale 与 serveExtra／otherCharge 已通过真实数据库验收；各批及线性整合验收见上节；员工名册、关联审计与事务内归属解析已真实验收，resolver 已仅接 trusted reserve／sale／retailSale，其余正式 action 和审核尚未迁移，HTTP／客户端及 2D 未开始，当前停止在本批。正式营业日和班次规则已确认的部分见 [REQUIREMENTS](./REQUIREMENTS.md)，运行实现仍属后续任务。
 
 ## 阶段停止条件
 

@@ -4,7 +4,7 @@ import { EMPLOYEE_ATTRIBUTED_ACTIONS, employeePolicyPayload } from './employee-a
 import { assertTrustedExecutionContext, AuthorizationDenied } from '../shared/identity.js';
 
 export const TRUSTED_ENABLED_ACTIONS = Object.freeze(['clean', 'markRoomIssue', 'clearRoomIssue',
-  'createCatalogProduct', 'updateCatalogProduct', 'updateCatalogPackage', 'cancelReservation', 'deposit', 'withdraw', 'reserve', 'sale', 'retailSale']);
+  'createCatalogProduct', 'updateCatalogProduct', 'updateCatalogPackage', 'cancelReservation', 'deposit', 'withdraw', 'reserve', 'sale', 'retailSale', 'serveExtra', 'otherCharge']);
 const enabled = new Set(TRUSTED_ENABLED_ACTIONS);
 
 export class SessionAuthenticationRequired extends Error {

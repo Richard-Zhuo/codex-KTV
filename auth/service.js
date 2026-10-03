@@ -16,8 +16,9 @@ function assertPrincipalId(value) {
   if (typeof value !== 'string' || !uuidPattern.test(value)) throw TypeError('principal ID 无效');
 }
 function assertPermissionId(value) {
+  // Preserve the existing camel-case ID; all other permission validation stays unchanged.
   if (typeof value !== 'string' || value.length > 100 ||
-      !permissionPattern.test(value) || value === 'administrator') {
+      (!permissionPattern.test(value) && value !== 'order.serveExtra') || value === 'administrator') {
     throw TypeError('只能保存具体 permission');
   }
 }
