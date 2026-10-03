@@ -10,7 +10,7 @@ import { BusinessRejection } from './shared/business-error.js';
 import { DEFAULT_CATALOG, roomPackage, assertCatalogPackagePrices, product, saleOptions, productIdOf, categoryLabel } from './catalog.js';
 import { need, recordInventoryChange } from './inventory.js';
 import { slot } from './shared/time.js';
-import { USERS, effectiveUser } from './shared/identity.js';
+import { USERS, effectiveUser, requireTrustedPermission } from './shared/identity.js';
 
 export const RESERVATION_SOURCES = ['线下', '手机', '座机', '美团', '抖音'];
 export const OPENING_SOURCES = ['', '美团', '抖音'];
@@ -144,8 +144,11 @@ export function cancelReservation(s, room, data, time) {
   booking.status = '已取消';
   if (room.status === '已预订' && !pending.some(r => r.id !== booking.id && reservationActiveAt(r, time))) room.status = '空闲';
 }
-export function cleanRoom(s, room) {
-  need(s, ['服务员','老板'], 'room.clean'); if (!room || room.status !== '待清洁') throw new BusinessRejection('房间状态已变化'); room.status = '空闲';
+export function cleanRoom(s, room, execution = { mode: 'demo' }) {
+  if (execution?.mode === 'trusted') requireTrustedPermission(execution.context, 'room.clean');
+  else if (execution?.mode === 'demo') need(s, ['服务员','老板'], 'room.clean');
+  else throw TypeError('清洁执行模式无效');
+  if (!room || room.status !== '待清洁') throw new BusinessRejection('房间状态已变化'); room.status = '空闲';
 }
 export function markRoomIssue(s, room, data, person, time) {
   need(s, [], 'room.issue');

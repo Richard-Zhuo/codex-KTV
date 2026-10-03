@@ -78,6 +78,24 @@ Stage 1 MySQL ledger 集成独立复验 11 total／11 pass／0 fail／0 skip，m
 
 已再次实际尝试 `npm test`，环境仍找不到 npm，进程未启动。原 6 项 Known Issues 保持 skip；`rules.js`、演示身份／时钟、command-policy 清单、ledger fingerprint／revision／terminal 协议及数据库 migration 均未修改；没有新增依赖或真人账号。本阶段实现及验收纳入一个独立提交，不进入 2C.2，不 push 或部署。
 
+## P0-1 Stage 2C.2：clean 首个 trusted vertical slice（2026-10-03）
+
+从干净 `main = origin/main = 0768814` 建立 `codex/p0-1-stage2c-clean-slice`。开始前本轮实际核实 MySQL 8.4.11／jbhh_ktv_test／InnoDB，并重跑基线 345 total／339 pass／0 fail／6 skip；未输出 URL 或密码。
+
+新增 `ledger/application.js:createTrustedLedgerApplication` 的显式入口和 `ledger/trusted-execution.js:TRUSTED_ENABLED_ACTIONS`，已迁移集合只含 clean，Stage 2A 的其他 44 个 eligible action 不开放执行。正式入口只收四字段 command 与独立 token digest credential；head 锁后调用现有同连接 revalidation，真实 actor／当前 grants／一次冻结 dbNow 来自数据库。先认证，再读 old operation；同 actor／同 fingerprint 返回原终态，只有新 key 才执行 enablement、Stage 2A 当前授权和 revision 检查。授权拒绝向外抛 AuthorizationDenied，不属于 BusinessRejection，不写 operation／成功 audit，不占 key。Stage 1 fingerprint、revision 和 terminal 类型均保留。
+
+`rules.js:transact` 第五参数显式 demo／trusted；trusted 只分流 clean，在演示身份和时钟求值前返回。`rooms.js:cleanRoom` 从 context.permissionIds 检查 room.clean，待清洁 → 空闲及原房态拒绝保持。`shared/identity.js` 增加浏览器兼容的 WeakSet context guard 与具体 trusted permission guard，`auth/session-revalidation.js` 在其 Stage 2A principal 创建后注册并保留旧 guard 导出；复制的 JSON context 无法通过。snapshot 的 user／clock／permissions／capabilities 仅原样保留，不用于可信授权或时间。policy attributes 仍 false／null，未新增模型。生产 MySQL store、schema、HTTP、UI 与其他领域 action 均未修改。
+
+本轮行为用例：synthetic session + room.clean + 正确 revision + 待清洁房间可提交一次 state／result／audit；演示和 payload 中的 actor／role／permission／clock 不影响可信事实；无 grant 拒绝后同一未占 key 在授予权限后可成功；撤权后原 key 重放仍取原结果，新 key 拒绝；disabled／revoked／idle／absolute／凭据轮换在 old operation 查询前拒绝；不同 actor／payload／expectedRevision 保持原冲突。业务拒绝与 revision conflict 继续 terminal，未知异常与 SQL 故障完整回滚。
+
+最终定向 `node --test --test-isolation=none ledger/trusted-clean.test.js ledger/trusted-clean.integration.test.js`：29 total／29 pass／0 fail／0 skip（单元 12，MySQL suite 17，其中真实子用例 15）。实际追踪 BEGIN／head／account／session／locking grants／dbNow／operation／domain／state／result／audit／COMMIT 顺序，同一 connection 仅一次 BEGIN／COMMIT。撤权后新建 pool 重连返回原终态，domain 未再次执行；session 活动时间不变。两条实际 CONNECTION_ID 不同的连接分别验证 revision 竞争最多一成功及同 key 只执行一次。成功 audit 上注入 CHECK 故障，确认已尝试 state 与 operation SQL 写入后整体回滚，修复约束后原 key 可重试。
+
+新 clean fixture 与原 auth／ledger fixture 共用 `test-support/mysql-fixture-lock.js`，只互斥各套建表／清理生命周期；不替代生产 InnoDB 行锁。三套测试严格限制专用库，不 CREATE／DROP database；clean fixture 拒绝预存 auth 表并仅清理本轮创建的八张 auth／ledger 表。原两套断言数量保持：auth 29／29（含 revalidation 13／13）、ledger 11／11，均在最终完整运行中真实执行。
+
+最终完整 `node --test --test-isolation=none`：374 total／368 pass／0 fail／6 skip，退出码 0，包含全部真实 MySQL 回归。首轮 clean MySQL 测试中的一处执行顺序断言曾把 FOR UPDATE 当成 UPDATE，已改为 SQL 动词匹配，最终定向与完整测试均重新通过。JavaScript 修改后已实际尝试 `npm test`，PowerShell 仍报 npm 未识别，进程未启动；不宣称取得 npm 通过证据。
+
+原六项 Known Issues 的测试与结论保持 skip，无新增生产依赖；未创建真人账号、employee 映射、policy attribute schema 或正式导入。本阶段仅一个独立提交，不进入 2C.3，不 push 或部署。
+
 ## 本轮隔离集成候选（2026-09-29）
 
 来源：用户交付的 `jbhh-ktv-full.zip`，基线 `ca726b2`；纯重构检查点 `74c3f55`；业务修复终点 `6aa01ba`。Track B 来源为 `codex/offsite-contracts@3193635`。候选位于独立工作树的 `codex/track-a-integration`，主工作区未提交内容保留；未合并 `main`、未推送。
@@ -214,7 +232,7 @@ Stage 1 MySQL ledger 集成独立复验 11 total／11 pass／0 fail／0 skip，m
 
 ## 下一步
 
-只读快照预检器、Stage 1A／1A.1／1A.2 协议、Stage 1B-MySQL 适配器、Stage 2A 纯命令策略及 Stage 2B 独立认证基础已完成；Stage 1B.1 和 Stage 2B 已分别在专用 MySQL 8.4 测试库取得真实验收证据。Stage 2A／2B 尚未接入 ledger 命令授权、HTTP 或客户端；Stage 2C.1 同事务认证基础已实现并通过本轮真实数据库验收；2C.2／2D 未开始。正式营业日和班次规则已确认的部分见 [REQUIREMENTS](./REQUIREMENTS.md)，运行实现仍属后续任务。
+只读快照预检器、Stage 1A／1A.1／1A.2 协议、Stage 1B-MySQL 适配器、Stage 2A 纯命令策略及 Stage 2B 独立认证基础已完成；Stage 1B.1 和 Stage 2B 已分别在专用 MySQL 8.4 测试库取得真实验收证据。Stage 2C.1 同事务认证与 2C.2 clean 可信执行已通过真实数据库验收，其他正式 action 尚未迁移；HTTP／客户端及 2C.3／2D 未开始。正式营业日和班次规则已确认的部分见 [REQUIREMENTS](./REQUIREMENTS.md)，运行实现仍属后续任务。
 
 ## 阶段停止条件
 

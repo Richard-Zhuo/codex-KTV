@@ -1,4 +1,4 @@
-// 只承载演示业务：整数分计价、事务式状态变更，不依赖 DOM。
+// 整数分计价、事务式状态变更，不依赖 DOM；演示与可信执行显式隔离。
 // 商品与套餐的运行时唯一来源是 state.catalog。DEFAULT_CATALOG 只由目录模块负责初始化、迁移和恢复演示数据。
 // 领域模块已分阶段迁出：catalog／inventory（Phase 3）、sales（Phase 4）、
 // rooms／deposits／expenses／procurement／incidents／handover（Phase 5）、UI（Phase 7）。
@@ -15,7 +15,7 @@ import { submitExpense, decideExpense } from './expenses.js';
 import { submitProcurement } from './procurement.js';
 import { submitIncident, submitIncidentResolution, decideIncidentResolution } from './incidents.js';
 import { submitHandover } from './handover.js';
-import { USERS, PERMISSION_ROLES, PERMISSION_IDS, defaultPermissions, defaultCapabilities, permissionsForRoles, effectiveUser, hasPermission } from './shared/identity.js';
+import { USERS, PERMISSION_ROLES, PERMISSION_IDS, defaultPermissions, defaultCapabilities, permissionsForRoles, effectiveUser, hasPermission, assertTrustedExecutionContext, AuthorizationDenied } from './shared/identity.js';
 
 export const OTHER_CHARGE_CATEGORIES = ['小吃', '热食', '烧鸡烤肉', '代驾', '其他'];
 
@@ -60,12 +60,21 @@ function normalizeSaleOptions(options, sellable) {
   });
 }
 // 先修改克隆，全部校验成功才返回；失败不产生部分扣库或半张账单。
-export function transact(original, action, data = {}, key) {
+export function transact(original, action, data = {}, key, execution = { mode: 'demo' }) {
+  if (!execution || !['demo', 'trusted'].includes(execution.mode)) throw TypeError('事务执行模式无效');
+  const context = execution.mode === 'trusted' ? assertTrustedExecutionContext(execution.context) : null;
+  if (context && action !== 'clean') throw new AuthorizationDenied('trusted-action-not-enabled');
   if (!key) throw new BusinessRejection('缺少操作编号');
   if (original.processed.includes(key)) return original;
   const s = structuredClone(original);
   s.catalog = mergeCatalog(s.catalog);
   assertCatalogPackagePrices(s.catalog);
+  if (context) {
+    // Only the migrated clean branch; never evaluate demo identity or clock.
+    cleanRoom(s, s.rooms.find(room => room.id === data.room), { mode: 'trusted', context });
+    s.processed.push(key);
+    return s;
+  }
   const time = s.clock, operator = effectiveUser(s).name;
   let person = operator;
   const room = s.rooms.find(r => r.id === data.room);

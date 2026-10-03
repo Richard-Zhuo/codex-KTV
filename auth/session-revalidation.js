@@ -2,8 +2,8 @@
 // No pool, transaction lifecycle, session activity writes or business command dispatch.
 import { timingSafeEqual } from 'node:crypto';
 import { createTrustedPrincipal } from '../ledger/command-policy.js';
-
-const trustedContexts = new WeakSet();
+import { assertTrustedExecutionContext, registerTrustedExecutionContext } from '../shared/identity.js';
+export { assertTrustedExecutionContext } from '../shared/identity.js';
 const utcPattern = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{6}Z$/;
 const isDigest = value => Buffer.isBuffer(value) && value.length === 32;
 
@@ -52,13 +52,7 @@ export async function revalidateSessionInTransaction({ port, tokenDigest }) {
     policyAttributesConfigured: false, policyAttributeIds: null,
     dbNow, actorSnapshot: null
   });
-  trustedContexts.add(context);
-  return context;
-}
-
-export function assertTrustedExecutionContext(context) {
-  if (!context || !trustedContexts.has(context)) throw TypeError('缺少事务内可信认证上下文');
-  return context;
+  return registerTrustedExecutionContext(context);
 }
 
 export function requireConfiguredPolicyAttributes(context) {

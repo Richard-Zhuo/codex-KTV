@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import mysql from 'mysql2/promise';
+import { acquireMySqlFixtureLock } from '../test-support/mysql-fixture-lock.js';
 import { createMySqlAuthStore } from './mysql-store.js';
 import { createAuthService } from './service.js';
 import { createMemoryLoginRateLimiter } from './rate-limit.js';
@@ -45,6 +46,7 @@ test('MySQL 8.4 InnoDB auth integration in jbhh_ktv_test',
       t.diagnostic('MySQL ' + target.version + '; database ' + target.database_name +
         '; default engine ' + target.default_engine);
 
+      await acquireMySqlFixtureLock(setup);
       const [existing] = await setup.execute(
         'SELECT table_name FROM information_schema.tables WHERE table_schema = ? AND table_name IN (?, ?, ?, ?, ?)',
         [database, ...tables]);

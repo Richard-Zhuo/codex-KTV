@@ -92,3 +92,36 @@ export function effectiveUser(state, userId = state?.user) {
 }
 export function hasPermission(user, permission) { return Boolean(user?.roles?.includes('管理员') || (user?.permissions || permissionsForRoles(user?.roles || [])).includes(permission)); }
 export function hasRole(user, roles) { return Boolean(user?.roles?.includes('管理员') || user?.roles?.some(role => roles.includes(role))); }
+
+// Browser-safe context guard shared with the Node auth boundary. Registration is
+// internal server code after session revalidation, never a request JSON field.
+const trustedExecutionContexts = new WeakSet();
+export function registerTrustedExecutionContext(context) {
+  if (!Object.isFrozen(context) || context?.mode !== 'trusted' ||
+      !Object.isFrozen(context.principal) || !Array.isArray(context.permissionIds) ||
+      !Object.isFrozen(context.permissionIds) || typeof context.principalId !== 'string' || !context.principalId ||
+      context.principalId !== context.principal?.id ||
+      context.permissionIds !== context.principal?.permissionIds ||
+      typeof context.sessionId !== 'string' || !context.sessionId ||
+      !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{6}Z$/.test(context.dbNow) ||
+      !Number.isFinite(Date.parse(context.dbNow))) throw TypeError('事务内可信认证上下文无效');
+  trustedExecutionContexts.add(context);
+  return context;
+}
+export function assertTrustedExecutionContext(context) {
+  if (!context || !trustedExecutionContexts.has(context)) throw TypeError('缺少事务内可信认证上下文');
+  return context;
+}
+export class AuthorizationDenied extends Error {
+  constructor(reason) {
+    super('正式命令未获授权');
+    this.name = 'AuthorizationDenied';
+    this.code = 'AUTHORIZATION_DENIED';
+    this.status = 'authorization-denied';
+    this.reason = reason;
+  }
+}
+export function requireTrustedPermission(context, permission) {
+  assertTrustedExecutionContext(context);
+  if (!context.permissionIds.includes(permission)) throw new AuthorizationDenied('missing-permission');
+}

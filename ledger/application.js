@@ -1,7 +1,8 @@
-// Stage 1A application protocol. No browser storage, transport, login, or database binding.
+// Stage 1 protocol plus an explicit session-authenticated execution path. No transport or UI.
 import { createHash } from 'node:crypto';
 import { transact } from '../rules.js';
 import { BusinessRejection } from '../shared/business-error.js';
+import { prepareSessionCredential, revalidateCommandSession, authorizeTrustedExecution } from './trusted-execution.js';
 
 const plainObject = value => value !== null && typeof value === 'object' && (Object.getPrototypeOf(value) === Object.prototype || Object.getPrototypeOf(value) === null);
 
@@ -47,18 +48,34 @@ function prepare(command) {
   };
 }
 
+// Formal entry: no caller-supplied principal, permissions or clock configuration.
+export function createTrustedLedgerApplication(options) {
+  if (!plainObject(options) || Reflect.ownKeys(options).some(key => !['store', 'transactCommand'].includes(key))) {
+    throw TypeError('正式账本入口只能配置 store 与领域执行器');
+  }
+  return createLedgerApplication({ ...options, executionMode: 'trusted' });
+}
+
 // Store port: runAtomic holds one ledger's transaction lock from read to commit;
 // commit stages state, result and success audit together, or persists none of them.
-export function createLedgerApplication({ store, principal, transactCommand = transact, now = () => new Date().toISOString() }) {
+export function createLedgerApplication({ store, principal, executionMode = 'demo', transactCommand = transact, now = () => new Date().toISOString() }) {
   const ledgerId = store?.ledgerId;
-  const actorId = principal?.id; // Trusted caller input; authentication is a later stage.
-  if (typeof ledgerId !== 'string' || !ledgerId || typeof actorId !== 'string' || !actorId || actorId.trim() !== actorId || typeof store?.runAtomic !== 'function' || typeof transactCommand !== 'function' || typeof now !== 'function') throw TypeError('账本、可信操作者或执行边界未配置');
+  const trusted = executionMode === 'trusted';
+  const legacyActorId = principal?.id; // Explicit Stage 1 / demo path only.
+  if (!['demo', 'trusted'].includes(executionMode) || (trusted && principal !== undefined) ||
+      typeof ledgerId !== 'string' || !ledgerId ||
+      (!trusted && (typeof legacyActorId !== 'string' || !legacyActorId || legacyActorId.trim() !== legacyActorId)) ||
+      typeof store?.runAtomic !== 'function' || typeof transactCommand !== 'function' || typeof now !== 'function') throw TypeError('账本、可信操作者或执行边界未配置');
   return {
-    async execute(command) {
+    async execute(command, sessionCredential) {
       const request = prepare(command);
+      const credential = trusted ? prepareSessionCredential(sessionCredential) : null;
       return store.runAtomic(async transaction => {
         const { ledgerId: observedLedgerId, state, revision: currentRevision } = await transaction.read();
         if (observedLedgerId !== ledgerId) throw Error('账本标识不一致，停止提交');
+        // runAtomic has begun and locked the head before exposing this capability.
+        const context = trusted ? await revalidateCommandSession(transaction, credential) : null;
+        const actorId = trusted ? context.principalId : legacyActorId;
         const saved = await transaction.findOperationResult(request.operationKey);
         if (saved) {
           if (saved.ledgerId !== ledgerId || saved.result?.ledgerId !== ledgerId || saved.result?.actorId !== saved.actorId || saved.result?.operationKey !== request.operationKey) throw Error('操作结果归属不一致，停止提交');
@@ -67,6 +84,8 @@ export function createLedgerApplication({ store, principal, transactCommand = tr
           if (saved.action !== request.action || saved.expectedRevision !== request.expectedRevision) throw Error('操作结果请求元数据不一致，停止提交');
           return saved.result;
         }
+        // Existing terminals need a valid session, but never a fresh action grant.
+        if (trusted) authorizeTrustedExecution(context, request);
         const finishRejected = async result => {
           await transaction.recordTerminal({ ledgerId, actorId, operationKey: request.operationKey, action: request.action, requestFingerprint: request.requestFingerprint, expectedRevision: request.expectedRevision, observedRevision: currentRevision, committedRevision: null, result });
           return result;
@@ -81,7 +100,8 @@ export function createLedgerApplication({ store, principal, transactCommand = tr
         if (!Number.isSafeInteger(currentRevision + 1)) throw RangeError('revision 已达到安全整数上限');
         let nextState;
         try {
-          nextState = transactCommand(state, request.action, request.payload, request.operationKey);
+          nextState = transactCommand(state, request.action, request.payload, request.operationKey,
+            trusted ? { mode: 'trusted', context } : { mode: 'demo' });
         } catch (error) {
           // Only explicit domain rejections reserve the key; unknown failures roll back.
           if (!(error instanceof BusinessRejection)) throw error;
@@ -91,7 +111,7 @@ export function createLedgerApplication({ store, principal, transactCommand = tr
           throw Error('领域事务未确认操作键，停止提交');
         }
         const revision = currentRevision + 1;
-        const committedAt = await (transaction.commitTimestamp?.() ?? now());
+        const committedAt = await (transaction.commitTimestamp?.() ?? (trusted ? context.dbNow : now()));
         if (typeof committedAt !== 'string' || !/T.+(?:Z|[+-]\d{2}:\d{2})$/.test(committedAt) || !Number.isFinite(Date.parse(committedAt))) throw TypeError('成功审计时间无效');
         const result = {
           status: 'committed', ledgerId, actorId, operationKey: request.operationKey, requestFingerprint: request.requestFingerprint,

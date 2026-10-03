@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import mysql from 'mysql2/promise';
+import { acquireMySqlFixtureLock } from '../test-support/mysql-fixture-lock.js';
 import { initialState, transact } from '../rules.js';
 import { createLedgerApplication } from './application.js';
 import { encodeLedgerSnapshot } from './mysql-snapshot.js';
@@ -49,6 +50,7 @@ test('MySQL 8.4 InnoDB ledger integration in jbhh_ktv_test',
       assert.equal(target.database_name, database, '实际连接必须位于专用账本测试数据库');
       assert.match(target.version, /^8\.4\./, '必须使用 MySQL 8.4 LTS');
       assert.equal(target.default_engine.toLowerCase(), 'innodb', '默认存储引擎必须是 InnoDB');
+      await acquireMySqlFixtureLock(setupConnection);
       verifiedTarget = true;
       t.diagnostic(`MySQL ${target.version}; database ${target.database_name}; default engine ${target.default_engine}`);
       await dropLedgerTables();
