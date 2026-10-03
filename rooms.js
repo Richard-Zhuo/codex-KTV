@@ -150,8 +150,21 @@ export function cleanRoom(s, room, execution = { mode: 'demo' }) {
   else throw TypeError('清洁执行模式无效');
   if (!room || room.status !== '待清洁') throw new BusinessRejection('房间状态已变化'); room.status = '空闲';
 }
-export function markRoomIssue(s, room, data, person, time) {
+function roomIssueSubmission(s, person, time, execution) {
+  if (execution?.mode === 'trusted') {
+    const context = execution.context;
+    requireTrustedPermission(context, 'room.issue');
+    // A principal is not a legacy demo user ID. Future trusted review uses the
+    // separate stable field; do not infer any real-person/demo-account mapping.
+    return { submittedBy: context.principalId, submittedById: '',
+      submittedByPrincipalId: context.principalId, submittedAt: context.dbNow };
+  }
+  if (execution?.mode !== 'demo') throw TypeError('房间异常执行模式无效');
   need(s, [], 'room.issue');
+  return { submittedBy: person, submittedById: s.user, submittedAt: time };
+}
+export function markRoomIssue(s, room, data, person, time, execution = { mode: 'demo' }) {
+  const submission = roomIssueSubmission(s, person, time, execution);
   if (!room) throw new BusinessRejection('请选择有效房间');
   if (!['空闲', '待清洁'].includes(room.status)) throw new BusinessRejection('营业中的房间不能直接标记为故障或维护中');
   if (pendingRoomIssueReview(s, room.id)) throw new BusinessRejection('该房间已有恢复申请待审核');
@@ -162,19 +175,19 @@ export function markRoomIssue(s, room, data, person, time) {
   room.status = '故障/维护中';
   room.issueType = issueType;
   room.issueNote = evidence.evidenceText || '已提交照片凭证';
-  room.issueAt = time;
-  room.issueBy = person;
+  room.issueAt = submission.submittedAt;
+  room.issueBy = submission.submittedBy;
   room.issueApprovedBy = '';
   room.issueEvidencePhoto = evidence.evidencePhoto;
   room.issueEvidencePhotoName = evidence.evidencePhotoName;
-  s.roomIssueReviews.push({ id: ++s.serial, room: room.id, change: '标记异常', fromStatus, requestedStatus: '故障/维护中', issueType, ...evidence, status: '无需审核', submittedBy: person, submittedById: s.user, submittedAt: time, decidedBy: '', decidedAt: time, decisionNote: '故障／维护标记提交后立即生效' });
+  s.roomIssueReviews.push({ id: ++s.serial, room: room.id, change: '标记异常', fromStatus, requestedStatus: '故障/维护中', issueType, ...evidence, status: '无需审核', ...submission, decidedBy: '', decidedAt: submission.submittedAt, decisionNote: '故障／维护标记提交后立即生效' });
 }
-export function clearRoomIssue(s, room, data, person, time) {
-  need(s, [], 'room.issue');
+export function clearRoomIssue(s, room, data, person, time, execution = { mode: 'demo' }) {
+  const submission = roomIssueSubmission(s, person, time, execution);
   if (!room || room.status !== '故障/维护中') throw new BusinessRejection('房间异常状态已经变化');
   if (pendingRoomIssueReview(s, room.id)) throw new BusinessRejection('该房间已有恢复申请待审核');
   const evidence = roomIssueEvidence(data);
-  s.roomIssueReviews.push({ id: ++s.serial, room: room.id, change: '恢复空房', fromStatus: room.status, requestedStatus: '空闲', issueType: room.issueType || '故障', ...evidence, status: '待审核', submittedBy: person, submittedById: s.user, submittedAt: time, decidedBy: '', decidedAt: '', decisionNote: '' });
+  s.roomIssueReviews.push({ id: ++s.serial, room: room.id, change: '恢复空房', fromStatus: room.status, requestedStatus: '空闲', issueType: room.issueType || '故障', ...evidence, status: '待审核', ...submission, decidedBy: '', decidedAt: '', decisionNote: '' });
 }
 export function decideRoomIssue(s, action, data, person, time, authorizeReviewer) {
   need(s, [], 'room.issue.approve');

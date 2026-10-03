@@ -79,7 +79,7 @@ test('MySQL trusted clean vertical slice in jbhh_ktv_test',
         const login = await auth.login({ loginIdentifier, password }); assert.equal(login.ok, true);
         return { ...login, credential: { tokenDigest: digestSessionToken(login.token) } };
       };
-      const seed = async id => {
+      const seed = async (id, prepareState = () => {}) => {
         const state = initialState();
         state.user = 'unmapped-demo-user'; state.clock = 'invalid-demo-clock';
         state.permissions = { administrator: ['administrator'] };
@@ -90,6 +90,7 @@ test('MySQL trusted clean vertical slice in jbhh_ktv_test',
           sales: [{ productNameSnapshot: 'historical-name', saleOptionNameSnapshot: 'historical-spec',
             pricePerSaleUnitCents: null, baseQuantityPerSaleUnit: 12, totalBaseQuantity: 12 }],
           payments: [{ method: '现金', amount: 100 }, { method: '微信', amount: 200 }] }];
+        prepareState(state);
         const snapshot = encodeLedgerSnapshot(state);
         await pool.execute('INSERT INTO ' + table('ledger_heads') +
           ' (ledger_id, revision, state_schema_version, state_json, state_checksum) VALUES (?, 0, ?, ?, ?)',
@@ -255,7 +256,9 @@ test('MySQL trusted clean vertical slice in jbhh_ktv_test',
           Object.freeze({ mode: 'trusted', principalId: login.principalId, permissionIds: ['room.clean'], dbNow: '2026-10-03T00:00:00.000000Z' }) }) });
         await assert.rejects(fake.app.execute(command('fake'), login.credential), TypeError);
         const run = application('clean-closed');
-        await assert.rejects(run.app.execute(command('not-enabled', 0, {}, 'settle'), login.credential), denied);
+        for (const action of ['settle', 'approveRoomIssue', 'rejectRoomIssue', 'open']) {
+          await assert.rejects(run.app.execute(command('not-enabled-' + action, 0, {}, action), login.credential), denied);
+        }
         assert.equal(fake.executions(), 0); assert.equal(run.executions(), 0); await assertUnchanged('clean-closed', before);
       });
 
@@ -313,6 +316,156 @@ test('MySQL trusted clean vertical slice in jbhh_ktv_test',
           const saved = await inspect('clean-key-race');
           assert.equal(saved.head.revision, 1); assert.equal(saved.operations.length, 1); assert.equal(saved.audit.length, 1);
           t.diagnostic('two independent CONNECTION_ID values verified; both races completed');
+        } finally { try { await a.rollback(); await b.rollback(); } finally { a.release(); b.release(); } }
+      });
+
+      // Stage 2C.3 first batch reuses this isolated eight-table fixture.
+      const issueActions = ['markRoomIssue', 'clearRoomIssue'];
+      const issuePayload = action => ({ room: 'V01', ...(action === 'markRoomIssue' ? { issueType: '维护中' } : {}), evidenceText: 'synthetic room evidence' });
+      const prepareIssueState = action => state => {
+        if (action === 'clearRoomIssue') {
+          state.rooms[0].status = '故障/维护中'; state.rooms[0].issueType = '维护中';
+          state.rooms[0].issueBy = 'unknown historical actor'; state.rooms[0].issueAt = 'unknown historical time';
+        }
+      };
+      for (const action of issueActions) {
+        await t.test(action + ': session actor and frozen DB time commit submission/state/result/audit atomically', async () => {
+          const login = await provision(['room.issue']), id = 'issue-first-' + action;
+          const original = await seed(id, prepareIssueState(action)), run = application(id);
+          const payload = { ...issuePayload(action), actorId: 'administrator', principalId: 'fake', user: 'fake',
+            permissions: ['*'], role: 'administrator', clock: '1900-01-01', person: 'fake',
+            submittedById: 'fake', submittedByPrincipalId: 'fake' };
+          const result = await run.app.execute(command('first', 0, payload, action), login.credential);
+          assert.equal(result.status, 'committed'); assert.equal(result.actorId, login.principalId); assert.equal(result.revision, 1);
+          assert.equal(run.executions(), 1); assert.deepEqual(run.context().permissionIds, ['room.issue']);
+          assert.equal(run.calls.filter(call => call.kind === 'db-now').length, 1);
+          assert.equal(run.context().dbNow, run.calls.find(call => call.kind === 'db-now').value);
+          const actual = await inspect(id), record = actual.head.state.roomIssueReviews.at(-1);
+          assert.equal(actual.head.revision, 1); assert.equal(actual.operations.length, 1); assert.equal(actual.audit.length, 1);
+          assert.equal(actual.operations[0].actor_principal_id, login.principalId); assert.equal(actual.operations[0].action, action);
+          assert.equal(actual.audit[0].actor_principal_id, login.principalId); assert.equal(actual.audit[0].action, action);
+          assert.equal(record.submittedBy, login.principalId); assert.equal(record.submittedByPrincipalId, login.principalId);
+          assert.equal(record.submittedById, ''); assert.equal(record.submittedAt, run.context().dbNow);
+          assert.equal(record.status, action === 'markRoomIssue' ? '无需审核' : '待审核');
+          if (action === 'markRoomIssue') {
+            assert.equal(actual.head.state.rooms[0].status, '故障/维护中');
+            assert.equal(actual.head.state.rooms[0].issueBy, login.principalId);
+            assert.equal(actual.head.state.rooms[0].issueAt, run.context().dbNow);
+          } else assert.deepEqual(actual.head.state.rooms[0], original.rooms[0]);
+          assert.equal(actual.head.state.roomIssueReviews.length, 1);
+          assert.deepEqual(actual.head.state.orders, original.orders); assert.deepEqual(actual.head.state.inventory, original.inventory);
+          for (const field of ['user', 'clock', 'permissions', 'capabilities', 'administrator']) assert.deepEqual(actual.head.state[field], original[field]);
+        });
+
+        await t.test(action + ': authorization denial has no effects or terminal; same key succeeds after grant', async () => {
+          const login = await provision(['backend.view', 'room.issue.approve']), id = 'issue-denied-' + action;
+          await seed(id, prepareIssueState(action)); const before = await inspect(id), run = application(id);
+          const request = command('denied', 0, { ...issuePayload(action), actorId: 'administrator',
+            principalId: 'fake', permissions: ['room.issue'], role: 'administrator', clock: '1900-01-01' }, action);
+          await assert.rejects(run.app.execute(request, login.credential), denied);
+          await assertUnchanged(id, before); assert.equal(run.executions(), 0);
+          await auth.grantPermission({ principalId: login.principalId, permissionId: 'room.issue' });
+          const result = await run.app.execute(request, login.credential);
+          assert.equal(result.status, 'committed'); assert.equal(result.actorId, login.principalId); assert.equal(result.revision, 1);
+        });
+
+        await t.test(action + ': reconnect after revoke replays original result; actor/fingerprint conflicts precede authorization', async () => {
+          const login = await provision(['room.issue']), other = await provision([]), id = 'issue-replay-' + action;
+          await seed(id, prepareIssueState(action)); const run = application(id), request = command('original', 0, issuePayload(action), action);
+          const first = await run.app.execute(request, login.credential);
+          await auth.revokePermission({ principalId: login.principalId, permissionId: 'room.issue' });
+          const before = await inspect(id), reconnect = mysql.createPool(poolOptions);
+          try {
+            const again = application(id, { connectionPool: reconnect, bind: createMySqlAuthStore({ pool: reconnect, database }).bindSessionRevalidation,
+              transactCommand: () => assert.fail('terminal replay/conflict must not execute domain') });
+            assert.deepEqual(await again.app.execute(request, login.credential), first);
+            const conflict = await again.app.execute(request, other.credential);
+            assert.equal(conflict.status, 'idempotency-conflict'); assert.equal(conflict.reason, 'actor-mismatch');
+            for (const changed of [{ ...request, expectedRevision: 1 },
+              { ...request, payload: { ...request.payload, evidenceText: 'changed evidence' } },
+              { ...request, action: action === 'markRoomIssue' ? 'clearRoomIssue' : 'markRoomIssue' }]) {
+              const result = await again.app.execute(changed, login.credential);
+              assert.equal(result.status, 'idempotency-conflict'); assert.equal(result.reason, 'request-mismatch');
+            }
+            await assert.rejects(again.app.execute({ ...request, operationKey: 'new', expectedRevision: 1 }, login.credential), denied);
+            assert.equal(again.executions(), 0);
+          } finally { await reconnect.end(); }
+          await assertUnchanged(id, before);
+        });
+
+        await t.test(action + ': disabled/revoked/idle/absolute/version invalidation blocks terminal access', async () => {
+          for (const state of ['disabled', 'revoked', 'idle-expired', 'absolute-expired', 'credential-version']) {
+            const login = await provision(['room.issue']), id = 'issue-auth-' + action + '-' + state;
+            await seed(id, prepareIssueState(action)); const run = application(id), request = command('private', 0, issuePayload(action), action);
+            await run.app.execute(request, login.credential); const before = await inspect(id);
+            if (state === 'disabled') await auth.disableAccount({ principalId: login.principalId });
+            else if (state === 'revoked') await auth.logout(login.token);
+            else if (state === 'credential-version') await auth.rotateCredential({ principalId: login.principalId, password: 'synthetic-rotated-only' });
+            else if (state === 'idle-expired') await pool.execute('UPDATE ' + table('auth_sessions') +
+              ' SET idle_expires_at = created_at WHERE session_id = ?', [login.sessionId]);
+            else await pool.execute('UPDATE ' + table('auth_sessions') +
+              ' SET idle_expires_at = created_at, absolute_expires_at = created_at + INTERVAL 1 MICROSECOND WHERE session_id = ?', [login.sessionId]);
+            run.calls.length = 0; await assert.rejects(run.app.execute(request, login.credential), authRequired);
+            assert.ok(!run.calls.some(call => call.kind === 'sql' && call.sql.includes('ledger_operations')));
+            assert.equal(run.executions(), 1); await assertUnchanged(id, before);
+          }
+        });
+
+        await t.test(action + ': revision conflict and original domain rejection persist and replay after revoke', async () => {
+          for (const status of ['revision-conflict', 'business-rejected']) {
+            const login = await provision(['room.issue']), id = 'issue-terminal-' + action + '-' + status;
+            const original = await seed(id, prepareIssueState(action)), run = application(id);
+            const request = command('terminal', status === 'revision-conflict' ? 9 : 0,
+              { ...issuePayload(action), ...(status === 'business-rejected' ? { evidenceText: '' } : {}) }, action);
+            const result = await run.app.execute(request, login.credential); assert.equal(result.status, status);
+            const before = await inspect(id); assert.deepEqual(before.head.state, original); assert.equal(before.head.revision, 0);
+            assert.equal(before.operations.length, 1); assert.equal(before.audit.length, 0);
+            await auth.revokePermission({ principalId: login.principalId, permissionId: 'room.issue' });
+            assert.deepEqual(await run.app.execute(request, login.credential), result); await assertUnchanged(id, before);
+          }
+        });
+
+        await t.test(action + ': injected audit SQL failure rolls back state/revision/operation and leaves key reusable', async () => {
+          const login = await provision(['room.issue']), id = 'issue-sql-' + action;
+          await seed(id, prepareIssueState(action)); const before = await inspect(id), run = application(id);
+          await setup.query('ALTER TABLE ' + table('ledger_success_audit') +
+            " ADD CONSTRAINT chk_issue_slice_fault CHECK (ledger_id <> '" + id + "')");
+          const request = command('sql-retry', 0, issuePayload(action), action);
+          try {
+            await assert.rejects(run.app.execute(request, login.credential), error => error.code === 'ER_CHECK_CONSTRAINT_VIOLATED');
+            assert.ok(run.calls.some(call => call.kind === 'sql' && call.sql.includes('ledger_heads') && call.sql.startsWith('UPDATE ')));
+            assert.ok(run.calls.some(call => call.kind === 'sql' && call.sql.includes('ledger_operations') && call.sql.startsWith('INSERT ')));
+            assert.ok(run.calls.some(call => call.kind === 'rollback')); await assertUnchanged(id, before);
+          } finally { await setup.query('ALTER TABLE ' + table('ledger_success_audit') + ' DROP CHECK chk_issue_slice_fault'); }
+          assert.equal((await run.app.execute(request, login.credential)).status, 'committed');
+        });
+      }
+
+      await t.test('room submissions: two independent connections preserve revision and same-key single execution', async () => {
+        const login = await provision(['room.issue']);
+        await seed('issue-race', state => { state.rooms[1].status = '故障/维护中'; state.rooms[1].issueType = '故障'; });
+        const a = await pool.getConnection(), b = await pool.getConnection();
+        try {
+          const [[aId]] = await a.query('SELECT CONNECTION_ID() AS id'), [[bId]] = await b.query('SELECT CONNECTION_ID() AS id');
+          assert.notEqual(aId.id, bId.id, 'requires two independent real MySQL connections');
+          await a.query('SET SESSION innodb_lock_wait_timeout = 5'); await b.query('SET SESSION innodb_lock_wait_timeout = 5');
+          const aPool = { getConnection: async () => wrapConnection(a, [], false) }, bPool = { getConnection: async () => wrapConnection(b, [], false) };
+          const first = application('issue-race', { connectionPool: aPool }), second = application('issue-race', { connectionPool: bPool });
+          const results = await Promise.all([first.app.execute(command('mark', 0, issuePayload('markRoomIssue'), 'markRoomIssue'), login.credential),
+            second.app.execute(command('clear', 0, { room: 'V02', evidenceText: 'synthetic repaired' }, 'clearRoomIssue'), login.credential)]);
+          assert.deepEqual(results.map(result => result.status).sort(), ['committed', 'revision-conflict']);
+          const actual = await inspect('issue-race');
+          assert.equal(actual.head.revision, 1); assert.equal(actual.operations.length, 2); assert.equal(actual.audit.length, 1);
+          assert.equal(actual.head.state.roomIssueReviews.length, 1); assert.equal(first.executions() + second.executions(), 1);
+          await seed('issue-key-race', prepareIssueState('clearRoomIssue'));
+          const retryA = application('issue-key-race', { connectionPool: aPool }), retryB = application('issue-key-race', { connectionPool: bPool });
+          const request = command('same', 0, issuePayload('clearRoomIssue'), 'clearRoomIssue');
+          const repeated = await Promise.all([retryA.app.execute(request, login.credential), retryB.app.execute(request, login.credential)]);
+          assert.deepEqual(repeated[0], repeated[1]); assert.equal(repeated[0].status, 'committed');
+          assert.equal(retryA.executions() + retryB.executions(), 1);
+          const saved = await inspect('issue-key-race'); assert.equal(saved.head.revision, 1);
+          assert.equal(saved.operations.length, 1); assert.equal(saved.audit.length, 1); assert.equal(saved.head.state.roomIssueReviews.length, 1);
+          t.diagnostic('room issue races used two verified independent CONNECTION_ID values');
         } finally { try { await a.rollback(); await b.rollback(); } finally { a.release(); b.release(); } }
       });
     } finally {

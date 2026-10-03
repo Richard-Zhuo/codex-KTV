@@ -1,8 +1,8 @@
-// Stage 2C.2: migrated execution is a separate gate from Stage 2A eligibility.
+// Migrated execution is a separate gate from Stage 2A eligibility.
 import { authorizeCommand } from './command-policy.js';
 import { assertTrustedExecutionContext, AuthorizationDenied } from '../shared/identity.js';
 
-export const TRUSTED_ENABLED_ACTIONS = Object.freeze(['clean']);
+export const TRUSTED_ENABLED_ACTIONS = Object.freeze(['clean', 'markRoomIssue', 'clearRoomIssue']);
 const enabled = new Set(TRUSTED_ENABLED_ACTIONS);
 
 export class SessionAuthenticationRequired extends Error {

@@ -63,15 +63,19 @@ function normalizeSaleOptions(options, sellable) {
 export function transact(original, action, data = {}, key, execution = { mode: 'demo' }) {
   if (!execution || !['demo', 'trusted'].includes(execution.mode)) throw TypeError('事务执行模式无效');
   const context = execution.mode === 'trusted' ? assertTrustedExecutionContext(execution.context) : null;
-  if (context && action !== 'clean') throw new AuthorizationDenied('trusted-action-not-enabled');
+  if (context && !['clean', 'markRoomIssue', 'clearRoomIssue'].includes(action)) throw new AuthorizationDenied('trusted-action-not-enabled');
   if (!key) throw new BusinessRejection('缺少操作编号');
   if (original.processed.includes(key)) return original;
   const s = structuredClone(original);
   s.catalog = mergeCatalog(s.catalog);
   assertCatalogPackagePrices(s.catalog);
   if (context) {
-    // Only the migrated clean branch; never evaluate demo identity or clock.
-    cleanRoom(s, s.rooms.find(room => room.id === data.room), { mode: 'trusted', context });
+    // Only migrated room commands; never evaluate demo identity or clock.
+    const room = s.rooms.find(room => room.id === data.room);
+    const execution = { mode: 'trusted', context };
+    if (action === 'clean') cleanRoom(s, room, execution);
+    else if (action === 'markRoomIssue') markRoomIssue(s, room, data, undefined, undefined, execution);
+    else clearRoomIssue(s, room, data, undefined, undefined, execution);
     s.processed.push(key);
     return s;
   }

@@ -96,6 +96,18 @@ Stage 1 MySQL ledger 集成独立复验 11 total／11 pass／0 fail／0 skip，m
 
 原六项 Known Issues 的测试与结论保持 skip，无新增生产依赖；未创建真人账号、employee 映射、policy attribute schema 或正式导入。本阶段仅一个独立提交，不进入 2C.3，不 push 或部署。
 
+## P0-1 Stage 2C.3 第一批：房间异常提交（2026-10-03）
+
+开始时实际工作树 clean，HEAD 为已验收 492f75d；本地 main 尚为 0768814，且与 492f75d 为线性祖先、无 main 独有提交。本轮仅 fast-forward main 至 492f75d，再建立 codex/p0-1-stage2c-room-issues，不创建 merge commit 或推送。重跑基线 374 total／368 pass／0 fail／6 skip。
+
+只向已迁移集合增加 markRoomIssue、clearRoomIssue。两者在演示 operator／clock 求值前进入 trusted 分支，具体 room.issue 权限、提交人 principal 和冻结 dbNow 只来自 session 重验 context；新记录增加 submittedByPrincipalId，旧演示 submittedById 留空，不猜真人映射。原房态、证据、异常类型和重复待审申请校验保持；标记立即生效，恢复仍为待审核申请。其他 42 个 eligible action、demo 与未知动作继续 fail closed；审核动作及其他领域逻辑均未修改。
+
+行为用例：有效 synthetic session＋room.issue＋正确 revision 可提交；state／payload 中的 actor、role、permissions、clock 无法授权或覆盖 actor／时间；缺权限不写 state、revision、operation、audit，授予权限后同 key 可用；撤权后重连取回原终态，新 key 拒绝；disabled／revoked／idle／absolute／凭据轮换拒绝旧回执访问；actor／payload／action／expectedRevision 冲突继续 Stage 1 语义。revision conflict 和明确领域拒绝继续持久终态，重放不重新执行。
+
+复用 ledger/trusted-clean.test.js 与 ledger/trusted-clean.integration.test.js，新增 12 个单元契约和 13 个真实数据库子用例。定向 Node 测试 54 total／54 pass／0 fail／0 skip（单元 24，MySQL 集成 30，含 28 个真实子用例及 guard／suite）。两个动作撤权后的新 pool 重连重放均未再调用 domain。两个独立 CONNECTION_ID 实测 revision 竞争最多一个成功、同 key 恢复申请只新增一次；audit CHECK 故障在 state 与 operation SQL 写入后触发，全部回滚且修复后原 key 可成功。专用数据库为 MySQL 8.4.11／jbhh_ktv_test／InnoDB；没有扩大 fixture 清理范围或创建／删除数据库。
+
+完整 node --test --test-isolation=none：399 total／393 pass／0 fail／6 skip，退出码 0；auth 29／29（其中 revalidation 13／13）、ledger 11／11 和房间命令集成都真实执行。原六项 Known Issues 保持 skip。已实际尝试 npm test，环境仍报 npm 未识别，未取得 npm 运行证据。ledger application、MySQL store、auth、command-policy、schema／migration、HTTP／UI、依赖和历史业务快照规则未修改；本批仅一个提交，不进入下一批，不 push 或部署。
+
 ## 本轮隔离集成候选（2026-09-29）
 
 来源：用户交付的 `jbhh-ktv-full.zip`，基线 `ca726b2`；纯重构检查点 `74c3f55`；业务修复终点 `6aa01ba`。Track B 来源为 `codex/offsite-contracts@3193635`。候选位于独立工作树的 `codex/track-a-integration`，主工作区未提交内容保留；未合并 `main`、未推送。
@@ -232,7 +244,7 @@ Stage 1 MySQL ledger 集成独立复验 11 total／11 pass／0 fail／0 skip，m
 
 ## 下一步
 
-只读快照预检器、Stage 1A／1A.1／1A.2 协议、Stage 1B-MySQL 适配器、Stage 2A 纯命令策略及 Stage 2B 独立认证基础已完成；Stage 1B.1 和 Stage 2B 已分别在专用 MySQL 8.4 测试库取得真实验收证据。Stage 2C.1 同事务认证与 2C.2 clean 可信执行已通过真实数据库验收，其他正式 action 尚未迁移；HTTP／客户端及 2C.3／2D 未开始。正式营业日和班次规则已确认的部分见 [REQUIREMENTS](./REQUIREMENTS.md)，运行实现仍属后续任务。
+只读快照预检器、Stage 1A／1A.1／1A.2 协议、Stage 1B-MySQL 适配器、Stage 2A 纯命令策略及 Stage 2B 独立认证基础已完成；Stage 1B.1 和 Stage 2B 已分别在专用 MySQL 8.4 测试库取得真实验收证据。Stage 2C.1 同事务认证、2C.2 clean 及 2C.3 第一批 markRoomIssue／clearRoomIssue 已通过真实数据库验收；其余正式 action 和审核尚未迁移，HTTP／客户端及 2D 未开始，当前停止在本批。正式营业日和班次规则已确认的部分见 [REQUIREMENTS](./REQUIREMENTS.md)，运行实现仍属后续任务。
 
 ## 阶段停止条件
 
