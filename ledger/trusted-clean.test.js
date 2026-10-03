@@ -2,6 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { initialState, transact } from '../rules.js';
 import { cleanRoom, markRoomIssue, clearRoomIssue, cancelReservation } from '../rooms.js';
+import { submitDeposit, withdrawDeposit } from '../deposits.js';
+import { DEPOSIT_TEST_ACTIONS, depositTestPayload, seedStoredDeposits, invalidDepositPayloads } from '../test-support/trusted-deposits-fixture.js';
 import { PERMISSION_IDS, AuthorizationDenied } from '../shared/identity.js';
 import { BusinessRejection } from '../shared/business-error.js';
 import { revalidateSessionInTransaction } from '../auth/session-revalidation.js';
@@ -95,7 +97,7 @@ test('trusted clean uses session actor and frozen DB context; all demo facts are
 
 test('trusted-enabled commands are independent from all other eligible and demo actions', async () => {
   assert.deepEqual(TRUSTED_ENABLED_ACTIONS, ['clean', 'markRoomIssue', 'clearRoomIssue',
-    'createCatalogProduct', 'updateCatalogProduct', 'updateCatalogPackage', 'cancelReservation']);
+    'createCatalogProduct', 'updateCatalogProduct', 'updateCatalogPackage', 'cancelReservation', 'deposit', 'withdraw']);
   assert.equal(Object.isFrozen(TRUSTED_ENABLED_ACTIONS), true);
   for (const action of [...FORMAL_COMMAND_ACTIONS.filter(action => !TRUSTED_ENABLED_ACTIONS.includes(action)), ...DEMO_ONLY_ACTIONS, 'unknown']) {
     const f = fixture({ permissions: [...PERMISSION_IDS] });
@@ -588,4 +590,133 @@ test('cancelReservation: unknown failure rolls back and the original key can ret
   await emptyEffects(f); fail = false;
   assert.equal((await f.app.execute(cancelRequest('cancel-fault'), f.credential)).status, 'committed');
   assert.equal((await f.memory.read()).revision, 1);
+});
+
+// Stage 2C.3 storage batch: customer identity is data, operator identity is trusted.
+for (const action of DEPOSIT_TEST_ACTIONS) {
+  const makeFixture = (options = {}) => fixture({ permissions: ['deposit.manage'], setup: seedStoredDeposits, ...options });
+  test(action + ': trusted actor/time ignore demo and payload identity; original storage mutations and history remain', async () => {
+    const f = makeFixture(), payload = { ...depositTestPayload(action), actorId: 'administrator', principalId: 'fake',
+      user: 'fake', person: 'fake', permissions: ['*'], role: 'administrator', clock: '1900-01-01', time: 'fake' };
+    const result = await f.app.execute(request('storage-first', 0, payload, action), f.credential);
+    assert.equal(result.status, 'committed'); assert.equal(result.actorId, f.auth.principalId); assert.equal(result.revision, 1);
+    assert.deepEqual(f.context().permissionIds, ['deposit.manage']); assert.equal(f.context().dbNow, dbNow);
+    const head = await f.memory.read(), demo = structuredClone(f.state);
+    demo.user = 'administrator'; demo.clock = dbNow;
+    const expected = transact(demo, action, payload, 'storage-first');
+    expected.user = f.state.user; expected.clock = f.state.clock;
+    const records = action === 'deposit' ? expected.deposits.slice(f.state.deposits.length) : expected.withdrawals.slice(f.state.withdrawals.length);
+    for (const record of records) record.person = f.auth.principalId;
+    assert.deepEqual(head.state, expected, 'domain behavior and all other facts are unchanged');
+    const saved = action === 'deposit' ? head.state.deposits.slice(f.state.deposits.length) : head.state.withdrawals.slice(f.state.withdrawals.length);
+    for (const record of saved) { assert.equal(record.person, f.auth.principalId); assert.equal(record.time, dbNow); }
+    if (action === 'deposit') {
+      assert.equal(saved.length, 2); assert.equal(new Set(saved.map(row => row.group)).size, 1);
+      assert.deepEqual(saved.map(row => row.count), [6, 3]);
+      for (const row of saved) { assert.equal(row.name, 'Synthetic Guest'); assert.equal(row.phone, '13800001234'); assert.notEqual(row.name, row.person); }
+    } else { assert.equal(head.state.deposits[0].count, 4); assert.equal(saved[0].deposit, 101); }
+    assert.deepEqual(head.state.orders, f.state.orders); assert.deepEqual(head.state.inventory, f.state.inventory);
+    assert.deepEqual(head.state.ledger, f.state.ledger); assert.equal(head.audit[0].actorId, f.auth.principalId);
+  });
+
+  test(action + ': valid customer input and forged actor/permissions cannot authorize; denied key stays reusable', async () => {
+    const f = makeFixture({ permissions: ['backend.view'] }), cmd = request('storage-grant', 0,
+      { ...depositTestPayload(action), actorId: 'administrator', permissions: ['deposit.manage'], role: 'administrator' }, action);
+    await assert.rejects(f.app.execute(cmd, f.credential), denied); await emptyEffects(f); assert.equal(f.executions(), 0);
+    f.auth.permissions = ['deposit.manage'];
+    assert.equal((await f.app.execute(cmd, f.credential)).status, 'committed'); assert.equal(f.executions(), 1);
+  });
+
+  test(action + ': revoke preserves original terminal; actor/payload/action/revision conflicts persist, new key denied', async () => {
+    const f = makeFixture(), cmd = request('storage-replay', 0, depositTestPayload(action), action);
+    const first = await f.app.execute(cmd, f.credential), before = await f.memory.read(); f.auth.permissions = [];
+    assert.deepEqual(await f.app.execute(cmd, f.credential), first);
+    for (const changed of [{ ...cmd, expectedRevision: 1 },
+      { ...cmd, payload: { ...cmd.payload, ...(action === 'deposit' ? { name: 'Different Guest' } : { count: 1 }) } },
+      { ...cmd, action: action === 'deposit' ? 'withdraw' : 'deposit' }]) {
+      const result = await f.app.execute(changed, f.credential);
+      assert.equal(result.status, 'idempotency-conflict'); assert.equal(result.reason, 'request-mismatch');
+    }
+    f.auth.principalId = 'synthetic-other';
+    const conflict = await f.app.execute(cmd, f.credential);
+    assert.equal(conflict.status, 'idempotency-conflict'); assert.equal(conflict.reason, 'actor-mismatch');
+    f.auth.principalId = first.actorId;
+    await assert.rejects(f.app.execute({ ...cmd, operationKey: 'new', expectedRevision: 1 }, f.credential), denied);
+    assert.equal(f.executions(), 1); assert.deepEqual(await f.memory.read(), before);
+  });
+
+  test(action + ': disabled/revoked/idle/absolute/credential invalidation blocks previous terminal access', async () => {
+    for (const change of [auth => { auth.enabled = false; }, auth => { auth.revoked = true; },
+      auth => { auth.idleExpiresAt = dbNow; }, auth => { auth.absoluteExpiresAt = dbNow; }, auth => { auth.credentialVersion++; }]) {
+      const f = makeFixture(), cmd = request('storage-private', 0, depositTestPayload(action), action);
+      await f.app.execute(cmd, f.credential); const before = await f.memory.read(); change(f.auth);
+      await assert.rejects(f.app.execute(cmd, f.credential), authenticationRequired);
+      assert.equal(f.executions(), 1); assert.deepEqual(await f.memory.read(), before);
+    }
+  });
+
+  test(action + ': original customer/room/product/quantity checks reject atomically and occupy terminal keys', async () => {
+    for (const payload of invalidDepositPayloads(action)) {
+      const f = makeFixture(), cmd = request('storage-business', 0, payload, action);
+      const result = await f.app.execute(cmd, f.credential); assert.equal(result.status, 'business-rejected');
+      const head = await f.memory.read(); assert.equal(head.revision, 0); assert.deepEqual(head.state, f.state);
+      assert.equal(head.operationResults.size, 1); assert.equal(head.audit.length, 0);
+      f.auth.permissions = []; assert.deepEqual(await f.app.execute(cmd, f.credential), result);
+      assert.deepEqual(await f.memory.read(), head);
+    }
+  });
+
+  test(action + ': domain entry requires real context and uses only its operator/time, never caller arguments', async () => {
+    const f = makeFixture(), fn = action === 'deposit' ? submitDeposit : withdrawDeposit;
+    await f.app.execute(request('storage-context', 0, depositTestPayload(action), action), f.credential);
+    for (const context of [null, structuredClone(f.context())]) {
+      assert.throws(() => fn(f.state, depositTestPayload(action), 'fake', 'fake', { mode: 'trusted', context }), TypeError);
+      assert.throws(() => transact(f.state, action, depositTestPayload(action), 'direct', { mode: 'trusted', context }), TypeError);
+    }
+    assert.throws(() => fn(f.state, depositTestPayload(action), 'fake', 'fake', { mode: 'invalid' }), TypeError);
+    const state = structuredClone(f.state);
+    fn(state, depositTestPayload(action), 'fake', '1900-01-01', { mode: 'trusted', context: f.context() });
+    const record = action === 'deposit' ? state.deposits.at(-1) : state.withdrawals.at(-1);
+    assert.equal(record.person, f.auth.principalId); assert.equal(record.time, dbNow);
+    const noGrant = makeFixture({ permissions: [] });
+    await assert.rejects(noGrant.app.execute(request('storage-context', 0, depositTestPayload(action), action), noGrant.credential), denied);
+    assert.throws(() => fn(noGrant.state, depositTestPayload(action), 'administrator', dbNow,
+      { mode: 'trusted', context: noGrant.context() }), denied);
+  });
+}
+
+test('storage workflow: different authorized actors handle the same customer, with no employee mapping or duplicate effects', async () => {
+  const f = fixture({ permissions: ['deposit.manage'], setup: seedStoredDeposits });
+  const deposit = request('storage-create', 0, depositTestPayload('deposit'), 'deposit');
+  const first = await f.app.execute(deposit, f.credential), stored = (await f.memory.read()).state.deposits.at(-2);
+  f.auth.principalId = 'synthetic-second-operator';
+  const withdrawal = request('storage-take', 1, { id: stored.id, identity: stored.name, count: 2 }, 'withdraw');
+  const taken = await f.app.execute(withdrawal, f.credential), before = await f.memory.read();
+  assert.equal(taken.actorId, f.auth.principalId); assert.equal(before.revision, 2);
+  assert.equal(before.state.deposits.find(row => row.id === stored.id).person, first.actorId);
+  assert.equal(before.state.withdrawals.at(-1).person, taken.actorId);
+  assert.equal(before.state.deposits.find(row => row.id === stored.id).count, 4);
+  assert.deepEqual(await f.app.execute(withdrawal, f.credential), taken);
+  f.auth.principalId = first.actorId; assert.deepEqual(await f.app.execute(deposit, f.credential), first);
+  assert.deepEqual(await f.memory.read(), before); assert.deepEqual(before.state.inventory, f.state.inventory);
+});
+
+test('storage customer name/phone/identity remain business inputs, including name-only/phone-only and legacy single-item deposit', async () => {
+  for (const payload of [
+    { room: 'V01', name: 'administrator', product: 'bw', count: 1 },
+    { room: 'V01', phone: '13800001234', product: 'bw', count: 1 }
+  ]) {
+    const f = fixture({ permissions: ['deposit.manage'], setup: seedStoredDeposits });
+    assert.equal((await f.app.execute(request('customer', 0, payload, 'deposit'), f.credential)).status, 'committed');
+    const stored = (await f.memory.read()).state.deposits.at(-1);
+    assert.equal(stored.name, payload.name || ''); assert.equal(stored.phone, payload.phone || '');
+    assert.equal(stored.person, 'synthetic-actor'); assert.equal(stored.initial, 1);
+  }
+  for (const identity of ['1234', '13800001234', ' Historic Guest ']) {
+    const f = fixture({ permissions: ['deposit.manage'], setup: seedStoredDeposits });
+    const result = await f.app.execute(request('customer', 0, { id: 101, identity, count: 6 }, 'withdraw'), f.credential);
+    assert.equal(result.status, 'committed'); const state = (await f.memory.read()).state;
+    assert.equal(state.deposits[0].count, 0); assert.equal(state.withdrawals.at(-1).person, f.auth.principalId);
+    assert.equal(state.deposits[0].productNameSnapshot, null, 'unknown retired-product history is not filled from catalog');
+  }
 });

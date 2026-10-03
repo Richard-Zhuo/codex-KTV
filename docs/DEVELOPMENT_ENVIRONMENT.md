@@ -23,9 +23,11 @@
 | 使用其他端口（PowerShell） | `$env:PORT = 4174; npm start` | 配置确认 | `server.js` 读取 `PORT`，本轮未执行 |
 | 完整自动测试 | `npm test` | 配置确认 | `package.json` 映射到 `node --test` |
 | 2026-09-28 历史替代测试 | `$env:NODE_OPTIONS = '--test-isolation=none'; pnpm test` | 历史执行 | 历史记录为 73/73；不能当作本轮结果 |
-| 本轮完整自动测试 | `node --test --test-isolation=none` | 本轮执行 | 2C.3 目录维护与取消预约线性整合、既有房间 trusted 命令及 auth／revalidation、ledger 真实数据库回归的实际结果见 [阶段记录](./CURRENT_STAGE.md)；不沿用 Stage 2B 历史数量 |
+| 本轮完整自动测试 | `node --test --test-isolation=none` | 本轮执行 | 2C.3 存取酒迁移、既有房间／目录 trusted 命令及 auth／revalidation、ledger 真实数据库回归的实际结果见 [阶段记录](./CURRENT_STAGE.md)；不沿用 Stage 2B 历史数量 |
 | 2C.1 定向单元测试 | `node --test --test-isolation=none auth/session-revalidation.test.js auth/auth.test.js ledger/command-policy.test.js ledger/mysql-store.test.js` | 本轮执行 | 同连接能力、可信 context、终态 replay 顺序和既有策略／适配器回归；不连接数据库 |
-| 2C.2／2C.3 房间与目录 trusted 定向测试 | `node --test --test-isolation=none ledger/trusted-clean.test.js ledger/trusted-clean.integration.test.js` | 本次执行 | 单元加独立真实 MySQL fixture，完整保留目录与取消预约两批 helper；实际本轮结果见 CURRENT_STAGE |
+| 2C.2／2C.3 trusted 命令定向测试 | `node --test --test-isolation=none ledger/trusted-clean.test.js ledger/trusted-clean.integration.test.js` | 配置确认 | 单元与受保护 MySQL fixture；目录、取消预约及存取酒 helper 均保留，本轮分开执行的实际结果见 CURRENT_STAGE |
+| 存取酒单元与原领域回归 | `node --test --test-isolation=none ledger/trusted-clean.test.js operations.test.js` | 本次执行 | 新存取酒 trusted 契约与原业务矩阵；不连接数据库 |
+| trusted 命令 MySQL 集成测试 | `node --test --test-isolation=none ledger/trusted-clean.integration.test.js` | 本次执行 | 新存取酒 helper 与既有房间／目录用例共用同一专用库八表 fixture；不扩大清理范围 |
 | MySQL 账本集成测试 | `LEDGER_MYSQL_TEST_URL` 明确指向 `jbhh_ktv_test` 后运行 `node --test --test-isolation=none ledger/mysql-store.integration.test.js` | 本次执行 | 本轮真实复验结果见 [CURRENT_STAGE](./CURRENT_STAGE.md)；仅清理该库三张已知账本表，不创建或删除数据库；未配置时跳过且不得当作集成通过 |
 | MySQL 认证／重验集成测试 | `AUTH_MYSQL_TEST_URL` 或已确认的 `LEDGER_MYSQL_TEST_URL` 指向 `jbhh_ktv_test` 后运行 `node --test --test-isolation=none auth/mysql-auth.integration.test.js` | 本次执行 | 保留原 Stage 2B 16 项，并在同一 auth fixture 调用 2C.1 重验／锁竞争用例；本轮数据库证据见 CURRENT_STAGE。拒绝预存 auth 表，只删除本次创建的五张 auth 表，不动 ledger 表或数据库本身 |
 | 隔离浏览器恢复演练 | `node docs/verification/browser-recovery-harness.mjs` | 历史执行 | 上轮仅绑定 `127.0.0.1` 的随机端口，使用合成已付款订单演练停写、复制、人工修正及显式重检；本轮未重跑，见 [浏览器记录](./verification/track-a-b-browser-recovery-2026-09-29.md) |
@@ -35,7 +37,7 @@
 
 独立 clean、原 auth、原 ledger 集成 fixture 共用 `test-support/mysql-fixture-lock.js`，具名锁只串行建表／清理的 fixture 生命周期，不串行或替代生产命令的 InnoDB 行锁。各套 SQL 只作用于已约定的专用测试表，绝不创建或删除数据库。
 
-修改 JavaScript 后，项目约定的正式自动验证命令是 `npm test`。本轮目录与取消预约重放整合已实际尝试，但 PowerShell 找不到 `npm`，进程未启动；本次使用 `node --test --test-isolation=none` 执行完整 Node 测试集合，结果见上表。此前阶段测试数均为历史证据。
+修改 JavaScript 后，项目约定的正式自动验证命令是 `npm test`。本轮存取酒迁移已实际尝试，但 PowerShell 找不到 `npm`，进程未启动；本次使用 `node --test --test-isolation=none` 执行完整 Node 测试集合，结果见上表。此前阶段测试数均为历史证据。
 
 ## 入口与端口
 

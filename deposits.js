@@ -6,6 +6,7 @@
 import { BusinessRejection } from './shared/business-error.js';
 import { product, saleOptions } from './catalog.js';
 import { need } from './inventory.js';
+import { requireTrustedPermission } from './shared/identity.js';
 
 function quantity(n) { if (!Number.isSafeInteger(n) || n <= 0) throw new BusinessRejection('数量必须是大于零的整数'); }
 function phone(value) { if (!/^1\d{10}$/.test(value || '')) throw new BusinessRejection('请填写11位手机号'); }
@@ -16,10 +17,22 @@ export function searchDeposits(deposits, query) {
   return deposits.filter(d => String(d.phone || '').includes(term) || String(d.name || '').toLocaleLowerCase('zh-CN').includes(term));
 }
 
-// —— 命令层：由 rules.js 的 transact 分支委托调用，参数与原分支一致 ——
-
-export function submitDeposit(s, data, person, time) {
+// Customer name/phone/identity remain business inputs; this is only the operator/time source.
+function depositExecution(s, person, time, execution) {
+  if (execution?.mode === 'trusted') {
+    const context = execution.context;
+    requireTrustedPermission(context, 'deposit.manage');
+    return { person: context.principalId, time: context.dbNow };
+  }
+  if (execution?.mode !== 'demo') throw TypeError('存取酒执行模式无效');
   need(s, ['服务员','老板'], 'deposit.manage');
+  return { person, time };
+}
+
+// —— 命令层：demo 保留旧调用；trusted 显式携带 context ——
+
+export function submitDeposit(s, data, person, time, execution = { mode: 'demo' }) {
+  ({ person, time } = depositExecution(s, person, time, execution));
   const phoneValue = String(data.phone || '').trim();
   const name = String(data.name || '').trim().slice(0,30);
   if (!phoneValue && !name) throw new BusinessRejection('手机号和姓名至少填写一个');
@@ -35,8 +48,8 @@ export function submitDeposit(s, data, person, time) {
     s.deposits.push({ id: ++s.serial, group, phone: phoneValue, name, room: data.room, product: depositProduct.id, productId: depositProduct.id, productNameSnapshot: depositProduct.name, baseUnitSnapshot: depositProduct.baseUnit, count: item.count, initial: item.count, time, person });
   }
 }
-export function withdrawDeposit(s, data, person, time) {
-  need(s, ['服务员','老板'], 'deposit.manage'); quantity(data.count);
+export function withdrawDeposit(s, data, person, time, execution = { mode: 'demo' }) {
+  ({ person, time } = depositExecution(s, person, time, execution)); quantity(data.count);
   const d = s.deposits.find(d => d.id === data.id);
   const identity = String(data.identity || '').trim();
   const phoneMatch = /^\d{4,11}$/.test(identity) && d?.phone && d.phone.endsWith(identity);

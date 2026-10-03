@@ -14,6 +14,7 @@ import { encodeLedgerSnapshot, decodeLedgerJson } from './mysql-snapshot.js';
 import { acquireMySqlFixtureLock } from '../test-support/mysql-fixture-lock.js';
 import { testTrustedCatalogCommands } from './trusted-catalog.integration.js';
 import { runTrustedCancelReservationIntegration } from './trusted-cancel-reservation.integration.js';
+import { testTrustedDeposits } from './trusted-deposits.integration.js';
 
 const testUrl = process.env.LEDGER_MYSQL_TEST_URL;
 const database = 'jbhh_ktv_test';
@@ -475,6 +476,8 @@ test('MySQL trusted clean vertical slice in jbhh_ktv_test',
       await runTrustedCancelReservationIntegration(t, {
         pool, poolOptions, setup, table, seed, provision, auth, application, inspect, assertUnchanged, wrapConnection
       });
+      await testTrustedDeposits({ t, pool, setup, auth, table, provision, seed, inspect, application,
+        assertUnchanged, wrapConnection, poolOptions, database });
     } finally {
       try { if (pool) await pool.end(); }
       finally {

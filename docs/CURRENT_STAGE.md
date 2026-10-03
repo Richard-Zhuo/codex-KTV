@@ -140,6 +140,22 @@ Stage 1 MySQL ledger 集成独立复验 11 total／11 pass／0 fail／0 skip，m
 
 组合验收实际结果：定向 node --test --test-isolation=none ledger/trusted-clean.test.js ledger/trusted-clean.integration.test.js 为 114 total／114 pass／0 fail／0 skip，完整保留 catalog 新增 15 单元／19 MySQL 子用例和取消预约新增 11 单元／15 MySQL 子用例。实际数据库为 MySQL 8.4.11／jbhh_ktv_test／InnoDB；auth 29／29（含 revalidation 13／13）、ledger 11／11 真实复验，未变为 skip。两批各自的重连撤权重放、实际不同 CONNECTION_ID 的连接竞争和 audit SQL 故障回滚均通过。完整 node --test --test-isolation=none 为 459 total／453 pass／0 fail／6 skip，退出码 0；原六项 Known Issues 仍跳过。已实际尝试 npm test，环境仍未识别 npm，未取得 npm 通过证据。
 
+## P0-1 Stage 2C.3：存酒与取酒（2026-10-03）
+
+开始前本轮实际核实 `main = origin/main = 15907357f3b26c8b958efffa72b70160d8e4bb6e`、工作树 clean；从该 main 建立 `codex/p0-1-stage2c-deposit-withdraw`，创建后再次确认 HEAD／main 一致。真实 MySQL 8.4.11／jbhh_ktv_test／InnoDB；完整基线实跑 459 total／453 pass／0 fail／6 skip，没有沿用旧分叉测试数。
+
+只向 trusted-enabled 与 transact 的显式 trusted 分支增加 deposit、withdraw，已有房间四动作和目录三动作完整保留，其余 36 个 eligible action 仍 fail closed。deposits.js 仅增加 context-aware 操作者／时间来源：trusted 从 branded context 校验 deposit.manage，将 principalId／dbNow 写入原 person／time 字段；demo 保持原 need／person／time。顾客姓名、手机号和取酒 identity 是业务输入，不能用于授权或推断 principal。手机号或姓名至少一个、一次多酒、商品可存条件、基础数量、严格存酒 ID、手机号尾号或完整姓名核对和取酒余额规则均保留；不扣商品库存，旧记录与未知历史名称不改写。没有 employee 映射、审批或 Known Issues 依赖。
+
+新增 14 项 trusted 单元契约及 17 项真实 MySQL 子用例。定向 `node --test --test-isolation=none ledger/trusted-clean.test.js operations.test.js` 实际 75 total／75 pass／0 fail／0 skip；`node --test --test-isolation=none ledger/trusted-clean.integration.test.js` 实际 81 total／81 pass／0 fail／0 skip（包含 guard／suite 与全部既有 trusted 用例）。新增 ledger/trusted-deposits.integration.js 只组织用例，test-support/trusted-deposits-fixture.js 只提供合成数据；复用既有八表 fixture，不新增 migration、不扩大清理范围，不 CREATE／DROP database。
+
+实际用例验证 state／payload 伪造 actor、role、permissions、clock 不能授权或覆盖操作者／时间；缺权限不写 state／revision／operation／audit，授予权限后原 key 可用；撤权后新 pool 重连取原 terminal，新 key 拒绝；失效账号／session 在 operation 查询前拒绝；actor／action／payload／expectedRevision 冲突及业务／revision 拒绝终态保持。同顾客可以由两个不同 synthetic principal 存入／取出，不混淆顾客核对值和操作者；多酒、旧单件、姓名或手机号单独输入、原数量及历史快照保持。
+
+使用两个实际 CONNECTION_ID 不同的 MySQL connection 验证存入／取出竞争同一旧 revision 最多一成功，并分别验证两动作同 key 竞争只执行一次。未知异常完整回滚、原 key 可重试；成功 audit 上注入 CHECK 故障，确认 state 与 operation SQL 已尝试写入后 state／serial／revision／operation／audit 全部回滚，修复约束后同 key 成功。JSON 往返仍保持 retail.room=null、库存 count=null 与 0，以及既有商品名称、价格、规格和基础数量快照；revalidation 一次数据库时间且不 touch session 活动。
+
+独立真实回归 auth 29 total／29 pass／0 fail／0 skip（原 2B 16 项、revalidation 13 项）、ledger 11 total／11 pass／0 fail／0 skip。最终完整 `node --test --test-isolation=none` 为 490 total／484 pass／0 fail／6 skip，退出码 0；三套 MySQL fixture 均实际运行，原六项 Known Issues 继续 skip。JavaScript 修改后实际尝试 `npm test`，PowerShell 仍报 npm 未识别、进程未启动，不宣称取得 npm 通过证据。
+
+源码对照确认存取酒原业务命令体与其他 demo 分支保持；ledger application／MySQL store、auth、Stage 2A policy、fingerprint／revision／terminal 协议、schema、依赖、HTTP／UI、其他领域和 Known Issues 测试未修改。本批只做一个独立提交，不进入下一批，不 push 或部署。
+
 ## 本轮隔离集成候选（2026-09-29）
 
 来源：用户交付的 `jbhh-ktv-full.zip`，基线 `ca726b2`；纯重构检查点 `74c3f55`；业务修复终点 `6aa01ba`。Track B 来源为 `codex/offsite-contracts@3193635`。候选位于独立工作树的 `codex/track-a-integration`，主工作区未提交内容保留；未合并 `main`、未推送。
@@ -276,7 +292,7 @@ Stage 1 MySQL ledger 集成独立复验 11 total／11 pass／0 fail／0 skip，m
 
 ## 下一步
 
-只读快照预检器、Stage 1A／1A.1／1A.2 协议、Stage 1B-MySQL 适配器、Stage 2A 纯命令策略及 Stage 2B 独立认证基础已完成；Stage 1B.1 和 Stage 2B 已分别在专用 MySQL 8.4 测试库取得真实验收证据。Stage 2C.1 同事务认证、2C.2 clean 及 2C.3 房间异常、目录维护、取消预约的单批已通过真实数据库验收；两批线性整合验收见上节，其余正式 action 和审核尚未迁移，HTTP／客户端及 2D 未开始，当前停止在本批。正式营业日和班次规则已确认的部分见 [REQUIREMENTS](./REQUIREMENTS.md)，运行实现仍属后续任务。
+只读快照预检器、Stage 1A／1A.1／1A.2 协议、Stage 1B-MySQL 适配器、Stage 2A 纯命令策略及 Stage 2B 独立认证基础已完成；Stage 1B.1 和 Stage 2B 已分别在专用 MySQL 8.4 测试库取得真实验收证据。Stage 2C.1 同事务认证、2C.2 clean 及 2C.3 房间异常、目录维护、取消预约、存取酒已通过真实数据库验收；各批及线性整合验收见上节，其余正式 action 和审核尚未迁移，HTTP／客户端及 2D 未开始，当前停止在本批。正式营业日和班次规则已确认的部分见 [REQUIREMENTS](./REQUIREMENTS.md)，运行实现仍属后续任务。
 
 ## 阶段停止条件
 

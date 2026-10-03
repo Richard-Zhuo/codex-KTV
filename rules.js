@@ -108,7 +108,7 @@ function executeCatalogCommand(s, action, data, execution = { mode: 'demo' }) {
 export function transact(original, action, data = {}, key, execution = { mode: 'demo' }) {
   if (!execution || !['demo', 'trusted'].includes(execution.mode)) throw TypeError('事务执行模式无效');
   const context = execution.mode === 'trusted' ? assertTrustedExecutionContext(execution.context) : null;
-  if (context && !['clean', 'markRoomIssue', 'clearRoomIssue', ...CATALOG_COMMAND_ACTIONS, 'cancelReservation'].includes(action)) throw new AuthorizationDenied('trusted-action-not-enabled');
+  if (context && !['clean', 'markRoomIssue', 'clearRoomIssue', ...CATALOG_COMMAND_ACTIONS, 'cancelReservation', 'deposit', 'withdraw'].includes(action)) throw new AuthorizationDenied('trusted-action-not-enabled');
   if (!key) throw new BusinessRejection('缺少操作编号');
   if (original.processed.includes(key)) return original;
   const s = structuredClone(original);
@@ -118,6 +118,8 @@ export function transact(original, action, data = {}, key, execution = { mode: '
     // Only migrated commands; never evaluate demo identity or clock.
     const execution = { mode: 'trusted', context };
     if (CATALOG_COMMAND_ACTIONS.includes(action)) executeCatalogCommand(s, action, data, execution);
+    else if (action === 'deposit') submitDeposit(s, data, undefined, undefined, execution);
+    else if (action === 'withdraw') withdrawDeposit(s, data, undefined, undefined, execution);
     else {
       const room = s.rooms.find(room => room.id === data.room);
       if (action === 'clean') cleanRoom(s, room, execution);
