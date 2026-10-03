@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { initialState, transact } from '../rules.js';
-import { cleanRoom, markRoomIssue, clearRoomIssue } from '../rooms.js';
+import { cleanRoom, markRoomIssue, clearRoomIssue, cancelReservation } from '../rooms.js';
 import { PERMISSION_IDS, AuthorizationDenied } from '../shared/identity.js';
 import { BusinessRejection } from '../shared/business-error.js';
 import { revalidateSessionInTransaction } from '../auth/session-revalidation.js';
@@ -95,7 +95,7 @@ test('trusted clean uses session actor and frozen DB context; all demo facts are
 
 test('trusted-enabled commands are independent from all other eligible and demo actions', async () => {
   assert.deepEqual(TRUSTED_ENABLED_ACTIONS, ['clean', 'markRoomIssue', 'clearRoomIssue',
-    'createCatalogProduct', 'updateCatalogProduct', 'updateCatalogPackage']);
+    'createCatalogProduct', 'updateCatalogProduct', 'updateCatalogPackage', 'cancelReservation']);
   assert.equal(Object.isFrozen(TRUSTED_ENABLED_ACTIONS), true);
   for (const action of [...FORMAL_COMMAND_ACTIONS.filter(action => !TRUSTED_ENABLED_ACTIONS.includes(action)), ...DEMO_ONLY_ACTIONS, 'unknown']) {
     const f = fixture({ permissions: [...PERMISSION_IDS] });
@@ -418,3 +418,174 @@ for (const action of CATALOG_TEST_ACTIONS) {
       { mode: 'trusted', context: noGrant.context() }), denied);
   });
 }
+
+// Stage 2C.3: cancellation consumes trusted permission/time, with no employee mapping.
+const reservationTime = hours => new Date(Date.parse(dbNow) + hours * 3600000).toISOString();
+const cancelRequest = (key = 'cancel-1', revision = 0, payload = { room: 'V01', id: 101 }) =>
+  request(key, revision, payload, 'cancelReservation');
+function cancelFixture({ setup = () => {}, permissions = ['room.reserve'], ...options } = {}) {
+  return fixture({ ...options, permissions, setup: state => {
+    state.rooms[0].status = '已预订';
+    state.reservations = [
+      { id: 101, room: 'V01', at: reservationTime(-1), session: 'night', status: '已预订',
+        person: 'unknown historical employee', employeeId: 'unmapped-demo-id', recordedBy: 'original recorder',
+        source: '线下', note: 'original reservation' },
+      { id: 102, room: 'V02', at: reservationTime(24), session: 'afternoon', status: '已预订' },
+      { id: 103, room: 'V01', at: reservationTime(-24), session: 'night', status: '已取消' }
+    ];
+    setup(state);
+  } });
+}
+
+test('cancelReservation: session actor and permission cancel only the selected booking; demo/payload facts stay inert', async () => {
+  const f = cancelFixture(), payload = { room: 'V01', id: 101, actorId: 'administrator',
+    principalId: 'forged', user: 'forged', person: 'forged', employee: 'forged',
+    permissions: ['*'], role: 'administrator', clock: '1900-01-01' };
+  const result = await f.app.execute(cancelRequest('cancel-first', 0, payload), f.credential);
+  assert.equal(result.status, 'committed'); assert.equal(result.actorId, f.auth.principalId);
+  assert.equal(result.revision, 1); assert.deepEqual(f.context().permissionIds, ['room.reserve']);
+  const head = await f.memory.read(), expected = structuredClone(f.state);
+  expected.reservations[0].status = '已取消'; expected.rooms[0].status = '空闲'; expected.processed.push('cancel-first');
+  assert.deepEqual(head.state, expected); assert.equal(head.audit[0].actorId, f.auth.principalId);
+  assert.equal(head.operationResults.get('cancel-first').actorId, f.auth.principalId);
+  assert.deepEqual(f.events, ['head', 'account', 'session', 'grants', 'db-now', 'operation', 'transact']);
+});
+
+test('cancelReservation: backend/open permission and forged payload deny without occupying key; same key can follow a grant', async () => {
+  const f = cancelFixture({ permissions: ['backend.view', 'room.open'] });
+  const cmd = cancelRequest('cancel-grant', 0, { room: 'V01', id: 101, actorId: 'administrator', permissions: ['room.reserve'] });
+  await assert.rejects(f.app.execute(cmd, f.credential), denied); await emptyEffects(f); assert.equal(f.executions(), 0);
+  f.auth.permissions = ['room.reserve'];
+  assert.equal((await f.app.execute(cmd, f.credential)).status, 'committed'); assert.equal(f.executions(), 1);
+});
+
+test('cancelReservation: revoke preserves old terminal; actor/payload/action/revision changes still conflict, new key is denied', async () => {
+  const f = cancelFixture(), cmd = cancelRequest('cancel-replay');
+  const first = await f.app.execute(cmd, f.credential), before = await f.memory.read();
+  f.auth.permissions = [];
+  assert.deepEqual(await f.app.execute(cmd, f.credential), first);
+  for (const changed of [{ ...cmd, payload: { ...cmd.payload, id: 102 } },
+    { ...cmd, expectedRevision: 1 }, { ...cmd, action: 'reserve' }]) {
+    const result = await f.app.execute(changed, f.credential);
+    assert.equal(result.status, 'idempotency-conflict'); assert.equal(result.reason, 'request-mismatch');
+  }
+  f.auth.principalId = 'synthetic-other';
+  const other = await f.app.execute(cmd, f.credential);
+  assert.equal(other.status, 'idempotency-conflict'); assert.equal(other.reason, 'actor-mismatch');
+  f.auth.principalId = first.actorId;
+  await assert.rejects(f.app.execute({ ...cmd, operationKey: 'cancel-new', expectedRevision: 1 }, f.credential), denied);
+  assert.equal(f.executions(), 1); assert.deepEqual(await f.memory.read(), before);
+});
+
+test('cancelReservation: disabled/revoked/idle/absolute/credential invalidation prevents terminal access', async () => {
+  for (const change of [auth => { auth.enabled = false; }, auth => { auth.revoked = true; },
+    auth => { auth.idleExpiresAt = dbNow; }, auth => { auth.absoluteExpiresAt = dbNow; },
+    auth => { auth.credentialVersion++; }]) {
+    const f = cancelFixture(), cmd = cancelRequest('cancel-private');
+    await f.app.execute(cmd, f.credential); const before = await f.memory.read();
+    change(f.auth); await assert.rejects(f.app.execute(cmd, f.credential), authenticationRequired);
+    assert.equal(f.executions(), 1); assert.deepEqual(await f.memory.read(), before);
+  }
+});
+
+test('cancelReservation: original room/booking/ambiguous-ID rejections leave state and revision unchanged', async () => {
+  for (const item of [
+    { payload: { room: 'missing', id: 101 } }, { payload: { room: 'V01', id: 999 } },
+    { payload: { room: 'V01', id: 'not-a-number' } }, { payload: { room: 'V01', id: 102 } },
+    { setup: state => { state.reservations[0].status = '已取消'; } },
+    { setup: state => { state.reservations[0].status = '已到店'; } },
+    ...[undefined, ''].map(id => ({ payload: { room: 'V01', ...(id === undefined ? {} : { id }) },
+      setup: state => { state.reservations.push({ ...state.reservations[0], id: 104, at: reservationTime(24) }); } }))
+  ]) {
+    const f = cancelFixture({ setup: item.setup }), cmd = cancelRequest('cancel-business', 0, item.payload || { room: 'V01', id: 101 });
+    const result = await f.app.execute(cmd, f.credential); assert.equal(result.status, 'business-rejected');
+    const head = await f.memory.read(); assert.equal(head.revision, 0); assert.deepEqual(head.state, f.state);
+    assert.equal(head.operationResults.size, 1); assert.equal(head.audit.length, 0);
+    f.auth.permissions = []; assert.deepEqual(await f.app.execute(cmd, f.credential), result);
+    assert.deepEqual(await f.memory.read(), head);
+  }
+});
+
+test('cancelReservation: omitted/empty ID selects only a unique pending booking, numeric ID remains compatible', async () => {
+  for (const payload of [{ room: 'V01' }, { room: 'V01', id: '' }, { room: 'V01', id: '101' }]) {
+    const f = cancelFixture();
+    assert.equal((await f.app.execute(cancelRequest('cancel-select', 0, payload), f.credential)).status, 'committed');
+    const head = await f.memory.read(); assert.equal(head.state.reservations[0].status, '已取消');
+    assert.deepEqual(head.state.reservations.slice(1), f.state.reservations.slice(1));
+  }
+});
+
+test('cancelReservation: original afternoon/night active-window boundaries use only frozen DB time', async () => {
+  const cases = [
+    ['afternoon', 0, true], ['afternoon', -3, true], ['afternoon', -4, false],
+    ['afternoon', -4 + 1 / 3600000, true], ['afternoon', 1, false],
+    ['night', 0, true], ['night', -5, true], ['night', -6, false],
+    ['night', -6 + 1 / 3600000, true], ['night', 1, false]
+  ];
+  for (const [session, hours, active] of cases) {
+    const f = cancelFixture({ setup: state => {
+      state.clock = reservationTime(72);
+      state.reservations.push({ id: 104, room: 'V01', at: reservationTime(hours), session, status: '已预订' });
+    } });
+    const result = await f.app.execute(cancelRequest('cancel-window', 0,
+      { room: 'V01', id: 101, clock: reservationTime(-72) }), f.credential);
+    assert.equal(result.status, 'committed'); assert.equal(f.context().dbNow, dbNow);
+    const head = await f.memory.read();
+    assert.equal(head.state.rooms[0].status, active ? '已预订' : '空闲', session + ' ' + hours);
+    assert.equal(head.state.reservations[1].status, '已预订'); assert.equal(head.state.reservations.at(-1).status, '已预订');
+  }
+});
+
+test('cancelReservation: other room states stay unchanged and non-pending bookings do not block release', async () => {
+  for (const status of ['空闲', '营业中', '待清洁', '故障/维护中', '已预订']) {
+    const f = cancelFixture({ setup: state => {
+      state.rooms[0].status = status;
+      state.reservations.push({ id: 104, room: 'V01', at: reservationTime(-1), session: 'night', status: '已到店' });
+      state.reservations[1].at = reservationTime(-1);
+    } });
+    assert.equal((await f.app.execute(cancelRequest(), f.credential)).status, 'committed');
+    const head = await f.memory.read(); assert.equal(head.state.rooms[0].status, status === '已预订' ? '空闲' : status);
+    assert.deepEqual(head.state.orders, f.state.orders); assert.deepEqual(head.state.inventory, f.state.inventory);
+    assert.deepEqual(head.state.roomIssueReviews, f.state.roomIssueReviews);
+  }
+});
+
+test('cancelReservation: domain rejects missing/copied context, wrong mode and no grant without demo fallback', async () => {
+  const f = cancelFixture(); await f.app.execute(cancelRequest('cancel-context'), f.credential);
+  for (const context of [null, structuredClone(f.context())]) {
+    assert.throws(() => cancelReservation(f.state, f.state.rooms[0], { id: 101 }, 'fake', { mode: 'trusted', context }), TypeError);
+    assert.throws(() => transact(f.state, 'cancelReservation', { room: 'V01', id: 101 }, 'direct', { mode: 'trusted', context }), TypeError);
+  }
+  assert.throws(() => cancelReservation(f.state, f.state.rooms[0], { id: 101 }, dbNow, { mode: 'invalid' }), TypeError);
+  const state = structuredClone(f.state);
+  state.reservations.push({ id: 104, room: 'V01', at: reservationTime(-1), session: 'night', status: '已预订' });
+  cancelReservation(state, state.rooms[0], { id: 101, clock: reservationTime(72) }, reservationTime(72), { mode: 'trusted', context: f.context() });
+  assert.equal(state.rooms[0].status, '已预订', 'caller time must not replace context.dbNow');
+  const noGrant = cancelFixture({ permissions: [] });
+  await assert.rejects(noGrant.app.execute(cancelRequest(), noGrant.credential), denied);
+  assert.throws(() => cancelReservation(noGrant.state, noGrant.state.rooms[0], { id: 101 }, dbNow,
+    { mode: 'trusted', context: noGrant.context() }), denied);
+});
+
+test('cancelReservation: stale revision/business terminal never re-executes after later ledger changes or revoke', async () => {
+  for (const status of ['revision-conflict', 'business-rejected']) {
+    const f = cancelFixture(), cmd = cancelRequest('cancel-terminal', status === 'revision-conflict' ? 9 : 0,
+      { room: 'V01', id: status === 'business-rejected' ? 999 : 101 });
+    const first = await f.app.execute(cmd, f.credential); assert.equal(first.status, status);
+    assert.equal((await f.app.execute(cancelRequest('cancel-later'), f.credential)).status, 'committed');
+    const before = await f.memory.read(); f.auth.permissions = [];
+    assert.deepEqual(await f.app.execute(cmd, f.credential), first); assert.deepEqual(await f.memory.read(), before);
+    assert.equal(f.executions(), status === 'revision-conflict' ? 1 : 2);
+  }
+});
+
+test('cancelReservation: unknown failure rolls back and the original key can retry after repair', async () => {
+  let fail = true;
+  const f = cancelFixture({ transactCommand: (...args) => {
+    const next = transact(...args); if (fail) throw Error('synthetic unknown fault'); return next;
+  } });
+  await assert.rejects(f.app.execute(cancelRequest('cancel-fault'), f.credential), /synthetic unknown fault/);
+  await emptyEffects(f); fail = false;
+  assert.equal((await f.app.execute(cancelRequest('cancel-fault'), f.credential)).status, 'committed');
+  assert.equal((await f.memory.read()).revision, 1);
+});

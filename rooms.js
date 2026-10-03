@@ -135,8 +135,13 @@ export function reserveRoom(s, room, data, person, operator, time) {
   const sessionLabel = data.session === 'afternoon' ? '下午场（14:00—18:00）' : '夜间场（20:00—次日02:00）';
   s.reservations.push({ id: ++s.serial, room: room.id, at, dayOffset: Number(data.dayOffset), session: data.session, sessionLabel, source: data.source, note: String(data.note || '').slice(0,100), status: '已预订', person, employeeId: delegated?.id || '', recordedBy: operator });
 }
-export function cancelReservation(s, room, data, time) {
-  need(s, ['开单员','老板'], 'room.reserve'); if (!room) throw new BusinessRejection('房间状态已变化');
+export function cancelReservation(s, room, data, time, execution = { mode: 'demo' }) {
+  if (execution?.mode === 'trusted') {
+    requireTrustedPermission(execution.context, 'room.reserve');
+    time = execution.context.dbNow;
+  } else if (execution?.mode === 'demo') need(s, ['开单员','老板'], 'room.reserve');
+  else throw TypeError('取消预订执行模式无效');
+  if (!room) throw new BusinessRejection('房间状态已变化');
   const pending = s.reservations.filter(r => r.room === room.id && r.status === '已预订');
   const reservationId = data.id === undefined || data.id === '' ? null : Number(data.id);
   const booking = reservationId === null ? (pending.length === 1 ? pending[0] : null) : pending.find(r => r.id === reservationId);

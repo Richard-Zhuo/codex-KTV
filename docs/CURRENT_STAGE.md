@@ -120,6 +120,26 @@ Stage 1 MySQL ledger 集成独立复验 11 total／11 pass／0 fail／0 skip，m
 
 完整 node --test --test-isolation=none：433 total／427 pass／0 fail／6 skip，退出码 0；auth 29／29（含 revalidation 13／13）、ledger 11／11 及全部 trusted MySQL 回归真实执行。原六项 Known Issues 保持 skip。修改 JavaScript 后实际尝试 npm test，环境仍无法识别 npm，未取得 npm 运行证据。ledger application／store、auth、command-policy、schema／migration、HTTP／UI、依赖及其他领域文件均未修改，不建立真人账号、员工映射或审批模型；本批一个提交，不进入下一批，不 push 或部署。
 
+## P0-1 Stage 2C.3：cancelReservation 原分叉验收（2026-10-03）
+
+原提交 7729d61 当时从实际干净 main@94f1c00 建立 codex/p0-1-stage2c-cancel-reservation；上一批 catalog 提交 b1e512d 仍保留在独立分支，本轮没有合并它或改动旧工作区。开始前真实确认 MySQL 8.4.11／jbhh_ktv_test／InnoDB，完整基线为 399 total／393 pass／0 fail／6 skip。
+
+只将 cancelReservation 加入 trusted-enabled，原分支当时已迁移四动作：clean、markRoomIssue、clearRoomIssue、cancelReservation。cancelReservation 只从 branded context 检查 room.reserve，使用同连接 revalidation 冻结的 dbNow；demo 保留原 permission／clock 路径。原预约 ID 选择、唯一待预约的缺省选择、取消状态及其他有效预约决定房态的规则逐字保留，不改下午四小时／夜间六小时边界，不增加员工映射或审批。历史 person／employeeId／recordedBy 仍原样保留；实际 actor 由 session principal 写入现有 operation／audit。
+
+新增 11 项定向单元与 15 项真实 MySQL 子用例：预约选择与原房态／时段矩阵、篡改 demo／payload 无效、授权拒绝不占 key 且授予权限后原 key 可用、撤权后重连重放原终态、新 key 拒绝、actor／action／payload／expectedRevision 冲突、disabled／revoked／idle／absolute／credential version 失效，以及拒绝终态在后续状态变化后保持。两个实际不同 CONNECTION_ID 的连接验证 revision 竞争最多一次提交和同 key 只执行一次；在成功 audit 注入 CHECK 失败，确认 state／operation SQL 已执行后完整回滚，修复后原 key 可重试。未知异常同样回滚。
+
+定向单元实际 35 total／35 pass／0 fail／0 skip；房间 MySQL suite 45／45／0／0（含取消预约 15／15）。auth 29／29／0／0（其中 revalidation 13／13）、ledger 11／11／0／0 真实复验通过。最终完整 node --test --test-isolation=none：425 total／419 pass／0 fail／6 skip，退出码 0。已实际尝试 npm test，PowerShell 仍未识别 npm，进程未启动；不宣称取得 npm 通过证据。
+
+源码对照确认 ledger application、MySQL store、auth、command-policy、schema／migration、其他 demo／领域 action、依赖和六项 Known Issues 未修改。沿用同一受保护八表 fixture，不 CREATE／DROP database，测试结束只清理本次创建的表。本批仅一个提交，不进入下一批，不 push 或部署。
+
+## P0-1 Stage 2C.3：目录与取消预约线性整合（2026-10-03）
+
+用户明确要求修正分叉：b1e512d 和原 cancel 提交 7729d61 均直接以 94f1c00 为 parent；main 先 ff-only 前进至 b1e512d，再只重放 cancel 提交到 catalog 之后。两个批次的原验收数字见上文，不能当作组合回归证据。
+
+重放保留七个 trusted-enabled action：clean、markRoomIssue、clearRoomIssue、createCatalogProduct、updateCatalogProduct、updateCatalogPackage、cancelReservation。保留完整目录命令体、目录 fixture／helper 和取消预约 helper／测试；其余 38 个 eligible action 继续 fail closed。不改变 auth、ledger application／store、fingerprint／revision／terminal 协议或任何 Known Issues。
+
+组合验收实际结果：定向 node --test --test-isolation=none ledger/trusted-clean.test.js ledger/trusted-clean.integration.test.js 为 114 total／114 pass／0 fail／0 skip，完整保留 catalog 新增 15 单元／19 MySQL 子用例和取消预约新增 11 单元／15 MySQL 子用例。实际数据库为 MySQL 8.4.11／jbhh_ktv_test／InnoDB；auth 29／29（含 revalidation 13／13）、ledger 11／11 真实复验，未变为 skip。两批各自的重连撤权重放、实际不同 CONNECTION_ID 的连接竞争和 audit SQL 故障回滚均通过。完整 node --test --test-isolation=none 为 459 total／453 pass／0 fail／6 skip，退出码 0；原六项 Known Issues 仍跳过。已实际尝试 npm test，环境仍未识别 npm，未取得 npm 通过证据。
+
 ## 本轮隔离集成候选（2026-09-29）
 
 来源：用户交付的 `jbhh-ktv-full.zip`，基线 `ca726b2`；纯重构检查点 `74c3f55`；业务修复终点 `6aa01ba`。Track B 来源为 `codex/offsite-contracts@3193635`。候选位于独立工作树的 `codex/track-a-integration`，主工作区未提交内容保留；未合并 `main`、未推送。
@@ -256,7 +276,7 @@ Stage 1 MySQL ledger 集成独立复验 11 total／11 pass／0 fail／0 skip，m
 
 ## 下一步
 
-只读快照预检器、Stage 1A／1A.1／1A.2 协议、Stage 1B-MySQL 适配器、Stage 2A 纯命令策略及 Stage 2B 独立认证基础已完成；Stage 1B.1 和 Stage 2B 已分别在专用 MySQL 8.4 测试库取得真实验收证据。Stage 2C.1 同事务认证、2C.2 clean 及 2C.3 房间异常与目录维护两小批已通过真实数据库验收；其余正式 action 和审核尚未迁移，HTTP／客户端及 2D 未开始，当前停止在本批。正式营业日和班次规则已确认的部分见 [REQUIREMENTS](./REQUIREMENTS.md)，运行实现仍属后续任务。
+只读快照预检器、Stage 1A／1A.1／1A.2 协议、Stage 1B-MySQL 适配器、Stage 2A 纯命令策略及 Stage 2B 独立认证基础已完成；Stage 1B.1 和 Stage 2B 已分别在专用 MySQL 8.4 测试库取得真实验收证据。Stage 2C.1 同事务认证、2C.2 clean 及 2C.3 房间异常、目录维护、取消预约的单批已通过真实数据库验收；两批线性整合验收见上节，其余正式 action 和审核尚未迁移，HTTP／客户端及 2D 未开始，当前停止在本批。正式营业日和班次规则已确认的部分见 [REQUIREMENTS](./REQUIREMENTS.md)，运行实现仍属后续任务。
 
 ## 阶段停止条件
 
