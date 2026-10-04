@@ -411,6 +411,24 @@ JavaScript 修改后实际尝试 npm test，PowerShell 报 The term 'npm' is not
 
 受保护 fixture 仍只管理本轮创建的 auth 六表、employee 八表、trusted 十一表；没有 CREATE／DROP database 或操作无关表。ledger application／store、fingerprint、operationKey、revision、terminal replay 与 auth 锁序均不改，没有新生产依赖、HTTP／UI、真人映射、procurement 或其他新 action。只做本批一个提交，parent ec467a8；main／origin/main 保持同步 ec467a8，新提交不 push、不进入下一批、不部署，无范围偏离。
 
+## P0-1 Stage 2C.3 credit 申请创建（2026-10-05）
+
+先核实 1a05549 直接 parent 为 ec467a8，ff-only 合入 main，无 merge commit。本次 main 完整 node --test --test-isolation=none 实际 1028 / 1022 / 0 / 6，全部 MySQL suite 真实执行；fetch 确认远端仍为 ec467a8 后普通 push，main = origin/main = 1a05549、0/0、clean。随后从此 HEAD 创建 codex/p0-1-stage2c-credit，起点等于当前 main；旧 Track A／PostgreSQL 工作树不改动。
+
+本批只增加 credit，trusted-enabled 共二十八动作，其他十七个 eligible action 仍拒绝。rules.js 在 demo operator／clock 求值前按原订单与营业中状态校验，调用 sales.js:applyCredit 的显式 trusted 模式并复用原 release。credit.apply、session principal、dbNow 只取 branded context；order.credit 新增 submittedByPrincipalId，submittedById 留空，person 只作可信显示快照（当前 null），submittedAt／24 小时 due 使用同一冻结时间。顾客姓名／手机号／备注／签名仍为业务输入；金额只取原未收余额、历史归属快照、approver 路由标签、待审批及房态释放不改。无 employee resolver，不判断 manager／boss 属性，不迁移 approve／reject／回款或付款。
+
+实际测试证据（total / pass / fail / skip）：
+
+- 首个公共 trusted 契约先因 trusted-action-not-enabled 真实失败，再完成最小分流后通过。最终 credit 单元：16 / 16 / 0 / 0，覆盖当前身份、原字段／金额／期限、伪造无效、key 复用、重放／冲突／认证失效、原业务拒绝、未知故障和其余动作 fail closed。直接领域 getter 验证不读 state.user／permissions／clock。
+- JavaScript 修改后实际尝试 npm test；PowerShell 报 The term 'npm' is not recognized，npm 未启动，没有该命令通过证据。
+- DEVELOPMENT_ENVIRONMENT 的七文件定向：143 / 139 / 0 / 4；四项 skip 是该集合原 Known Issues，不改结论。
+- 四套真实 MySQL：auth/mysql-auth.integration.test.js、employees/mysql-roster.integration.test.js、ledger/mysql-store.integration.test.js、ledger/trusted-clean.integration.test.js：409 / 409 / 0 / 0。auth 45/45（revalidation 13 保留）、employee 30/30、ledger 11/11、trusted 323/323（新 credit 14/14）；MySQL 8.4.11 / jbhh_ktv_test / InnoDB 全部实际执行，无数据库 skip。
+- 最终完整 node --test --test-isolation=none：1058 / 1052 / 0 / 6，退出码 0；逐项比较本轮 main 日志，六项 Known Issues 名称与 skip 完全一致。
+
+真实 MySQL 验证单连接 head → account → session → 当前 grants／attributes → 一次 DB UTC → operation → trusted transact → state／result／audit／COMMIT，revalidation 不 touch 活动。未配置属性即可合法提交，包括原高额路由；顾客身份不替代操作者或授权。撤权后新 pool 重连取回原终态、不重新创建或重复释放；新 key 当前权限不足不占键。disabled／revoked／idle／absolute／credential version 失效先于 lookup 拒绝；actor／payload／action／revision 指纹冲突保持。两种竞争实际核对两个不同 CONNECTION_ID：同 key 一次执行／一个 audit，不同 key 旧 revision 一成功／一 revision-conflict。未知异常在申请与房态变化后回滚；实际 audit CHECK SQL 故障在 head UPDATE／operation INSERT 后验证 state、room、revision、operation、audit 全回滚，修复后原 key 重试成功。
+
+复用受保护十一表 fixture，无新 migration、表或生产依赖；未 CREATE／DROP database，不操作无关表。ledger application／store、fingerprint、operationKey、revision、terminal replay、auth／attributes 实现、审批与六项 Known Issues 不改。只做本批一个提交，parent 1a05549；main／origin/main 保持已同步基线，新提交不 push、不进入 credit 审批或下一批、不部署，无范围偏离。
+
 ## 本轮隔离集成候选（2026-09-29）
 
 来源：用户交付的 `jbhh-ktv-full.zip`，基线 `ca726b2`；纯重构检查点 `74c3f55`；业务修复终点 `6aa01ba`。Track B 来源为 `codex/offsite-contracts@3193635`。候选位于独立工作树的 `codex/track-a-integration`，主工作区未提交内容保留；未合并 `main`、未推送。
@@ -547,7 +565,7 @@ JavaScript 修改后实际尝试 npm test，PowerShell 报 The term 'npm' is not
 
 ## 下一步
 
-只读快照预检器、Stage 1A／1A.1／1A.2 协议、Stage 1B-MySQL 适配器、Stage 2A 纯命令策略及 Stage 2B 独立认证基础已完成；Stage 1B.1 和 Stage 2B 已分别在专用 MySQL 8.4 测试库取得真实验收证据。Stage 2C.1 同事务认证、2C.2 clean 及 2C.3 房间异常、目录维护、取消预约、存取酒、reserve、sale／retailSale、serveExtra／otherCharge、exchange、房间恢复 approve／reject、stock／consumableStock、approveInventory／rejectInventory、gift 提交／approveGift／rejectGift 及 expense 申请／approveExpense／rejectExpense 已通过真实数据库验收；其他未列动作仍未迁移，各批及线性整合验收见上节；员工名册、关联审计与事务内归属解析已真实验收，resolver 已仅接 trusted reserve／sale／retailSale，其余正式 action 和审核尚未迁移，policy attributes 配置／审计与同事务当前读已完成，属性基础自身不开放业务动作；HTTP／客户端及 2D 未开始，当前停止在本批。正式营业日和班次规则已确认的部分见 [REQUIREMENTS](./REQUIREMENTS.md)，运行实现仍属后续任务。
+只读快照预检器、Stage 1A／1A.1／1A.2 协议、Stage 1B-MySQL 适配器、Stage 2A 纯命令策略及 Stage 2B 独立认证基础已完成；Stage 1B.1 和 Stage 2B 已分别在专用 MySQL 8.4 测试库取得真实验收证据。Stage 2C.1 同事务认证、2C.2 clean 及 2C.3 房间异常、目录维护、取消预约、存取酒、reserve、sale／retailSale、serveExtra／otherCharge、exchange、房间恢复 approve／reject、stock／consumableStock、approveInventory／rejectInventory、gift 提交／approveGift／rejectGift 及 expense 申请／approveExpense／rejectExpense、credit 申请已通过真实数据库验收；其他未列动作仍未迁移，各批及线性整合验收见上节；员工名册、关联审计与事务内归属解析已真实验收，resolver 已仅接 trusted reserve／sale／retailSale，其余正式 action 和审核尚未迁移，policy attributes 配置／审计与同事务当前读已完成，属性基础自身不开放业务动作；HTTP／客户端及 2D 未开始，当前停止在本批。正式营业日和班次规则已确认的部分见 [REQUIREMENTS](./REQUIREMENTS.md)，运行实现仍属后续任务。
 
 ## 阶段停止条件
 

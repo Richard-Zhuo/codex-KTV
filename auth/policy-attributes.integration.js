@@ -325,7 +325,7 @@ export async function verifyPolicyAttributes(t, { pool, database, qualified, att
     await auth.grantPermission({ principalId: login.principalId,permissionId:'review.self' });
     context = await read(login);
     assert.equal(authorizeReviewCommand({ principal: context.principal,action:'approveRounding',reviewFacts }).allowed,true);
-    assert.equal(TRUSTED_ENABLED_ACTIONS.length,27);
+    assert.equal(TRUSTED_ENABLED_ACTIONS.length,28);
     assert.equal(TRUSTED_ENABLED_ACTIONS.includes('approveRounding'),false);
     assert.throws(()=>authorizeTrustedExecution(context,{action:'approveRounding',payload:{}}),error=>error.reason==='trusted-action-not-enabled');
   });

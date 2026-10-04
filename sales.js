@@ -11,7 +11,7 @@
 import { BusinessRejection } from './shared/business-error.js';
 import { DEFAULT_CATALOG, product, saleOption, saleOptions, productIdOf, categoryLabel } from './catalog.js';
 import { recordInventoryChange, need } from './inventory.js';
-import { USERS, effectiveUser, requireTrustedPermission } from './shared/identity.js';
+import { USERS, effectiveUser, assertTrustedExecutionContext, requireTrustedPermission } from './shared/identity.js';
 
 export const PAYMENT_METHODS = ['微信', '支付宝', '现金', '美团', '抖音'];
 
@@ -208,8 +208,14 @@ export function decideRounding(s, order, action, data, person, time, authorizeRe
   if (action === 'rejectRounding' && !decisionNote) throw new BusinessRejection('请填写驳回原因');
   order.roundingReview.status = action === 'approveRounding' ? '已批准' : '已驳回'; order.roundingReview.decidedBy = person; order.roundingReview.decidedAt = time; order.roundingReview.decisionNote = decisionNote; order.roundingReview.selfReviewAuthorized = selfReview;
 }
-export function applyCredit(s, order, data, person, time) {
-  need(s, ['开单员','收银员','服务员','库管','店长','老板'], 'credit.apply');
+export function applyCredit(s, order, data, person, time, execution = { mode: 'demo' }) {
+  if (!execution || !['demo', 'trusted'].includes(execution.mode)) throw TypeError('挂账执行模式无效');
+  const context = execution.mode === 'trusted' ? assertTrustedExecutionContext(execution.context) : null;
+  if (context) {
+    requireTrustedPermission(context, 'credit.apply');
+    person = context.actorSnapshot?.displayName ?? null;
+    time = context.dbNow;
+  } else need(s, ['开单员','收银员','服务员','库管','店长','老板'], 'credit.apply');
   if ((order.giftRequests || []).some(item => item.status === '待确认')) throw new BusinessRejection('还有待确认的赠酒水申请，请先处理');
   const phoneValue = String(data.phone || '').trim(), name = String(data.name || '').trim().slice(0,30);
   if (!phoneValue && !name) throw new BusinessRejection('手机号和顾客姓名至少填写一个');
@@ -217,7 +223,7 @@ export function applyCredit(s, order, data, person, time) {
   const note = String(data.note || '').trim().slice(0,200); if (!note) throw new BusinessRejection('请填写挂账备注');
   if (typeof data.signature !== 'string' || !data.signature.startsWith('data:image/png;base64,') || data.signature.length < 100) throw new BusinessRejection('请由经办员工本人手写签字');
   const amount = outstanding(order); if (!amount) throw new BusinessRejection('本单已经收清，无需挂账');
-  order.credit = { id: ++s.serial, amount, remaining: amount, phone: phoneValue, name, note, person, submittedById: s.user, openedBy: order.openedBy || order.person || '未记录', openSource: order.openSource || '线下', reservedBy: order.reservedBy || '', reservationSource: order.reservationSource || '', signature: data.signature, submittedAt: time, due: new Date(Date.parse(time)+86400000).toISOString(), approver: amount>100000 ? '老板' : '店长', repayments: [], repaymentRequests: [] };
+  order.credit = { id: ++s.serial, amount, remaining: amount, phone: phoneValue, name, note, person, submittedById: context ? '' : s.user, ...(context ? { submittedByPrincipalId: context.principalId } : {}), openedBy: order.openedBy || order.person || '未记录', openSource: order.openSource || '线下', reservedBy: order.reservedBy || '', reservationSource: order.reservationSource || '', signature: data.signature, submittedAt: time, due: new Date(Date.parse(time)+86400000).toISOString(), approver: amount>100000 ? '老板' : '店长', repayments: [], repaymentRequests: [] };
   order.status = '待审批挂账';
   return { release: true };
 }

@@ -230,7 +230,7 @@ function executeExchange(s, data, person, time, execution = { mode: 'demo' }) {
 export function transact(original, action, data = {}, key, execution = { mode: 'demo' }) {
   if (!execution || !['demo', 'trusted'].includes(execution.mode)) throw TypeError('事务执行模式无效');
   const context = execution.mode === 'trusted' ? assertTrustedExecutionContext(execution.context) : null;
-  if (context && !['clean', 'markRoomIssue', 'clearRoomIssue', 'approveRoomIssue', 'rejectRoomIssue', ...CATALOG_COMMAND_ACTIONS, 'cancelReservation', 'deposit', 'withdraw', 'reserve', 'sale', 'retailSale', ...ORDER_ADDITION_ACTIONS, 'exchange', 'stock', 'consumableStock', 'approveInventory', 'rejectInventory', 'gift', 'approveGift', 'rejectGift', 'expense', 'approveExpense', 'rejectExpense'].includes(action)) throw new AuthorizationDenied('trusted-action-not-enabled');
+  if (context && !['clean', 'markRoomIssue', 'clearRoomIssue', 'approveRoomIssue', 'rejectRoomIssue', ...CATALOG_COMMAND_ACTIONS, 'cancelReservation', 'deposit', 'withdraw', 'reserve', 'sale', 'retailSale', ...ORDER_ADDITION_ACTIONS, 'exchange', 'stock', 'consumableStock', 'approveInventory', 'rejectInventory', 'gift', 'approveGift', 'rejectGift', 'expense', 'approveExpense', 'rejectExpense', 'credit'].includes(action)) throw new AuthorizationDenied('trusted-action-not-enabled');
   if (!key) throw new BusinessRejection('缺少操作编号');
   if (original.processed.includes(key)) return original;
   const s = structuredClone(original);
@@ -249,6 +249,12 @@ export function transact(original, action, data = {}, key, execution = { mode: '
     } else if (action === 'retailSale') submitRetailSale(s, data, undefined, undefined, undefined, execution);
     else if (ORDER_ADDITION_ACTIONS.includes(action)) executeOrderAddition(s, action, data, undefined, undefined, execution);
     else if (action === 'exchange') executeExchange(s, data, undefined, undefined, execution);
+    else if (action === 'credit') {
+      const order = s.orders.find(order => order.id === data.order);
+      if (!order || order.status !== '营业中') throw new BusinessRejection('账单已变化，请返回房间重新查看');
+      applyCredit(s, order, data, undefined, undefined, execution);
+      release(s, order);
+    }
     else if (action === 'expense') submitExpense(s, data, undefined, undefined, execution);
     else if (action === 'approveExpense' || action === 'rejectExpense') decideExpense(s, action, data, undefined, undefined, undefined, execution);
     else if (action === 'gift') executeGift(s, data, undefined, undefined, execution);

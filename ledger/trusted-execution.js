@@ -5,7 +5,7 @@ import { assertTrustedExecutionContext, AuthorizationDenied } from '../shared/id
 
 export const TRUSTED_ENABLED_ACTIONS = Object.freeze(['clean', 'markRoomIssue', 'clearRoomIssue',
   'createCatalogProduct', 'updateCatalogProduct', 'updateCatalogPackage', 'cancelReservation', 'deposit', 'withdraw', 'reserve', 'sale', 'retailSale', 'serveExtra', 'otherCharge', 'exchange',
-  'approveRoomIssue', 'rejectRoomIssue', 'stock', 'consumableStock', 'approveInventory', 'rejectInventory', 'gift', 'approveGift', 'rejectGift', 'expense', 'approveExpense', 'rejectExpense']);
+  'approveRoomIssue', 'rejectRoomIssue', 'stock', 'consumableStock', 'approveInventory', 'rejectInventory', 'gift', 'approveGift', 'rejectGift', 'expense', 'approveExpense', 'rejectExpense', 'credit']);
 const enabled = new Set(TRUSTED_ENABLED_ACTIONS);
 
 export class SessionAuthenticationRequired extends Error {

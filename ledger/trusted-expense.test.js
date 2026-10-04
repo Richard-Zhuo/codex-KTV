@@ -205,7 +205,7 @@ test('expense: procurement and remaining unconverted actions stay disabled despi
   const f = fixture({ permissions: ['expense.create','expense.approve','procurement.create','incident.create','credit.apply',
     'credit.repay','rounding.approve','room.open','payment.collect','payment.settle','handover','review.self'] });
   for (const action of ['procurement','incident','resolveIncident','approveIncidentResolution',
-    'rejectIncidentResolution','credit','approveCredit','rejectCredit','repay','approveRepay','rejectRepay','approveRounding','rejectRounding',
+    'rejectIncidentResolution','approveCredit','rejectCredit','repay','approveRepay','rejectRepay','approveRounding','rejectRounding',
     'open','collect','settle','pay','handover']) {
     await assert.rejects(f.app.execute({ ...expenseCommand(action), action }, f.credential), e => denied(e) && e.reason === 'trusted-action-not-enabled');
     await assertNoEffects(f);
