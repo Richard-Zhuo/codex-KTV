@@ -47,6 +47,7 @@
 - 挂账回款、特殊差额、超额赠酒水、房间恢复、库存盘点和客诉／异常恢复需要对应审核权限。审核本人提交的申请时，还必须有自审附加授权（当前演示以 `review.self` 表达），并记录是否经授权自审；超额免零还须遵守下文的真人限制，不能仅凭通用 `review.self` 扩大自批范围。
 - 挂账审批和大额报销审批同样属于员工系统中的日常营业审核，继续使用各自既有具体权限和事务规则。
 - 故障／维护标记提交照片或文字后立即生效，无需另一人审核；恢复空房才进入审核。
+- 正式 approveRoomIssue／rejectRoomIssue 只从已锁账本中的对应恢复申请读取 submittedByPrincipalId，具体权限为 room.issue.approve；本人审核还必须有 review.self。payload 的申请人、selfReview 或 approver 不提供授权。缺少可信申请人 principal 的旧申请不根据姓名、演示 ID 或员工关联推断，批准／驳回均停写拒绝且不占操作键。决定保存 decidedByPrincipalId 与冻结 dbNow；decidedBy 仅为可信显示快照，无可信显示名时为 null。原房态、证据、批准及驳回规则保持。
 
 ## 已确认：正式员工名册基础
 

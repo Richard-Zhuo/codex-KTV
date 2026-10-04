@@ -10,7 +10,7 @@ import { BusinessRejection } from './shared/business-error.js';
 import { DEFAULT_CATALOG, roomPackage, assertCatalogPackagePrices, product, saleOptions, productIdOf, categoryLabel } from './catalog.js';
 import { need, recordInventoryChange } from './inventory.js';
 import { slot } from './shared/time.js';
-import { USERS, effectiveUser, requireTrustedPermission } from './shared/identity.js';
+import { USERS, effectiveUser, requireTrustedPermission, assertTrustedExecutionContext, AuthorizationDenied } from './shared/identity.js';
 
 export const RESERVATION_SOURCES = ['线下', '手机', '座机', '美团', '抖音'];
 export const OPENING_SOURCES = ['', '美团', '抖音'];
@@ -209,12 +209,27 @@ export function clearRoomIssue(s, room, data, person, time, execution = { mode: 
   const evidence = roomIssueEvidence(data);
   s.roomIssueReviews.push({ id: ++s.serial, room: room.id, change: '恢复空房', fromStatus: room.status, requestedStatus: '空闲', issueType: room.issueType || '故障', ...evidence, status: '待审核', ...submission, decidedBy: '', decidedAt: '', decisionNote: '' });
 }
-export function decideRoomIssue(s, action, data, person, time, authorizeReviewer) {
-  need(s, [], 'room.issue.approve');
+export function decideRoomIssue(s, action, data, person, time, authorizeReviewer, execution = { mode: 'demo' }) {
+  const context = execution?.mode === 'trusted' ? assertTrustedExecutionContext(execution.context) : null;
+  if (context) requireTrustedPermission(context, 'room.issue.approve');
+  else if (execution?.mode === 'demo') need(s, [], 'room.issue.approve');
+  else throw TypeError('房间恢复审核执行模式无效');
   const request = (s.roomIssueReviews || []).find(item => item.id === Number(data.request));
   if (!request || request.status !== '待审核') throw new BusinessRejection('该房间恢复申请已经处理');
   if (request.requestedStatus !== '空闲') throw new BusinessRejection('只有恢复为空房的申请需要审核');
-  const selfReview = authorizeReviewer(request.submittedById);
+  let selfReview;
+  if (context) {
+    // This request is read from the ledger's locked state (cloned by transact).
+    // Neither names, demo IDs nor payload applicant fields establish identity.
+    const applicant = request.submittedByPrincipalId;
+    if (typeof applicant !== 'string' || !applicant || applicant.trim() !== applicant || applicant.length > 191) {
+      throw new AuthorizationDenied('untrusted-room-issue-applicant');
+    }
+    selfReview = applicant === context.principalId;
+    if (selfReview) requireTrustedPermission(context, 'review.self');
+    person = context.actorSnapshot?.displayName ?? null;
+    time = context.dbNow;
+  } else selfReview = authorizeReviewer(request.submittedById);
   if (action === 'approveRoomIssue') {
     const targetRoom = s.rooms.find(item => item.id === request.room);
     if (!targetRoom || targetRoom.status !== request.fromStatus) throw new BusinessRejection('房间状态已经变化，请驳回后重新提交');
@@ -240,4 +255,5 @@ export function decideRoomIssue(s, action, data, person, time, authorizeReviewer
     request.decisionNote = decisionNote;
     request.selfReviewAuthorized = selfReview;
   }
+  if (context) request.decidedByPrincipalId = context.principalId;
 }

@@ -254,6 +254,22 @@ trusted MySQL 定向实际 162 total／162 pass／0 fail／0 skip，含新增 ex
 
 最终完整 node --test --test-isolation=none 实际 708 total／702 pass／0 fail／6 skip，退出码 0。真实 MySQL auth 29／29（含 revalidation 13／13）、employee 30／30、ledger 11／11、trusted 162／162（exchange 15／15）均执行且无 skip；原六项 Known Issues 名称和 skip 保持。结束后只读核实十张 fixture 表均不存在。本批一个独立提交，parent 为 34c2365；main／origin/main 保持该已同步基线，exchange 新提交不 push，不继续下一批或部署。
 
+## P0-1 Stage 2C.3 trusted 房间恢复审批第一批（2026-10-04）
+
+本轮现场核实 clean main = origin/main = ec1071c8521e80403b10558a118d24ae84f615c3，从该 main 直接建立 codex/p0-1-stage2c-room-issue-review，分支起点严格等于 main HEAD。旧 Track A／B 与 PostgreSQL 历史工作树均保留。
+
+本批只新增 approveRoomIssue／rejectRoomIssue trusted-enabled，当前共十七动作，其余 28 个 eligible action 继续 fail closed。rules.js 的显式 trusted 分支在演示 operator／clock 读取前调用 rooms.js:decideRoomIssue；现有 ledger application／store、session revalidation、command-policy 和 Stage 1 fingerprint／revision／terminal replay 协议均未修改。未新增 schema、依赖、真人映射或 policy attributes 模型。
+
+行为用例以有效 synthetic session、room.issue.approve、正确 revision 和锁内待审核恢复申请为前置。decideRoomIssue 从 transact 隔离克隆的 ledger state 按 request ID 读取 submittedByPrincipalId；非本人只需普通审核权，本人还需 review.self。payload 的 submittedBy／submittedByPrincipalId／applicant／selfReview／approver 不能作为事实。缺少或无效稳定申请人字段时抛 AuthorizationDenied，state／revision／operation／成功 audit 均不变，key 不被消耗；旧姓名、演示 ID、employee 关联均不猜映射。批准和驳回新增 decidedByPrincipalId，时间使用冻结 dbNow；decidedBy 仅取可信显示快照，当前 auth actorSnapshot=null，因此为 null，不伪造姓名。原房态恢复、异常字段清空、驳回原因和状态判断共用原命令体；demo 保持原行为。
+
+新增数据库无关契约测试 21 项，以及共用既有十表专用库 fixture 的真实 MySQL 子用例 20 项。定向 node --test --test-isolation=none ledger/trusted-room-issue-review.test.js ledger/trusted-clean.test.js rooms.test.js rules.test.js ledger/command-policy.test.js：157 total／156 pass／0 fail／1 skip（该集合原平台券 Known Issue）。用例验证本人双权限、后台权限不替代审核权、请求伪造、legacy 停写、不占键与后续授予权限重试、可信 principal／DB 时间、原房态业务拒绝终态、demo／trusted 业务对照、无 context／伪造 context、未知异常完整回滚。
+
+现场读取并核对 MySQL 8.4.11／jbhh_ktv_test／InnoDB，未输出 URL 或密码。trusted MySQL 定向 182 total／182 pass／0 fail／0 skip（含新增 20 项）：先通过真实 trusted mark／clear 产生申请，再由另一 session 审核；确认同一 connection 与 head → account → session → current grants → DB time → operation → domain → state／result／audit／COMMIT 顺序。本人缺 review.self、legacy 缺可信 principal、权限不足均回滚且无终态；有效原 actor 撤销审核与自审权后，新 pool 重连仍返回旧结果，新 key 拒绝。账号／session 停用、撤销、过期和凭据版本失效均早于旧回执查询。两个真实独立 CONNECTION_ID 分别验证 approve／reject 基于同一旧 revision 最多一成功，以及同 key 仅决定一次。成功 audit 的 CHECK 故障在 head UPDATE 和 operation INSERT 后触发，完整回滚 state／revision／operation／audit；修复约束后原 key 可重试。首次两处新增审计 revision 断言误用数字，mysql2 按现有 bigNumberStrings 配置返回字符串；只修正测试断言后重新取得通过证据，生产账本未改。
+
+JavaScript 修改后实际尝试 npm test，PowerShell 报 The term 'npm' is not recognized，npm 未启动。最终完整 node --test --test-isolation=none：749 total／743 pass／0 fail／6 skip，退出码 0。MySQL auth 29／29（含 revalidation 13／13）、employee 30／30、ledger 11／11、trusted 182／182 均真实执行、0 skip；原六项 Known Issues 的名称与 skip 保持。结束后只读确认十张 fixture 表均不存在，不 CREATE／DROP database，不操作其他表。
+
+本批仅一个独立提交，parent 为 ec1071c；不进入其他审批或下一批，不 push／部署，不接 HTTP／UI，不修六项 Known Issues。
+
 ## 本轮隔离集成候选（2026-09-29）
 
 来源：用户交付的 `jbhh-ktv-full.zip`，基线 `ca726b2`；纯重构检查点 `74c3f55`；业务修复终点 `6aa01ba`。Track B 来源为 `codex/offsite-contracts@3193635`。候选位于独立工作树的 `codex/track-a-integration`，主工作区未提交内容保留；未合并 `main`、未推送。
