@@ -3,12 +3,12 @@
 正式数据库方向现为 MySQL 8.4 LTS + InnoDB。既有 `schema.sql`、`seed.sql` 和历史导入映射保留为旧 PostgreSQL 关系型设计参考，不作为当前可执行的正式数据库结构。现有页面仍使用 localStorage；本目录 SQL 不会自动迁移或覆盖演示数据。
 
 
-incident 只新增 trusted 创建动作，复用现有 ledger snapshot／auth／employees schema，无新 migration。负责人在同一 connection 通过现有 employee resolver 解析稳定 UUID，记录 assigneeEmployeeId／assigneeEmployeeNameSnapshot 与独立 submittedByPrincipalId；处理结果和审核不接入。真实验收 helper 为 ledger/trusted-incident.integration.js，沿用 guarded 十一表 fixture，结果见 CURRENT_STAGE。
+incident 只新增 trusted 创建动作，复用现有 ledger snapshot／auth／employees schema，无新 migration。负责人在同一 connection 通过现有 employee resolver 解析稳定 UUID，记录 assigneeEmployeeId／assigneeEmployeeNameSnapshot 与独立 submittedByPrincipalId；处理结果现另由 trusted resolveIncident 使用显式 principal→employee 关联校验，恢复审核仍未接入。真实验收 helper 为 ledger/trusted-incident.integration.js 与 ledger/trusted-incident-resolution.integration.js，沿用 guarded 十一表 fixture，结果见 CURRENT_STAGE。
 
 
 ## 当前方向：MySQL 8.4 LTS／InnoDB 过渡账本
 
-`migrations/001_mysql_ledger_core.sql` 只建立 `ledger_heads`、`ledger_operations`、`ledger_success_audit`，三表均指定 `ENGINE=InnoDB`。`ledger/mysql-store.js:createMySqlLedgerStore` 由可信调用方显式注入 `mysql2` promise Pool、稳定 ledgerId 和已迁移的数据库名，沿用 Stage 1A 的 `runAtomic` 端口。独立 Node trusted 入口只对已迁移房间、目录、存取酒、预约、销售、订单追加、换酒及库存申请／审核及 gift 提交／审批、expense 申请／审批、credit 申请／决定、repay 申请／审批与 incident 创建动作接入同事务 session 重验，具体集合见 [ARCHITECTURE](../docs/ARCHITECTURE.md)；没有真人账号、HTTP、UI 切换或正式数据导入，已有静态演示仍只用浏览器 localStorage。
+`migrations/001_mysql_ledger_core.sql` 只建立 `ledger_heads`、`ledger_operations`、`ledger_success_audit`，三表均指定 `ENGINE=InnoDB`。`ledger/mysql-store.js:createMySqlLedgerStore` 由可信调用方显式注入 `mysql2` promise Pool、稳定 ledgerId 和已迁移的数据库名，沿用 Stage 1A 的 `runAtomic` 端口。独立 Node trusted 入口只对已迁移房间、目录、存取酒、预约、销售、订单追加、换酒及库存申请／审核及 gift 提交／审批、expense 申请／审批、credit 申请／决定、repay 申请／审批与 incident 创建／resolveIncident 动作接入同事务 session 重验，具体集合见 [ARCHITECTURE](../docs/ARCHITECTURE.md)；没有真人账号、HTTP、UI 切换或正式数据导入，已有静态演示仍只用浏览器 localStorage。
 
 `ledger_heads.state_json` 保存版本化 MySQL JSON 快照，`state_checksum` 是按 JSON 值规范化后的 SHA-256；读回会核对。MySQL JSON 会调整文本表示，它和原始 `jbhh-demo-v1` 文本不是同一备份。未来正式导入必须另存原始 JSON 字节和原文校验和，本阶段不执行导入。此过渡账本不代表最终领域关系模型已完成。
 
@@ -28,7 +28,7 @@ Stage 2C.1 另提供 `bindSessionRevalidation(connection)`，复用调用方已�
 
 ## 同事务 principal 员工解析
 
-现有 employees 的 unique nullable principal_id 已支持按关联定位，无新 migration。bindEmployeeResolver(connection).resolvePrincipalEmployeeInTransaction({trustedContext}) 使用调用方已重验 session／锁 account 的连接，按 principal_id FOR SHARE 读取并复核 enabled；raw principal／姓名／旧 USERS 不接受，返回稳定 employeeId／displayName。credited resolver 保持独立。专用库测试复用原八张 auth／employee 表，helper employees/principal-employee-resolver.integration.js 不负责 DDL／清理，不开放新业务动作；接口与锁序见 ARCHITECTURE。
+现有 employees 的 unique nullable principal_id 已支持按关联定位，无新 migration。bindEmployeeResolver(connection).resolvePrincipalEmployeeInTransaction({trustedContext}) 使用调用方已重验 session／锁 account 的连接，按 principal_id FOR SHARE 读取并复核 enabled；raw principal／姓名／旧 USERS 不接受，返回稳定 employeeId／displayName。credited resolver 保持独立。专用库测试复用原八张 auth／employee 表，helper employees/principal-employee-resolver.integration.js 不负责 DDL／清理，解析器基础设施提交自身不开放动作；其后仅 resolveIncident 使用此能力。接口与锁序见 ARCHITECTURE。
 
 ## 员工名册与显式关联
 

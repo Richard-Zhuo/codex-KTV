@@ -4,7 +4,7 @@
 // 函数体逐字节保留，负责人提交、授权审核、驳回回流待处理行为不变。
 import { BusinessRejection } from './shared/business-error.js';
 import { need } from './inventory.js';
-import { USERS, effectiveUser, hasPermission, assertTrustedExecutionContext, requireTrustedPermission } from './shared/identity.js';
+import { USERS, effectiveUser, hasPermission, assertTrustedExecutionContext, requireTrustedPermission, AuthorizationDenied } from './shared/identity.js';
 
 export const INCIDENT_TYPES = ['客诉', '设备异常', '卫生异常', '库存异常', '员工交接', '其他'];
 
@@ -52,16 +52,29 @@ export function submitIncident(s, data, person, time, execution = { mode: 'demo'
     ...(context ? { submittedByPrincipalId: context.principalId, actualActorPrincipalId: context.principalId,
       assigneeEmployeeId: context.assigneeEmployeeId, assigneeEmployeeNameSnapshot: context.assigneeEmployeeNameSnapshot } : {}) });
 }
-export function submitIncidentResolution(s, data, person, time) {
-  need(s, [], 'incident.resolve');
+export function submitIncidentResolution(s, data, person, time, execution = { mode: 'demo' }) {
+  if (!execution || !['demo', 'trusted'].includes(execution.mode)) throw TypeError('处理结果提交执行模式无效');
+  const context = execution.mode === 'trusted' ? assertTrustedExecutionContext(execution.context) : null;
+  if (context) {
+    requireTrustedPermission(context, 'incident.resolve');
+    person = context.actorEmployeeNameSnapshot; time = context.dbNow;
+  } else need(s, [], 'incident.resolve');
   const incident = (s.incidents || []).find(item => item.id === Number(data.id));
   if (!incident || incident.status === '已完成') throw new BusinessRejection('该客诉／异常已经处理');
-  if (incident.assignee !== person && !hasPermission(effectiveUser(s), 'incident.viewAll')) throw new BusinessRejection('只有负责人或管理人员可以填写处理结果');
+  if (context) {
+    // Only the locked state's stable assignee is an authorization fact. Never payload or historical names.
+    const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+    if (typeof incident.assigneeEmployeeId !== 'string' || !uuid.test(incident.assigneeEmployeeId)) throw new AuthorizationDenied('incident-assignee-unproven');
+    if (typeof context.actorEmployeeId !== 'string' || !uuid.test(context.actorEmployeeId) ||
+        typeof context.actorEmployeeNameSnapshot !== 'string' || !context.actorEmployeeNameSnapshot.trim()) throw TypeError('缺少事务内操作者员工关联');
+    if (context.actorEmployeeId !== incident.assigneeEmployeeId) throw new AuthorizationDenied('incident-assignee-mismatch');
+  } else if (incident.assignee !== person && !hasPermission(effectiveUser(s), 'incident.viewAll')) throw new BusinessRejection('只有负责人或管理人员可以填写处理结果');
   incident.resolutionReviews ??= [];
   if (incident.resolutionReviews.some(request => request.status === '待审核')) throw new BusinessRejection('处理结果已经提交审核，请等待有权限的员工处理');
   const result = String(data.result || '').trim().slice(0, 300); if (!result) throw new BusinessRejection('请填写处理结果');
   const note = String(data.note || '').trim().slice(0, 300); if (!note) throw new BusinessRejection('请填写处理备注');
-  incident.resolutionReviews.push({ id: ++s.serial, result, note, status: '待审核', submittedBy: person, submittedById: s.user, submittedAt: time, decidedBy: '', decidedAt: '', decisionNote: '' });
+  incident.resolutionReviews.push({ id: ++s.serial, result, note, status: '待审核', submittedBy: person, submittedById: context ? null : s.user, submittedAt: time, decidedBy: '', decidedAt: '', decisionNote: '',
+    ...(context ? { submittedByPrincipalId: context.principalId, submittedByEmployeeId: context.actorEmployeeId } : {}) });
   incident.status = '待审核'; incident.lastReminderDate = '';
 }
 export function decideIncidentResolution(s, action, data, person, time, authorizeReviewer) {

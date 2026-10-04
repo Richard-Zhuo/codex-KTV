@@ -23,7 +23,7 @@ flowchart TD
   L[ledger/application.js 独立命令入口] -->|legacy demo| TX
   L --> DB[(MySQL 8.4 InnoDB 过渡账本)]
   AUTH[auth/service.js 独立认证] --> AUTHDB[(MySQL auth 五表)]
-  L -->|trusted 已迁移三十四动作| RV[同连接 session revalidation]
+  L -->|trusted 已迁移三十五动作| RV[同连接 session revalidation]
   RV --> AUTHDB
   RV --> CP[当前 grants command-policy]
   CP --> TX
@@ -64,21 +64,21 @@ flowchart TD
 
 `ledger/mysql-store.js:createMySqlLedgerStore` 实现冻结的 `runAtomic` 端口；调用方显式提供 `mysql2` promise Pool、ledgerId 与已迁移的 MySQL 数据库名。每条命令只借用一个 connection，在 `START TRANSACTION` 后按主键 `SELECT ledger_heads ... FOR UPDATE`，向 application 提供同键终态查询、可选的同连接认证与 employee resolver 能力，再由显式 execution mode 决定执行顺序。成功时将 MySQL JSON state、revision、语义快照校验和、operation result 和成功审计同事务提交；旧 revision 或明确业务拒绝只保存终态 operation。未知异常和 SQL 写入失败回滚，提交结果不明时保留原 key 供查询，不自动生成新 key。成功时间由数据库 `UTC_TIMESTAMP(6)` 生成，未知或损坏快照停写。
 
-`database/migrations/001_mysql_ledger_core.sql` 的三表均为 InnoDB，并以主键、唯一约束及外键保护操作与审计。MySQL JSON 规范化后的快照校验和只验证状态 JSON 值；它不是原始 localStorage 文本备份，未来正式导入必须另留原文及原文 SHA-256。此为单门店版本化 snapshot 过渡模型，最终领域关系模型尚未完成。真实 MySQL 8.4.11／InnoDB 的 migration、行锁竞争、重连持久性和回滚证据见 [CURRENT_STAGE](./CURRENT_STAGE.md)；适配器未接入浏览器或 HTTP；独立 Node trusted 入口仅对已迁移的三十四个房间／目录／存取酒／预约／销售／配品与其他消费／换酒／房间恢复审核／库存申请／审核、赠酒提交／审批及 expense 申请／审批及 credit 申请／决定、repay 申请／审批动作使用 session 身份，具体集合见下文。
+`database/migrations/001_mysql_ledger_core.sql` 的三表均为 InnoDB，并以主键、唯一约束及外键保护操作与审计。MySQL JSON 规范化后的快照校验和只验证状态 JSON 值；它不是原始 localStorage 文本备份，未来正式导入必须另留原文及原文 SHA-256。此为单门店版本化 snapshot 过渡模型，最终领域关系模型尚未完成。真实 MySQL 8.4.11／InnoDB 的 migration、行锁竞争、重连持久性和回滚证据见 [CURRENT_STAGE](./CURRENT_STAGE.md)；适配器未接入浏览器或 HTTP；独立 Node trusted 入口仅对已迁移的三十五个房间／目录／存取酒／预约／销售／配品与其他消费／换酒／房间恢复审核／库存申请／审核、赠酒提交／审批及 expense 申请／审批及 credit 申请／决定、repay 申请／审批动作使用 session 身份，具体集合见下文。
 
 旧 `database/schema.sql`、`seed.sql` 和 `codex/p0-1-trusted-ledger@7d3c23c` PostgreSQL 适配器只保留历史设计／实验参考。PostgreSQL 实验未取得真实数据库验收，也未推送或部署；它不是当前正式数据库方向。
 
-## P0-1 Stage 2A 可信命令策略（已迁移三十四动作接入）
+## P0-1 Stage 2A 可信命令策略（已迁移三十五动作接入）
 
 `ledger/command-policy.js` 位于服务端 ledger/application 邻近边界，但不改变 `createLedgerApplication`、`runAtomic` 或领域事务。它仅以显式注入且经工厂隔离的可信 principal 判断 action 是否在 45 个现有非演示命令清单内，以及该动作的具体权限资格；未知与演示专用动作默认拒绝。它不读取 MySQL、房态、库存、付款或审批状态，也不计算金额。允许结果始终标明下一阶段须在账本锁内重验当前账号／权限和业务相关事实，不是一次可提交授权。
 
-`trustedExecutionContext.actualActorPrincipalId` 只取自注入 principal；`attribution.creditedEmployeeId` 只是客户端请求的业务归属候选，尚未核实员工名册，不能替代操作者或授予权限；reserve／sale／retailSale 的候选现由下述事务内 resolver 核实。房间恢复与库存审核已从锁定账本读取申请人的真实 principal ID，其他审核动作须在后续迁移后，再同时检查具体审核权限和 `review.self`；超额免零本人审核还需显式 `rounding.self.excess` 授权属性。当前没有真人账号映射，不能按姓名或历史演示 ID 赋权。浏览器 DEMO 路径继续保留原规则。clean、房间异常提交、目录维护三动作、取消预约、存取酒、预约、销售、配品／其他消费、换酒、房间恢复审核、库存申请／审核、gift 提交／审批及 expense 申请／审批及 credit 申请／决定、repay 申请／审批在 ledger transaction 中调用该策略；其他 12 个 eligible action 尚未获 trusted execution enablement，2D 未接入。
+`trustedExecutionContext.actualActorPrincipalId` 只取自注入 principal；`attribution.creditedEmployeeId` 只是客户端请求的业务归属候选，尚未核实员工名册，不能替代操作者或授予权限；reserve／sale／retailSale 的候选现由下述事务内 resolver 核实。房间恢复与库存审核已从锁定账本读取申请人的真实 principal ID，其他审核动作须在后续迁移后，再同时检查具体审核权限和 `review.self`；超额免零本人审核还需显式 `rounding.self.excess` 授权属性。当前没有真人账号映射，不能按姓名或历史演示 ID 赋权。浏览器 DEMO 路径继续保留原规则。clean、房间异常提交、目录维护三动作、取消预约、存取酒、预约、销售、配品／其他消费、换酒、房间恢复审核、库存申请／审核、gift 提交／审批及 expense 申请／审批及 credit 申请／决定、repay 申请／审批、incident 创建／resolveIncident 在 ledger transaction 中调用该策略；其他 10 个 eligible action 尚未获 trusted execution enablement，2D 未接入。
 
 ## P0-1 Stage 2B 认证基础（独立 Node 入口）
 
 `auth/service.js:createAuthService` 编排合成账号创建、登录、会话认证、退出、撤销、停用、凭据轮换和具体权限变更；`auth/mysql-store.js:createMySqlAuthStore` 将关联写入放在同一 MySQL connection／事务。`auth/password.js` 用 Node 内置异步 scrypt 和每条凭据独立随机 salt；`auth/session-token.js` 产生 256-bit 随机 token，数据库只存 SHA-256 digest。`auth/rate-limit.js` 是显式注入的登录限流端口的单进程实现，默认阈值为 15 分钟内 5 次失败；多进程正式入口须注入共享实现。没有新增生产依赖。
 
-`auth_accounts` 的随机 UUID principal ID 由服务端生成，模块不提供删除或重用账号的方法；停用保留账号与审计历史。`auth_grants` 只存具体 permission，不存管理员通配捷径。每次认证都在数据库中重新核对账号启用状态、凭据版本、session 撤销与过期状态，并读取当下 grants；session/token 不携带权限。登录成功的 session 和 `login-success` 事件同事务；失败登录、退出、停用与撤销事件使用数据库时间。不存在账号和密码错误对外同为 `invalid-credentials`。独立认证服务不暴露 HTTP 或 UI；已迁移的三十四动作使用 2C.1 同连接重验。账号与权限管理方法仍是可信内部能力，尚未经过 command 授权，不得对客户端暴露。
+`auth_accounts` 的随机 UUID principal ID 由服务端生成，模块不提供删除或重用账号的方法；停用保留账号与审计历史。`auth_grants` 只存具体 permission，不存管理员通配捷径。每次认证都在数据库中重新核对账号启用状态、凭据版本、session 撤销与过期状态，并读取当下 grants；session/token 不携带权限。登录成功的 session 和 `login-success` 事件同事务；失败登录、退出、停用与撤销事件使用数据库时间。不存在账号和密码错误对外同为 `invalid-credentials`。独立认证服务不暴露 HTTP 或 UI；已迁移的三十五动作使用 2C.1 同连接重验。账号与权限管理方法仍是可信内部能力，尚未经过 command 授权，不得对客户端暴露。
 
 `database/migrations/002_mysql_auth_core.sql` 的五张 InnoDB 表已在专用 MySQL 测试库中验证；脚本执行一次，重复执行首表报已存在。集成测试只在 URL、实际库名、MySQL 版本与默认引擎均符合条件且包括属性表的六张 auth 表预先不存在时建表，另执行下述 004，再执行 005 → 006 扩展具体属性 CHECK，结束只删除本次建的 auth 表。测试证据见 [CURRENT_STAGE](./CURRENT_STAGE.md)。真人 account ID、登录标识与凭据发放等仍见 [OPEN BUSINESS DECISIONS](./OPEN_BUSINESS_DECISIONS.md)。
 
@@ -116,7 +116,7 @@ revalidation 在 account → session → 当前 grants → 当前 attributes 后
 
 `createTrustedLedgerApplication({store})` 接收 `execute(command, {tokenDigest})`；认证材料与 Stage 1 指纹命令分开，不能传 principal、权限或时钟配置。命令 schema／指纹 → BEGIN／head FOR UPDATE → 同连接认证（account／session／当前 grants 与 attributes／一次 dbNow）→ 查 existing operation → actor／fingerprint 校验。已有终态只要求当前账号和 session 有效，直接返回原终态，不再次检查当前 action permission；新 key 才执行 trusted-enabled → Stage 2A policy → revision →（reserve／sale／retailSale 的销售归属、incident 的负责人：同连接 employee resolver）→ trusted transact → state／result／audit 原子提交。
 
-`ledger/trusted-execution.js:TRUSTED_ENABLED_ACTIONS` 是独立、冻结的已迁移清单，只含 clean、markRoomIssue、clearRoomIssue、createCatalogProduct、updateCatalogProduct、updateCatalogPackage、cancelReservation、deposit、withdraw、reserve、sale、retailSale、serveExtra、otherCharge、exchange、approveRoomIssue、rejectRoomIssue、stock、consumableStock、approveInventory、rejectInventory、gift、approveGift、rejectGift、expense、approveExpense、rejectExpense、credit、approve、reject（两项仅为 credit decision）、repay、approveRepayment、rejectRepayment、incident。其余 eligible、demo 与未知 action 对新 key 默认拒绝；`rules.js:transact` 的 trusted 分支也只支持这三十四项。授权不足以 `AuthorizationDenied`（code AUTHORIZATION_DENIED、status authorization-denied）向外传播，不属于 BusinessRejection，不写终态或占用 key；缺失 port／伪造 context 同样不执行。revision conflict 与明确领域拒绝仍保留 Stage 1 terminal 语义。
+`ledger/trusted-execution.js:TRUSTED_ENABLED_ACTIONS` 是独立、冻结的已迁移清单，只含 clean、markRoomIssue、clearRoomIssue、createCatalogProduct、updateCatalogProduct、updateCatalogPackage、cancelReservation、deposit、withdraw、reserve、sale、retailSale、serveExtra、otherCharge、exchange、approveRoomIssue、rejectRoomIssue、stock、consumableStock、approveInventory、rejectInventory、gift、approveGift、rejectGift、expense、approveExpense、rejectExpense、credit、approve、reject（两项仅为 credit decision）、repay、approveRepayment、rejectRepayment、incident。其余 eligible、demo 与未知 action 对新 key 默认拒绝；`rules.js:transact` 的 trusted 分支也只支持这三十五项。授权不足以 `AuthorizationDenied`（code AUTHORIZATION_DENIED、status authorization-denied）向外传播，不属于 BusinessRejection，不写终态或占用 key；缺失 port／伪造 context 同样不执行。revision conflict 与明确领域拒绝仍保留 Stage 1 terminal 语义。
 
 transact 第五参数显式区分 `{mode:'demo'}` 与 `{mode:'trusted', context}`，旧调用缺省为 demo。trusted 在演示 operator／clock 求值前分流，cleanRoom 只从 branded context.permissionIds 检查 room.clean，继续只允许待清洁 → 空闲。旧 snapshot 的 user／clock／capabilities 等字段只作为原样快照数据保留，不作可信事实。markRoomIssue／clearRoomIssue 只从同一 context 检查 room.issue、取 principalId 与 dbNow；标记立即生效、恢复只提交待审核及原证据／房态规则保持。新 trusted 提交记录增加 submittedByPrincipalId，旧演示 submittedById 留空，不推断账号映射；显示字段 submittedBy／issueBy 当前使用 principalId，因 actorSnapshot 尚无显示名。历史记录和 demo 字段保持，房间恢复 approve／reject 已迁移；库存、赠酒审核见下文，其他审核仍未开放。业务 dbNow 来自 revalidation；成功审计的基础设施提交时间继续由 MySQL store 生成。
 
@@ -160,13 +160,19 @@ context 的 WeakSet 标记和 permission guard 放在已存在的、浏览器兼
 
 `approveRepayment`／`rejectRepayment` 在 demo 身份／clock 求值前进入 `sales.js:decideRepayment` 的显式 trusted 模式。保留原订单 credit 存在、按 Number(request) 选择本次待审核 repaymentRequest 的校验；只从该锁内申请的 submittedByPrincipalId 比较 session principal，不用原 credit 经办人、其他申请、旧演示 ID、姓名或 payload 判断本人。必须 credit.repay.approve，本人另需 review.self；legacy 缺有效 principal 两动作都授权拒绝，不写终态、不占 key。决定写 decidedByPrincipalId，decidedBy 仅可信显示快照，decidedAt 只用冻结 dbNow。批准原命令体生成一笔 payment，由 credit.repayments 与 order.payments 同额引用，保存 approvedByPrincipalId，approvedBy 只作审核人显示快照、person 仍为该申请提交人的显示快照；原余额扣减、归零转已回款及驳回原因／状态规则不改。驳回不写 payment、不减余额。全部申请／资金／历史变化在隔离 state 中生成，再由原 ledger 一事务提交 state、revision、operation、audit；未知／SQL 故障全回滚。payment 沿用 time 字段取 dbNow，不新增资金日期口径或改写 reporting，原跨日 Known Issue 保持。有效原 actor 撤审核／自审权限后重放已有终态，新 key 使用当前权限；失效认证先于 lookup 拒绝。无 employee resolver、岗位属性限制或新 schema。
 
-incident 在 demo operator／clock 求值前进入 incidents.js:submitIncident 的显式 trusted 模式，只检查 context.permissionIds 的 incident.create；submittedByPrincipalId／actualActorPrincipalId 取 session principal，person 仅可信显示快照（当前 null），createdAt 只取冻结 dbNow。ledger application 仅对新 key、已认证且通过 policy／revision 的 incident 调用原 transaction-bound employee resolver，以 assigneeEmployeeId 或 assignee 的一致 UUID 查 enabled 员工；withTrustedAssigneeEmployee 保存独立负责人快照，不复用销售 creditedEmployeeId。记录 assigneeEmployeeId、assigneeEmployeeNameSnapshot，兼容显示 assignee／assigneeId；无关联账号或关联账号 disabled 不替代员工 enabled 状态。原显式 date、room、type、description 和待处理业务语义不改，不读旧 USERS 或姓名推断负责人。现有 terminal replay 不再解析员工，授权拒绝不占 key；unknown／SQL 故障完整回滚，不开放 resolveIncident／恢复审核。
+incident 在 demo operator／clock 求值前进入 incidents.js:submitIncident 的显式 trusted 模式，只检查 context.permissionIds 的 incident.create；submittedByPrincipalId／actualActorPrincipalId 取 session principal，person 仅可信显示快照（当前 null），createdAt 只取冻结 dbNow。ledger application 仅对新 key、已认证且通过 policy／revision 的 incident 调用原 transaction-bound employee resolver，以 assigneeEmployeeId 或 assignee 的一致 UUID 查 enabled 员工；withTrustedAssigneeEmployee 保存独立负责人快照，不复用销售 creditedEmployeeId。记录 assigneeEmployeeId、assigneeEmployeeNameSnapshot，兼容显示 assignee／assigneeId；无关联账号或关联账号 disabled 不替代员工 enabled 状态。原显式 date、room、type、description 和待处理业务语义不改，不读旧 USERS 或姓名推断负责人。现有 terminal replay 不再解析员工，授权拒绝不占 key；unknown／SQL 故障完整回滚；处理结果新增接入见下节，恢复审核仍未开放。
 
 ## 同事务 principal → employee 解析（内部能力）
 
 employees/employee-resolver.js:createTransactionBoundPrincipalEmployeeResolver 接收调用方端口，公开 resolvePrincipalEmployeeInTransaction({trustedContext})；输入必须是同事务 session revalidation 注册的可信 context，不接受 raw principalId、请求 JSON、姓名或旧 USERS。employees/mysql-store.js:bindEmployeeResolver(connection) 在原 credited resolver 之外提供此独立方法，检查活动事务和实际库名后按 employees.principal_id 做 FOR SHARE 当前读，复核关联、enabled 与规范 UUID，只返回冻结 {employeeId, displayName}。无关联／停用明确拒绝；未知 SQL／端口错误原样传播。调用方先锁 account，再读取 employee；关联／解除／停用仍遵循 account → employee，principal 与 employee 是不同身份概念。
 
 此能力不借新连接、不 BEGIN／COMMIT／ROLLBACK／release、不写审计或 session activity，不修改 creditedEmployee 解析，不新增 migration、真人映射或 trusted action。调用方事务结束后重新解析；历史姓名不补映射。真实专用库测试包括两种双连接停用顺序、调用方 rollback 与实际 SQL 失败，证据见 CURRENT_STAGE。
+
+## resolveIncident trusted 处理结果提交
+
+仅新增 resolveIncident 到 trusted-enabled，集合以 ledger/trusted-execution.js 为准。ledger/application.js 在同 connection session 重验、已有终态读取、新 key 策略／revision 后，经 ledger/incident-resolution.js:resolveIncidentActorContext 调用 principal→employee resolver；只传 branded context，不传 payload principal。withTrustedActorEmployee 保留 principal 与权限，另附 actorEmployeeId／当前姓名快照，区别于 creditedEmployee 和 assignee。无关联／停用转为非终态 AuthorizationDenied；SQL／未知异常原样回滚。
+
+rules.js 在 demo 身份／clock 求值前进入 incidents.js:submitIncidentResolution 的 trusted 分支；锁定 state 中对应 incident.assigneeEmployeeId 必须可证明且匹配当前 actor employee。legacy 姓名／旧 ID 不补关联，payload 不影响匹配；不增加 manager bypass，demo 原 incident.viewAll 行为保留。请求保存 submittedByPrincipalId、submittedByEmployeeId、submittedBy 当前显示快照与 frozen dbNow，待审核状态、300 字符限制、提醒复位及历史保持。授权拒绝不占 key；原终态 replay 早于当前 permission／员工解析，但仍先要求有效认证。两项 incident resolution 审核及其余未迁移动作继续 fail closed，无新 schema／HTTP／UI／真人映射。
 
 ## 状态所有权
 
@@ -181,6 +187,6 @@ employees/employee-resolver.js:createTransactionBoundPrincipalEmployeeResolver �
 | 报表 | `reporting.js` 只读派生 | 不单独存第二份事实 |
 | MySQL 8.4／InnoDB | 独立 `ledger/mysql-store.js` 过渡账本 | 专用测试库已真实验收；当前页面未接入 |
 | 正式员工名册与关联审计 | 独立 `employees/` 服务与 MySQL store | employees／employee_events 管理为独立内部能力；销售归属解析接 reserve／sale／retailSale，负责人解析接 incident，客户端未接入 |
-| MySQL auth 账号、凭据、grants、session、事件 | 独立 `auth/` 服务与存储适配器 | 专用测试库已真实验收；已迁移三十四动作的 Node trusted 命令取 session 身份，浏览器尚未接入 |
+| MySQL auth 账号、凭据、grants、session、事件 | 独立 `auth/` 服务与存储适配器 | 专用测试库已真实验收；已迁移三十五动作的 Node trusted 命令取 session 身份，浏览器尚未接入 |
 
 旧 PostgreSQL `database/schema.sql` 的 `room_orders.room_id` 仍要求非空，不能直接承载当前无房零售。正式系统需要受信任的 API、真实身份、服务端事务、审计、并发版本、支付与退款证据、可验证备份及数据库迁移。

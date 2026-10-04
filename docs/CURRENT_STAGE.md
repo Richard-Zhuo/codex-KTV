@@ -527,6 +527,16 @@ incidents.js:submitIncident 显式 demo／trusted 身份壳，原 date、房号�
 
 本轮完整 node --test --test-isolation=none 实际 1284／1278／0／6，退出码 0；四套 MySQL 全部再次执行，六项 skip 名称与本轮 incident main 日志完全一致。基础设施单独提交，不开放 resolveIncident 或其他动作，不 push、不部署。
 
+## P0-1 Stage 2C.3：resolveIncident 可信处理结果提交（2026-10-05）
+
+基于本轮独立 infrastructure 提交 e2f4d72 继续第二个提交，main／origin/main 仍在已同步 51b722a。只新增 resolveIncident 到 trusted-enabled，共三十五项；其他十项 eligible 仍关闭，尤其 approveIncidentResolution／rejectIncidentResolution、免零审批、付款、开房、采购和交班。
+
+session 重验→existing operation→新 key policy／revision→同 connection principal→employee resolver→trusted transact 原链保持；actor／permission／时间只取 context。当前 actor employee 与锁定 incident.assigneeEmployeeId 比较，无关联／停用／不匹配／legacy 未证明均 AuthorizationDenied，不写 terminal／audit／revision，不占 key；不从 payload、姓名、旧 USERS 或 viewAll 加管理者绕过。demo 保留原负责人／incident.viewAll 判断；批准／驳回函数与 main 逐字一致。
+
+新 resolutionReviews 保存 submittedByPrincipalId、submittedByEmployeeId、可信当前姓名显示快照及 dbNow；原结果／备注必填及 300 字符限制、待审核、提醒复位与历史保持，不直接完成 incident。撤权及解除员工关联后，有效原 actor 同 key 重连返回原终态，不再解析员工；新 key 用当前资格。失效 session 仍在读取 operation 前拒绝，指纹／actor 冲突、终态拒绝及 revision 协议不变。
+
+新增单元先在 trusted gate 实际失败；迁移后新增单元 21／21，五文件定向实际 127／127／0／0。已按项目规则尝试 npm test，PowerShell 找不到 npm，未取得该证据。首轮真实数据库实际 544／540／4／0（含根失败）：两项用例夹具误用当前 auth 不接受的旧 incident.viewAll grant，另一个用例未捕获同步 constructor 配置拒绝。仅修正测试为正式具体权限、保留 payload／demo 管理者伪造拒绝，并捕获同步拒绝；生产权限及业务实现未因此改变。修正后四文件 MySQL 实际 544／544／0／0；auth 47／47（原 16＋revalidation 13 继续执行）、employee 40／40（新增 principal resolver 十项）、ledger 20／20（原 11＋10 元边界九项）、trusted 437／437（新增 resolveIncident 23／23）。实际 MySQL 8.4.11／jbhh_ktv_test／InnoDB，无数据库 skip。最终完整 node --test --test-isolation=none 实际 1328／1322／0／6，退出码 0；四套 MySQL 再次全部实际执行，六项 skip 名称与本轮 incident main 回归完全一致。两种 revision／同 key 竞争验证真实独立 CONNECTION_ID，最多一个待审请求效果；独立员工 disable 在 account 锁后按序发生。SQL resolver／audit 中途故障与未知异常全部 rollback，原 key 可修复重试；reconnect 旧终态不重复提交。fixture 仍只操作并清理原十一张已知表，最终只读核对全部清理。本批不改变员工名册、数据库 schema、¥10 小额免零规则、六项 Known Issues 或其他业务 action，不建真人映射；仅第二个独立提交，不合入／push 新提交、不部署。
+
 ## 本轮隔离集成候选（2026-09-29）
 
 来源：用户交付的 `jbhh-ktv-full.zip`，基线 `ca726b2`；纯重构检查点 `74c3f55`；业务修复终点 `6aa01ba`。Track B 来源为 `codex/offsite-contracts@3193635`。候选位于独立工作树的 `codex/track-a-integration`，主工作区未提交内容保留；未合并 `main`、未推送。
