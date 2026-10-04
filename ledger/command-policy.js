@@ -6,7 +6,9 @@ const trustedReviews = new WeakSet();
 const permissionIds = new Set(PERMISSION_IDS);
 export const EXCESS_ROUNDING_SELF = 'rounding.self.excess';
 export const EXPENSE_APPROVAL_BOSS = 'expense.approval.boss';
-export const POLICY_ATTRIBUTE_IDS = Object.freeze([EXCESS_ROUNDING_SELF, EXPENSE_APPROVAL_BOSS]);
+export const CREDIT_APPROVAL_MANAGER = 'credit.approval.manager';
+export const CREDIT_APPROVAL_BOSS = 'credit.approval.boss';
+export const POLICY_ATTRIBUTE_IDS = Object.freeze([EXCESS_ROUNDING_SELF, EXPENSE_APPROVAL_BOSS, CREDIT_APPROVAL_MANAGER, CREDIT_APPROVAL_BOSS]);
 
 // Only these domain actions may be considered by a future formal command path.
 // The map contains grants, not domain rules, amounts, room state or stock balances.

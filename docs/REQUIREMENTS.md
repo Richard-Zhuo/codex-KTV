@@ -52,7 +52,7 @@
 ## 已确认：正式 policy attributes 基础
 
 - auth_accounts.policy_attributes_configured 默认 false；认证上下文用 false／null 表示未配置，true／[] 表示已配置空集合。不得按姓名、岗位、payload 或演示身份推断配置。
-- 独立 InnoDB auth_policy_attributes 保存稳定 principal 的具体授权属性；当前受支持属性只有既已冻结的 rounding.self.excess，它不能替代普通 approve permission 或 review.self，也不开放尚未迁移的业务 action。
+- 独立 InnoDB auth_policy_attributes 保存稳定 principal 的具体授权属性；当前具体属性为 rounding.self.excess、expense.approval.boss、credit.approval.manager 和 credit.approval.boss；属性不能替代普通 approve permission 或 review.self，也不开放尚未迁移的业务 action。
 - configure／grant／revoke 是可信内部管理能力，实际操作者与目标 principal 分开传递、校验和审计；变更先按稳定 UUID 顺序锁 account，同一事务写属性／配置标志与事件。重复配置不清空已有集合，重复 grant／不存在的 revoke 不增加事件；grant／revoke 要求先显式 configure。
 - transaction-bound revalidation 在调用方连接内锁住账号／session 后，对 grants 和属性作当前读取；属性变更下一次认证即生效，不更新 session 活动或把权限固化到 token。停用账号继续拒绝认证。没有真人属性配置，内部管理接口不得直接暴露给客户端。
 
@@ -122,7 +122,8 @@
 - 正式免零差额不超过 5 元时，现场可直接免零，主要用于凑整 5 元或整 10 元；超过 5 元须进入审批，未经批准不得当作已收或完成合法结账。卓老板可以批准本人超额免零；老板娘、邵叔、雄老板不能自批，须由其他有权人员批准。卓益没有最终结账权限，不能借免零审批绕过该限制。当前演示“任意金额少收即免零并结账”不是目标行为。
 - 所有演示身份均可从结账申请挂账。手机号或顾客姓名至少填写一个，挂账备注和经办签名必填；只挂尚未收取的余额。
 - 挂账金额不超过 1000 元由店长审批，超过 1000 元由老板审批；提单起 24 小时到期，挂账不计入实收。
-- 正式 trusted `credit` 申请创建只使用 session context 的 `credit.apply`、principal 和冻结 `dbNow`。新 `order.credit` 保存 `submittedByPrincipalId`，`submittedById` 不填演示 ID，`person` 仅作可信显示快照；payload 身份／权限／时钟不得覆盖。顾客姓名、手机号和签名仍是业务输入；金额只取原未收余额，期限仍为提单后 24 小时，原待审批和房态释放语义保持。原 approver 岗位标签仅保留既有业务路由，本批不判断 manager／boss 属性，不开放 approve／reject 或回款。授权拒绝不占操作键，既有终态重放及完整 rollback 保持。
+- 正式 trusted `credit` 申请创建只使用 session context 的 `credit.apply`、principal 和冻结 `dbNow`。新 `order.credit` 保存 `submittedByPrincipalId`，`submittedById` 不填演示 ID，`person` 仅作可信显示快照；payload 身份／权限／时钟不得覆盖。顾客姓名、手机号和签名仍是业务输入；金额只取原未收余额，期限仍为提单后 24 小时，原待审批和房态释放语义保持。原 approver 岗位标签仅保留既有业务路由，创建链不判断 manager／boss 属性；决定链见下一条，回款仍未迁移。授权拒绝不占操作键，既有终态重放及完整 rollback 保持。
+- 正式 credit 的 approve／reject 均从锁内 order.credit 读取 submittedByPrincipalId；必须有 credit.approve，本人额外需要 review.self。两动作保留相同金额分级：≤1000 元需要已配置的 credit.approval.manager 或 credit.approval.boss，>1000 元仅 credit.approval.boss；boss 覆盖 manager 资格。approver 是申请时保存的审批级别，不是审核人身份；不依据角色、姓名、payload 或当前未收余额补造级别。未知／矛盾的保存金额与级别、legacy 缺可信申请人均 fail closed，不占操作键。决定保存 decidedByPrincipalId，decisionBy 仅显示快照（当前 null），decisionAt 使用冻结 dbNow；原批准转已挂账、驳回归档并清除当前 credit／转营业中且不重新占房等语义不变。撤销 permission／属性后有效原 actor 的旧 key 仍取原终态，新 key 验当前资格；SQL 故障完整 rollback。
 - 回款先登记金额和方式，审核通过后才扣减欠款并计入实收；存酒不能抵欠款。
 - 交班必须分别填写实点收款合计和前台现金；前台现金只留档，不重复计入实收差异。
 - 当前门店没有固定现金备用金制度；交班与现金应有数只能使用实际清点和已记录的期初现金，不预设固定开班金额。

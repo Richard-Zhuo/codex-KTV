@@ -171,9 +171,9 @@ test('credit: missing context or connection-bound auth fails closed without demo
  assert.throws(()=>applyCredit(f.state,creditOrder(f.state),creditCommand().payload,'fake',dbNow,{mode:'unknown'}),/执行模式/);
 });
 
-test('credit: approval, repayment, rounding, money and remaining business actions stay closed despite grants',async()=>{
+test('credit: repayment, rounding, money and remaining business actions stay closed despite grants',async()=>{
  const f=fixture({permissions:['credit.apply','credit.approve','credit.repay','credit.repay.approve','rounding.approve','payment.collect','payment.settle','incident.create','incident.resolve','incident.resolve.approve','procurement.create','handover','room.open','review.self']});
- for(const action of ['approve','reject','repay','approveRepayment','rejectRepayment','approveRounding','rejectRounding','collect','settle','pay','incident','resolveIncident','approveIncidentResolution','rejectIncidentResolution','procurement','handover','open']){
+ for(const action of ['repay','approveRepayment','rejectRepayment','approveRounding','rejectRounding','collect','settle','pay','incident','resolveIncident','approveIncidentResolution','rejectIncidentResolution','procurement','handover','open']){
   await assert.rejects(f.app.execute({...creditCommand(action),action},f.credential),e=>denied(e)&&e.reason==='trusted-action-not-enabled');await assertNoEffects(f);
  }
 });

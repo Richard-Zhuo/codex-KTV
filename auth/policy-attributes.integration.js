@@ -1,6 +1,6 @@
 // Runs only inside the guarded auth fixture; no separate DDL owner or database cleanup.
 import assert from 'node:assert/strict';
-import { applyExpenseApprovalAttributeMigration } from '../test-support/mysql-policy-attributes-fixture.js';
+import { applyExpenseApprovalAttributeMigration, applyCreditApprovalAttributesMigration } from '../test-support/mysql-policy-attributes-fixture.js';
 import { createMySqlAuthStore } from './mysql-store.js';
 import { createAuthService } from './service.js';
 import { createPolicyAttributeService } from './policy-attributes.js';
@@ -325,7 +325,7 @@ export async function verifyPolicyAttributes(t, { pool, database, qualified, att
     await auth.grantPermission({ principalId: login.principalId,permissionId:'review.self' });
     context = await read(login);
     assert.equal(authorizeReviewCommand({ principal: context.principal,action:'approveRounding',reviewFacts }).allowed,true);
-    assert.equal(TRUSTED_ENABLED_ACTIONS.length,28);
+    assert.equal(TRUSTED_ENABLED_ACTIONS.length,30);
     assert.equal(TRUSTED_ENABLED_ACTIONS.includes('approveRounding'),false);
     assert.throws(()=>authorizeTrustedExecution(context,{action:'approveRounding',payload:{}}),error=>error.reason==='trusted-action-not-enabled');
   });
@@ -356,6 +356,45 @@ export async function verifyPolicyAttributes(t, { pool, database, qualified, att
         await assert.rejects(connectionApi(faulty)[method](bossInput,actorContext),e=>e.code==='ER_BAD_FIELD_ERROR');
       }finally{connection.release();}
       assert.deepEqual(await snapshot(login.principalId),before);assert.equal(await api[method](bossInput,actorContext),true);
+    }
+    assert.deepEqual((await read(login)).policyAttributeIds,[attributeId]);
+  });
+
+  await t.test('credit attributes: 006 repeats safely, keeps old facts, reads both specific tiers and audits independent actor/target',async()=>{
+    // The preceding 005 repeat deliberately restored its older CHECK; extend it again.
+    const statements=await applyCreditApprovalAttributesMigration(pool);assert.equal(statements.length,2);
+    const login=await provision();await configure(login);await api.grantPolicyAttribute(input(login),actorContext);
+    for(const attributeId of ['expense.approval.boss','credit.approval.manager','credit.approval.boss']){
+      const attrInput={principalId:login.principalId,attributeId};assert.equal(await api.grantPolicyAttribute(attrInput,actorContext),true);
+      assert.equal(await api.grantPolicyAttribute(attrInput,actorContext),false);
+    }
+    const before=await snapshot(login.principalId);await applyCreditApprovalAttributesMigration(pool);await applyCreditApprovalAttributesMigration(pool);
+    assert.deepEqual(await snapshot(login.principalId),before);
+    let current=await read(login);assert.equal(current.policyAttributesConfigured,true);
+    assert.deepEqual(current.policyAttributeIds,['credit.approval.boss','credit.approval.manager','expense.approval.boss','rounding.self.excess']);
+    for(const attributeId of ['credit.approval.manager','credit.approval.boss']){
+      const audit=(await events(login.principalId)).find(e=>e.policy_attribute_id===attributeId);
+      assert.equal(audit.actor_principal_id,actor.principalId);assert.equal(audit.principal_id,login.principalId);assert.notEqual(audit.actor_principal_id,audit.principal_id);
+      assert.equal(audit.session_id,null);assert.equal(audit.reason_code,null);assert.ok(audit.occurred_at);
+      await api.revokePolicyAttribute({principalId:login.principalId,attributeId},actorContext);
+      assert.equal((await read(login)).policyAttributeIds.includes(attributeId),false);
+    }
+    const serialized=JSON.stringify(await events(login.principalId));assert.equal(serialized.includes(password),false);assert.equal(serialized.includes(login.token),false);
+    assert.deepEqual((await read(login)).policyAttributeIds,['expense.approval.boss','rounding.self.excess']);
+    for(const unsupported of ['manager','boss','credit.approval.*','credit.approve'])await assert.rejects(pool.execute('INSERT INTO '+qualified('auth_policy_attributes')+' (principal_id,attribute_id) VALUES (?,?)',
+      [login.principalId,unsupported]),e=>e.code==='ER_CHECK_CONSTRAINT_VIOLATED');
+  });
+
+  await t.test('credit attributes: audit SQL failure fully rolls back manager/boss grant and revoke',async()=>{
+    const login=await provision();await configure(login);await api.grantPolicyAttribute(input(login),actorContext);
+    for(const attributeId of ['credit.approval.manager','credit.approval.boss'])for(const method of ['grantPolicyAttribute','revokePolicyAttribute']){
+      const attrInput={principalId:login.principalId,attributeId},before=await snapshot(login.principalId),connection=await pool.getConnection();
+      try{
+        const faulty=proxy(connection),execute=faulty.execute.bind(faulty);
+        faulty.execute=(sql,args)=>execute(sql.includes('(principal_id, actor_principal_id, event_type, policy_attribute_id)')?sql.replace('(principal_id,','(missing_credit_attribute_test_column,'):sql,args);
+        await assert.rejects(connectionApi(faulty)[method](attrInput,actorContext),e=>e.code==='ER_BAD_FIELD_ERROR');
+      }finally{connection.release();}
+      assert.deepEqual(await snapshot(login.principalId),before);assert.equal(await api[method](attrInput,actorContext),true);
     }
     assert.deepEqual((await read(login)).policyAttributeIds,[attributeId]);
   });

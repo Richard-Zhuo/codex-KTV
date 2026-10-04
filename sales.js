@@ -11,7 +11,7 @@
 import { BusinessRejection } from './shared/business-error.js';
 import { DEFAULT_CATALOG, product, saleOption, saleOptions, productIdOf, categoryLabel } from './catalog.js';
 import { recordInventoryChange, need } from './inventory.js';
-import { USERS, effectiveUser, assertTrustedExecutionContext, requireTrustedPermission } from './shared/identity.js';
+import { USERS, effectiveUser, assertTrustedExecutionContext, requireTrustedPermission, AuthorizationDenied } from './shared/identity.js';
 
 export const PAYMENT_METHODS = ['微信', '支付宝', '现金', '美团', '抖音'];
 
@@ -227,15 +227,43 @@ export function applyCredit(s, order, data, person, time, execution = { mode: 'd
   order.status = '待审批挂账';
   return { release: true };
 }
-export function decideCredit(s, order, action, person, time, authorizeReviewer) {
-  if (!order || order.status !== '待审批挂账') throw new BusinessRejection('审批已处理'); need(s, [order.credit.approver], 'credit.approve');
-  // Bug #1 修复：指定审批人是硬性岗位限制，need 的管理员岗位穿透不再适用于此分支。
-  // 层级语义：店长级挂账可由店长或老板批准，老板级挂账只能由老板批准；
-  // 无对应营业岗位的身份（如仅持 credit.approve 具体权限的管理员）不能跨级批准。
-  const roles = effectiveUser(s).roles || [];
-  const allowedRoles = order.credit.approver === '店长' ? ['店长', '老板'] : [order.credit.approver];
-  if (!roles.some(role => allowedRoles.includes(role))) throw new BusinessRejection(`这笔挂账需要${order.credit.approver}岗位审批`);
-  const selfReview = authorizeReviewer(order.credit.submittedById);
+export function decideCredit(s, order, action, person, time, authorizeReviewer, execution = { mode: 'demo' }) {
+  if (!execution || !['demo', 'trusted'].includes(execution.mode)) throw TypeError('挂账审核执行模式无效');
+  const context = execution.mode === 'trusted' ? assertTrustedExecutionContext(execution.context) : null;
+  if (!order || order.status !== '待审批挂账') throw new BusinessRejection('审批已处理');
+  let selfReview;
+  if (context) {
+    requireTrustedPermission(context, 'credit.approve');
+    // Applicant and routing level are facts from the locked ledger head, never payload.
+    const credit = order.credit, applicant = credit?.submittedByPrincipalId;
+    if (typeof applicant !== 'string' || !applicant || applicant.trim() !== applicant || applicant.length > 191) {
+      throw new AuthorizationDenied('untrusted-credit-applicant');
+    }
+    selfReview = applicant === context.principalId;
+    if (selfReview) requireTrustedPermission(context, 'review.self');
+    // approver is the saved approval LEVEL, not an actor identity. Do not recalculate
+    // from outstanding balance or change either decision's original tier behavior.
+    if (!Number.isSafeInteger(credit.amount) || credit.amount <= 0 ||
+        credit.approver !== (credit.amount > 100000 ? '老板' : '店长')) {
+      throw new AuthorizationDenied('untrusted-credit-approval-level');
+    }
+    if (!context.policyAttributesConfigured) throw new AuthorizationDenied('policy-attributes-unconfigured');
+    const attributes = context.policyAttributeIds;
+    const boss = attributes.includes('credit.approval.boss');
+    if (!boss && !(credit.approver === '店长' && attributes.includes('credit.approval.manager'))) {
+      throw new AuthorizationDenied('missing-policy-attribute');
+    }
+    person = context.actorSnapshot?.displayName ?? null;
+    time = context.dbNow;
+    credit.decidedByPrincipalId = context.principalId;
+  } else {
+    need(s, [order.credit.approver], 'credit.approve');
+    // Demo retains its original hard role tier for both approve and reject.
+    const roles = effectiveUser(s).roles || [];
+    const allowedRoles = order.credit.approver === '店长' ? ['店长', '老板'] : [order.credit.approver];
+    if (!roles.some(role => allowedRoles.includes(role))) throw new BusinessRejection(`这笔挂账需要${order.credit.approver}岗位审批`);
+    selfReview = authorizeReviewer(order.credit.submittedById);
+  }
   order.credit.decisionAt = time;
   order.credit.decisionBy = person;
   order.credit.selfReviewAuthorized = selfReview;

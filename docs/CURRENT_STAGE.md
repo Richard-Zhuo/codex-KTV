@@ -429,6 +429,25 @@ JavaScript 修改后实际尝试 npm test，PowerShell 报 The term 'npm' is not
 
 复用受保护十一表 fixture，无新 migration、表或生产依赖；未 CREATE／DROP database，不操作无关表。ledger application／store、fingerprint、operationKey、revision、terminal replay、auth／attributes 实现、审批与六项 Known Issues 不改。只做本批一个提交，parent 1a05549；main／origin/main 保持已同步基线，新提交不 push、不进入 credit 审批或下一批、不部署，无范围偏离。
 
+## P0-1 Stage 2C.3 credit approve／reject（2026-10-05）
+
+先确认 96a363f 的直接 parent 为 1a05549，ff-only 合入 main，无 merge commit；本次 main 完整 node --test --test-isolation=none：1058 / 1052 / 0 / 6，MySQL 真实执行。fetch 确认 origin/main 无新增后普通 push，main = origin/main = 96a363f、0/0、clean。随后从此 HEAD 创建 codex/p0-1-stage2c-credit-review；旧 Track A／PostgreSQL 工作树未改动。
+
+本批只新增 approve／reject 作为 credit decision，trusted-enabled 共三十项，其余十五个 eligible action 仍拒绝。rules.js 在 demo operator／clock 求值前分流到 sales.js:decideCredit 的显式 trusted 分支。锁内 order.credit.submittedByPrincipalId 与 session principal 比较；必须 credit.approve，本人另需 review.self。配置后的 credit.approval.manager 或 boss 可决定≤1000 元，>1000 元仅 boss，两动作保留相同分级；approver 仍是原保存审批级别，不是审核人身份。保存金额和路由级别未知／矛盾时授权拒绝，不猜值、不按当前余额重算；legacy 无可信 applicant 两动作都拒绝、不占 key。姓名／旧 USERS／员工关系／payload 不提供 principal 或属性。
+
+决定新增 decidedByPrincipalId，decisionBy 只取可信显示快照（当前 null），decisionAt 取同一冻结 dbNow；原批准转已挂账、驳回归档含稳定决定 ID 的申请后清除当前 credit／转营业中、不抢占已释放房间的语义保持。金额、期限、顾客输入、历史快照、payment、库存均不改。006_mysql_credit_approval_attributes.sql 仅在 005 后增量扩展两个具名 metadata CHECK，支持两项具体属性；不新增表、真人配置或生产依赖，旧 004／005 不改。
+
+实际证据（total / pass / fail / skip）：
+
+- 首个新增公开 trusted 审批用例先因 principal 工厂尚不支持 manager 属性失败；最小接入后通过。最终 credit review 单元 31 / 31 / 0 / 0，包含两个动作分级／本人资格、未知或矛盾保存事实、payload／legacy 拒绝、不占键、重放／冲突、失败原子性、demo 业务对照及直接领域 getter 不读演示身份／时钟。
+- 修改 JavaScript 后实际尝试 npm test；PowerShell 报 The term 'npm' is not recognized，npm 未启动。DEVELOPMENT_ENVIRONMENT 所列十一文件定向 Node 回归：238 / 234 / 0 / 4，四项为原 Known Issues 子集。
+- 四文件真实 MySQL 回归：443 / 443 / 0 / 0；auth 47/47（原认证 16、revalidation 13、旧属性 16 保留，新增属性用例 2），employee 30/30、ledger 11/11、trusted 355/355（新 credit review 32/32）。环境 MySQL 8.4.11 / jbhh_ktv_test / InnoDB，全部真实执行，无数据库 skip。
+- 最终完整 node --test --test-isolation=none：1125 / 1119 / 0 / 6，退出码 0；逐项比较本次 main 日志，六项 Known Issues 名称与 skip 完全一致。
+
+真实 DB 用例核对同连接 head → account → session → 当前 grants／attributes → 一次 DB 时间 → operation → domain → state／result／audit／COMMIT，不 touch session activity，不查 employee。创建 credit 的 actor 与决定 actor 使用独立合成 session 验证。撤 permission／manager／boss 后新 pool 重连返回原终态不重做；新 key 目标为另一仍待审申请，当前资格不足不写回执，重新授予后原 key 可用。失效认证先于旧 operation 查询；actor／action／payload／expectedRevision 冲突保持。竞争真实查询不同 CONNECTION_ID：同 key 两连接只决定一次，两个 principal 竞争 approve／reject 一成功／一 revision conflict。audit CHECK 中途 SQL 失败确认 head UPDATE／operation INSERT 已到达后，state／history／revision／operation／audit 全回滚；未知故障及属性事件 SQL 故障同样回滚，修复后原 key 可重试。006 在空 fixture 后实际执行，并在保留已有属性与事件时重复执行两次，配置和 rows 不变。
+
+测试只复用受保护十一表 fixture，无 CREATE／DROP database；结束只清理本轮拥有的表，验收后只读查询确认十一张 fixture 表均已清理。ledger application／store、指纹／revision／终态顺序、回款、免零、付款／结账及其他业务动作、六项 Known Issues 均未修改。本批一个提交，parent 96a363f；main／origin/main 保留已同步基线，新提交不 push、不进入下一批、不部署，无范围偏离。
+
 ## 本轮隔离集成候选（2026-09-29）
 
 来源：用户交付的 `jbhh-ktv-full.zip`，基线 `ca726b2`；纯重构检查点 `74c3f55`；业务修复终点 `6aa01ba`。Track B 来源为 `codex/offsite-contracts@3193635`。候选位于独立工作树的 `codex/track-a-integration`，主工作区未提交内容保留；未合并 `main`、未推送。

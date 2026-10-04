@@ -128,3 +128,12 @@ test('policy attributes: expense boss grant/revoke is explicit, audited, duplica
   await f.api.revokePolicyAttribute({principalId:target,attributeId:boss},context);
   assert.deepEqual([...f.read().attributes.get(target)],[attributeId]);
 });
+
+for(const creditAttribute of ['credit.approval.manager','credit.approval.boss'])test('policy attributes: '+creditAttribute+' is specific, audited, duplicate safe and independent',async()=>{
+  const f=fixture();await f.api.configurePolicyAttributes({principalId:target},context);
+  await f.api.grantPolicyAttribute({principalId:target,attributeId},context);
+  const input={principalId:target,attributeId:creditAttribute};
+  assert.equal(await f.api.grantPolicyAttribute(input,context),true);assert.equal(await f.api.grantPolicyAttribute(input,context),false);
+  assert.deepEqual(f.read().events.at(-1),{actorPrincipalId:actor,principalId:target,eventType:'policy-attribute-granted',attributeId:creditAttribute});
+  assert.equal(await f.api.revokePolicyAttribute(input,context),true);assert.deepEqual([...f.read().attributes.get(target)],[attributeId]);
+});
