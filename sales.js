@@ -277,14 +277,20 @@ export function decideCredit(s, order, action, person, time, authorizeReviewer, 
   }
   return { release: false };
 }
-export function submitRepay(s, order, data, person, time) {
-  need(s, ['收银员','财务','老板'], 'credit.repay');
+export function submitRepay(s, order, data, person, time, execution = { mode: 'demo' }) {
+  if (!execution || !['demo', 'trusted'].includes(execution.mode)) throw TypeError('回款申请执行模式无效');
+  const context = execution.mode === 'trusted' ? assertTrustedExecutionContext(execution.context) : null;
+  if (context) {
+    requireTrustedPermission(context, 'credit.repay');
+    person = context.actorSnapshot?.displayName ?? null;
+    time = context.dbNow;
+  } else need(s, ['收银员','财务','老板'], 'credit.repay');
   if (!order || order.status !== '已挂账') throw new BusinessRejection('请选择已审批的挂账');
   order.credit.repaymentRequests ??= [];
   const pendingAmount = order.credit.repaymentRequests.filter(request => request.status === '待审核').reduce((sum, request) => sum + request.amount, 0);
   if (!Number.isSafeInteger(data.amount) || data.amount <= 0 || data.amount > order.credit.remaining - pendingAmount) throw new BusinessRejection('回款金额应大于零且不超过扣除待审核回款后的欠款');
   if (!PAYMENT_METHODS.includes(data.method)) throw new BusinessRejection('请选择收款方式');
-  order.credit.repaymentRequests.push({ id: ++s.serial, amount: data.amount, method: data.method, status: '待审核', submittedBy: person, submittedById: s.user, submittedAt: time, decidedBy: '', decidedAt: '', decisionNote: '' });
+  order.credit.repaymentRequests.push({ id: ++s.serial, amount: data.amount, method: data.method, status: '待审核', submittedBy: person, submittedById: context ? '' : s.user, ...(context ? { submittedByPrincipalId: context.principalId } : {}), submittedAt: time, decidedBy: '', decidedAt: '', decisionNote: '' });
 }
 export function decideRepayment(s, order, action, data, person, time, authorizeReviewer) {
   need(s, [], 'credit.repay.approve');

@@ -225,6 +225,6 @@ test('expense review: boss attribute and review grants do not enable remaining b
     'rounding.approve','incident.create','incident.resolve.approve','payment.collect','payment.settle','handover','room.open'],configured:true,attributes:[boss]});
   for(const action of ['procurement','repay','approveRepayment','rejectRepayment','approveRounding','rejectRounding',
     'incident','resolveIncident','approveIncidentResolution','rejectIncidentResolution','open','collect','settle','pay','handover']){
-    await assert.rejects(f.app.execute({...expenseReviewCommand(action),action},f.credential),e=>denied(e)&&e.reason==='trusted-action-not-enabled');await assertNoEffects(f);
+    await assert.rejects(f.app.execute({...expenseReviewCommand(action),action},f.credential),e=>denied(e)&&e.reason===(action==='repay'?'missing-permission':'trusted-action-not-enabled'));await assertNoEffects(f);
   }
 });
