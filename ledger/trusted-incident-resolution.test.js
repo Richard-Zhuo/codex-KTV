@@ -127,10 +127,10 @@ test('resolveIncident: unknown resolver/domain faults roll back without consumin
  let fail=true;const domain=fixture({execute:(...args)=>{const next=transact(...args);if(fail)throw Error('synthetic after request');return next;}});
  await assert.rejects(domain.app.execute(cmd,domain.credential),/synthetic after request/);await unchanged(domain);fail=false;assert.equal((await domain.app.execute(cmd,domain.credential)).status,'committed');
 });
-test('resolveIncident: incident approvals and all remaining not-yet-migrated actions stay closed',async()=>{
+test('resolveIncident: all remaining not-yet-migrated actions stay closed',async()=>{
  assert.ok(TRUSTED_ENABLED_ACTIONS.includes('resolveIncident'));
  const f=fixture({permissions:['incident.resolve','incident.resolve.approve','rounding.approve','payment.collect','payment.settle','procurement.create','handover','room.open']});
- for(const action of ['approveIncidentResolution','rejectIncidentResolution','approveRounding','rejectRounding','open','collect','settle','pay','procurement','handover']){
+ for(const action of ['approveRounding','rejectRounding','open','collect','settle','pay','procurement','handover']){
   await assert.rejects(f.app.execute({...resolutionCommand(action),action},f.credential),e=>denied(e)&&e.reason==='trusted-action-not-enabled');
  }await unchanged(f);
 });

@@ -77,16 +77,29 @@ export function submitIncidentResolution(s, data, person, time, execution = { mo
     ...(context ? { submittedByPrincipalId: context.principalId, submittedByEmployeeId: context.actorEmployeeId } : {}) });
   incident.status = '待审核'; incident.lastReminderDate = '';
 }
-export function decideIncidentResolution(s, action, data, person, time, authorizeReviewer) {
-  need(s, [], 'incident.resolve.approve');
+export function decideIncidentResolution(s, action, data, person, time, authorizeReviewer, execution = { mode: 'demo' }) {
+  if (!execution || !['demo', 'trusted'].includes(execution.mode)) throw TypeError('处理结果审核执行模式无效');
+  const context = execution.mode === 'trusted' ? assertTrustedExecutionContext(execution.context) : null;
+  if (context) requireTrustedPermission(context, 'incident.resolve.approve');
+  else need(s, [], 'incident.resolve.approve');
   const incident = (s.incidents || []).find(item => item.id === Number(data.id));
   const request = (incident?.resolutionReviews || []).find(item => item.id === Number(data.request));
   if (!incident || !request || request.status !== '待审核') throw new BusinessRejection('这项客诉／异常恢复申请已经处理');
-  const selfReview = authorizeReviewer(request.submittedById);
+  let selfReview;
+  if (context) {
+    // Only this selected request in the locked ledger state proves its applicant.
+    const applicant = request.submittedByPrincipalId;
+    if (typeof applicant !== 'string' || !applicant || applicant.trim() !== applicant || applicant.length > 191)
+      throw new AuthorizationDenied('untrusted-incident-resolution-applicant');
+    selfReview = applicant === context.principalId;
+    if (selfReview) requireTrustedPermission(context, 'review.self');
+    person = context.actorSnapshot?.displayName ?? null; time = context.dbNow;
+  } else selfReview = authorizeReviewer(request.submittedById);
   const decisionNote = String(data.decisionNote || '').trim().slice(0, 300);
   if (action === 'rejectIncidentResolution' && !decisionNote) throw new BusinessRejection('请填写驳回原因');
   if (action === 'approveIncidentResolution') {
     incident.result = request.result; incident.note = request.note; incident.status = '已完成'; incident.resolvedBy = request.submittedBy; incident.resolvedAt = time; incident.reviewedBy = person; incident.lastReminderDate = '';
   } else incident.status = '待处理';
   request.status = action === 'approveIncidentResolution' ? '已批准' : '已驳回'; request.decidedBy = person; request.decidedAt = time; request.decisionNote = decisionNote; request.selfReviewAuthorized = selfReview;
+  if (context) request.decidedByPrincipalId = context.principalId;
 }

@@ -178,7 +178,7 @@ export async function testTrustedRepay({t,pool,setup,auth,table,provision,seed,i
   const login=await provision(['credit.repay','credit.repay.approve','review.self','rounding.approve','payment.collect','payment.settle','incident.create',
    'incident.resolve','incident.resolve.approve','procurement.create','handover','room.open']),id='repay-closed';await seedFor(id);const run=runFor(id),before=await inspect(id);
   for(const action of ['approveRounding','rejectRounding','collect','settle','pay',
-   'approveIncidentResolution','rejectIncidentResolution','procurement','handover','open']){
+   'procurement','handover','open']){
    await assert.rejects(run.app.execute({...repayCommand(action),action},login.credential),e=>denied(e)&&e.reason==='trusted-action-not-enabled');await assertUnchanged(id,before);
   }
  });

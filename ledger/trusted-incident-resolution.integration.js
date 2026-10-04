@@ -158,8 +158,8 @@ export async function testTrustedIncidentResolution({t,pool,setup,auth,table,pro
   assert.equal((await run.app.execute(cmd,assignee.credential)).status,'committed');const actual=await inspect(id),request=actual.head.state.incidents.at(-1).resolutionReviews[0];
   assert.equal(request.submittedByPrincipalId,assignee.principalId);assert.notEqual(request.submittedByPrincipalId,incident.submittedByPrincipalId);assert.equal(actual.head.revision,2);
  });
- await t.test('resolveIncident: approvals and all other unmigrated actions remain fail closed',async()=>{
+ await t.test('resolveIncident: all other unmigrated actions remain fail closed',async()=>{
   const login=await linked(['incident.resolve','incident.resolve.approve','rounding.approve','payment.collect','payment.settle','procurement.create','handover','room.open']),id='incident-resolution-closed';await seedFor(id,login.employee);const before=await inspect(id);
-  for(const action of ['approveIncidentResolution','rejectIncidentResolution','approveRounding','rejectRounding','collect','settle','pay','procurement','handover','open'])await assert.rejects(application(id).app.execute({...resolutionCommand(action),action},login.credential),e=>denied(e)&&e.reason==='trusted-action-not-enabled');await assertUnchanged(id,before);
+  for(const action of ['approveRounding','rejectRounding','collect','settle','pay','procurement','handover','open'])await assert.rejects(application(id).app.execute({...resolutionCommand(action),action},login.credential),e=>denied(e)&&e.reason==='trusted-action-not-enabled');await assertUnchanged(id,before);
  });
 }

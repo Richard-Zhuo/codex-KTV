@@ -537,6 +537,22 @@ session 重验→existing operation→新 key policy／revision→同 connection
 
 新增单元先在 trusted gate 实际失败；迁移后新增单元 21／21，五文件定向实际 127／127／0／0。已按项目规则尝试 npm test，PowerShell 找不到 npm，未取得该证据。首轮真实数据库实际 544／540／4／0（含根失败）：两项用例夹具误用当前 auth 不接受的旧 incident.viewAll grant，另一个用例未捕获同步 constructor 配置拒绝。仅修正测试为正式具体权限、保留 payload／demo 管理者伪造拒绝，并捕获同步拒绝；生产权限及业务实现未因此改变。修正后四文件 MySQL 实际 544／544／0／0；auth 47／47（原 16＋revalidation 13 继续执行）、employee 40／40（新增 principal resolver 十项）、ledger 20／20（原 11＋10 元边界九项）、trusted 437／437（新增 resolveIncident 23／23）。实际 MySQL 8.4.11／jbhh_ktv_test／InnoDB，无数据库 skip。最终完整 node --test --test-isolation=none 实际 1328／1322／0／6，退出码 0；四套 MySQL 再次全部实际执行，六项 skip 名称与本轮 incident main 回归完全一致。两种 revision／同 key 竞争验证真实独立 CONNECTION_ID，最多一个待审请求效果；独立员工 disable 在 account 锁后按序发生。SQL resolver／audit 中途故障与未知异常全部 rollback，原 key 可修复重试；reconnect 旧终态不重复提交。fixture 仍只操作并清理原十一张已知表，最终只读核对全部清理。本批不改变员工名册、数据库 schema、¥10 小额免零规则、六项 Known Issues 或其他业务 action，不建真人映射；仅第二个独立提交，不合入／push 新提交、不部署。
 
+## P0-1 Stage 2C.3：incident resolution 可信恢复审核（2026-10-05）
+
+先核实线性链 51b722a → e2f4d72 → df02a93，按顺序两次 ff-only 合入 main，无 merge commit。本轮收尾完整 node --test --test-isolation=none 实际 1328／1322／0／6，四套 MySQL 实际执行；fetch 后 origin 未新增，普通 push，main=origin/main=df02a93、0／0、clean。从该 HEAD 直接创建 codex/p0-1-stage2c-incident-resolution-review，本批独立提交 parent 必须为 df02a93，不合入／push 新提交、不部署。
+
+只新增 approveIncidentResolution／rejectIncidentResolution，trusted-enabled 共三十七项；其余八项 open、collect、settle、pay、approveRounding、rejectRounding、procurement、handover 仍 fail closed。既有 application／MySQL store／command-policy 的 session 重验、既有终态查找、新 key 验权与 revision、原子提交协议不改；无新 permission、schema、依赖或真人映射。
+
+rules.js 在 demo operator／clock 求值前委托 incidents.js:decideIncidentResolution 的显式 trusted 分支。两动作从锁定 state 选择本次 resolutionReviews；只读该 request 的 submittedByPrincipalId，与 session principal 相等则需既有 incident.resolve.approve＋review.self，非本人仍需 incident.resolve.approve。不用 incident 创建人、assignee、employee 关联、旧 ID、姓名或 payload 代替申请人；legacy 缺可信 principal 两动作均 AuthorizationDenied，全回滚、不写终态、不占 key。决定保存 request.decidedByPrincipalId；decidedBy／reviewedBy 只用 context 的显示快照（当前 null），decidedAt／批准 resolvedAt 取冻结 dbNow。原批准复制结果／备注、已完成与提醒复位、驳回必填原因并回流待处理、其他历史数据保持，demo 原行为不变。审批不调用 employee resolver。
+
+测试先在未迁移 gate 实际失败，再加入上述两动作及最小身份壳；新增单元实际 25／25，六文件定向回归 152／152／0／0。JavaScript 修改及最终夹具修正后均实际尝试 npm test，PowerShell 找不到 npm，未取得 npm 执行证据，使用当前 package 脚本对应 Node 内置测试。
+
+首轮四文件真实 MySQL 实际 570／564／6／0（五个子用例失败＋根失败）：新夹具误用认证服务不接受的旧混合大小写 grant，以及三个竞争夹具 ledger ID 超过既有列长度。只修正测试 permission 和 ID，不修改生产校验或 schema、不放宽业务断言。修正后四文件真实 MySQL 实际 570／570／0／0：auth 47／47（原 16＋revalidation 13 继续实际执行）、employee 40／40、ledger 20／20（原 11＋¥10 规则九项）、trusted 463／463（新增恢复审核 26／26）。MySQL 8.4.11／jbhh_ktv_test／InnoDB，无数据库 skip。
+
+完整 trusted 登记→负责人提交处理结果→独立无员工关联 reviewer 决定链实测同一 connection 的 head→account→session→grants→一次 DB 时间→operation→domain→state／result／audit→COMMIT；不 touch session activity。三个不同 key 决定竞争及两种同 key 重试，均验证两个不同 CONNECTION_ID、第二连接实际等待 head 锁，最多一次业务决定。两动作的 audit INSERT 约束故障在 head／operation 写入后完整 rollback，未知异常同样不占 key，修复后原 key 成功。撤审核／自审权限并重新建立连接后原 key 返回原终态，新 key 拒绝；disabled／revoked／idle／absolute／credential 失效均在读取 operation 前拒绝。
+
+最终完整 node --test --test-isolation=none 实际 1379／1373／0／6，退出码 0；四套 MySQL 全部再次真实执行，新增恢复审核数据库用例 26／26。原六项 skip 名称与本轮前置提交收尾日志完全一致；¥10 免零规则、sales／reporting、Known Issues、ledger 指纹／revision／terminal、auth／employee store、HTTP／UI 均未修改。fixture 只使用并清理原十一张已知表，最终只读核对剩余 0 张，不 CREATE／DROP DATABASE、不清理其他工作树。仅本批一个提交，不进入下一批。
+
 ## 本轮隔离集成候选（2026-09-29）
 
 来源：用户交付的 `jbhh-ktv-full.zip`，基线 `ca726b2`；纯重构检查点 `74c3f55`；业务修复终点 `6aa01ba`。Track B 来源为 `codex/offsite-contracts@3193635`。候选位于独立工作树的 `codex/track-a-integration`，主工作区未提交内容保留；未合并 `main`、未推送。
