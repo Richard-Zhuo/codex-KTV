@@ -12,18 +12,19 @@ const dbNow = '2026-10-03T08:00:00.123456Z';
 const tokenDigest = Buffer.alloc(32, 7);
 function fixture() {
   const calls = [];
-  const account = { principalId: 'synthetic-a', enabled: true, credentialVersion: '1' };
+  const account = { principalId: 'synthetic-a', enabled: true, credentialVersion: '1', policyAttributesConfigured: false };
   const session = { principalId: account.principalId, sessionId: 'synthetic-session',
     tokenDigest, credentialVersion: '1', revoked: false,
     idleExpiresAt: '2026-10-03T09:00:00.000000Z',
     absoluteExpiresAt: '2026-10-03T12:00:00.000000Z' };
-  const current = { grants: ['room.clean'], now: dbNow };
+  const current = { grants: ['room.clean'], attributes: [], now: dbNow };
   const port = {
     async locateSessionByDigest() { calls.push('locate'); return {
       principalId: account.principalId, sessionId: 'synthetic-session' }; },
     async lockAccount(id) { calls.push('account:' + id); return account; },
     async lockSessionById(id) { calls.push('session:' + id); return session; },
     async listGrants(id) { calls.push('grants:' + id); return [...current.grants]; },
+    async listPolicyAttributes(id) { calls.push('attributes:' + id); return [...current.attributes]; },
     async readDbNow() { calls.push('dbNow'); return current.now; }
   };
   return { port, account, session, calls, current,
@@ -34,7 +35,7 @@ test('revalidation locks account then session then current grants and freezes on
   const f = fixture();
   const context = await f.revalidate();
   assert.deepEqual(f.calls, ['locate', 'account:synthetic-a', 'session:synthetic-session',
-    'grants:synthetic-a', 'dbNow']);
+    'grants:synthetic-a', 'attributes:synthetic-a', 'dbNow']);
   assert.equal(context.principalId, f.account.principalId);
   assert.equal(context.sessionId, f.session.sessionId);
   assert.equal(context.dbNow, dbNow);
@@ -123,7 +124,7 @@ function mysqlFixture(active = true) {
         return [[{ session_id: f.session.sessionId, principal_id: f.account.principalId }]];
       }
       if (sql.includes('FROM `auth_unit`.`auth_accounts`')) {
-        return [[{ principal_id: f.account.principalId, enabled: 1, credential_version: '1' }]];
+        return [[{ principal_id: f.account.principalId, enabled: 1, credential_version: '1', policy_attributes_configured: 0 }]];
       }
       if (sql.includes('FROM `auth_unit`.`auth_sessions`')) {
         return [[{ session_id: f.session.sessionId, principal_id: f.account.principalId,
@@ -131,6 +132,7 @@ function mysqlFixture(active = true) {
           idle_expiry: f.session.idleExpiresAt, absolute_expiry: f.session.absoluteExpiresAt }]];
       }
       if (sql.includes('FROM `auth_unit`.`auth_grants`')) return [[{ permission_id: 'room.clean' }]];
+      if (sql.includes('FROM `auth_unit`.`auth_policy_attributes`')) return [[]];
       if (sql.includes('AS db_now')) return [[{ db_now: dbNow }]];
       throw Error('unexpected test SQL');
     },
@@ -154,6 +156,8 @@ test('MySQL binding uses only caller connection, current reads and no activity o
   assert.ok(locked[1].includes('auth_sessions'));
   assert.ok(locked[2].includes('auth_grants'));
   assert.match(locked[2], /ORDER BY permission_id FOR UPDATE$/);
+  assert.ok(locked[3].includes('auth_policy_attributes'));
+  assert.match(locked[3], /ORDER BY attribute_id FOR UPDATE$/);
   assert.equal(f.calls.filter(sql => sql.includes('AS db_now')).length, 1);
   assert.ok(f.calls.every(sql => sql.startsWith('SELECT ') || sql === 'DO 0'));
 });
@@ -263,4 +267,32 @@ test('replay contract preserves success, revision conflict and business rejectio
   assert.equal(data.audit.length, 1);
   assert.equal(data.operationResults.size, 3);
   assert.equal(f.executions(), 2); // One explicit rejection and one success, never a replay.
+});
+
+
+test('configured attributes are immutable DB facts in principal/context; empty differs from unconfigured', async () => {
+  const f = fixture(); f.account.policyAttributesConfigured = true;
+  const empty = await f.revalidate();
+  assert.equal(empty.policyAttributesConfigured, true);
+  assert.deepEqual(empty.policyAttributeIds, []);
+  assert.equal(requireConfiguredPolicyAttributes(empty), empty.policyAttributeIds);
+  f.current.attributes = ['rounding.self.excess'];
+  const granted = await revalidateSessionInTransaction({ port: f.port, tokenDigest,
+    policyAttributeIds: ['forged'], role: 'administrator' });
+  assert.deepEqual(granted.policyAttributeIds, ['rounding.self.excess']);
+  assert.equal(granted.policyAttributeIds, granted.principal.policyAttributeIds);
+  assert.ok(Object.isFrozen(granted.policyAttributeIds));
+  f.current.attributes = [];
+  assert.deepEqual((await f.revalidate()).policyAttributeIds, []);
+  assert.deepEqual(granted.policyAttributeIds, ['rounding.self.excess']);
+});
+
+test('missing/corrupt configuration and attributes fail closed without inventing role attributes', async () => {
+  for (const mutate of [f => { delete f.account.policyAttributesConfigured; },
+    f => { f.account.policyAttributesConfigured = null; },
+    f => { f.current.attributes = ['rounding.self.excess']; },
+    f => { f.account.policyAttributesConfigured = true; f.current.attributes = ['unknown.attribute']; }]) {
+    const f = fixture(); mutate(f);
+    await assert.rejects(f.revalidate());
+  }
 });

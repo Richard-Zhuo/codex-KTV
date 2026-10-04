@@ -24,10 +24,10 @@ function fixture(action,{permissions=action==='sale'?['staff.record']:['retail.s
   const employees=new Map([[employeeId,{employeeId,displayName:'Synthetic Same Name',enabled:true}],
     [secondId,{employeeId:secondId,displayName:'Synthetic Same Name',enabled:true}]]);
   const port={locateSessionByDigest:async()=>({principalId:auth.id,sessionId:'synthetic-session'}),
-    lockAccount:async()=>{events.push('account');return {principalId:auth.id,enabled:auth.enabled,credentialVersion:auth.version};},
+    lockAccount:async()=>{events.push('account');return {principalId:auth.id,enabled:auth.enabled,credentialVersion: auth.version, policyAttributesConfigured: false};},
     lockSessionById:async()=>{events.push('session');return {principalId:auth.id,sessionId:'synthetic-session',tokenDigest:digest,
       revoked:auth.revoked,credentialVersion:auth.sessionVersion,idleExpiresAt:auth.idle,absoluteExpiresAt:auth.absolute};},
-    listGrants:async()=>{events.push('grants');return auth.permissions;},readDbNow:async()=>{events.push('db-now');return dbNow;}};
+    listGrants:async()=>{events.push('grants');return auth.permissions;},listPolicyAttributes:async()=>[],readDbNow:async()=>{events.push('db-now');return dbNow;}};
   let context,executions=0,hasResolver=resolver,failure=null;
   const store={ledgerId:memory.ledgerId,runAtomic:work=>memory.runAtomic(tx=>{
     events.push('head');const lookup=tx.findOperationResult;

@@ -22,10 +22,11 @@ function fixture({ permissions = ['order.gift'], prepare = () => {}, execute = t
   const auth = { id: 'synthetic-gift-actor', permissions, enabled: true, revoked: false, credentialVersion: 1, sessionVersion: 1,
     idle: '2099-01-01T00:00:00.000000Z', absolute: '2099-01-02T00:00:00.000000Z' };
   const port = { locateSessionByDigest: async () => ({ principalId: auth.id, sessionId: 'synthetic-gift-session' }),
-    lockAccount: async () => { events.push('account'); return { principalId: auth.id, enabled: auth.enabled, credentialVersion: auth.credentialVersion }; },
+    lockAccount: async () => { events.push('account'); return { principalId: auth.id, enabled: auth.enabled, credentialVersion: auth.credentialVersion, policyAttributesConfigured: false }; },
     lockSessionById: async () => { events.push('session'); return { principalId: auth.id, sessionId: 'synthetic-gift-session', tokenDigest: digest,
       revoked: auth.revoked, credentialVersion: auth.sessionVersion, idleExpiresAt: auth.idle, absoluteExpiresAt: auth.absolute }; },
     listGrants: async () => { events.push('grants'); return auth.permissions; },
+    listPolicyAttributes: async () => [],
     readDbNow: async () => { events.push('db-now'); return dbNow; } };
   let executions = 0, context;
   const store = { ledgerId: memory.ledgerId, runAtomic: work => memory.runAtomic(tx => {

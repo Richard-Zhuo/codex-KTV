@@ -30,10 +30,11 @@ function fixture({permissions=['staff.record'],setup=()=>{},resolver=true,execut
   let context,executionCount=0,resolverFailure=null,hasResolver=resolver;
   const port={
     locateSessionByDigest:async()=>({principalId:auth.id,sessionId:'synthetic-session'}),
-    lockAccount:async()=>{events.push('account');return {principalId:auth.id,enabled:auth.enabled,credentialVersion:auth.version};},
+    lockAccount:async()=>{events.push('account');return {principalId:auth.id,enabled:auth.enabled,credentialVersion: auth.version, policyAttributesConfigured: false};},
     lockSessionById:async()=>{events.push('session');return {principalId:auth.id,sessionId:'synthetic-session',tokenDigest:digest,
       revoked:auth.revoked,credentialVersion:auth.sessionVersion,idleExpiresAt:auth.idle,absoluteExpiresAt:auth.absolute};},
     listGrants:async()=>{events.push('grants');return auth.permissions;},
+    listPolicyAttributes: async () => [],
     readDbNow:async()=>{events.push('db-now');return dbNow;}
   };
   const store={ledgerId:memory.ledgerId,runAtomic:work=>memory.runAtomic(tx=>{

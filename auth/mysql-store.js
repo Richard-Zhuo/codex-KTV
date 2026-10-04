@@ -1,6 +1,6 @@
 // MySQL persistence port. Account is the first auth lock on every path.
 import { lockSessionForDigest, revalidateSessionInTransaction, sessionValidAt } from './session-revalidation.js';
-const tableNames = ['auth_accounts', 'auth_credentials', 'auth_grants', 'auth_sessions', 'auth_events'];
+const tableNames = ['auth_accounts', 'auth_credentials', 'auth_grants', 'auth_sessions', 'auth_events', 'auth_policy_attributes'];
 
 export class AuthCommitOutcomeUnknown extends Error {
   constructor(cause) {
@@ -22,6 +22,7 @@ export function createMySqlAuthStore({ pool, database }) {
   const grants = names.auth_grants;
   const sessions = names.auth_sessions;
   const events = names.auth_events;
+  const attributes = names.auth_policy_attributes;
 
   const transactionPort = connection => {
     const port = {
@@ -53,10 +54,12 @@ export function createMySqlAuthStore({ pool, database }) {
 
     async lockAccount(principalId) {
       const [[row]] = await connection.execute(
-        'SELECT principal_id, enabled, credential_version FROM ' + accounts +
+        'SELECT principal_id, enabled, credential_version, policy_attributes_configured FROM ' + accounts +
         ' WHERE principal_id = ? FOR UPDATE', [principalId]);
+      if (row && ![0, 1].includes(row.policy_attributes_configured)) throw Error('policy attributes 配置事实无效');
       return row && { principalId: row.principal_id, enabled: row.enabled === 1,
-        credentialVersion: String(row.credential_version) };
+        credentialVersion: String(row.credential_version),
+        policyAttributesConfigured: row.policy_attributes_configured === 1 };
     },
 
     async insertSession({ sessionId, principalId, digest, credentialVersion,
@@ -119,6 +122,42 @@ export function createMySqlAuthStore({ pool, database }) {
         'SELECT permission_id FROM ' + grants + ' WHERE principal_id = ? ORDER BY permission_id FOR UPDATE',
         [principalId]);
       return rows.map(row => row.permission_id);
+    },
+
+    async listPolicyAttributes(principalId) {
+      const [rows] = await connection.execute('SELECT attribute_id FROM ' + attributes +
+        ' WHERE principal_id = ? ORDER BY attribute_id FOR UPDATE', [principalId]);
+      return rows.map(row => row.attribute_id);
+    },
+
+    async configurePolicyAttributes(principalId) {
+      const [result] = await connection.execute('UPDATE ' + accounts +
+        ' SET policy_attributes_configured = 1 WHERE principal_id = ? AND policy_attributes_configured = 0', [principalId]);
+      if (result.affectedRows !== 1) throw Error('policy attributes 配置未完成');
+    },
+
+    async addPolicyAttribute(principalId, attributeId) {
+      const [rows] = await connection.execute('SELECT attribute_id FROM ' + attributes +
+        ' WHERE principal_id = ? AND attribute_id = ? FOR UPDATE', [principalId, attributeId]);
+      if (rows.length) return false;
+      const [result] = await connection.execute('INSERT INTO ' + attributes +
+        ' (principal_id, attribute_id) VALUES (?, ?)', [principalId, attributeId]);
+      if (result.affectedRows !== 1) throw Error('policy attribute 授予未完成');
+      return true;
+    },
+
+    async removePolicyAttribute(principalId, attributeId) {
+      const [result] = await connection.execute('DELETE FROM ' + attributes +
+        ' WHERE principal_id = ? AND attribute_id = ?', [principalId, attributeId]);
+      return result.affectedRows === 1;
+    },
+
+    async appendPolicyAttributeEvent({ actorPrincipalId, principalId, eventType, attributeId }) {
+      // principal_id is the target; actor_principal_id is the actual trusted operator.
+      const [result] = await connection.execute('INSERT INTO ' + events +
+        ' (principal_id, actor_principal_id, event_type, policy_attribute_id) VALUES (?, ?, ?, ?)',
+      [principalId, actorPrincipalId, eventType, attributeId]);
+      if (result.affectedRows !== 1) throw Error('policy attributes 审计未写入');
     },
 
     async findSessionByIdForUpdate(sessionId) {

@@ -16,11 +16,11 @@ Migration 只能在已核实的空目标数据库执行一次。MySQL DDL 每条
 
 `auth/mysql-store.js` 对组合写入使用一条连接和单个事务；凭据校验及成功 session／审计写入在此事务内完成，SQL 失败回滚。session 每次认证重读启用状态、凭据版本和 grants；权限不写入 token 或 session。`auth/rate-limit.js` 的单进程实现仅是显式限流 port 的当前实现，未来多进程 HTTP 入口须换共享限流器。正式登录标识、初始密码发放与恢复仍待门店决定。
 
-真实测试可使用 `AUTH_MYSQL_TEST_URL`，未设时复用已明确的 `LEDGER_MYSQL_TEST_URL`；连接必须实际选中 `jbhh_ktv_test`，且为 MySQL 8.4／默认 InnoDB。若 auth 表已存在，测试拒绝执行；测试只删除该次成功创建的五张 auth 表，不创建／删除数据库，不碰 ledger 表。DDL 每条独立提交，部分失败须检查后处理。
+真实测试可使用 `AUTH_MYSQL_TEST_URL`，未设时复用已明确的 `LEDGER_MYSQL_TEST_URL`；连接必须实际选中 `jbhh_ktv_test`，且为 MySQL 8.4／默认 InnoDB。若 auth 表已存在，测试拒绝执行；当前测试另执行 004，只删除该次成功创建的六张 auth 表（含 auth_policy_attributes），不创建／删除数据库，不碰 ledger 表。DDL 每条独立提交，部分失败须检查后处理。
 
-Stage 2C.1 另提供 `bindSessionRevalidation(connection)`，复用调用方已开启的事务，不管理连接生命周期或活动更新时间；account-first 锁序、当前 grants、单次 DB UTC 时间和未配置属性的接口契约见 [ARCHITECTURE](../docs/ARCHITECTURE.md)。未新增表或 migration；已迁移房间（含恢复审核）、目录、存取酒、预约、销售、配品／其他消费、换酒及库存申请／审核及 gift 提交／审批动作已消费此能力，精确执行顺序与 demo 隔离见 [ARCHITECTURE](../docs/ARCHITECTURE.md)，真实验收状态见 [CURRENT_STAGE](../docs/CURRENT_STAGE.md)。
+Stage 2C.1 另提供 `bindSessionRevalidation(connection)`，复用调用方已开启的事务，不管理连接生命周期或活动更新时间；account-first 锁序、当前 grants、单次 DB UTC 时间和配置属性的接口契约见 [ARCHITECTURE](../docs/ARCHITECTURE.md)。2C.1 当时未新增表或 migration，当前属性基础另由下述 004 提供；已迁移房间（含恢复审核）、目录、存取酒、预约、销售、配品／其他消费、换酒及库存申请／审核及 gift 提交／审批动作已消费此能力，精确执行顺序与 demo 隔离见 [ARCHITECTURE](../docs/ARCHITECTURE.md)，真实验收状态见 [CURRENT_STAGE](../docs/CURRENT_STAGE.md)。
 
-2C.2 建立的独立房间命令集成 fixture 原用以上两个 migration；2C.3 的房间异常、目录维护、取消预约、存取酒、reserve、销售、配品／其他消费及换酒复用同一 fixture，现为 reserve 另执行 003_mysql_employee_core.sql；目录用例由 ledger/trusted-catalog.integration.js 承载，取消预约用例由 ledger/trusted-cancel-reservation.integration.js 承载，存取酒用例由 ledger/trusted-deposits.integration.js 承载，reserve 用例由 ledger/trusted-reserve.integration.js 承载；销售用例由 ledger/trusted-sales.integration.js 承载；配品／其他消费用例由 ledger/trusted-order-additions.integration.js 承载；换酒用例由 ledger/trusted-exchange.integration.js 承载；房间恢复审核由 ledger/trusted-room-issue-review.integration.js 承载，库存申请由 ledger/trusted-stock.integration.js 承载；库存审核由 ledger/trusted-inventory-review.integration.js 承载；gift 提交由 ledger/trusted-gift.integration.js 承载；gift 审批由 ledger/trusted-gift-review.integration.js 承载；各 helper 均不负责 DDL／清理；严格验证 URL 与实际库为 `jbhh_ktv_test`、版本 8.4、引擎 InnoDB；拒绝预存 auth／employee 表，结束仅按外键顺序删除本次创建的十张 auth／ledger／employee 表。原 auth fixture 仍只操作其五表，原 ledger fixture 仍只操作其三表。三套 fixture 以 setup connection 的具名锁串行 DDL，连接结束释放；命令并发仍用真实 InnoDB 行锁，测试锁不进入生产 adapter。不创建／删除数据库，不操作其他表。
+2C.2 建立的独立房间命令集成 fixture 原用以上两个 migration；2C.3 的房间异常、目录维护、取消预约、存取酒、reserve、销售、配品／其他消费及换酒复用同一 fixture，现为 reserve 另执行 003_mysql_employee_core.sql；目录用例由 ledger/trusted-catalog.integration.js 承载，取消预约用例由 ledger/trusted-cancel-reservation.integration.js 承载，存取酒用例由 ledger/trusted-deposits.integration.js 承载，reserve 用例由 ledger/trusted-reserve.integration.js 承载；销售用例由 ledger/trusted-sales.integration.js 承载；配品／其他消费用例由 ledger/trusted-order-additions.integration.js 承载；换酒用例由 ledger/trusted-exchange.integration.js 承载；房间恢复审核由 ledger/trusted-room-issue-review.integration.js 承载，库存申请由 ledger/trusted-stock.integration.js 承载；库存审核由 ledger/trusted-inventory-review.integration.js 承载；gift 提交由 ledger/trusted-gift.integration.js 承载；gift 审批由 ledger/trusted-gift-review.integration.js 承载；各 helper 均不负责 DDL／清理；严格验证 URL 与实际库为 `jbhh_ktv_test`、版本 8.4、引擎 InnoDB；拒绝预存 auth／employee 表，结束仅按外键顺序删除本次创建的十一张 auth／ledger／employee 表（含属性表）。当前 auth fixture 只操作其六表，原 ledger fixture 仍只操作其三表。三套 fixture 以 setup connection 的具名锁串行 DDL，连接结束释放；命令并发仍用真实 InnoDB 行锁，测试锁不进入生产 adapter。不创建／删除数据库，不操作其他表。
 
 ## 员工名册与显式关联
 
@@ -28,13 +28,22 @@ Stage 2C.1 另提供 `bindSessionRevalidation(connection)`，复用调用方已�
 
 内部接口及锁序见 [ARCHITECTURE](../docs/ARCHITECTURE.md)。关系变更和事件在一条 connection／事务提交；员工停用、账号停用互不联动，不提供硬删除或 ID 重用。事务内归属解析当前仅被 trusted reserve／sale／retailSale 调用；bindEmployeeResolver(connection) 只在调用方活动事务内按 UUID 做 FOR SHARE 当前读取，返回启用员工的 ID／显示名快照，不读取 principal 关联或管理事务。接口、锁序与证据见 ARCHITECTURE／CURRENT_STAGE；预约／销售新记录的快照字段与精确链见 ARCHITECTURE；历史姓名、旧 USERS 及其他业务 action 保持。
 
-真实名册 fixture 从 LEDGER_MYSQL_TEST_URL 取得已指定 jbhh_ktv_test，验证 URL／实际库／MySQL 8.4／InnoDB，拒绝预存的五张 auth 表及两张 employee 表。与原 fixture 共用具名测试锁，只清理本次创建的七表，按 employee_events → employees → auth_events → auth_sessions → auth_grants → auth_credentials → auth_accounts 顺序；不操作 ledger 三表，不 CREATE／DROP database。SQL 故障注入只将 employee_events INSERT 列名改为不存在列，实际数据库拒绝后验证此前 employee 写入回滚。证据见 [CURRENT_STAGE](../docs/CURRENT_STAGE.md)。
+真实名册 fixture 从 LEDGER_MYSQL_TEST_URL 取得已指定 jbhh_ktv_test，验证 URL／实际库／MySQL 8.4／InnoDB，拒绝预存的六张 auth 表（含属性表）及两张 employee 表。与原 fixture 共用具名测试锁，只清理本次创建的八表，按 employee_events → employees → auth_policy_attributes → auth_events → auth_sessions → auth_grants → auth_credentials → auth_accounts 顺序；不操作 ledger 三表，不 CREATE／DROP database。SQL 故障注入只将 employee_events INSERT 列名改为不存在列，实际数据库拒绝后验证此前 employee 写入回滚。证据见 [CURRENT_STAGE](../docs/CURRENT_STAGE.md)。
+
+## Policy attributes 配置与审计
+
+`migrations/004_mysql_auth_policy_attributes.sql` 依赖 002 的 auth 表，按编号执行时位于 003 后；auth-only fixture 可只执行 002 → 004。三个 DDL statement 分别增加 account 配置标志、创建 InnoDB auth_policy_attributes、扩展 auth_events。脚本仅运行一次；重复执行第一条明确拒绝（重复字段或 CHECK 名），不静默跳过部分结构；DDL 不是整体可回滚事务，部分失败须检查每条实际完成情况后处理，不能自动删除数据。原 002 和 003 不改写。
+
+默认所有账号未配置（false/null），显式 configure 后可为空（true/[]）。属性主键和 FK 保证唯一且关联稳定 principal，当前只支持 rounding.self.excess；granted_at／occurred_at 取数据库 UTC。新属性事件的 principal_id 是 target，actor_principal_id 是 actual actor；旧事件保持空 actor，不伪造过去事实。内部接口、account-first 锁序、同事务认证的当前读取及 secret 排除见 [ARCHITECTURE](../docs/ARCHITECTURE.md)。不 seed 真人配置，不开放新业务动作。
+
+测试辅助器 `test-support/mysql-policy-attributes-fixture.js` 只在调用方已核实的专用库、拒绝预存 auth／属性表、且本轮已经创建 002 表后执行 004；只登记成功创建的 auth_policy_attributes，清理顺序早于 auth_accounts，绝不 CREATE／DROP DATABASE。新增 attributes helper 在同一 auth fixture 验证真实双连接锁序／重复授予、当前读及 SQL 中途失败 rollback；结果见 CURRENT_STAGE。
 
 ## 文件
 
 - `migrations/001_mysql_ledger_core.sql`：当前 MySQL 过渡账本三表。
 - `migrations/002_mysql_auth_core.sql`：独立认证与 session 基础五表；无真人 seed。
 - `migrations/003_mysql_employee_core.sql`：employees／employee_events 名册与关联审计；无员工或账号 seed。
+- `migrations/004_mysql_auth_policy_attributes.sql`：显式属性配置标志、属性集合和独立 actual actor／target 审计；无真人 seed。
 - `schema.sql`：旧 PostgreSQL 关系型业务表、约束、索引，以及金山日报和支出表的原始暂存区。
 - `seed.sql`：旧 PostgreSQL 草案中的当前门店、9 个房间、员工岗位说明、具体权限、商品与库存项目。
 - `kdocs-import.md`：旧关系型草案中的金山文档字段映射；正式 MySQL 导入尚未设计。

@@ -11,6 +11,7 @@ import { digestSessionToken } from '../auth/session-token.js';
 import { createTrustedLedgerApplication } from './application.js';
 import { createMySqlLedgerStore } from './mysql-store.js';
 import { encodeLedgerSnapshot, decodeLedgerJson } from './mysql-snapshot.js';
+import { applyPolicyAttributeMigration, policyAttributeTables } from '../test-support/mysql-policy-attributes-fixture.js';
 import { acquireMySqlFixtureLock } from '../test-support/mysql-fixture-lock.js';
 import { testTrustedCatalogCommands } from './trusted-catalog.integration.js';
 import { runTrustedCancelReservationIntegration } from './trusted-cancel-reservation.integration.js';
@@ -64,7 +65,7 @@ test('MySQL trusted clean vertical slice in jbhh_ktv_test',
       t.diagnostic('MySQL ' + target.version + '; database ' + database + '; engine ' + target.engine);
       await acquireMySqlFixtureLock(setup);
       const [existingAuth] = await setup.execute('SELECT table_name FROM information_schema.tables ' +
-        'WHERE table_schema = ? AND table_name IN (?, ?, ?, ?, ?, ?, ?)', [database, ...authTables, ...employeeTables]);
+        'WHERE table_schema = ? AND table_name IN (?, ?, ?, ?, ?, ?, ?, ?)', [database, ...authTables, ...employeeTables, ...policyAttributeTables]);
       assert.equal(existingAuth.length, 0, '拒绝删除预存 auth／employee 表');
       // The user explicitly designated these three ledger tables as disposable test tables.
       for (const name of [...ledgerTables].reverse()) await setup.query('DROP TABLE IF EXISTS ' + table(name));
@@ -76,10 +77,11 @@ test('MySQL trusted clean vertical slice in jbhh_ktv_test',
         for (let index = 0; index < statements.length; index++) {
           await setup.query(statements[index]); created.push(names[index]);
         }
+        if (names === authTables) await applyPolicyAttributeMigration(setup, created);
       }
       const [engines] = await setup.execute('SELECT engine FROM information_schema.tables WHERE table_schema = ? ' +
-        'AND table_name IN (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)', [database, ...ledgerTables, ...authTables, ...employeeTables]);
-      assert.equal(engines.length, 10); assert.ok(engines.every(row => row.ENGINE === 'InnoDB' || row.engine === 'InnoDB'));
+        'AND table_name IN (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)', [database, ...ledgerTables, ...authTables, ...employeeTables, ...policyAttributeTables]);
+      assert.equal(engines.length, 11); assert.ok(engines.every(row => row.ENGINE === 'InnoDB' || row.engine === 'InnoDB'));
       const poolOptions = { uri: testUrl, database, connectionLimit: 5, waitForConnections: true,
         supportBigNumbers: true, bigNumberStrings: true };
       pool = mysql.createPool(poolOptions);

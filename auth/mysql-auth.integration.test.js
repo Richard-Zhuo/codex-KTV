@@ -7,11 +7,14 @@ import { createMySqlAuthStore } from './mysql-store.js';
 import { createAuthService } from './service.js';
 import { createMemoryLoginRateLimiter } from './rate-limit.js';
 import { digestSessionToken } from './session-token.js';
+import { verifyPolicyAttributes } from './policy-attributes.integration.js';
 import { verifySessionRevalidation } from './session-revalidation.integration.js';
+import { applyPolicyAttributeMigration, policyAttributeTables } from '../test-support/mysql-policy-attributes-fixture.js';
 
 const testUrl = process.env.AUTH_MYSQL_TEST_URL || process.env.LEDGER_MYSQL_TEST_URL;
 const database = 'jbhh_ktv_test';
 const tables = ['auth_accounts', 'auth_credentials', 'auth_grants', 'auth_sessions', 'auth_events'];
+const allTables = [...tables, ...policyAttributeTables];
 const password = 'synthetic-password-2B-only';
 const quote = String.fromCharCode(96);
 const qualified = name => quote + database + quote + '.' + quote + name + quote;
@@ -48,8 +51,8 @@ test('MySQL 8.4 InnoDB auth integration in jbhh_ktv_test',
 
       await acquireMySqlFixtureLock(setup);
       const [existing] = await setup.execute(
-        'SELECT table_name FROM information_schema.tables WHERE table_schema = ? AND table_name IN (?, ?, ?, ?, ?)',
-        [database, ...tables]);
+        'SELECT table_name FROM information_schema.tables WHERE table_schema = ? AND table_name IN (?, ?, ?, ?, ?, ?)',
+        [database, ...allTables]);
       assert.equal(existing.length, 0,
         'auth 表已存在；停止，不清理来源不明的表');
       const migration = await readFile(
@@ -62,10 +65,11 @@ test('MySQL 8.4 InnoDB auth integration in jbhh_ktv_test',
         await setup.query(statements[index]);
         created.push(tables[index]);
       }
+      const attributeStatements = await applyPolicyAttributeMigration(setup, created);
       const [engines] = await setup.execute(
-        'SELECT table_name AS table_name, engine AS engine FROM information_schema.tables WHERE table_schema = ? AND table_name IN (?, ?, ?, ?, ?)',
-        [database, ...tables]);
-      assert.equal(engines.length, tables.length);
+        'SELECT table_name AS table_name, engine AS engine FROM information_schema.tables WHERE table_schema = ? AND table_name IN (?, ?, ?, ?, ?, ?)',
+        [database, ...allTables]);
+      assert.equal(engines.length, allTables.length);
       assert.ok(engines.every(row => row.engine === 'InnoDB'));
       await assert.rejects(setup.query(statements[0]),
         error => error.code === 'ER_TABLE_EXISTS_ERROR');
@@ -357,6 +361,7 @@ test('MySQL 8.4 InnoDB auth integration in jbhh_ktv_test',
         assert.equal(uncommitted.length, 0);
       });
       await verifySessionRevalidation(t, { pool, database, qualified });
+      await verifyPolicyAttributes(t, { pool, database, qualified, attributeStatements });
     } finally {
       try { if (pool) await pool.end(); }
       finally {

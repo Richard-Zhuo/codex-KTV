@@ -20,10 +20,10 @@ function fixture(action,{permissions=[orderAdditionPermission(action)],setup=()=
   const auth={id:'synthetic-session-actor',permissions,enabled:true,revoked:false,version:1,sessionVersion:1,
     idle:'2099-01-01T00:00:00.000000Z',absolute:'2099-01-02T00:00:00.000000Z'};
   const port={locateSessionByDigest:async()=>({principalId:auth.id,sessionId:'synthetic-session'}),
-    lockAccount:async()=>{events.push('account');return {principalId:auth.id,enabled:auth.enabled,credentialVersion:auth.version};},
+    lockAccount:async()=>{events.push('account');return {principalId:auth.id,enabled:auth.enabled,credentialVersion: auth.version, policyAttributesConfigured: false};},
     lockSessionById:async()=>{events.push('session');return {principalId:auth.id,sessionId:'synthetic-session',tokenDigest:digest,
       revoked:auth.revoked,credentialVersion:auth.sessionVersion,idleExpiresAt:auth.idle,absoluteExpiresAt:auth.absolute};},
-    listGrants:async()=>{events.push('grants');return auth.permissions;},readDbNow:async()=>{events.push('db-now');return dbNow;}};
+    listGrants:async()=>{events.push('grants');return auth.permissions;},listPolicyAttributes:async()=>[],readDbNow:async()=>{events.push('db-now');return dbNow;}};
   let context,executions=0;
   const store={ledgerId:memory.ledgerId,runAtomic:work=>memory.runAtomic(tx=>{
     events.push('head');const find=tx.findOperationResult;tx.findOperationResult=key=>{events.push('operation');return find(key);};

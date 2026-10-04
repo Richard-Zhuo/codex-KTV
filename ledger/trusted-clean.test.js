@@ -43,12 +43,13 @@ function fixture({ permissions = ['room.clean'], transactCommand = transact, set
   const port = {
     locateSessionByDigest: async () => ({ principalId: auth.principalId, sessionId: 'synthetic-session' }),
     lockAccount: async () => { events.push('account'); return { principalId: auth.principalId,
-      enabled: auth.enabled, credentialVersion: auth.credentialVersion }; },
+      enabled: auth.enabled, credentialVersion: auth.credentialVersion, policyAttributesConfigured: false }; },
     lockSessionById: async () => { events.push('session'); return { principalId: auth.principalId,
       sessionId: 'synthetic-session', tokenDigest, revoked: auth.revoked,
       credentialVersion: auth.sessionVersion, idleExpiresAt: auth.idleExpiresAt,
       absoluteExpiresAt: auth.absoluteExpiresAt }; },
     listGrants: async () => { events.push('grants'); return [...auth.permissions]; },
+    listPolicyAttributes: async () => [],
     readDbNow: async () => { events.push('db-now'); return dbNow; }
   };
   const store = { ledgerId: memory.ledgerId, read: memory.read, runAtomic: work =>

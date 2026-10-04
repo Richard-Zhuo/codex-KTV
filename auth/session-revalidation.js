@@ -43,13 +43,17 @@ export async function revalidateSessionInTransaction({ port, tokenDigest }) {
   if (!account.enabled || session.revoked ||
       session.credentialVersion !== account.credentialVersion) return null;
   const permissionIds = await port.listGrants(account.principalId);
-  const dbNow = await port.readDbNow(); // Exactly once, after account/session/grant locks.
+  const attributeIds = await port.listPolicyAttributes(account.principalId);
+  if (typeof account.policyAttributesConfigured !== 'boolean' || !Array.isArray(attributeIds) ||
+      (!account.policyAttributesConfigured && attributeIds.length)) throw Error('policy attributes 配置事实无效');
+  const dbNow = await port.readDbNow(); // Exactly once, after account/session/grant/attribute locks.
   if (!sessionValidAt(locked, dbNow)) return null;
-  const principal = createTrustedPrincipal({ id: account.principalId, permissionIds });
+  const principal = createTrustedPrincipal({ id: account.principalId, permissionIds, policyAttributeIds: attributeIds });
   const context = Object.freeze({
     mode: 'trusted', principal, principalId: principal.id, sessionId: session.sessionId,
     permissionIds: principal.permissionIds,
-    policyAttributesConfigured: false, policyAttributeIds: null,
+    policyAttributesConfigured: account.policyAttributesConfigured,
+    policyAttributeIds: account.policyAttributesConfigured ? principal.policyAttributeIds : null,
     dbNow, actorSnapshot: null
   });
   return registerTrustedExecutionContext(context);

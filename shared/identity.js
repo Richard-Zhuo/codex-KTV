@@ -102,6 +102,10 @@ export function registerTrustedExecutionContext(context) {
       !Object.isFrozen(context.permissionIds) || typeof context.principalId !== 'string' || !context.principalId ||
       context.principalId !== context.principal?.id ||
       context.permissionIds !== context.principal?.permissionIds ||
+      typeof context.policyAttributesConfigured !== 'boolean' ||
+      !Array.isArray(context.principal?.policyAttributeIds) || !Object.isFrozen(context.principal.policyAttributeIds) ||
+      (context.policyAttributesConfigured ? context.policyAttributeIds !== context.principal.policyAttributeIds :
+        context.policyAttributeIds !== null || context.principal.policyAttributeIds.length !== 0) ||
       typeof context.sessionId !== 'string' || !context.sessionId ||
       !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{6}Z$/.test(context.dbNow) ||
       !Number.isFinite(Date.parse(context.dbNow))) throw TypeError('事务内可信认证上下文无效');

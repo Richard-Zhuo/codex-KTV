@@ -354,6 +354,25 @@ JavaScript 修改后实际尝试 npm test，PowerShell 报 The term 'npm' is not
 
 本批仅一个独立提交，parent 为 048cd23；main／origin/main 保持已同步基线，新提交不 push，不进入下一批，不部署。赠酒业务规则不变，无范围偏离。
 
+## P0-1 policy attributes 基础（2026-10-04）
+
+先核实 8fdba43 的直接 parent 为 048cd23，ff-only 合入 main；本次在 main 实际运行完整回归 914 / 908 / 0 / 6，真实 MySQL 全部执行。fetch 后确认远端无新增，普通 push 完成 main = origin/main = 8fdba43、0/0、clean。随后从该 HEAD 创建 codex/p0-1-auth-policy-attributes，本批只有属性基础设施，不开放新的业务 action。
+
+新增 004_mysql_auth_policy_attributes.sql：InnoDB auth_policy_attributes、auth_accounts.policy_attributes_configured 默认 0、auth_events 的 actual actor／target 属性变更审计。未配置返回 false/null；显式 configure 后可返回 true/[]。configure／grant／revoke 位于独立 auth/policy-attributes.js；实际内部 actor 与 target 分开校验，两者 account 按 UUID 升序锁定，变更与事件同事务，重复变更不增加事件；grant／revoke 要求先配置。未配置却已有异常属性行时 configure 拒绝且不改状态，不静默采纳未经审计的属性；合成及真实数据库回归均覆盖。当前唯一支持的属性 rounding.self.excess 保持既有表达，不替代审核权限或 review.self。
+
+同事务 revalidation 当前读 account 配置标志、grants 和属性集合，按 account → session → grants → attributes 取一次 DB UTC，创建可信 principal/context。只使用调用方 connection，不管理事务、不 touch session 活动；已配置空集合明确区分于未配置，字段缺失／集合不一致／未知属性停写失败，不从请求、姓名或演示 role 补全。真实账号停用与已有撤销／过期／凭据版本规则保持；API 仍是内部管理能力，未接管理授权、HTTP 或 UI，不创建真人账号／属性配置。
+
+实际测试证据（total / pass / fail / skip）：
+
+- 按项目规则尝试 npm test；PowerShell 报 The term 'npm' is not recognized，npm 未启动，未取得 npm test 证据。
+- node --test --test-isolation=none auth/policy-attributes.test.js auth/session-revalidation.test.js：31 / 31 / 0 / 0。
+- 上述两文件加原十套已迁移 trusted 单元 fixture：269 / 269 / 0 / 0；仅为合成数据库 port 增加明确未配置标志与空属性查询，业务断言不改。
+- 专用库 jbhh_ktv_test，MySQL 8.4.11 / InnoDB：四套真实 MySQL 回归共 350 / 350 / 0 / 0；auth 43/43（保留原 29，含 revalidation 13；新增 attributes 14）、employee 30/30、ledger 11/11、trusted 266/266。
+- 新 14 项验证了 004 实际执行与重复执行拒绝、默认／空集合、即时 grant/revoke 与重复安全、actual actor／target 及 DB UTC 无秘密审计、停用／未知账号、旧 REPEATABLE READ 快照后的当前读、只读连接能力／冻结时间、配置与 grant/revoke 的双向并发顺序、双连接重复 grant、交叉 actor／target 稳定锁序、配置／grant／revoke 审计 SQL 故障完整 rollback、FK／唯一／shape 约束与原 rounding 属性表达。并发实际比较不同 CONNECTION_ID，不用单连接模拟。
+- 完整 node --test --test-isolation=none：936 / 930 / 0 / 6，退出码 0；skip 仍仅原六项 Known Issues，没有数据库 skip。
+
+测试只在核实的专用库创建/迁移/清理本轮 fixture 拥有的表；auth 六表、employee 八表、trusted 十一表，未 CREATE/DROP database。历史 002/003、rules.js、ledger application/store、指纹、operationKey、revision、终态 replay 及 trusted-enabled 二十四动作均不改；没有新增生产依赖、岗位限制、真人映射、业务 action、部署或本批 push。
+
 ## 本轮隔离集成候选（2026-09-29）
 
 来源：用户交付的 `jbhh-ktv-full.zip`，基线 `ca726b2`；纯重构检查点 `74c3f55`；业务修复终点 `6aa01ba`。Track B 来源为 `codex/offsite-contracts@3193635`。候选位于独立工作树的 `codex/track-a-integration`，主工作区未提交内容保留；未合并 `main`、未推送。
@@ -490,7 +509,7 @@ JavaScript 修改后实际尝试 npm test，PowerShell 报 The term 'npm' is not
 
 ## 下一步
 
-只读快照预检器、Stage 1A／1A.1／1A.2 协议、Stage 1B-MySQL 适配器、Stage 2A 纯命令策略及 Stage 2B 独立认证基础已完成；Stage 1B.1 和 Stage 2B 已分别在专用 MySQL 8.4 测试库取得真实验收证据。Stage 2C.1 同事务认证、2C.2 clean 及 2C.3 房间异常、目录维护、取消预约、存取酒、reserve、sale／retailSale、serveExtra／otherCharge、exchange、房间恢复 approve／reject、stock／consumableStock、approveInventory／rejectInventory 及 gift 提交／approveGift／rejectGift 已通过真实数据库验收；其他未列动作仍未迁移，各批及线性整合验收见上节；员工名册、关联审计与事务内归属解析已真实验收，resolver 已仅接 trusted reserve／sale／retailSale，其余正式 action 和审核尚未迁移，HTTP／客户端及 2D 未开始，当前停止在本批。正式营业日和班次规则已确认的部分见 [REQUIREMENTS](./REQUIREMENTS.md)，运行实现仍属后续任务。
+只读快照预检器、Stage 1A／1A.1／1A.2 协议、Stage 1B-MySQL 适配器、Stage 2A 纯命令策略及 Stage 2B 独立认证基础已完成；Stage 1B.1 和 Stage 2B 已分别在专用 MySQL 8.4 测试库取得真实验收证据。Stage 2C.1 同事务认证、2C.2 clean 及 2C.3 房间异常、目录维护、取消预约、存取酒、reserve、sale／retailSale、serveExtra／otherCharge、exchange、房间恢复 approve／reject、stock／consumableStock、approveInventory／rejectInventory 及 gift 提交／approveGift／rejectGift 已通过真实数据库验收；其他未列动作仍未迁移，各批及线性整合验收见上节；员工名册、关联审计与事务内归属解析已真实验收，resolver 已仅接 trusted reserve／sale／retailSale，其余正式 action 和审核尚未迁移，policy attributes 配置／审计与同事务当前读已完成，未开放新动作；HTTP／客户端及 2D 未开始，当前停止在本批。正式营业日和班次规则已确认的部分见 [REQUIREMENTS](./REQUIREMENTS.md)，运行实现仍属后续任务。
 
 ## 阶段停止条件
 

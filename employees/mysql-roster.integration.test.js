@@ -7,6 +7,7 @@ import { createEmployeeService } from './service.js';
 import { createMySqlEmployeeStore } from './mysql-store.js';
 import { EmployeeRosterError } from './errors.js';
 import { runEmployeeResolverIntegrationTests } from './employee-resolver.integration.js';
+import { applyPolicyAttributeMigration, policyAttributeTables } from '../test-support/mysql-policy-attributes-fixture.js';
 import { acquireMySqlFixtureLock } from '../test-support/mysql-fixture-lock.js';
 import { createAuthService } from '../auth/service.js';
 import { createMySqlAuthStore } from '../auth/mysql-store.js';
@@ -16,7 +17,7 @@ const testUrl = process.env.LEDGER_MYSQL_TEST_URL;
 const database = 'jbhh_ktv_test';
 const authTables = ['auth_accounts','auth_credentials','auth_grants','auth_sessions','auth_events'];
 const employeeTables = ['employees','employee_events'];
-const tables = [...authTables, ...employeeTables];
+const tables = [...authTables, ...employeeTables, ...policyAttributeTables];
 const quote = String.fromCharCode(96);
 const table = name => quote + database + quote + '.' + quote + name + quote;
 const isCode = code => error => error instanceof EmployeeRosterError && error.code === code;
@@ -76,6 +77,7 @@ test('MySQL 8.4 InnoDB employee roster foundation in jbhh_ktv_test',
           .split(';').map(part=>part.trim()).filter(Boolean);
         assert.equal(statements.length,names.length);
         for (const [index,sql] of statements.entries()) { await setup.query(sql); created.push(names[index]); }
+        if (names === authTables) await applyPolicyAttributeMigration(setup, created);
         if (names === employeeTables) employeeStatements = statements;
       }
       const poolOptions = {uri:testUrl,database,connectionLimit:5,waitForConnections:true,supportBigNumbers:true,bigNumberStrings:true};

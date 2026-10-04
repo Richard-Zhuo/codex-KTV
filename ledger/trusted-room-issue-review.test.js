@@ -27,10 +27,11 @@ function fixture({ permissions = ['room.issue.approve'], applicant = APPLICANT_P
     idle: '2099-01-01T00:00:00.000000Z', absolute: '2099-01-02T00:00:00.000000Z' };
   const port = {
     locateSessionByDigest: async () => ({ principalId: auth.id, sessionId: 'synthetic-room-review-session' }),
-    lockAccount: async () => { events.push('account'); return { principalId: auth.id, enabled: auth.enabled, credentialVersion: auth.version }; },
+    lockAccount: async () => { events.push('account'); return { principalId: auth.id, enabled: auth.enabled, credentialVersion: auth.version, policyAttributesConfigured: false }; },
     lockSessionById: async () => { events.push('session'); return { sessionId: 'synthetic-room-review-session', principalId: auth.id,
       tokenDigest, revoked: auth.revoked, credentialVersion: auth.sessionVersion, idleExpiresAt: auth.idle, absoluteExpiresAt: auth.absolute }; },
     listGrants: async () => { events.push('grants'); return auth.permissions; },
+    listPolicyAttributes: async () => [],
     readDbNow: async () => { events.push('db-now'); return dbNow; }
   };
   let context, executions = 0;

@@ -49,6 +49,13 @@
 - 故障／维护标记提交照片或文字后立即生效，无需另一人审核；恢复空房才进入审核。
 - 正式 approveRoomIssue／rejectRoomIssue 只从已锁账本中的对应恢复申请读取 submittedByPrincipalId，具体权限为 room.issue.approve；本人审核还必须有 review.self。payload 的申请人、selfReview 或 approver 不提供授权。缺少可信申请人 principal 的旧申请不根据姓名、演示 ID 或员工关联推断，批准／驳回均停写拒绝且不占操作键。决定保存 decidedByPrincipalId 与冻结 dbNow；decidedBy 仅为可信显示快照，无可信显示名时为 null。原房态、证据、批准及驳回规则保持。
 
+## 已确认：正式 policy attributes 基础
+
+- auth_accounts.policy_attributes_configured 默认 false；认证上下文用 false／null 表示未配置，true／[] 表示已配置空集合。不得按姓名、岗位、payload 或演示身份推断配置。
+- 独立 InnoDB auth_policy_attributes 保存稳定 principal 的具体授权属性；当前受支持属性只有既已冻结的 rounding.self.excess，它不能替代普通 approve permission 或 review.self，也不开放尚未迁移的业务 action。
+- configure／grant／revoke 是可信内部管理能力，实际操作者与目标 principal 分开传递、校验和审计；变更先按稳定 UUID 顺序锁 account，同一事务写属性／配置标志与事件。重复配置不清空已有集合，重复 grant／不存在的 revoke 不增加事件；grant／revoke 要求先显式 configure。
+- transaction-bound revalidation 在调用方连接内锁住账号／session 后，对 grants 和属性作当前读取；属性变更下一次认证即生效，不更新 session 活动或把权限固化到 token。停用账号继续拒绝认证。没有真人属性配置，内部管理接口不得直接暴露给客户端。
+
 ## 已确认：正式员工名册基础
 
 - 员工以服务端生成、稳定且不可复用的 UUID employee_id 标识；display_name 可同名，不作为身份键。员工可无登录账号，enabled 与账号启用状态独立。
