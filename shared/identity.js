@@ -126,6 +126,15 @@ export function withTrustedCreditedEmployee(context, employee) {
   return registerTrustedExecutionContext(Object.freeze({ ...context,
     creditedEmployeeId: employee.employeeId, creditedEmployeeNameSnapshot: employee.displayName }));
 }
+// Separate from sales credit: only a resolved incident assignee snapshot.
+export function withTrustedAssigneeEmployee(context, employee) {
+  assertTrustedExecutionContext(context);
+  if (!Object.isFrozen(employee) || typeof employee?.employeeId !== 'string' ||
+      !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(employee.employeeId) ||
+      typeof employee.displayName !== 'string' || !employee.displayName.trim()) throw TypeError('事务内员工快照无效');
+  return registerTrustedExecutionContext(Object.freeze({ ...context,
+    assigneeEmployeeId: employee.employeeId, assigneeEmployeeNameSnapshot: employee.displayName }));
+}
 export class AuthorizationDenied extends Error {
   constructor(reason) {
     super('正式命令未获授权');

@@ -155,6 +155,7 @@
 - 正式 trusted `approveExpense`／`rejectExpense` 从锁定账本的待审 expense 读取 `submittedByPrincipalId` 与保存的金额；非本人必须有 `expense.approve`，本人另需 `review.self`。金额 >500 元时两动作还需已配置的 `expense.approval.boss` 属性；未配置或已配置空集合均拒绝，≤500 元不需此属性。属性只取当前 session context，不从姓名、旧岗位或 payload 推导。缺少可信申请人的历史／采购关联报销均授权拒绝、不占 operationKey。两动作保存 `decidedByPrincipalId`，approver 只作显示快照；保留原待审状态校验、金额、决定及采购状态同步，不迁移 procurement。撤销权限／属性后有效原 actor 的原请求仍返回已存终态，新 key 用当前授权事实。
 - 采购自动关联一笔支出／报销记录，并保留经办归属。
 - 客诉／异常包含日期、房号、类型、描述、负责人、处理结果和备注。未完成及待审核记录从每天 14:00 起在页面提示。
+- 正式 trusted incident 只登记客诉／异常：incident.create、submittedByPrincipalId／actualActorPrincipalId 与 createdAt 仅来自有效 session context；负责人显式 assigneeEmployeeId（或 assignee UUID）在同一账本 connection 上通过 employee resolver 验证存在且 enabled。保存稳定 assigneeEmployeeId 和当时 assigneeEmployeeNameSnapshot，原 assignee／person 仅作显示；无账号关联员工仍可负责，同名员工按 UUID 区分，负责人不授予操作者权限。原日期输入、房号、类型、描述截断及待处理状态保持；授权拒绝不占 key，员工拒绝只留明确业务拒绝终态。撤权后有效原 actor 重放旧终态；不迁移处理结果或恢复审核。
 - 负责人提交处理结果后进入恢复审核，审核通过才转为完成。
 
 ## 已确认：报表、主题与数据边界

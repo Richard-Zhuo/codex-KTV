@@ -501,6 +501,22 @@ sales.js:validateSettlementPayments 以 SMALL_ROUNDING_LIMIT_CENTS=1000 表达 �
 
 rounding-limit.test.js 从 10.01 元必须有待审核记录的实际失败开始，覆盖 0／5／9.99／10.00／10.01 元、168→160、已收款后余额、无效金额、结账权限与原特殊审批。真实 MySQL 使用 ledger 原三表 guarded fixture 调用 ledger/rounding-limit.integration.js；原 11 项加新增 9 项实际 20／20／0／0，通过 JSON 往返、replay 单次付款及审核／SQL 全回滚。已尝试 npm test，PowerShell 找不到 npm，未取得 npm 运行证据；四文件定向 Node 回归 91／86／0／5（原五项 Known Issue 子集）；完整 node --test --test-isolation=none 实际 1231／1225／0／6，退出码 0，四套 MySQL 全部执行；六项 skip 名称与本轮 27e2349 main 回归完全一致。
 
+## P0-1 Stage 2C.3：incident 可信创建（2026-10-05）
+
+本轮先完成 repayment review 27e2349 的 ff-only 合入、完整实际 1212／1206／0／6、fetch 无新增后普通 push；再独立完成小额免零 10 元提交 9e2535c，真实 MySQL 边界与完整 1231／1225／0／6 通过后 ff-only 合入并普通 push。main／origin/main=9e2535c、0／0、clean；从该 main HEAD 直接创建 codex/p0-1-stage2c-incident，本批 parent 必须为 9e2535c。
+
+只新增 incident 到 trusted-enabled，共三十四动作、其余十一项 eligible 仍 fail closed；resolveIncident、两项恢复审核及付款、免零审批、采购、开房、交班仍关闭。创建链沿用 session 重验→已存终态→新 key 策略／revision→同 connection employee resolver→trusted transact；actor／权限／createdAt 只来自 branded context，person 仅显示快照（当前 null），submittedByPrincipalId／actualActorPrincipalId 稳定。
+
+负责人显式 assigneeEmployeeId 或 assignee UUID；同事务读取 employee 存在且 enabled 后，withTrustedAssigneeEmployee 保存独立 assigneeEmployeeId／assigneeEmployeeNameSnapshot，不将负责人当成销售 credited employee，也不以关联 principal 授予 actor 权限。新记录保留 assignee／assigneeId 显示兼容；无账号员工合法，同名按 UUID 区分，员工与账号 enabled 各自独立。unknown／disabled 和不一致 UUID 属明确业务拒绝，只留原 terminal，不留 incident、revision 或 audit。SQL／未知异常不占 key；authorization denied 同样不占 key。
+
+incidents.js:submitIncident 显式 demo／trusted 身份壳，原 date、房号存在、类型、描述截断和待处理／空 resolutionReviews 不变；正式分支不读取 USERS／state.user／state.permissions／state.clock。demo 继续原规则；处理结果和恢复审批函数与 main 逐字一致。ledger fingerprint／终态/revision、MySQL schema/store、员工管理、其他领域及六项 Known Issues 未改变；不新增生产依赖，不建真人账号／映射。
+
+测试从未迁移 gate 的实际失败开始。新增单元 18／18；五文件定向 Node 回归 118／118／0／0。新测试曾将 demo 名称写成真人称呼，已按现有 USERS 显示快照纠正；首轮 MySQL 仅一个子用例因 fixture 的 incident-unknown ledger ID 重复而失败（合计 511／509／2／0，含根失败），已改为独立 incident-program-fault，未修改生产代码或放宽断言。修正后四文件真实 MySQL 511／511／0／0，其中 incident 新增 17／17；MySQL 8.4.11／jbhh_ktv_test／InnoDB，原 auth／revalidation／employees／ledger／所有 trusted 批次均实际执行。
+
+独立 CONNECTION_ID 实测 revision／同 key 竞争只一笔创建；同 connection 的员工 FOR SHARE 与独立员工 disable 明确先后，停用后新 key 拒绝。有效原 actor 撤权并重连后重放旧结果，不再查员工、不因改名／停用改变姓名快照；失效认证禁止读取既有结果。真实 resolver SELECT 故障、audit INSERT 约束故障及未知异常全部 rollback，原 key 可在故障修复后重试。revalidation 冻结数据库时间，不 touch session 活动。fixture 只操作原十一张已知表，无 CREATE／DROP DATABASE；最终只读检查确认这些 fixture 表剩余 0 张。
+
+修改 JavaScript 后实际尝试 npm test（含最终夹具修正后），PowerShell 找不到 npm，未取得 npm 执行证据。最终完整 node --test --test-isolation=none 实际 1266／1260／0／6，退出码 0；四套 MySQL 全部再次真实执行，新 incident 单元 18／18、MySQL 17／17，原六项 Known Issues 的名称／skip 与本轮 repayment review main 日志完全一致。本批只一个 incident 提交，不合入／push 该提交、不进入下一批、不部署。
+
 ## 本轮隔离集成候选（2026-09-29）
 
 来源：用户交付的 `jbhh-ktv-full.zip`，基线 `ca726b2`；纯重构检查点 `74c3f55`；业务修复终点 `6aa01ba`。Track B 来源为 `codex/offsite-contracts@3193635`。候选位于独立工作树的 `codex/track-a-integration`，主工作区未提交内容保留；未合并 `main`、未推送。

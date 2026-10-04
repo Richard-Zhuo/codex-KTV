@@ -101,9 +101,9 @@ export function createLedgerApplication({ store, principal, executionMode = 'dem
         if (!Number.isSafeInteger(currentRevision + 1)) throw RangeError('revision 已达到安全整数上限');
         let nextState;
         try {
-          // Resolve an explicitly credited employee only for migrated actions, after auth, replay lookup,
+          // Resolve the explicitly credited employee or incident assignee only for migrated actions, after auth, replay lookup,
           // policy and revision checks, on the same locked transaction.
-          const executionContext = trusted && EMPLOYEE_ATTRIBUTED_ACTIONS.includes(request.action)
+          const executionContext = trusted && (EMPLOYEE_ATTRIBUTED_ACTIONS.includes(request.action) || request.action === 'incident')
             ? await resolveEmployeeContext(transaction, context, request.payload, request.action) : context;
           nextState = transactCommand(state, request.action, request.payload, request.operationKey,
             trusted ? { mode: 'trusted', context: executionContext } : { mode: 'demo' });

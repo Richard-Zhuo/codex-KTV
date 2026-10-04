@@ -1,7 +1,7 @@
 // Shared attribution for the three migrated employee-credited commands.
 import { EmployeeRosterError } from '../employees/errors.js';
 import { BusinessRejection } from '../shared/business-error.js';
-import { withTrustedCreditedEmployee } from '../shared/identity.js';
+import { withTrustedCreditedEmployee, withTrustedAssigneeEmployee } from '../shared/identity.js';
 
 export const EMPLOYEE_ATTRIBUTED_ACTIONS = Object.freeze(['reserve', 'sale', 'retailSale']);
 
@@ -13,15 +13,17 @@ export function employeePolicyPayload(payload) {
 }
 
 export async function resolveEmployeeContext(transaction, context, payload, action) {
-  if (!EMPLOYEE_ATTRIBUTED_ACTIONS.includes(action)) throw TypeError('未迁移的员工归属动作');
-  const label = action === 'reserve' ? '预约' : '销售';
+  if (!EMPLOYEE_ATTRIBUTED_ACTIONS.includes(action) && action !== 'incident') throw TypeError('未迁移的员工归属动作');
+  const incident = action === 'incident';
+  const label = incident ? '客诉／异常负责人' : action === 'reserve' ? '预约' : '销售';
   if (typeof transaction.employeeResolver?.resolveCreditedEmployeeInTransaction !== 'function') {
     throw TypeError(`正式${label}缺少同事务 employee resolver port`);
   }
-  const employeeId = payload.creditedEmployeeId ?? payload.employee;
+  const employeeId = incident ? (payload.assigneeEmployeeId ?? payload.assignee) : (payload.creditedEmployeeId ?? payload.employee);
   if (typeof employeeId !== 'string' ||
       !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(employeeId) ||
-      (payload.creditedEmployeeId !== undefined && payload.employee !== undefined && payload.employee !== employeeId)) {
+      (incident ? payload.assigneeEmployeeId !== undefined && payload.assignee !== undefined && payload.assignee !== employeeId :
+        payload.creditedEmployeeId !== undefined && payload.employee !== undefined && payload.employee !== employeeId)) {
     throw new BusinessRejection('必须显式选择一致的 employee UUID，不按姓名或 principal 推断');
   }
   let employee;
@@ -35,5 +37,5 @@ export async function resolveEmployeeContext(transaction, context, payload, acti
     throw error;
   }
   if (employee?.employeeId !== employeeId) throw TypeError('员工解析结果与请求 UUID 不一致');
-  return withTrustedCreditedEmployee(context, employee);
+  return incident ? withTrustedAssigneeEmployee(context, employee) : withTrustedCreditedEmployee(context, employee);
 }

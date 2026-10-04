@@ -201,7 +201,7 @@ test('gift: missing/copied contexts and unbound session port fail closed; direct
   const deniedActor = fixture({ permissions: [] }); await assert.rejects(deniedActor.app.execute(giftCommand(), deniedActor.credential), denied);
   assert.throws(() => transact(deniedActor.state, 'gift', giftCommand().payload, 'direct', { mode: 'trusted', context: deniedActor.context() }), denied);
   const unbound = fixture({ bind: false }); await assert.rejects(unbound.app.execute(giftCommand(), unbound.credential), /revalidation port/); await assertNoEffects(unbound);
-  for (const action of ['expense','incident','credit','repay','approveRounding','settle','handover']) {
+  for (const action of ['expense','credit','repay','approveRounding','settle','handover']) {
     await assert.rejects(f.app.execute({ ...giftCommand(action,1), action }, f.credential), e => denied(e) && e.reason === (['expense','credit','repay'].includes(action) ? 'missing-permission' : 'trusted-action-not-enabled'));
   }
 });
