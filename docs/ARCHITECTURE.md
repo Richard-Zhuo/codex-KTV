@@ -162,6 +162,12 @@ context 的 WeakSet 标记和 permission guard 放在已存在的、浏览器兼
 
 incident 在 demo operator／clock 求值前进入 incidents.js:submitIncident 的显式 trusted 模式，只检查 context.permissionIds 的 incident.create；submittedByPrincipalId／actualActorPrincipalId 取 session principal，person 仅可信显示快照（当前 null），createdAt 只取冻结 dbNow。ledger application 仅对新 key、已认证且通过 policy／revision 的 incident 调用原 transaction-bound employee resolver，以 assigneeEmployeeId 或 assignee 的一致 UUID 查 enabled 员工；withTrustedAssigneeEmployee 保存独立负责人快照，不复用销售 creditedEmployeeId。记录 assigneeEmployeeId、assigneeEmployeeNameSnapshot，兼容显示 assignee／assigneeId；无关联账号或关联账号 disabled 不替代员工 enabled 状态。原显式 date、room、type、description 和待处理业务语义不改，不读旧 USERS 或姓名推断负责人。现有 terminal replay 不再解析员工，授权拒绝不占 key；unknown／SQL 故障完整回滚，不开放 resolveIncident／恢复审核。
 
+## 同事务 principal → employee 解析（内部能力）
+
+employees/employee-resolver.js:createTransactionBoundPrincipalEmployeeResolver 接收调用方端口，公开 resolvePrincipalEmployeeInTransaction({trustedContext})；输入必须是同事务 session revalidation 注册的可信 context，不接受 raw principalId、请求 JSON、姓名或旧 USERS。employees/mysql-store.js:bindEmployeeResolver(connection) 在原 credited resolver 之外提供此独立方法，检查活动事务和实际库名后按 employees.principal_id 做 FOR SHARE 当前读，复核关联、enabled 与规范 UUID，只返回冻结 {employeeId, displayName}。无关联／停用明确拒绝；未知 SQL／端口错误原样传播。调用方先锁 account，再读取 employee；关联／解除／停用仍遵循 account → employee，principal 与 employee 是不同身份概念。
+
+此能力不借新连接、不 BEGIN／COMMIT／ROLLBACK／release、不写审计或 session activity，不修改 creditedEmployee 解析，不新增 migration、真人映射或 trusted action。调用方事务结束后重新解析；历史姓名不补映射。真实专用库测试包括两种双连接停用顺序、调用方 rollback 与实际 SQL 失败，证据见 CURRENT_STAGE。
+
 ## 状态所有权
 
 | 事实 | 当前 owner | 持久化 |

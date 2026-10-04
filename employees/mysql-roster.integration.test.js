@@ -7,6 +7,7 @@ import { createEmployeeService } from './service.js';
 import { createMySqlEmployeeStore } from './mysql-store.js';
 import { EmployeeRosterError } from './errors.js';
 import { runEmployeeResolverIntegrationTests } from './employee-resolver.integration.js';
+import { runPrincipalEmployeeResolverIntegrationTests } from './principal-employee-resolver.integration.js';
 import { applyPolicyAttributeMigration, policyAttributeTables } from '../test-support/mysql-policy-attributes-fixture.js';
 import { acquireMySqlFixtureLock } from '../test-support/mysql-fixture-lock.js';
 import { createAuthService } from '../auth/service.js';
@@ -286,6 +287,7 @@ test('MySQL 8.4 InnoDB employee roster foundation in jbhh_ktv_test',
           " (employee_id,actor_principal_id,event_type) VALUES (?,?,'principal-linked')",[employee.employeeId,actorPrincipalId]),error=>error.code==='ER_CHECK_CONSTRAINT_VIOLATED');
       });
       await runEmployeeResolverIntegrationTests(t,{pool,database,roster,context,create,account,snapshot,readEvents,makeRoster:service,ownedPool});
+      await runPrincipalEmployeeResolverIntegrationTests(t,{pool,database,roster,context,create,auth,snapshot,makeRoster:service,ownedPool});
     } finally {
       try {if(pool) await pool.end();}
       finally {

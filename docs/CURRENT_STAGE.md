@@ -517,6 +517,16 @@ incidents.js:submitIncident 显式 demo／trusted 身份壳，原 date、房号�
 
 修改 JavaScript 后实际尝试 npm test（含最终夹具修正后），PowerShell 找不到 npm，未取得 npm 执行证据。最终完整 node --test --test-isolation=none 实际 1266／1260／0／6，退出码 0；四套 MySQL 全部再次真实执行，新 incident 单元 18／18、MySQL 17／17，原六项 Known Issues 的名称／skip 与本轮 repayment review main 日志完全一致。本批只一个 incident 提交，不合入／push 该提交、不进入下一批、不部署。
 
+## P0-1 Stage 2C.3：principal → employee 同事务解析（2026-10-05）
+
+先核实 incident 51b722a 直接 parent=9e2535c，ff-only 合入 main；本轮实际完整 1266／1260／0／6，四套 MySQL 实际执行。fetch 后 origin 未新增，普通 push；main=origin/main=51b722a、0／0、clean。从该 HEAD 直接创建 codex/p0-1-stage2c-incident-resolution，基础设施提交 parent 必须为 51b722a。
+
+新独立 factory／方法 resolvePrincipalEmployeeInTransaction({trustedContext}) 只接受 branded session context。当前 connection 的 principal_id FOR SHARE 读取显式关联启用 employee，冻结 employeeId／displayName；无关联和停用均 fail closed，不以姓名、旧 USERS 或 payload 猜身份，actor principal 不变。原 creditedEmployee 解析完整保留；无新 migration、业务动作、真实账号／关联或生产依赖。锁序为调用方 auth account → session／grants → employee；不借连接、不管理事务、不写 session activity。
+
+实现前新增契约因缺 export 实际失败；实现后新增单元 8／8，五文件定向实际 80／80／0／0。原员工 MySQL fixture 加十项实际 40／40／0／0；两个真实 CONNECTION_ID 覆盖解析先／停用先，在 account 锁上真实等待，随后读取停用事实；实际 SQL 字段故障与调用方未提交更新均完整 rollback。测试只清理本次创建八张 auth／employee 表，不操作 database 或 ledger 表。已实际尝试 npm test，PowerShell 找不到 npm，未取得 npm 证据。
+
+本轮完整 node --test --test-isolation=none 实际 1284／1278／0／6，退出码 0；四套 MySQL 全部再次执行，六项 skip 名称与本轮 incident main 日志完全一致。基础设施单独提交，不开放 resolveIncident 或其他动作，不 push、不部署。
+
 ## 本轮隔离集成候选（2026-09-29）
 
 来源：用户交付的 `jbhh-ktv-full.zip`，基线 `ca726b2`；纯重构检查点 `74c3f55`；业务修复终点 `6aa01ba`。Track B 来源为 `codex/offsite-contracts@3193635`。候选位于独立工作树的 `codex/track-a-integration`，主工作区未提交内容保留；未合并 `main`、未推送。
