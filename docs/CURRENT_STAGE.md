@@ -240,6 +240,20 @@ ledger application／MySQL store、Stage 2A policy、员工 resolver、sales／i
 
 最终完整 node --test --test-isolation=none 实际 677 total／671 pass／0 fail／6 skip，退出码 0。真实 MySQL auth 29／29（含 revalidation 13／13）、employee 30／30、ledger 11／11、trusted 147／147（新增 24／24）均执行且无 skip；原六项 Known Issues 名称与 skip 结论保持。本批只做一个提交，parent 为 ca5c872；main 不前进，不 push、不部署或进入下一批。
 
+## P0-1 Stage 2C.3 trusted exchange（2026-10-04）
+
+本轮先核实 34c2365 的直接 parent = 干净 main@ca5c872，使用 ff-only 将 main 前进至 34c23656b8478ef9f8b99107e5c7c01ad3f4f413，无 merge commit。合入后完整 node --test --test-isolation=none 实际 677 total／671 pass／0 fail／6 skip；MySQL 8.4.11／jbhh_ktv_test／InnoDB 中 auth 29／29（含 revalidation 13）、employee 30／30、ledger 11／11、trusted 147／147 均真实执行。随后 fetch 确认 origin/main 仍为 ca5c872，本地单纯领先 1／0，普通 push 成功；同步后 main = origin/main = 34c2365、0／0、clean。立即从该 main 建立 codex/p0-1-stage2c-exchange，分支起点严格等于 main HEAD。
+
+本批仅 exchange 新增 trusted-enabled，当前十五动作，其他 30 个 eligible action 继续 fail closed。rules.js 私有 executeExchange 复用原 demo／trusted 换酒规则，在演示 user／clock 读取前分流；trusted 只从 branded context 检查 order.exchange、取 session principal 与冻结 dbNow。两笔 recordInventoryChange 显式传递同一 execution，复用已有可信库存 actor／time；换酒记录 person／time 来自 context 并附 actualActorPrincipalId。原动作没有员工归属，不调用 resolver，不重选或改写历史人员快照。
+
+对照同步 main，除显式 execution 参数和稳定 actor 元数据外，原换酒命令体保持。套餐／增购／已存在赠饮行、按实际支数 1:1、同级或向下、数量限制、库存退回／领取、目标行合并／新快照、成交金额和历史快照共用原规则。源库存已在克隆中退回后，目标不足或缺账仍拒绝整笔，不留半状态。inventory.js、sales／rooms／auth／employee、ledger application／store／fingerprint、schema／migration、依赖及六项 Known Issues 均未修改；不迁移 gift／审核、开房、付款、挂账或其他动作。
+
+新增 exchange 单元 16 项、真实 MySQL 子用例 15 项。定向 node --test --test-isolation=none ledger/trusted-exchange.test.js ledger/trusted-clean.test.js rules.test.js inventory.test.js sales.test.js 实际 156 total／155 pass／0 fail／1 skip（该集合原平台券 Known Issue），exchange 16／16 通过。首轮仅新增 demo 对照夹具把保留原 clock 文本的时间误归一化为三位毫秒；修正测试匹配现行 demo 格式，生产时间语义不变。JS 修改后多次实际尝试 npm test，PowerShell 报 The term 'npm' is not recognized，npm 未启动，未取得 npm 通过证据。
+
+trusted MySQL 定向实际 162 total／162 pass／0 fail／0 skip，含新增 exchange 15／15。沿用严格专用库十表 fixture，不 CREATE／DROP database 或扩大清理；仅合成账号。实际验证同一 connection、head → account → session → grants → operation → domain／commit、单次 dbNow、不 touch session activity；三类来源、部分／全部换酒、已有目标合并、原数量／级别拒绝、counted／uncounted／null／0、非库存商品运行时标记和历史快照保持。有效账号撤权后，新 pool 重连取回原终态，不重复库存；新键拒绝且不占键。五类 auth 失效先于 operation 查询；actor／action／payload／revision 冲突保持。两个独立 CONNECTION_ID 的 revision 竞争最多一笔成功，同 key 竞争只执行一次。领域变化后 unknown Error 及 head UPDATE／operation INSERT 后 audit CHECK 故障，均完整回滚 state／revision／operation／audit 和两笔库存；修复后原 key 可成功。
+
+最终完整 node --test --test-isolation=none 实际 708 total／702 pass／0 fail／6 skip，退出码 0。真实 MySQL auth 29／29（含 revalidation 13／13）、employee 30／30、ledger 11／11、trusted 162／162（exchange 15／15）均执行且无 skip；原六项 Known Issues 名称和 skip 保持。结束后只读核实十张 fixture 表均不存在。本批一个独立提交，parent 为 34c2365；main／origin/main 保持该已同步基线，exchange 新提交不 push，不继续下一批或部署。
+
 ## 本轮隔离集成候选（2026-09-29）
 
 来源：用户交付的 `jbhh-ktv-full.zip`，基线 `ca726b2`；纯重构检查点 `74c3f55`；业务修复终点 `6aa01ba`。Track B 来源为 `codex/offsite-contracts@3193635`。候选位于独立工作树的 `codex/track-a-integration`，主工作区未提交内容保留；未合并 `main`、未推送。
@@ -376,7 +390,7 @@ ledger application／MySQL store、Stage 2A policy、员工 resolver、sales／i
 
 ## 下一步
 
-只读快照预检器、Stage 1A／1A.1／1A.2 协议、Stage 1B-MySQL 适配器、Stage 2A 纯命令策略及 Stage 2B 独立认证基础已完成；Stage 1B.1 和 Stage 2B 已分别在专用 MySQL 8.4 测试库取得真实验收证据。Stage 2C.1 同事务认证、2C.2 clean 及 2C.3 房间异常、目录维护、取消预约、存取酒、reserve、sale／retailSale 与 serveExtra／otherCharge 已通过真实数据库验收；各批及线性整合验收见上节；员工名册、关联审计与事务内归属解析已真实验收，resolver 已仅接 trusted reserve／sale／retailSale，其余正式 action 和审核尚未迁移，HTTP／客户端及 2D 未开始，当前停止在本批。正式营业日和班次规则已确认的部分见 [REQUIREMENTS](./REQUIREMENTS.md)，运行实现仍属后续任务。
+只读快照预检器、Stage 1A／1A.1／1A.2 协议、Stage 1B-MySQL 适配器、Stage 2A 纯命令策略及 Stage 2B 独立认证基础已完成；Stage 1B.1 和 Stage 2B 已分别在专用 MySQL 8.4 测试库取得真实验收证据。Stage 2C.1 同事务认证、2C.2 clean 及 2C.3 房间异常、目录维护、取消预约、存取酒、reserve、sale／retailSale、serveExtra／otherCharge 与 exchange 已通过真实数据库验收；各批及线性整合验收见上节；员工名册、关联审计与事务内归属解析已真实验收，resolver 已仅接 trusted reserve／sale／retailSale，其余正式 action 和审核尚未迁移，HTTP／客户端及 2D 未开始，当前停止在本批。正式营业日和班次规则已确认的部分见 [REQUIREMENTS](./REQUIREMENTS.md)，运行实现仍属后续任务。
 
 ## 阶段停止条件
 

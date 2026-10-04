@@ -136,11 +136,49 @@ function executeOrderAddition(s, action, data, person, time, execution = { mode:
     if (context) extra.servedByPrincipalId = context.principalId;
   }
 }
+// Shared original exchange rules; trusted mode changes only authority and attribution.
+function executeExchange(s, data, person, time, execution = { mode: 'demo' }) {
+  let context = null;
+  if (execution?.mode === 'trusted') {
+    context = execution.context; requireTrustedPermission(context, 'order.exchange');
+    person = context.principalId; time = context.dbNow;
+  } else if (execution?.mode === 'demo') need(s, ['开单员','服务员','老板'], 'order.exchange');
+  else throw TypeError('换酒执行模式无效');
+  const order = s.orders.find(order => order.id === data.order);
+  if (!order || order.status !== '营业中') throw new BusinessRejection('账单已变化，请返回房间重新查看');
+  quantity(data.count);
+  const source = String(data.line || '');
+  let lines, line, scope;
+  if (source.startsWith('sale:')) {
+    const id = Number(source.slice(5));
+    const sale = order.sales.find(item => (item.drinks || []).some(drink => drink.id === id));
+    lines = sale?.drinks; line = lines?.find(drink => drink.id === id); scope = '增购';
+  } else if (source.startsWith('bonus:')) {
+    const id = Number(source.slice(6));
+    const gift = (order.bonusGifts || []).find(item => (item.drinks || []).some(drink => drink.id === id));
+    lines = gift?.drinks; line = lines?.find(drink => drink.id === id); scope = '赠送';
+  } else {
+    const id = Number(source.startsWith('gift:') ? source.slice(5) : source);
+    lines = order.drinks; line = lines.find(drink => drink.id === id); scope = '套餐';
+  }
+  if (!line || line.count < data.count) throw new BusinessRejection('超过可换数量');
+  if (!canExchange(productIdOf(line), data.product, s.catalog)) throw new BusinessRejection('只能换同级或更低级商品，瓶装水不能换出');
+  recordInventoryChange(s, productIdOf(line), data.count, '换购退回', time, {}, execution); recordInventoryChange(s, data.product, -data.count, '换购领取', time, {}, execution);
+  line.count -= data.count;
+  const target = lines.find(drink => productIdOf(drink) === data.product);
+  if (target) target.count += data.count; else {
+    // Bug #3 修复：换入行写入完整名称/单位快照，历史展示不再依赖当前目录。
+    const exchanged = product(data.product, s.catalog);
+    lines.push({ id: ++s.serial, product: data.product, productId: exchanged.id, productNameSnapshot: exchanged.name, baseUnitSnapshot: exchanged.baseUnit, count: data.count, totalBaseQuantity: data.count, snapshotStatus: 'current' });
+  }
+  order.exchanges.push({ from: productIdOf(line), to: data.product, fromProductId: productIdOf(line), toProductId: data.product, count: data.count, scope, time, person,
+    ...(context ? { actualActorPrincipalId: context.principalId } : {}) });
+}
 // 先修改克隆，全部校验成功才返回；失败不产生部分扣库或半张账单。
 export function transact(original, action, data = {}, key, execution = { mode: 'demo' }) {
   if (!execution || !['demo', 'trusted'].includes(execution.mode)) throw TypeError('事务执行模式无效');
   const context = execution.mode === 'trusted' ? assertTrustedExecutionContext(execution.context) : null;
-  if (context && !['clean', 'markRoomIssue', 'clearRoomIssue', ...CATALOG_COMMAND_ACTIONS, 'cancelReservation', 'deposit', 'withdraw', 'reserve', 'sale', 'retailSale', ...ORDER_ADDITION_ACTIONS].includes(action)) throw new AuthorizationDenied('trusted-action-not-enabled');
+  if (context && !['clean', 'markRoomIssue', 'clearRoomIssue', ...CATALOG_COMMAND_ACTIONS, 'cancelReservation', 'deposit', 'withdraw', 'reserve', 'sale', 'retailSale', ...ORDER_ADDITION_ACTIONS, 'exchange'].includes(action)) throw new AuthorizationDenied('trusted-action-not-enabled');
   if (!key) throw new BusinessRejection('缺少操作编号');
   if (original.processed.includes(key)) return original;
   const s = structuredClone(original);
@@ -158,6 +196,7 @@ export function transact(original, action, data = {}, key, execution = { mode: '
       submitSale(s, order, data, undefined, undefined, undefined, execution);
     } else if (action === 'retailSale') submitRetailSale(s, data, undefined, undefined, undefined, execution);
     else if (ORDER_ADDITION_ACTIONS.includes(action)) executeOrderAddition(s, action, data, undefined, undefined, execution);
+    else if (action === 'exchange') executeExchange(s, data, undefined, undefined, execution);
     else {
       const room = s.rooms.find(room => room.id === data.room);
       if (action === 'clean') cleanRoom(s, room, execution);
@@ -244,32 +283,7 @@ export function transact(original, action, data = {}, key, execution = { mode: '
     request.status = action === 'approveGift' ? '已批准' : '已驳回'; request.decidedBy = person; request.decidedAt = time; request.decisionNote = decisionNote; request.selfReviewAuthorized = selfReview;
     if (action === 'approveGift') grantBonus(s, order, request.product, request.halves, '老板／店长确认赠送', time, request.requestedBy);
   } else if (action === 'exchange') {
-    need(s, ['开单员','服务员','老板'], 'order.exchange'); active(); quantity(data.count);
-    const source = String(data.line || '');
-    let lines, line, scope;
-    if (source.startsWith('sale:')) {
-      const id = Number(source.slice(5));
-      const sale = order.sales.find(item => (item.drinks || []).some(drink => drink.id === id));
-      lines = sale?.drinks; line = lines?.find(drink => drink.id === id); scope = '增购';
-    } else if (source.startsWith('bonus:')) {
-      const id = Number(source.slice(6));
-      const gift = (order.bonusGifts || []).find(item => (item.drinks || []).some(drink => drink.id === id));
-      lines = gift?.drinks; line = lines?.find(drink => drink.id === id); scope = '赠送';
-    } else {
-      const id = Number(source.startsWith('gift:') ? source.slice(5) : source);
-      lines = order.drinks; line = lines.find(drink => drink.id === id); scope = '套餐';
-    }
-    if (!line || line.count < data.count) throw new BusinessRejection('超过可换数量');
-    if (!canExchange(productIdOf(line), data.product, s.catalog)) throw new BusinessRejection('只能换同级或更低级商品，瓶装水不能换出');
-    recordInventoryChange(s, productIdOf(line), data.count, '换购退回', time); recordInventoryChange(s, data.product, -data.count, '换购领取', time);
-    line.count -= data.count;
-    const target = lines.find(drink => productIdOf(drink) === data.product);
-    if (target) target.count += data.count; else {
-      // Bug #3 修复：换入行写入完整名称/单位快照，历史展示不再依赖当前目录。
-      const exchanged = product(data.product, s.catalog);
-      lines.push({ id: ++s.serial, product: data.product, productId: exchanged.id, productNameSnapshot: exchanged.name, baseUnitSnapshot: exchanged.baseUnit, count: data.count, totalBaseQuantity: data.count, snapshotStatus: 'current' });
-    }
-    order.exchanges.push({ from: productIdOf(line), to: data.product, fromProductId: productIdOf(line), toProductId: data.product, count: data.count, scope, time, person });
+    executeExchange(s, data, person, time);
   } else if (action === 'serveExtra') {
     executeOrderAddition(s, action, data, person, time);
   } else if (action === 'collect') {
