@@ -134,7 +134,8 @@
 - 已有开房赠饮在未建账时可沿用旧流程记录未计账流水；付费商品销售必须先建账并通过库存校验。从明确的期初盘点开始管理，不追扣历史赠饮流水。
 - 可售商品库存保存在 `state.inventory`，按各商品 `baseUnit` 管理；内部瓜子、冰块、纸巾、吸管等仍在 `state.consumables`，可另记已开封数量，本轮不迁移。瓜子等套餐配品没有已确认价格时不作为单独销售商品。
 - 期初建账和每次盘点都先形成申请，审核通过后才改变账面数量；库管不能绕过审核直接改变库存。
-- 正式 trusted `stock`／`consumableStock` 从锁定账本的 `count === null` 选择 `inventory.opening`，其他余额（包括 `0`）选择 `inventory.adjust`；仅使用 session context 的权限、principal 与冻结数据库时间。新申请保存 `submittedByPrincipalId`，姓名只作可信显示快照，不从 payload 或演示身份推断。原数量、基础单位及待审核语义保持；库存 approve／reject 尚未开放 trusted execution。
+- 正式 trusted `stock`／`consumableStock` 从锁定账本的 `count === null` 选择 `inventory.opening`，其他余额（包括 `0`）选择 `inventory.adjust`；仅使用 session context 的权限、principal 与冻结数据库时间。新申请保存 `submittedByPrincipalId`，姓名只作可信显示快照，不从 payload 或演示身份推断。原数量、基础单位及待审核语义保持。
+- 正式 trusted `approveInventory`／`rejectInventory` 只从锁定账本中的申请读取 `submittedByPrincipalId`。非本人需 `inventory.approve`，本人另需 `review.self`；缺少可信申请人时两动作均授权拒绝、不占 operationKey，不从姓名、旧演示 ID、员工关联或 payload 推断。两动作保存 `decidedByPrincipalId`，姓名仅作显示快照；批准流水及通知附稳定申请人／审核人 principal。原批准、驳回、null／0、基础单位和数量变化语义不变。
 - 所有演示岗位默认可登记支出／报销。低于财务的岗位只能看本人记录；财务、店长、老板、管理员可看全部，具体权限仍可覆盖。
 - 报销超过 500 元进入老板审批。支出性质包括一次性支出、固定支出、资金周转；付款方式沿用五种收款方式。
 - 采购自动关联一笔支出／报销记录，并保留经办归属。

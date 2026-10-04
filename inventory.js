@@ -5,7 +5,7 @@
 // 权限闸门与自审授权经 ctx 注入（need／authorizeReviewer），避免对 rules.js 的循环依赖。
 import { BusinessRejection } from './shared/business-error.js';
 import { product } from './catalog.js';
-import { effectiveUser, hasPermission, hasRole, assertTrustedExecutionContext, requireTrustedPermission } from './shared/identity.js';
+import { effectiveUser, hasPermission, hasRole, assertTrustedExecutionContext, requireTrustedPermission, AuthorizationDenied } from './shared/identity.js';
 
 export function need(state, roles, permission = '') { const user = effectiveUser(state); if (permission ? !hasPermission(user, permission) : !hasRole(user, roles)) throw new BusinessRejection('当前身份没有操作权限，请切换到对应演示身份'); }
 
@@ -59,26 +59,46 @@ export function submitConsumableStock(s, data, person, time, execution = { mode:
   s.inventoryReviews.push({ id: ++s.serial, kind: 'consumable', product: data.product, before, after: data.count, openedBefore: beforeOpened, openedAfter: data.opened, reason, source: before === null ? '消耗品期初建账' : '消耗品盘点调整', status: '待审核', ...submission, decidedBy: '', decidedAt: '', decisionNote: '' });
 }
 
-export function decideInventory(s, action, data, person, time, authorizeReviewer) {
-  need(s, [], 'inventory.approve');
+export function decideInventory(s, action, data, person, time, authorizeReviewer, execution = { mode: 'demo' }) {
+  const context = execution?.mode === 'trusted' ? assertTrustedExecutionContext(execution.context) : null;
+  if (context) requireTrustedPermission(context, 'inventory.approve');
+  else if (execution?.mode === 'demo') need(s, [], 'inventory.approve');
+  else throw TypeError('库存审核执行模式无效');
   const request = (s.inventoryReviews || []).find(item => item.id === Number(data.request));
   if (!request || request.status !== '待审核') throw new BusinessRejection('这笔库存盘点已经处理');
-  const selfReview = authorizeReviewer(request.submittedById);
+  let selfReview;
+  if (context) {
+    // Read only the applicant recorded in the locked ledger state, never payload identity.
+    const applicant = request.submittedByPrincipalId;
+    if (typeof applicant !== 'string' || !applicant || applicant.trim() !== applicant || applicant.length > 191) {
+      throw new AuthorizationDenied('untrusted-inventory-applicant');
+    }
+    selfReview = applicant === context.principalId;
+    if (selfReview) requireTrustedPermission(context, 'review.self');
+    person = context.actorSnapshot?.displayName ?? null;
+    time = context.dbNow;
+  } else selfReview = authorizeReviewer(request.submittedById);
+  const reviewerIdentity = context ? { submittedByPrincipalId: request.submittedByPrincipalId,
+    reviewedByPrincipalId: context.principalId } : {};
   const decisionNote = String(data.decisionNote || '').trim().slice(0, 300);
   if (action === 'rejectInventory' && !decisionNote) throw new BusinessRejection('请填写驳回原因');
   if (action === 'approveInventory') {
     if (request.kind === 'consumable') {
       const item = s.consumables?.[request.product];
       if (!item || item.count !== request.before || (item.opened || 0) !== request.openedBefore) throw new BusinessRejection('消耗品库存已经变化，请驳回后重新盘点');
-      s.ledger.push({ id: ++s.serial, kind: 'consumable', product: request.product, delta: request.after-(request.before ?? 0), before: request.before, after: request.after, openedBefore: request.openedBefore, openedAfter: request.openedAfter, reason: request.reason, source: request.source, counted: true, person: request.submittedBy, reviewedBy: person, time });
+      s.ledger.push({ id: ++s.serial, kind: 'consumable', product: request.product, delta: request.after-(request.before ?? 0), before: request.before, after: request.after, openedBefore: request.openedBefore, openedAfter: request.openedAfter, reason: request.reason, source: request.source, counted: true, person: request.submittedBy, reviewedBy: person, time, ...reviewerIdentity });
       item.count = request.after; item.opened = request.openedAfter; if (request.before === null) item.openedAt = time;
     } else {
       const item = s.inventory[request.product];
       if (!item || item.count !== request.before) throw new BusinessRejection('商品库存已经变化，请驳回后重新盘点');
-      s.ledger.push({ id: ++s.serial, product: request.product, delta: request.after-(request.before ?? 0), before: request.before, after: request.after, reason: request.reason, source: request.source, counted: true, person: request.submittedBy, reviewedBy: person, time });
+      s.ledger.push({ id: ++s.serial, product: request.product, delta: request.after-(request.before ?? 0), before: request.before, after: request.after, reason: request.reason, source: request.source, counted: true, person: request.submittedBy, reviewedBy: person, time, ...reviewerIdentity });
       item.count = request.after; if (request.before === null) item.openedAt = time;
     }
-    s.notices.push({ id: ++s.serial, kind: request.kind, product: request.product, unit: request.kind === 'consumable' ? (s.consumables?.[request.product]?.unit || '份') : (s.inventory[request.product]?.unit || product(request.product, s.catalog).baseUnit), before: request.before, after: request.after, openedBefore: request.openedBefore, openedAfter: request.openedAfter, reason: request.reason, person: request.submittedBy, reviewedBy: person, time });
+    const notice = { id: ++s.serial, kind: request.kind, product: request.product, unit: request.kind === 'consumable' ? (s.consumables?.[request.product]?.unit || '份') : (s.inventory[request.product]?.unit || product(request.product, s.catalog).baseUnit), before: request.before, after: request.after, openedBefore: request.openedBefore, openedAfter: request.openedAfter, reason: request.reason, person: request.submittedBy, reviewedBy: person, time, ...reviewerIdentity };
+    // JSON persistence omits absent fields; do not invent opened quantities for drinks.
+    if (context) for (const field of ['openedBefore', 'openedAfter']) if (notice[field] === undefined) delete notice[field];
+    s.notices.push(notice);
   }
   request.status = action === 'approveInventory' ? '已批准' : '已驳回'; request.decidedBy = person; request.decidedAt = time; request.decisionNote = decisionNote; request.selfReviewAuthorized = selfReview;
+  if (context) request.decidedByPrincipalId = context.principalId;
 }
