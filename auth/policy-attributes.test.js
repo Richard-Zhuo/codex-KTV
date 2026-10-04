@@ -117,3 +117,14 @@ test('policy attributes: audit failure rolls back configured flag and attribute 
   await assert.rejects(g.api.grantPolicyAttribute({ principalId: target, attributeId }, context), /audit failure/);
   assert.deepEqual(g.read(), before);
 });
+
+test('policy attributes: expense boss grant/revoke is explicit, audited, duplicate safe and independent from rounding', async () => {
+  const f=fixture(),boss='expense.approval.boss';await f.api.configurePolicyAttributes({principalId:target},context);
+  await f.api.grantPolicyAttribute({principalId:target,attributeId},context);
+  assert.equal(await f.api.grantPolicyAttribute({principalId:target,attributeId:boss},context),true);
+  assert.equal(await f.api.grantPolicyAttribute({principalId:target,attributeId:boss},context),false);
+  assert.deepEqual([...f.read().attributes.get(target)].sort(),[boss,attributeId]);
+  assert.deepEqual(f.read().events.at(-1),{actorPrincipalId:actor,principalId:target,eventType:'policy-attribute-granted',attributeId:boss});
+  await f.api.revokePolicyAttribute({principalId:target,attributeId:boss},context);
+  assert.deepEqual([...f.read().attributes.get(target)],[attributeId]);
+});

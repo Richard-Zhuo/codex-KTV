@@ -1,5 +1,6 @@
 // Runs only inside the guarded auth fixture; no separate DDL owner or database cleanup.
 import assert from 'node:assert/strict';
+import { applyExpenseApprovalAttributeMigration } from '../test-support/mysql-policy-attributes-fixture.js';
 import { createMySqlAuthStore } from './mysql-store.js';
 import { createAuthService } from './service.js';
 import { createPolicyAttributeService } from './policy-attributes.js';
@@ -324,8 +325,39 @@ export async function verifyPolicyAttributes(t, { pool, database, qualified, att
     await auth.grantPermission({ principalId: login.principalId,permissionId:'review.self' });
     context = await read(login);
     assert.equal(authorizeReviewCommand({ principal: context.principal,action:'approveRounding',reviewFacts }).allowed,true);
-    assert.equal(TRUSTED_ENABLED_ACTIONS.length,25);
+    assert.equal(TRUSTED_ENABLED_ACTIONS.length,27);
     assert.equal(TRUSTED_ENABLED_ACTIONS.includes('approveRounding'),false);
     assert.throws(()=>authorizeTrustedExecution(context,{action:'approveRounding',payload:{}}),error=>error.reason==='trusted-action-not-enabled');
   });
+  await t.test('expense attribute: 005 repeats safely, preserves rounding, and grants/revokes current boss facts with actor/target audit', async () => {
+    const login=await provision(),boss='expense.approval.boss';await configure(login);
+    await api.grantPolicyAttribute(input(login),actorContext);
+    const bossInput={principalId:login.principalId,attributeId:boss};
+    assert.equal(await api.grantPolicyAttribute(bossInput,actorContext),true);assert.equal(await api.grantPolicyAttribute(bossInput,actorContext),false);
+    let current=await read(login);assert.equal(current.policyAttributesConfigured,true);assert.deepEqual(current.policyAttributeIds,[boss,attributeId]);
+    const before=await snapshot(login.principalId);const statements=await applyExpenseApprovalAttributeMigration(pool);
+    assert.equal(statements.length,2);await applyExpenseApprovalAttributeMigration(pool);assert.deepEqual(await snapshot(login.principalId),before);
+    const audit=(await events(login.principalId)).find(e=>e.policy_attribute_id===boss);
+    assert.equal(audit.actor_principal_id,actor.principalId);assert.equal(audit.principal_id,login.principalId);assert.equal(audit.session_id,null);
+    const serialized=JSON.stringify(await events(login.principalId));assert.equal(serialized.includes(password),false);assert.equal(serialized.includes(login.token),false);
+    for(const unsupported of ['boss','expense.approval.*','expense.approve'])await assert.rejects(pool.execute('INSERT INTO '+qualified('auth_policy_attributes')+' (principal_id,attribute_id) VALUES (?,?)',
+      [login.principalId,unsupported]),e=>e.code==='ER_CHECK_CONSTRAINT_VIOLATED');
+    assert.equal(await api.revokePolicyAttribute(bossInput,actorContext),true);current=await read(login);assert.deepEqual(current.policyAttributeIds,[attributeId]);
+  });
+
+  await t.test('expense attribute: real audit SQL failure rolls back boss grant and revoke without changing rounding or session', async () => {
+    const login=await provision();await configure(login);await api.grantPolicyAttribute(input(login),actorContext);
+    const bossInput={principalId:login.principalId,attributeId:'expense.approval.boss'};
+    for(const method of ['grantPolicyAttribute','revokePolicyAttribute']){
+      const before=await snapshot(login.principalId),connection=await pool.getConnection();
+      try{
+        const faulty=proxy(connection),execute=faulty.execute.bind(faulty);
+        faulty.execute=(sql,args)=>execute(sql.includes('(principal_id, actor_principal_id, event_type, policy_attribute_id)')?sql.replace('(principal_id,','(missing_expense_attribute_test_column,'):sql,args);
+        await assert.rejects(connectionApi(faulty)[method](bossInput,actorContext),e=>e.code==='ER_BAD_FIELD_ERROR');
+      }finally{connection.release();}
+      assert.deepEqual(await snapshot(login.principalId),before);assert.equal(await api[method](bossInput,actorContext),true);
+    }
+    assert.deepEqual((await read(login)).policyAttributeIds,[attributeId]);
+  });
+
 }

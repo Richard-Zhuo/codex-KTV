@@ -202,7 +202,7 @@ export async function testTrustedStock({ t, pool, setup, auth, table, provision,
     for (const action of ['approveGift', 'rejectGift', 'approveExpense', 'rejectExpense', 'approveIncidentResolution', 'rejectIncidentResolution', 'approve', 'reject', 'approveRepayment', 'rejectRepayment', 'approveRounding', 'rejectRounding']) {
       await assert.rejects(run.app.execute({ operationKey: action, expectedRevision: 1, action,
         payload: { request: before.head.state.inventoryReviews[0].id, decisionNote: 'fake', submittedByPrincipalId: 'fake' } }, login.credential),
-        error => denied(error) && error.reason === (['approveGift', 'rejectGift'].includes(action) ? 'missing-permission' : 'trusted-action-not-enabled'));
+        error => denied(error) && error.reason === (['approveGift', 'rejectGift', 'approveExpense', 'rejectExpense'].includes(action) ? 'missing-permission' : 'trusted-action-not-enabled'));
       await assertUnchanged(id, before);
     }
   });

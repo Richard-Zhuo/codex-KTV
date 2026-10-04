@@ -5,7 +5,7 @@
 // 已知 bug（审批费用后关联 procurement.status 不同步）保持原状，修复另立任务。
 import { BusinessRejection } from './shared/business-error.js';
 import { need } from './inventory.js';
-import { effectiveUser, hasPermission, assertTrustedExecutionContext, requireTrustedPermission } from './shared/identity.js';
+import { effectiveUser, hasPermission, assertTrustedExecutionContext, requireTrustedPermission, AuthorizationDenied } from './shared/identity.js';
 import { PAYMENT_METHODS } from './sales.js';
 
 export const EXPENSE_NATURES = ['一次性支出', '固定支出', '资金周转'];
@@ -43,12 +43,35 @@ export function submitExpense(s, data, person, time, execution = { mode: 'demo' 
   const needsApproval = type === '报销' && data.amount > EXPENSE_APPROVAL_THRESHOLD;
   s.expenses.push({ id: ++s.serial, date: expenseDate, type, amount: data.amount, method: data.method, nature: data.nature, description, proof, proofName: String(data.proofName || '').trim().slice(0, 120), status: needsApproval ? '待老板审批' : '已记录', approver: '', approvedAt: '', submittedById: context ? '' : s.user, ...(context ? { submittedByPrincipalId: context.principalId } : {}), person, time });
 }
-export function decideExpense(s, action, data, person, time, authorizeReviewer) {
-  need(s, ['老板'], 'expense.approve');
+export function decideExpense(s, action, data, person, time, authorizeReviewer, execution = { mode: 'demo' }) {
+  if (!execution || !['demo', 'trusted'].includes(execution.mode)) throw TypeError('费用审核执行模式无效');
+  const context = execution.mode === 'trusted' ? assertTrustedExecutionContext(execution.context) : null;
+  if (context) requireTrustedPermission(context, 'expense.approve');
+  else need(s, ['老板'], 'expense.approve');
   const expense = (s.expenses || []).find(item => item.id === Number(data.id));
   if (!expense || expense.status !== '待老板审批') throw new BusinessRejection('这笔报销不在待审批状态');
-  if (!effectiveUser(s).roles.includes('老板')) throw new BusinessRejection('这笔报销需要老板岗位审批');
-  const selfReview = authorizeReviewer(expense.submittedById);
+  let selfReview;
+  if (context) {
+    // Applicant and amount are facts from the locked head's isolated state, never payload.
+    const applicant = expense.submittedByPrincipalId;
+    if (typeof applicant !== 'string' || !applicant || applicant.trim() !== applicant || applicant.length > 191) {
+      throw new AuthorizationDenied('untrusted-expense-applicant');
+    }
+    selfReview = applicant === context.principalId;
+    if (selfReview) requireTrustedPermission(context, 'review.self');
+    // An unknown amount cannot safely be treated as below the approval threshold.
+    if (!Number.isSafeInteger(expense.amount) || expense.amount <= 0) throw new AuthorizationDenied('untrusted-expense-amount');
+    if (expense.amount > EXPENSE_APPROVAL_THRESHOLD) {
+      if (!context.policyAttributesConfigured) throw new AuthorizationDenied('policy-attributes-unconfigured');
+      if (!context.policyAttributeIds.includes('expense.approval.boss')) throw new AuthorizationDenied('missing-policy-attribute');
+    }
+    person = context.actorSnapshot?.displayName ?? null;
+    time = context.dbNow;
+    expense.decidedByPrincipalId = context.principalId;
+  } else {
+    if (!effectiveUser(s).roles.includes('老板')) throw new BusinessRejection('这笔报销需要老板岗位审批');
+    selfReview = authorizeReviewer(expense.submittedById);
+  }
   expense.selfReviewAuthorized = selfReview;
   expense.status = action === 'approveExpense' ? '已审批' : '已驳回';
   expense.approver = person;

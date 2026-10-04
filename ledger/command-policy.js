@@ -5,6 +5,8 @@ const trustedPrincipals = new WeakSet();
 const trustedReviews = new WeakSet();
 const permissionIds = new Set(PERMISSION_IDS);
 export const EXCESS_ROUNDING_SELF = 'rounding.self.excess';
+export const EXPENSE_APPROVAL_BOSS = 'expense.approval.boss';
+export const POLICY_ATTRIBUTE_IDS = Object.freeze([EXCESS_ROUNDING_SELF, EXPENSE_APPROVAL_BOSS]);
 
 // Only these domain actions may be considered by a future formal command path.
 // The map contains grants, not domain rules, amounts, room state or stock balances.
@@ -65,7 +67,7 @@ export function createTrustedPrincipal({ id, permissionIds: grants = [], policyA
   if (typeof id !== 'string' || !id || id.trim() !== id || id.length > 191 ||
       !Array.isArray(grants) || grants.some(grant => !permissionIds.has(grant)) ||
       !Array.isArray(policyAttributeIds) ||
-      policyAttributeIds.some(attribute => attribute !== EXCESS_ROUNDING_SELF)) {
+      policyAttributeIds.some(attribute => !POLICY_ATTRIBUTE_IDS.includes(attribute))) {
     throw TypeError('可信 principal 无效');
   }
   const principal = Object.freeze({ id, permissionIds: Object.freeze([...new Set(grants)]),

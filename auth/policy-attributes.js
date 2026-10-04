@@ -1,4 +1,4 @@
-import { EXCESS_ROUNDING_SELF } from '../ledger/command-policy.js';
+import { POLICY_ATTRIBUTE_IDS } from '../ledger/command-policy.js';
 
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 function fields(input, names) {
@@ -22,7 +22,7 @@ export function createPolicyAttributeService({ store }) {
     fields(input, kind === 'configure' ? ['principalId'] : ['principalId', 'attributeId']);
     fields(context, ['actorPrincipalId']);
     principalId(input.principalId); principalId(context.actorPrincipalId);
-    if (kind !== 'configure' && input.attributeId !== EXCESS_ROUNDING_SELF) {
+    if (kind !== 'configure' && !POLICY_ATTRIBUTE_IDS.includes(input.attributeId)) {
       throw TypeError('必须提供受支持的具体 policy attribute');
     }
     // Freeze primitive inputs before awaiting; neither audit nor target can change in flight.

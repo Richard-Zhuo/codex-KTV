@@ -147,7 +147,8 @@
 - 正式 trusted `approveInventory`／`rejectInventory` 只从锁定账本中的申请读取 `submittedByPrincipalId`。非本人需 `inventory.approve`，本人另需 `review.self`；缺少可信申请人时两动作均授权拒绝、不占 operationKey，不从姓名、旧演示 ID、员工关联或 payload 推断。两动作保存 `decidedByPrincipalId`，姓名仅作显示快照；批准流水及通知附稳定申请人／审核人 principal。原批准、驳回、null／0、基础单位和数量变化语义不变。
 - 所有演示岗位默认可登记支出／报销。低于财务的岗位只能看本人记录；财务、店长、老板、管理员可看全部，具体权限仍可覆盖。
 - 报销超过 500 元进入老板审批。支出性质包括一次性支出、固定支出、资金周转；付款方式沿用五种收款方式。
-- 正式 trusted `expense` 申请创建只使用 session context 的 `expense.create`、principal 和冻结数据库时间。新记录保存 `submittedByPrincipalId`，原 `person` 仅作可信显示快照，`submittedById` 不填演示 ID；payload 身份／权限／时钟不得覆盖。原显式支出日期、金额、用途、凭证及超过 500 元报销的待审批状态保持；本批不开放报销审核或实现新的老板审批授权。
+- 正式 trusted `expense` 申请创建只使用 session context 的 `expense.create`、principal 和冻结数据库时间。新记录保存 `submittedByPrincipalId`，原 `person` 仅作可信显示快照，`submittedById` 不填演示 ID；payload 身份／权限／时钟不得覆盖。原显式支出日期、金额、用途、凭证及超过 500 元报销的待审批状态保持；申请创建不替代下述审核授权。
+- 正式 trusted `approveExpense`／`rejectExpense` 从锁定账本的待审 expense 读取 `submittedByPrincipalId` 与保存的金额；非本人必须有 `expense.approve`，本人另需 `review.self`。金额 >500 元时两动作还需已配置的 `expense.approval.boss` 属性；未配置或已配置空集合均拒绝，≤500 元不需此属性。属性只取当前 session context，不从姓名、旧岗位或 payload 推导。缺少可信申请人的历史／采购关联报销均授权拒绝、不占 operationKey。两动作保存 `decidedByPrincipalId`，approver 只作显示快照；保留原待审状态校验、金额、决定及采购状态同步，不迁移 procurement。撤销权限／属性后有效原 actor 的原请求仍返回已存终态，新 key 用当前授权事实。
 - 采购自动关联一笔支出／报销记录，并保留经办归属。
 - 客诉／异常包含日期、房号、类型、描述、负责人、处理结果和备注。未完成及待审核记录从每天 14:00 起在页面提示。
 - 负责人提交处理结果后进入恢复审核，审核通过才转为完成。
