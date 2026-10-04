@@ -469,6 +469,28 @@ JavaScript 修改后实际尝试 npm test，PowerShell 报 The term 'npm' is not
 
 复用受保护十一表 fixture，无新 schema／migration／生产依赖；不 CREATE／DROP database，不操作无关表。ledger application／store、fingerprint／operationKey／revision／terminal semantics、auth／attributes 实现及六项 Known Issues 均未改变。原 gate 测试只同步 repay 已迁移后的预期，其余动作测试保留。本批一个提交，parent 3a42360；main／origin/main 保持已同步基线，新提交不 push、不进入回款审批或下一批、不部署，无范围偏离。
 
+## P0-1 Stage 2C.3 repayment approve／reject（2026-10-05）
+
+先核实 57a8e08 的直接 parent 为 3a42360，ff-only 合入 main，无 merge commit；本次 main 完整 node --test --test-isolation=none：1159 / 1153 / 0 / 6，MySQL 全部真实执行，六项 Known Issues skip 与前批日志一致。fetch 确认远端仍为 3a42360 后普通 push，main = origin/main = 57a8e08、0/0、clean。随后从此 HEAD 创建 codex/p0-1-stage2c-repayment-review，起点等于当前 main；旧分支及其他工作树未改动。
+
+本批只新增 approveRepayment／rejectRepayment，trusted-enabled 共三十三项，其余十二个 eligible action 仍 fail closed。rules.js 在 demo 身份／clock 求值前进入 sales.js:decideRepayment 的显式 trusted 分支。审批事实只取锁内本次 repaymentRequest；submittedByPrincipalId 与 session principal 相等时，credit.repay.approve 之外另需 review.self，不使用原 credit 经办人、其他申请、姓名、旧演示 ID 或 payload 判本人。缺失或无效 applicant principal 的 legacy 两动作都授权拒绝、不占 key；无 employee resolver、manager／boss 属性条件或新 schema。
+
+决定保存 decidedByPrincipalId；decidedBy 只为可信显示快照（当前 null），decidedAt 取冻结 dbNow。批准的一笔 payment 同额进入 credit.repayments 和 order.payments，并保存 approvedByPrincipalId；person 保留本次申请提交人的显示快照，approvedBy 只为审核人显示快照。原金额、方式、余额扣减及归零转已回款、驳回原因必填／截断和状态规则共用原命令体；驳回不生成 payment、不减少余额。payment 沿用 time 字段，不加 occurredAt 或新资金日口径，不修改 reporting 或跨日 Known Issue。
+
+实际证据（total / pass / fail / skip）：
+
+- 首个公共 trusted 用例先真实因 trusted-action-not-enabled 失败，最小分流后通过；新增 repayment review 单元 28 / 28 / 0 / 0，覆盖两个动作、当前申请自审、legacy／伪造、只一笔资金效果、驳回无资金、原业务拒绝／付款字段和整体原子性。直接领域 getter 验证不读 state.user／permissions／clock，也不调用 demo 审核回调。
+- JavaScript 修改后实际尝试 npm test（包括最终集成用例修正后）；PowerShell 报 The term 'npm' is not recognized，未取得 npm 执行证据。DEVELOPMENT_ENVIRONMENT 的七文件定向 Node 回归：172 / 172 / 0 / 0。
+- 首轮新 MySQL legacy 夹具误用 undefined 字段，被既有 JSON 编码器拒绝；重放用例误将被拒的领域尝试计入成功次数。只修正新夹具：缺失字段显式删除，并验证 replay 前后执行计数不增加；没有放宽生产 JSON 校验或业务规则。
+- 最终四文件真实 MySQL 回归：485 / 485 / 0 / 0；每文件含 guard／根测试：auth 47/47（原 revalidation 13 保留）、employee 30/30、ledger 11/11、trusted 397/397（新增 repayment review 25/25）。MySQL 8.4.11 / jbhh_ktv_test / InnoDB 全部实际执行，无数据库 skip。
+- 最终完整 node --test --test-isolation=none：1212 / 1206 / 0 / 6，退出码 0；上述四套 MySQL 在完整运行中再次全部真实执行。六项 Known Issues 的名称和 skip 与本次 main 日志逐项完全一致。
+
+真实 DB 验证同一 connection 的 head → account → session → 当前 grants／attributes → 一次 DB UTC → operation → domain → state／result／audit／COMMIT；不 touch session activity、不查 employee。新 trusted repay 由独立 session 创建申请，审核人可恰为原 credit 经办人但不是本次申请人，仍按非自审处理。批准恰新增一笔 payment、余额只扣一次，驳回保持资金／余额原值。撤 credit.repay.approve 或 review.self 后新 pool 重连取原终态，不重新决定或扣款；新 key 当前资格不足不写回执，重新授权后原 key 可用。失效认证在 operation 查询前拒绝；actor／action／请求 ID／原因／expectedRevision 冲突保持，business rejection／revision conflict 仍为可重放终态。
+
+四种竞争均核对两条真实不同 CONNECTION_ID：approve 与 reject 分别同 key 只决定一次；两位审核人不同 key 对同 request 的 approve／approve 或 approve／reject 在旧 revision 最多一个成功，另一条 revision conflict；批准最多一笔资金效果。刷新 revision 后再批准已处理申请为原 business rejection，不再扣款。未知故障在领域决定后全回滚；实际 audit CHECK 中途 SQL 失败确认 head UPDATE／operation INSERT 已到达，再核对申请、payment、余额、历史、revision、operation、audit 完整无残留，修复后原 key 能重试。
+
+仅复用原受保护十一表 fixture，不 CREATE／DROP database，不碰无关表；测试完成后只读核对十一张 fixture 表已全部清理。Stage 1 application／store、指纹／revision／终态流程、auth／policy attributes／employee 实现、其他业务动作与六项 Known Issues 不改。一个提交，parent 57a8e08；main／origin/main 保持已同步基线。新提交不 push、不进入下一批、不部署，无范围偏离。
+
 ## 本轮隔离集成候选（2026-09-29）
 
 来源：用户交付的 `jbhh-ktv-full.zip`，基线 `ca726b2`；纯重构检查点 `74c3f55`；业务修复终点 `6aa01ba`。Track B 来源为 `codex/offsite-contracts@3193635`。候选位于独立工作树的 `codex/track-a-integration`，主工作区未提交内容保留；未合并 `main`、未推送。
@@ -605,7 +627,7 @@ JavaScript 修改后实际尝试 npm test，PowerShell 报 The term 'npm' is not
 
 ## 下一步
 
-只读快照预检器、Stage 1A／1A.1／1A.2 协议、Stage 1B-MySQL 适配器、Stage 2A 纯命令策略及 Stage 2B 独立认证基础已完成；Stage 1B.1 和 Stage 2B 已分别在专用 MySQL 8.4 测试库取得真实验收证据。Stage 2C.1 同事务认证、2C.2 clean 及 2C.3 房间异常、目录维护、取消预约、存取酒、reserve、sale／retailSale、serveExtra／otherCharge、exchange、房间恢复 approve／reject、stock／consumableStock、approveInventory／rejectInventory、gift 提交／approveGift／rejectGift 及 expense 申请／approveExpense／rejectExpense、credit 申请／approve／reject、repay 申请创建已通过真实数据库验收；其他未列动作仍未迁移，各批及线性整合验收见上节；员工名册、关联审计与事务内归属解析已真实验收，resolver 已仅接 trusted reserve／sale／retailSale，其余正式 action 和审核尚未迁移，policy attributes 配置／审计与同事务当前读已完成，属性基础自身不开放业务动作；HTTP／客户端及 2D 未开始，当前停止在本批。正式营业日和班次规则已确认的部分见 [REQUIREMENTS](./REQUIREMENTS.md)，运行实现仍属后续任务。
+只读快照预检器、Stage 1A／1A.1／1A.2 协议、Stage 1B-MySQL 适配器、Stage 2A 纯命令策略及 Stage 2B 独立认证基础已完成；Stage 1B.1 和 Stage 2B 已分别在专用 MySQL 8.4 测试库取得真实验收证据。Stage 2C.1 同事务认证、2C.2 clean 及 2C.3 房间异常、目录维护、取消预约、存取酒、reserve、sale／retailSale、serveExtra／otherCharge、exchange、房间恢复 approve／reject、stock／consumableStock、approveInventory／rejectInventory、gift 提交／approveGift／rejectGift 及 expense 申请／approveExpense／rejectExpense、credit 申请／approve／reject、repay 申请／approveRepayment／rejectRepayment 已通过真实数据库验收；其他未列动作仍未迁移，各批及线性整合验收见上节；员工名册、关联审计与事务内归属解析已真实验收，resolver 已仅接 trusted reserve／sale／retailSale，其余正式 action 和审核尚未迁移，policy attributes 配置／审计与同事务当前读已完成，属性基础自身不开放业务动作；HTTP／客户端及 2D 未开始，当前停止在本批。正式营业日和班次规则已确认的部分见 [REQUIREMENTS](./REQUIREMENTS.md)，运行实现仍属后续任务。
 
 ## 阶段停止条件
 

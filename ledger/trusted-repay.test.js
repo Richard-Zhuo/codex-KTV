@@ -197,10 +197,10 @@ test('repay: competing keys and same-key retries append at most once per old rev
  }
 });
 
-test('repay: request grant does not open repayment decisions, money actions or remaining unmigrated commands',async()=>{
+test('repay: request grant does not open money actions or remaining unmigrated commands',async()=>{
  const f=fixture({permissions:['credit.repay','credit.repay.approve','review.self','rounding.approve','payment.collect','payment.settle',
   'incident.create','incident.resolve','incident.resolve.approve','procurement.create','handover','room.open']});
- for(const action of ['approveRepayment','rejectRepayment','approveRounding','rejectRounding','collect','settle','pay','incident','resolveIncident',
+ for(const action of ['approveRounding','rejectRounding','collect','settle','pay','incident','resolveIncident',
   'approveIncidentResolution','rejectIncidentResolution','procurement','handover','open']){
   await assert.rejects(f.app.execute({...repayCommand(action),action},f.credential),e=>denied(e)&&e.reason==='trusted-action-not-enabled');await assertNoEffects(f);
  }

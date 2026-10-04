@@ -292,19 +292,34 @@ export function submitRepay(s, order, data, person, time, execution = { mode: 'd
   if (!PAYMENT_METHODS.includes(data.method)) throw new BusinessRejection('请选择收款方式');
   order.credit.repaymentRequests.push({ id: ++s.serial, amount: data.amount, method: data.method, status: '待审核', submittedBy: person, submittedById: context ? '' : s.user, ...(context ? { submittedByPrincipalId: context.principalId } : {}), submittedAt: time, decidedBy: '', decidedAt: '', decisionNote: '' });
 }
-export function decideRepayment(s, order, action, data, person, time, authorizeReviewer) {
-  need(s, [], 'credit.repay.approve');
+export function decideRepayment(s, order, action, data, person, time, authorizeReviewer, execution = { mode: 'demo' }) {
+  if (!execution || !['demo', 'trusted'].includes(execution.mode)) throw TypeError('回款审核执行模式无效');
+  const context = execution.mode === 'trusted' ? assertTrustedExecutionContext(execution.context) : null;
+  if (context) requireTrustedPermission(context, 'credit.repay.approve');
+  else need(s, [], 'credit.repay.approve');
   if (!order?.credit) throw new BusinessRejection('挂账记录不存在');
   const request = (order.credit.repaymentRequests || []).find(item => item.id === Number(data.request));
   if (!request || request.status !== '待审核') throw new BusinessRejection('这笔回款申请已经处理');
-  const selfReview = authorizeReviewer(request.submittedById);
+  let selfReview;
+  if (context) {
+    // The selected request in the locked state is the applicant fact, not the original credit or payload.
+    const applicant = request.submittedByPrincipalId;
+    if (typeof applicant !== 'string' || !applicant || applicant.trim() !== applicant || applicant.length > 191) {
+      throw new AuthorizationDenied('untrusted-repayment-applicant');
+    }
+    selfReview = applicant === context.principalId;
+    if (selfReview) requireTrustedPermission(context, 'review.self');
+    person = context.actorSnapshot?.displayName ?? null;
+    time = context.dbNow;
+  } else selfReview = authorizeReviewer(request.submittedById);
   const decisionNote = String(data.decisionNote || '').trim().slice(0, 300);
   if (action === 'rejectRepayment' && !decisionNote) throw new BusinessRejection('请填写驳回原因');
   if (action === 'approveRepayment') {
     if (order.status !== '已挂账' || request.amount > order.credit.remaining) throw new BusinessRejection('挂账余额已经变化，请驳回后重新登记');
-    const payment = { amount: request.amount, method: request.method, chargeId: 'credit-repayment', time, person: request.submittedBy, approvedBy: person, repaymentRequestId: request.id };
+    const payment = { amount: request.amount, method: request.method, chargeId: 'credit-repayment', time, person: request.submittedBy, approvedBy: person, repaymentRequestId: request.id, ...(context ? { approvedByPrincipalId: context.principalId } : {}) };
     order.credit.repayments.push(payment); order.payments.push(payment); order.credit.remaining -= request.amount;
     if (!order.credit.remaining) order.status = '已回款';
   }
   request.status = action === 'approveRepayment' ? '已批准' : '已驳回'; request.decidedBy = person; request.decidedAt = time; request.decisionNote = decisionNote; request.selfReviewAuthorized = selfReview;
+  if (context) request.decidedByPrincipalId = context.principalId;
 }

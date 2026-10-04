@@ -115,9 +115,9 @@ export async function testTrustedCredit({t,pool,setup,auth,table,provision,seed,
   assert.deepEqual(await run.app.execute(cmd,login.credential),first);assert.equal(run.executions(),1);await assertUnchanged(id,before);
  });
 
- await t.test('credit: repayment decisions, rounding, payments and other unconverted commands remain disabled',async()=>{
+ await t.test('credit: rounding, payments and other unconverted commands remain disabled',async()=>{
   const login=await provision(['credit.apply','credit.approve','credit.repay','credit.repay.approve','rounding.approve','payment.collect','payment.settle','incident.create','incident.resolve','incident.resolve.approve','procurement.create','handover','room.open','review.self']),id='credit-blocked';await seedFor(id);const run=runFor(id);await run.app.execute(creditCommand(),login.credential);const before=await inspect(id);
-  for(const action of ['approveRepayment','rejectRepayment','approveRounding','rejectRounding','collect','settle','pay','incident','resolveIncident','approveIncidentResolution','rejectIncidentResolution','procurement','handover','open']){
+  for(const action of ['approveRounding','rejectRounding','collect','settle','pay','incident','resolveIncident','approveIncidentResolution','rejectIncidentResolution','procurement','handover','open']){
    await assert.rejects(run.app.execute({...creditCommand(action,1),action},login.credential),e=>denied(e)&&e.reason==='trusted-action-not-enabled');await assertUnchanged(id,before);
   }
  });
