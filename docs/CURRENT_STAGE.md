@@ -270,6 +270,26 @@ JavaScript 修改后实际尝试 npm test，PowerShell 报 The term 'npm' is not
 
 本批仅一个独立提交，parent 为 ec1071c；不进入其他审批或下一批，不 push／部署，不接 HTTP／UI，不修六项 Known Issues。
 
+## P0-1 Stage 2C.3 trusted 库存申请（2026-10-04）
+
+本轮先核实房间恢复审批提交 88a5c1a 的直接 parent 为 ec1071c；clean main 从 ec1071c ff-only 到 88a5c1a，没有 merge commit。合入后完整 node --test --test-isolation=none 实际 749 total／743 pass／0 fail／6 skip，auth 29、employee 30、ledger 11、trusted 182 均真实执行。fetch 后确认 origin/main 未新增、仅本地领先一提交，再普通 push；main = origin/main = 88a5c1a，0／0、clean。旧 Track A／B 和 PostgreSQL 工作树未改。
+
+随后从该 clean main 直接建立 codex/p0-1-stage2c-stock，再次核实新分支 HEAD = main HEAD = 88a5c1a。本批仅增加 stock／consumableStock 到 trusted-enabled，共十九动作，其余 26 个 eligible action 仍 fail closed，特别是 approveInventory／rejectInventory。无新 schema、依赖、员工映射或 policy attributes；ledger application／MySQL store／auth／command-policy 和 Stage 1 指纹、revision、terminal replay 顺序均未改变。
+
+用例以有效 synthetic session、当前对应库存权限、正确 revision 和锁内 inventory／consumables 为前置。rules.js 在 demo operator／clock 求值前传入显式 trusted execution；inventory.js 两个提交函数保留原 item.count === null 判断，期初需 inventory.opening，其他余额包括 0 需 inventory.adjust。私有 inventorySubmission 只从 branded context.permissionIds 精确验权；submittedByPrincipalId 取 session principal，submittedAt 取一次冻结 dbNow，submittedById 留空；submittedBy 仅作 actorSnapshot.displayName 快照，当前为 null，不伪造姓名。payload 申请人、actor、权限、role、clock 或伪造 before／source 不能覆盖真实事实。
+
+原整数库存与 opened 数量、原因截断、同商品待审核阻拦、来源、基础单位及 before／after 字段共用原规则。提交只创建待审核申请，不改变库存余额、opened、流水或通知；count=null 与 0 严格区分。demo 原行为保持。权限不足抛 AuthorizationDenied、完整回滚，不占 operationKey；授予正确权限后原 key 可重试。明确业务拒绝和 revision conflict 仍是 terminal；未知异常不占键。
+
+新增 20 项数据库无关测试与 21 项真实 MySQL 子用例，复用原受保护十表 fixture，没有新增 DDL／清理生命周期。定向 node --test --test-isolation=none ledger/trusted-stock.test.js ledger/trusted-clean.test.js inventory.test.js ledger/command-policy.test.js 实际 113 total／113 pass／0 fail／0 skip。验证锁内 null／0／正数权限选择、申请人及时间、防伪造、拒绝不占键、旧 key 重放与 actor／payload／expectedRevision／action 冲突、失效认证、原数量及待审核规则、demo 对照、不读取演示身份／时间、缺失／复制 context 拒绝和未知异常完整回滚。
+
+现场 MySQL 8.4.11／jbhh_ktv_test／InnoDB 已核实，URL 可读且未输出。真实定向 node --test --test-isolation=none ledger/trusted-clean.integration.test.js auth/mysql-auth.integration.test.js ledger/mysql-store.integration.test.js employees/mysql-roster.integration.test.js：273 total／273 pass／0 fail／0 skip。trusted 203／203，含新增库存 21／21；auth 29／29（revalidation 13／13）、employee 30／30、ledger 11／11 继续执行。申请在同一 connection 依序 head → account → session → 当前 grants → 一次 dbNow → existing operation → domain → state／result／audit／COMMIT；不 touch session activity，也不调用员工 resolver。撤销权限后新 pool 重连仍返回原 terminal、不再生成申请，新 key 拒绝；disabled／revoked／idle／absolute／credential version 失效均先于 operation 查找。
+
+每个动作都使用两个实际不同 CONNECTION_ID 的 MySQL connection 验证不同 key 的同旧 revision 竞争：一笔 committed、一笔 revision-conflict、仅一申请和一次 revision；同 key 竞争只执行一次。未知异常以及 head UPDATE 和 operation INSERT 后成功 audit 的 CHECK SQL 故障均完整回滚 state／库存／申请／revision／operation／audit；修复故障后原 key 成功。零售 room=null、未知历史名称／价格／规格和基础数量快照、counted=false 旧流水保持。
+
+JavaScript 修改后实际尝试 npm test，PowerShell 报 The term 'npm' is not recognized，进程未启动，未取得 npm 通过证据。最终完整 node --test --test-isolation=none：790 total／784 pass／0 fail／6 skip，退出码 0；上述全部 MySQL 套件真实执行且 0 skip，原六项 Known Issues 名称与 skip 保持。测试结束后只读确认十张 fixture 表均不存在，不 CREATE／DROP database，不操作其他表。
+
+本批仅一个独立提交，parent 为 88a5c1a；main／origin/main 保持已同步基线，新提交不 push，不进入库存审批或下一批，不部署。不改变库存业务规则或 Known Issues，无范围偏离。
+
 ## 本轮隔离集成候选（2026-09-29）
 
 来源：用户交付的 `jbhh-ktv-full.zip`，基线 `ca726b2`；纯重构检查点 `74c3f55`；业务修复终点 `6aa01ba`。Track B 来源为 `codex/offsite-contracts@3193635`。候选位于独立工作树的 `codex/track-a-integration`，主工作区未提交内容保留；未合并 `main`、未推送。
@@ -406,7 +426,7 @@ JavaScript 修改后实际尝试 npm test，PowerShell 报 The term 'npm' is not
 
 ## 下一步
 
-只读快照预检器、Stage 1A／1A.1／1A.2 协议、Stage 1B-MySQL 适配器、Stage 2A 纯命令策略及 Stage 2B 独立认证基础已完成；Stage 1B.1 和 Stage 2B 已分别在专用 MySQL 8.4 测试库取得真实验收证据。Stage 2C.1 同事务认证、2C.2 clean 及 2C.3 房间异常、目录维护、取消预约、存取酒、reserve、sale／retailSale、serveExtra／otherCharge 与 exchange 已通过真实数据库验收；各批及线性整合验收见上节；员工名册、关联审计与事务内归属解析已真实验收，resolver 已仅接 trusted reserve／sale／retailSale，其余正式 action 和审核尚未迁移，HTTP／客户端及 2D 未开始，当前停止在本批。正式营业日和班次规则已确认的部分见 [REQUIREMENTS](./REQUIREMENTS.md)，运行实现仍属后续任务。
+只读快照预检器、Stage 1A／1A.1／1A.2 协议、Stage 1B-MySQL 适配器、Stage 2A 纯命令策略及 Stage 2B 独立认证基础已完成；Stage 1B.1 和 Stage 2B 已分别在专用 MySQL 8.4 测试库取得真实验收证据。Stage 2C.1 同事务认证、2C.2 clean 及 2C.3 房间异常、目录维护、取消预约、存取酒、reserve、sale／retailSale、serveExtra／otherCharge、exchange、房间恢复 approve／reject 与 stock／consumableStock 已通过真实数据库验收；库存审批和其他未列动作仍未迁移，各批及线性整合验收见上节；员工名册、关联审计与事务内归属解析已真实验收，resolver 已仅接 trusted reserve／sale／retailSale，其余正式 action 和审核尚未迁移，HTTP／客户端及 2D 未开始，当前停止在本批。正式营业日和班次规则已确认的部分见 [REQUIREMENTS](./REQUIREMENTS.md)，运行实现仍属后续任务。
 
 ## 阶段停止条件
 

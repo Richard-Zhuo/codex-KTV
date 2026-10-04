@@ -5,7 +5,7 @@
 // 权限闸门与自审授权经 ctx 注入（need／authorizeReviewer），避免对 rules.js 的循环依赖。
 import { BusinessRejection } from './shared/business-error.js';
 import { product } from './catalog.js';
-import { effectiveUser, hasPermission, hasRole, assertTrustedExecutionContext } from './shared/identity.js';
+import { effectiveUser, hasPermission, hasRole, assertTrustedExecutionContext, requireTrustedPermission } from './shared/identity.js';
 
 export function need(state, roles, permission = '') { const user = effectiveUser(state); if (permission ? !hasPermission(user, permission) : !hasRole(user, roles)) throw new BusinessRejection('当前身份没有操作权限，请切换到对应演示身份'); }
 
@@ -25,25 +25,38 @@ export function recordInventoryChange(state, id, delta, source, time, related = 
   if (item.count !== null) item.count += delta;
 }
 
-export function submitStock(s, data, person, time) {
+// Submission identity is separate from the unchanged inventory review rules.
+function inventorySubmission(state, roles, permission, person, time, execution) {
+  if (!execution || !['demo', 'trusted'].includes(execution.mode)) throw TypeError('库存申请执行模式无效');
+  if (execution.mode === 'trusted') {
+    const context = assertTrustedExecutionContext(execution.context);
+    requireTrustedPermission(context, permission);
+    return { submittedBy: context.actorSnapshot?.displayName ?? null, submittedById: '',
+      submittedByPrincipalId: context.principalId, submittedAt: context.dbNow };
+  }
+  need(state, roles, permission);
+  return { submittedBy: person, submittedById: state.user, submittedAt: time };
+}
+
+export function submitStock(s, data, person, time, execution = { mode: 'demo' }) {
   const item = s.inventory[data.product]; if (!item) throw new BusinessRejection('该商品不管理库存');
-  need(s, item.count === null ? ['店长','老板','采购'] : ['店长','老板','库管','采购'], item.count === null ? 'inventory.opening' : 'inventory.adjust');
+  const submission = inventorySubmission(s, item.count === null ? ['店长','老板','采购'] : ['店长','老板','库管','采购'], item.count === null ? 'inventory.opening' : 'inventory.adjust', person, time, execution);
   if (!Number.isSafeInteger(data.count) || data.count < 0) throw new BusinessRejection('实际库存应为非负整数');
   const reason = String(data.reason || '').trim().slice(0, 300); if (!reason) throw new BusinessRejection('请填写调整原因');
   if (pendingInventoryReview(s, 'drink', data.product)) throw new BusinessRejection('该商品已有库存盘点待审核');
   const before = item.count;
-  s.inventoryReviews.push({ id: ++s.serial, kind: 'drink', product: data.product, before, after: data.count, reason, source: before === null ? '期初建账' : '盘点调整', status: '待审核', submittedBy: person, submittedById: s.user, submittedAt: time, decidedBy: '', decidedAt: '', decisionNote: '' });
+  s.inventoryReviews.push({ id: ++s.serial, kind: 'drink', product: data.product, before, after: data.count, reason, source: before === null ? '期初建账' : '盘点调整', status: '待审核', ...submission, decidedBy: '', decidedAt: '', decisionNote: '' });
 }
 
-export function submitConsumableStock(s, data, person, time) {
+export function submitConsumableStock(s, data, person, time, execution = { mode: 'demo' }) {
   const item = s.consumables?.[data.product]; if (!item) throw new BusinessRejection('该消耗品不在库存管理中');
   const permission = item.count === null ? 'inventory.opening' : 'inventory.adjust';
-  need(s, [], permission);
+  const submission = inventorySubmission(s, [], permission, person, time, execution);
   if (!Number.isSafeInteger(data.count) || data.count < 0 || !Number.isSafeInteger(data.opened) || data.opened < 0) throw new BusinessRejection('消耗品数量应为非负整数');
   const reason = String(data.reason || '').trim().slice(0, 300); if (!reason) throw new BusinessRejection('请填写调整原因');
   if (pendingInventoryReview(s, 'consumable', data.product)) throw new BusinessRejection('该消耗品已有库存盘点待审核');
   const before = item.count, beforeOpened = item.opened || 0;
-  s.inventoryReviews.push({ id: ++s.serial, kind: 'consumable', product: data.product, before, after: data.count, openedBefore: beforeOpened, openedAfter: data.opened, reason, source: before === null ? '消耗品期初建账' : '消耗品盘点调整', status: '待审核', submittedBy: person, submittedById: s.user, submittedAt: time, decidedBy: '', decidedAt: '', decisionNote: '' });
+  s.inventoryReviews.push({ id: ++s.serial, kind: 'consumable', product: data.product, before, after: data.count, openedBefore: beforeOpened, openedAfter: data.opened, reason, source: before === null ? '消耗品期初建账' : '消耗品盘点调整', status: '待审核', ...submission, decidedBy: '', decidedAt: '', decisionNote: '' });
 }
 
 export function decideInventory(s, action, data, person, time, authorizeReviewer) {
