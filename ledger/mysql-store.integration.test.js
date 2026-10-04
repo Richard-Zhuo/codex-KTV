@@ -7,6 +7,7 @@ import { initialState, transact } from '../rules.js';
 import { createLedgerApplication } from './application.js';
 import { encodeLedgerSnapshot } from './mysql-snapshot.js';
 import { createMySqlLedgerStore } from './mysql-store.js';
+import { testRoundingLimit } from './rounding-limit.integration.js';
 
 const testUrl = process.env.LEDGER_MYSQL_TEST_URL;
 const database = 'jbhh_ktv_test';
@@ -71,11 +72,12 @@ test('MySQL 8.4 InnoDB ledger integration in jbhh_ktv_test',
       assert.ok(engines.every(row => row.engine === 'InnoDB'));
       await assert.rejects(pool.query(statements[0]), error => error.code === 'ER_TABLE_EXISTS_ERROR');
 
-      const seed = async id => {
+      const seed = async (id, prepareState = () => {}) => {
         const state = initialState();
         state.user = 'shaoBoss';
         state.clock = '2026-09-29T20:00:00+08:00';
         state.inventory.bw.count = 24;
+        prepareState(state);
         const encoded = encodeLedgerSnapshot(state);
         await pool.execute('INSERT INTO ' + qualified('ledger_heads') +
           ' (ledger_id, revision, state_schema_version, state_json, state_checksum) VALUES (?, 0, ?, ?, ?)',
@@ -265,6 +267,8 @@ test('MySQL 8.4 InnoDB ledger integration in jbhh_ktv_test',
         assert.equal(zero.head.state.inventory.bw.count, 0);
         assert.equal(zero.head.state.inventory.qd.count, null);
       });
+
+      await testRoundingLimit(t, { seed, app, inspect, pool, qualified });
     } finally {
       try { if (pool) await pool.end(); }
       finally {

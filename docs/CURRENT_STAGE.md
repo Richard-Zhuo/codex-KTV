@@ -4,7 +4,7 @@
 
 ## 当前基线与业务契约纠偏（2026-09-29）
 
-Track A＋B 集成提交 `81e1a4c` 已在 `main`；下方“隔离集成候选尚未合并 main”的文字是当时的历史记录，不再代表当前 Git 状态。本轮收到门店对完整营业职责、≤5 元免零和超额审批自批限制、暂定 06:00 营业日、订单营业额与逐笔付款资金分日归属、平台券先核销和无固定备用金的明确确认，已更新 [REQUIREMENTS](./REQUIREMENTS.md)、[OFFSITE_CONTRACTS](./OFFSITE_CONTRACTS.md)、[OPEN BUSINESS DECISIONS](./OPEN_BUSINESS_DECISIONS.md) 与 [P0 矩阵](./OFFSITE_P0_MATRIX.md)。这些是目标契约纠偏，当前演示代码并未因此实现新规则；K01、K05、K07 仍见 [KNOWN_ISSUES](./KNOWN_ISSUES.md)。真人与历史演示账号 ID 的映射继续待确认。
+Track A＋B 集成提交 `81e1a4c` 已在 `main`；下方“隔离集成候选尚未合并 main”的文字是当时的历史记录，不再代表当前 Git 状态。本轮收到门店对完整营业职责、当时的≤5 元免零（本轮门店已改为≤10 元）和超额审批自批限制、暂定 06:00 营业日、订单营业额与逐笔付款资金分日归属、平台券先核销和无固定备用金的明确确认，已更新 [REQUIREMENTS](./REQUIREMENTS.md)、[OFFSITE_CONTRACTS](./OFFSITE_CONTRACTS.md)、[OPEN BUSINESS DECISIONS](./OPEN_BUSINESS_DECISIONS.md) 与 [P0 矩阵](./OFFSITE_P0_MATRIX.md)。这些是目标契约纠偏，当前演示代码并未因此实现新规则；K01、K05、K07 仍见 [KNOWN_ISSUES](./KNOWN_ISSUES.md)。真人与历史演示账号 ID 的映射继续待确认。
 
 ## P0-1 原始快照只读预检器（2026-09-29）
 
@@ -490,6 +490,16 @@ JavaScript 修改后实际尝试 npm test，PowerShell 报 The term 'npm' is not
 四种竞争均核对两条真实不同 CONNECTION_ID：approve 与 reject 分别同 key 只决定一次；两位审核人不同 key 对同 request 的 approve／approve 或 approve／reject 在旧 revision 最多一个成功，另一条 revision conflict；批准最多一笔资金效果。刷新 revision 后再批准已处理申请为原 business rejection，不再扣款。未知故障在领域决定后全回滚；实际 audit CHECK 中途 SQL 失败确认 head UPDATE／operation INSERT 已到达，再核对申请、payment、余额、历史、revision、operation、audit 完整无残留，修复后原 key 能重试。
 
 仅复用原受保护十一表 fixture，不 CREATE／DROP database，不碰无关表；测试完成后只读核对十一张 fixture 表已全部清理。Stage 1 application／store、指纹／revision／终态流程、auth／policy attributes／employee 实现、其他业务动作与六项 Known Issues 不改。一个提交，parent 57a8e08；main／origin/main 保持已同步基线。新提交不 push、不进入下一批、不部署，无范围偏离。
+
+## 门店规则调整：小额免零上限 10 元（2026-10-05）
+
+基线为已 ff-only 合入、完整 1212／1206／0／6 实际回归且普通 push 的 repayment review 27e2349；main／origin/main 同步后独立建立 codex/p0-1-rounding-ten-yuan。本批只调整免零额度，不迁移任何新 trusted action。
+
+sales.js:validateSettlementPayments 以 SMALL_ROUNDING_LIMIT_CENTS=1000 表达 ≤10 元直接免零；>10 元沿既有 roundingReview 待审核路径，显式特殊情况仍需理由并进入原审批。不修改结账权限、审核人员、review.self／rounding.self.excess、付款／挂账／营业日或目标凑整方式；例如 168 元收 160 元保留真实付款 160 元和免零 8 元。免零从实际未收金额与本次正数付款之差计算，仍拒绝负数／零付款和超收。
+
+当前代码此前没有 500 分生产阈值，只对特殊情况创建审核；此次最小补入小额／超额分流，未修复 K01 的审批前订单已关闭，也未修复 K06 的 outstanding 差额。旧六项 Known Issues 保持 skip；现有 skipped 数据无 >5 元阈值需要迁移，168／0.01 元仍超出新额度。
+
+rounding-limit.test.js 从 10.01 元必须有待审核记录的实际失败开始，覆盖 0／5／9.99／10.00／10.01 元、168→160、已收款后余额、无效金额、结账权限与原特殊审批。真实 MySQL 使用 ledger 原三表 guarded fixture 调用 ledger/rounding-limit.integration.js；原 11 项加新增 9 项实际 20／20／0／0，通过 JSON 往返、replay 单次付款及审核／SQL 全回滚。已尝试 npm test，PowerShell 找不到 npm，未取得 npm 运行证据；四文件定向 Node 回归 91／86／0／5（原五项 Known Issue 子集）；完整 node --test --test-isolation=none 实际 1231／1225／0／6，退出码 0，四套 MySQL 全部执行；六项 skip 名称与本轮 27e2349 main 回归完全一致。
 
 ## 本轮隔离集成候选（2026-09-29）
 

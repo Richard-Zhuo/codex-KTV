@@ -131,6 +131,7 @@ function validatePayments(payments, amount) {
   if (payments.reduce((sum, payment) => sum + payment.amount, 0) !== amount) throw new BusinessRejection('各项收款之和必须等于本次待收金额');
   return payments;
 }
+const SMALL_ROUNDING_LIMIT_CENTS = 1000; // 门店小额免零上限：10 元。
 function validateSettlementPayments(payments, amount, differenceType = '免零', differenceNote = '') {
   if (!Number.isSafeInteger(amount) || amount < 0) throw new BusinessRejection('待收金额无效');
   if (amount === 0) return { payments: [], rounding: 0, differenceType: '', differenceNote: '', needsReview: false };
@@ -143,7 +144,7 @@ function validateSettlementPayments(payments, amount, differenceType = '免零',
   if (!['免零', '特殊情况'].includes(type)) throw new BusinessRejection('请选择有效的差额处理方式');
   const note = String(differenceNote || '').trim().slice(0, 200);
   if (type === '特殊情况' && !note) throw new BusinessRejection('请填写特殊情况说明，提交后由店长审核');
-  return { payments, rounding, differenceType: type, differenceNote: type === '特殊情况' ? note : '', needsReview: type === '特殊情况' };
+  return { payments, rounding, differenceType: type, differenceNote: type === '特殊情况' ? note : '', needsReview: type === '特殊情况' || rounding > SMALL_ROUNDING_LIMIT_CENTS };
 }
 
 // —— 命令层：由 rules.js 的 transact 分支委托调用，参数与原分支一致 ——
