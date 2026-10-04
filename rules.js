@@ -37,16 +37,41 @@ export function initialState() {
   const catalog = cloneCatalog(DEFAULT_CATALOG);
   return { version: 1, capabilitySchemaVersion: 4, catalogSchemaVersion: catalog.schemaVersion, catalog, clock: today.toISOString(), user: 'staff', permissions: defaultPermissions(), capabilities: defaultCapabilities(), rooms: ['V01','V02','V03','V05','V06','333','666','999','888'].map(id => ({ id, type: roomType(id), status: '空闲', order: null, issueType: '', issueNote: '', issueAt: '', issueBy: '', issueApprovedBy: '', issueEvidencePhoto: '', issueEvidencePhotoName: '' })), orders: [], reservations: [], deposits: [], withdrawals: [], expenses: [], procurements: [], incidents: [], roomIssueReviews: [], inventoryReviews: [], inventory: Object.fromEntries(inventoryProducts(catalog).map(item => [item.id, { count: null, threshold: item.inventoryThreshold ?? 10, unit: item.baseUnit }])), consumables: Object.fromEntries(consumableProducts(catalog).map(item => [item.id, { count: null, opened: 0, unit: item.baseUnit, threshold: item.inventoryThreshold ?? 10 }])), ledger: [], notices: [], handovers: [], processed: [], serial: 0 };
 }
-// grantBonus 服务 gift/approveGift 分支（赠酒域，暂留 rules.js），函数体自 HEAD 逐字保留。
-function grantBonus(state, order, productId, halves, source, time, requestedBy) {
+// gift 共用原数量与快照规则；approveGift 仍保持原 demo 调用。
+function grantBonus(state, order, productId, halves, source, time, requestedBy, execution = { mode: 'demo' }) {
+  if (!execution || !['demo', 'trusted'].includes(execution.mode)) throw TypeError('赠酒执行模式无效');
+  const context = execution.mode === 'trusted' ? assertTrustedExecutionContext(execution.context) : null;
+  if (context) time = context.dbNow;
   const bottles = halves * 6;
-  recordInventoryChange(state, productId, -bottles, source, time);
+  recordInventoryChange(state, productId, -bottles, source, time, {}, execution);
   order.bonusGifts ??= [];
   const giftId = ++state.serial;
   const p = product(productId, state.catalog);
   const halfOption = saleOption(p, 'half');
   const snapshot = productSnapshot(state.catalog, productId, bottles, { saleOptionId: halfOption.id, saleOptionNameSnapshot: halfOption.name, saleQuantity: halves, baseQuantityPerSaleUnit: halfOption.baseQuantity, totalBaseQuantity: bottles, referenceValueCents: halves * halfOption.priceCents, snapshotStatus: 'current' });
-  order.bonusGifts.push({ id: giftId, product: productId, productId, ...snapshot, halves, bottles, drinks: [{ id: ++state.serial, product: productId, productId, productNameSnapshot: snapshot.productNameSnapshot, baseUnitSnapshot: snapshot.baseUnitSnapshot, count: bottles, totalBaseQuantity: bottles }], source, person: effectiveUser(state).name, requestedBy: requestedBy || effectiveUser(state).name, time });
+  order.bonusGifts.push({ id: giftId, product: productId, productId, ...snapshot, halves, bottles, drinks: [{ id: ++state.serial, product: productId, productId, productNameSnapshot: snapshot.productNameSnapshot, baseUnitSnapshot: snapshot.baseUnitSnapshot, count: bottles, totalBaseQuantity: bottles }], source, person: context ? context.principalId : effectiveUser(state).name, requestedBy: requestedBy || (context ? context.actorSnapshot?.displayName ?? null : effectiveUser(state).name), time,
+    ...(context ? { actualActorPrincipalId: context.principalId } : {}) });
+}
+// Gift submission shares the original allowance, stock and pending-review rules.
+function executeGift(s, data, person, time, execution = { mode: 'demo' }) {
+  if (!execution || !['demo', 'trusted'].includes(execution.mode)) throw TypeError('赠酒执行模式无效');
+  const context = execution.mode === 'trusted' ? assertTrustedExecutionContext(execution.context) : null;
+  if (context) { person = context.actorSnapshot?.displayName ?? null; time = context.dbNow; }
+  if (context) requireTrustedPermission(context, 'order.gift');
+  else need(s, ['开单员','服务员','店长','老板'], 'order.gift');
+  const order = s.orders.find(order => order.id === data.order);
+  if (!order || order.status !== '营业中') throw new BusinessRejection('账单已变化，请返回房间重新查看');
+  quantity(data.halves);
+  const p = product(data.productId || data.product, s.catalog);
+  if (!p.openingGiftEligible || p.selectionOnly) throw new BusinessRejection('该商品不参与赠酒水规则');
+  const halfOption = saleOption(p, 'half');
+  const allowance = bonusAllowance(order, p.id);
+  if (!allowance.purchased) throw new BusinessRejection('请先增购对应酒水');
+  order.giftRequests ??= [];
+  const directHalves = Math.min(data.halves, allowance.availableHalves);
+  const excessHalves = data.halves - directHalves;
+  if (directHalves) grantBonus(s, order, p.id, directHalves, '每增购2打赠半打', time, undefined, execution);
+  if (excessHalves) order.giftRequests.push({ id: ++s.serial, product: p.id, productId: p.id, productNameSnapshot: p.name, categorySnapshot: p.category, baseUnitSnapshot: p.baseUnit, saleOptionId: 'half', saleOptionNameSnapshot: halfOption.name, halves: excessHalves, saleQuantity: excessHalves, baseQuantityPerSaleUnit: halfOption.baseQuantity, bottles: excessHalves * halfOption.baseQuantity, totalBaseQuantity: excessHalves * halfOption.baseQuantity, referenceValueCents: excessHalves * halfOption.priceCents, allowanceAtRequest: directHalves, status: '待确认', requestedBy: person, requestedById: context ? '' : s.user, ...(context ? { submittedByPrincipalId: context.principalId } : {}), submittedAt: time, time, decidedBy: '', decidedAt: '', decisionNote: '', snapshotStatus: 'current' });
 }
 // 目录命令的私有业务校验；demo 与 trusted 共用原规则。
 function normalizeSaleOptions(options, sellable) {
@@ -178,7 +203,7 @@ function executeExchange(s, data, person, time, execution = { mode: 'demo' }) {
 export function transact(original, action, data = {}, key, execution = { mode: 'demo' }) {
   if (!execution || !['demo', 'trusted'].includes(execution.mode)) throw TypeError('事务执行模式无效');
   const context = execution.mode === 'trusted' ? assertTrustedExecutionContext(execution.context) : null;
-  if (context && !['clean', 'markRoomIssue', 'clearRoomIssue', 'approveRoomIssue', 'rejectRoomIssue', ...CATALOG_COMMAND_ACTIONS, 'cancelReservation', 'deposit', 'withdraw', 'reserve', 'sale', 'retailSale', ...ORDER_ADDITION_ACTIONS, 'exchange', 'stock', 'consumableStock', 'approveInventory', 'rejectInventory'].includes(action)) throw new AuthorizationDenied('trusted-action-not-enabled');
+  if (context && !['clean', 'markRoomIssue', 'clearRoomIssue', 'approveRoomIssue', 'rejectRoomIssue', ...CATALOG_COMMAND_ACTIONS, 'cancelReservation', 'deposit', 'withdraw', 'reserve', 'sale', 'retailSale', ...ORDER_ADDITION_ACTIONS, 'exchange', 'stock', 'consumableStock', 'approveInventory', 'rejectInventory', 'gift'].includes(action)) throw new AuthorizationDenied('trusted-action-not-enabled');
   if (!key) throw new BusinessRejection('缺少操作编号');
   if (original.processed.includes(key)) return original;
   const s = structuredClone(original);
@@ -197,6 +222,7 @@ export function transact(original, action, data = {}, key, execution = { mode: '
     } else if (action === 'retailSale') submitRetailSale(s, data, undefined, undefined, undefined, execution);
     else if (ORDER_ADDITION_ACTIONS.includes(action)) executeOrderAddition(s, action, data, undefined, undefined, execution);
     else if (action === 'exchange') executeExchange(s, data, undefined, undefined, execution);
+    else if (action === 'gift') executeGift(s, data, undefined, undefined, execution);
     else if (action === 'stock') submitStock(s, data, undefined, undefined, execution);
     else if (action === 'consumableStock') submitConsumableStock(s, data, undefined, undefined, execution);
     else if (action === 'approveInventory' || action === 'rejectInventory') decideInventory(s, action, data, undefined, undefined, undefined, execution);
@@ -266,17 +292,7 @@ export function transact(original, action, data = {}, key, execution = { mode: '
   } else if (action === 'otherCharge') {
     executeOrderAddition(s, action, data, person, time);
   } else if (action === 'gift') {
-    need(s, ['开单员','服务员','店长','老板'], 'order.gift'); active(); quantity(data.halves);
-    const p = product(data.productId || data.product, s.catalog);
-    if (!p.openingGiftEligible || p.selectionOnly) throw new BusinessRejection('该商品不参与赠酒水规则');
-    const halfOption = saleOption(p, 'half');
-    const allowance = bonusAllowance(order, p.id);
-    if (!allowance.purchased) throw new BusinessRejection('请先增购对应酒水');
-    order.giftRequests ??= [];
-    const directHalves = Math.min(data.halves, allowance.availableHalves);
-    const excessHalves = data.halves - directHalves;
-    if (directHalves) grantBonus(s, order, p.id, directHalves, '每增购2打赠半打', time);
-    if (excessHalves) order.giftRequests.push({ id: ++s.serial, product: p.id, productId: p.id, productNameSnapshot: p.name, categorySnapshot: p.category, baseUnitSnapshot: p.baseUnit, saleOptionId: 'half', saleOptionNameSnapshot: halfOption.name, halves: excessHalves, saleQuantity: excessHalves, baseQuantityPerSaleUnit: halfOption.baseQuantity, bottles: excessHalves * halfOption.baseQuantity, totalBaseQuantity: excessHalves * halfOption.baseQuantity, referenceValueCents: excessHalves * halfOption.priceCents, allowanceAtRequest: directHalves, status: '待确认', requestedBy: person, requestedById: s.user, submittedAt: time, time, decidedBy: '', decidedAt: '', decisionNote: '', snapshotStatus: 'current' });
+    executeGift(s, data, person, time);
   } else if (action === 'approveGift' || action === 'rejectGift') {
     need(s, ['店长','老板'], 'gift.approve'); active();
     const request = (order.giftRequests || []).find(item => item.id === data.request);
