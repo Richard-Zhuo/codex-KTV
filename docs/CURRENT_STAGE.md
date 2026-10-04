@@ -373,6 +373,25 @@ JavaScript 修改后实际尝试 npm test，PowerShell 报 The term 'npm' is not
 
 测试只在核实的专用库创建/迁移/清理本轮 fixture 拥有的表；auth 六表、employee 八表、trusted 十一表，未 CREATE/DROP database。历史 002/003、rules.js、ledger application/store、指纹、operationKey、revision、终态 replay 及 trusted-enabled 二十四动作均不改；没有新增生产依赖、岗位限制、真人映射、业务 action、部署或本批 push。
 
+## P0-1 Stage 2C.3 expense 申请创建（2026-10-04）
+
+先核实 b5ba5a8 直接 parent 为 8fdba43，ff-only 合入 main，没有 merge commit。本次 main 完整回归实际 936 / 930 / 0 / 6，MySQL 8.4.11 / jbhh_ktv_test / InnoDB 真实执行；fetch 确认远端仍为 8fdba43 后普通 push，main = origin/main = b5ba5a8、0/0、clean。随后从该 HEAD 创建 codex/p0-1-stage2c-expense，起点等于 main HEAD。
+
+本批只把 expense 加入 trusted-enabled，共二十五动作；其余二十个 eligible action 仍拒绝。rules.js 在 demo operator／clock 求值前分流到 expenses.js:submitExpense 的显式 trusted 模式。expense.create、session principal 和冻结 dbNow 只取 branded context；新 state.expenses[] 保存 submittedByPrincipalId，submittedById 留空，person 只取可信显示快照（当前 null），time 为 dbNow。原 data.date 是业务输入，不改为数据库当天；原金额、用途、付款方式、支出性质、凭证截断、报销超过 500 元进入待老板审批等创建规则不变。没有员工归属，不接 resolver、不推断真人；未迁移 approveExpense／rejectExpense 或采购，也未建立新的老板审批授权。
+
+实际测试证据（total / pass / fail / skip）：
+
+- npm test 在 JavaScript 修改后实际尝试两次，PowerShell 报 The term 'npm' is not recognized，npm 未启动，未取得该命令通过证据。
+- node --test --test-isolation=none ledger/trusted-expense.test.js：16 / 16 / 0 / 0；新增单元契约涵盖 session 身份、业务字段与 demo 对照、伪造无效、授权拒绝不占键、授予权限后同 key 重试、撤权重放、认证失效、指纹冲突、业务终态、未知故障、竞争、缺失 context 与未迁移动作拒绝。直接领域入口用 getter 验证不读取 state.user／permissions／clock。
+- node --test --test-isolation=none ledger/trusted-expense.test.js ledger/trusted-clean.test.js ledger/command-policy.test.js operations.test.js：104 / 104 / 0 / 0，原业务矩阵保持。
+- 四套真实 MySQL：node --test --test-isolation=none auth/mysql-auth.integration.test.js employees/mysql-roster.integration.test.js ledger/mysql-store.integration.test.js ledger/trusted-clean.integration.test.js，364 / 364 / 0 / 0。auth 43/43（保留 revalidation 13/13 与原 auth 用例）、employee 30/30、ledger 11/11、trusted 280/280；新增 expense 14/14。
+- 首次完整回归 966 / 958 / 2 / 6：两条旧赠酒单元用例仍认为 expense 未迁移，实际正确拒绝但原因是 missing-permission。仅更新这两处门禁断言，继续验证 gift 权限不能取得 expense.create；赠酒实现不改。修正定向 expense／gift／gift-review 三文件 54 / 54 / 0 / 0。
+- 最终完整 node --test --test-isolation=none：966 / 960 / 0 / 6，退出码 0；上述 MySQL 套件全部真实执行。逐项对照本轮 main 回归，六项 Known Issues 的名称及 skip 完全相同，无数据库 skip。
+
+真实数据库验证一次借连接、head → account → session → grants → dbNow → operation → transact → state／result／audit／COMMIT；revalidation 不更新 session activity。撤权后新建 pool 重连返回已存终态、不再次创建报销，新 key 授权拒绝且不占键；disabled／revoked／idle／absolute／credential version 失效均在 lookup 前拒绝。两种竞争比较了两个不同 CONNECTION_ID：同 key 只执行一次，不同 key 基于旧 revision 得到一成功／一 revision-conflict。未知异常在领域变化后回滚；实际 audit CHECK SQL 故障在 head UPDATE／operation INSERT 后触发，state／revision／operation／audit 完整回滚，修复后原 key 可重试。retail.room=null、count=null／0、历史商品／付款／报销快照与关联采购不变。
+
+复用受保护十一表 fixture，无新增表或 migration；测试结束只读确认这些表均不存在，没有 CREATE／DROP database 或操作无关表。ledger application／store、auth 实现、command-policy、fingerprint、operationKey、revision 与 terminal replay 不改，无新增生产依赖或真人属性配置。本批仅一个独立提交、parent b5ba5a8；main／origin/main 保持已同步基线，新提交不 push，不进入 expense 审批或下一批，不部署，无范围偏离。
+
 ## 本轮隔离集成候选（2026-09-29）
 
 来源：用户交付的 `jbhh-ktv-full.zip`，基线 `ca726b2`；纯重构检查点 `74c3f55`；业务修复终点 `6aa01ba`。Track B 来源为 `codex/offsite-contracts@3193635`。候选位于独立工作树的 `codex/track-a-integration`，主工作区未提交内容保留；未合并 `main`、未推送。
@@ -509,7 +528,7 @@ JavaScript 修改后实际尝试 npm test，PowerShell 报 The term 'npm' is not
 
 ## 下一步
 
-只读快照预检器、Stage 1A／1A.1／1A.2 协议、Stage 1B-MySQL 适配器、Stage 2A 纯命令策略及 Stage 2B 独立认证基础已完成；Stage 1B.1 和 Stage 2B 已分别在专用 MySQL 8.4 测试库取得真实验收证据。Stage 2C.1 同事务认证、2C.2 clean 及 2C.3 房间异常、目录维护、取消预约、存取酒、reserve、sale／retailSale、serveExtra／otherCharge、exchange、房间恢复 approve／reject、stock／consumableStock、approveInventory／rejectInventory 及 gift 提交／approveGift／rejectGift 已通过真实数据库验收；其他未列动作仍未迁移，各批及线性整合验收见上节；员工名册、关联审计与事务内归属解析已真实验收，resolver 已仅接 trusted reserve／sale／retailSale，其余正式 action 和审核尚未迁移，policy attributes 配置／审计与同事务当前读已完成，未开放新动作；HTTP／客户端及 2D 未开始，当前停止在本批。正式营业日和班次规则已确认的部分见 [REQUIREMENTS](./REQUIREMENTS.md)，运行实现仍属后续任务。
+只读快照预检器、Stage 1A／1A.1／1A.2 协议、Stage 1B-MySQL 适配器、Stage 2A 纯命令策略及 Stage 2B 独立认证基础已完成；Stage 1B.1 和 Stage 2B 已分别在专用 MySQL 8.4 测试库取得真实验收证据。Stage 2C.1 同事务认证、2C.2 clean 及 2C.3 房间异常、目录维护、取消预约、存取酒、reserve、sale／retailSale、serveExtra／otherCharge、exchange、房间恢复 approve／reject、stock／consumableStock、approveInventory／rejectInventory、gift 提交／approveGift／rejectGift 及 expense 申请已通过真实数据库验收；其他未列动作仍未迁移，各批及线性整合验收见上节；员工名册、关联审计与事务内归属解析已真实验收，resolver 已仅接 trusted reserve／sale／retailSale，其余正式 action 和审核尚未迁移，policy attributes 配置／审计与同事务当前读已完成，属性基础自身不开放业务动作；HTTP／客户端及 2D 未开始，当前停止在本批。正式营业日和班次规则已确认的部分见 [REQUIREMENTS](./REQUIREMENTS.md)，运行实现仍属后续任务。
 
 ## 阶段停止条件
 

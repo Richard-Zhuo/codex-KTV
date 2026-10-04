@@ -5,7 +5,7 @@
 // 已知 bug（审批费用后关联 procurement.status 不同步）保持原状，修复另立任务。
 import { BusinessRejection } from './shared/business-error.js';
 import { need } from './inventory.js';
-import { effectiveUser, hasPermission } from './shared/identity.js';
+import { effectiveUser, hasPermission, assertTrustedExecutionContext, requireTrustedPermission } from './shared/identity.js';
 import { PAYMENT_METHODS } from './sales.js';
 
 export const EXPENSE_NATURES = ['一次性支出', '固定支出', '资金周转'];
@@ -19,8 +19,14 @@ export function visibleExpenses(state, user = effectiveUser(state)) {
 
 // —— 命令层：由 rules.js 的 transact 分支委托调用，参数与原分支一致 ——
 
-export function submitExpense(s, data, person, time) {
-  need(s, ['管理员','老板','店长','财务','采购','开单员','服务员','收银员','库管'], 'expense.create');
+export function submitExpense(s, data, person, time, execution = { mode: 'demo' }) {
+  if (!execution || !['demo', 'trusted'].includes(execution.mode)) throw TypeError('费用申请执行模式无效');
+  const context = execution.mode === 'trusted' ? assertTrustedExecutionContext(execution.context) : null;
+  if (context) {
+    requireTrustedPermission(context, 'expense.create');
+    person = context.actorSnapshot?.displayName ?? null;
+    time = context.dbNow;
+  } else need(s, ['管理员','老板','店长','财务','采购','开单员','服务员','收银员','库管'], 'expense.create');
   const expenseDate = String(data.date || '').trim();
   const parsedDate = Date.parse(`${expenseDate}T00:00:00`);
   if (!/^\d{4}-\d{2}-\d{2}$/.test(expenseDate) || !Number.isFinite(parsedDate)) throw new BusinessRejection('请选择有效支出日期');
@@ -35,7 +41,7 @@ export function submitExpense(s, data, person, time) {
   if (proof && (!proof.startsWith('data:image/') || proof.length > 800000)) throw new BusinessRejection('图片凭证格式或大小无效');
   s.expenses ??= [];
   const needsApproval = type === '报销' && data.amount > EXPENSE_APPROVAL_THRESHOLD;
-  s.expenses.push({ id: ++s.serial, date: expenseDate, type, amount: data.amount, method: data.method, nature: data.nature, description, proof, proofName: String(data.proofName || '').trim().slice(0, 120), status: needsApproval ? '待老板审批' : '已记录', approver: '', approvedAt: '', submittedById: s.user, person, time });
+  s.expenses.push({ id: ++s.serial, date: expenseDate, type, amount: data.amount, method: data.method, nature: data.nature, description, proof, proofName: String(data.proofName || '').trim().slice(0, 120), status: needsApproval ? '待老板审批' : '已记录', approver: '', approvedAt: '', submittedById: context ? '' : s.user, ...(context ? { submittedByPrincipalId: context.principalId } : {}), person, time });
 }
 export function decideExpense(s, action, data, person, time, authorizeReviewer) {
   need(s, ['老板'], 'expense.approve');
