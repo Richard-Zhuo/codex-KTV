@@ -82,7 +82,8 @@
 - 套餐、付费增购和已赠酒水均可按支 1:1 换酒，只允许同级或向下、可部分换，原收费金额不变；瓶装水不可换出。
 - 正式 exchange 只从 session 重验后的 trusted context 取得 order.exchange 权限、实际操作者及冻结 dbNow；两笔库存流水和换酒记录均使用该来源。原动作没有员工归属，不重选或改写历史归属员工，不借员工身份授权。原商品、数量、库存、目标行快照及成交金额规则保持，两步库存与订单变更必须整体原子提交，失败无半笔；授权拒绝不占操作键，撤权后的有效原 actor 仍能取回旧终态。
 - 同一种可按打销售的酒水每增购 24 支，可直接赠对应酒水半打；超出额度进入赠酒审核。赠送不增加应收，待审核申请会阻止结账或挂账。
-- 正式 trusted gift 只从 session context 取得 order.gift、actual actor 和冻结 dbNow；新超额 giftRequest 保存 submittedByPrincipalId，requestedBy 仅为可信显示快照（当前 null），requestedById 留空，不借演示 ID 或 payload 推断申请人。原赠酒没有员工归属输入，不重选或改写订单的 credited employee；显式 creditedEmployeeId 保持 Stage 2A 的非代录拒绝规则。额度内赠送／超额待确认、商品／数量、库存 counted 与 null／0、规格／参考值快照以及不增加应收的语义保持。权限不足不占操作键，撤权后的有效原 actor 可重放既有终态；gift approve／reject 尚未开放。
+- 正式 trusted gift 只从 session context 取得 order.gift、actual actor 和冻结 dbNow；新超额 giftRequest 保存 submittedByPrincipalId，requestedBy 仅为可信显示快照（当前 null），requestedById 留空，不借演示 ID 或 payload 推断申请人。原赠酒没有员工归属输入，不重选或改写订单的 credited employee；显式 creditedEmployeeId 保持 Stage 2A 的非代录拒绝规则。额度内赠送／超额待确认、商品／数量、库存 counted 与 null／0、规格／参考值快照以及不增加应收的语义保持。权限不足不占操作键，撤权后的有效原 actor 可重放既有终态；赠酒审批的稳定身份边界见下一条。
+- 正式 approveGift／rejectGift 只按锁定 ledger state 的 giftRequest.submittedByPrincipalId 判断申请人；两动作均需 gift.approve，本人还需 review.self。payload 中的 applicant／submittedByPrincipalId／selfReview／approver、旧姓名／演示 ID／员工关联不能作为授权事实；legacy 缺少可信稳定 principal 时两动作都拒绝、不占操作键。决定保存 decidedByPrincipalId，decidedBy 仅为可信显示快照（当前 null），decidedAt 只用冻结 dbNow；原批准／驳回、库存、数量、商品与历史快照语义保持。有效原 actor 撤权后仍可重放旧终态，新 key 使用当前权限；SQL 故障整体回滚。不增加岗位或 policy attribute 限制。
 
 ## 已确认：商品、套餐与价格模型
 

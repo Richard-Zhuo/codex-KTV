@@ -37,7 +37,7 @@ export function initialState() {
   const catalog = cloneCatalog(DEFAULT_CATALOG);
   return { version: 1, capabilitySchemaVersion: 4, catalogSchemaVersion: catalog.schemaVersion, catalog, clock: today.toISOString(), user: 'staff', permissions: defaultPermissions(), capabilities: defaultCapabilities(), rooms: ['V01','V02','V03','V05','V06','333','666','999','888'].map(id => ({ id, type: roomType(id), status: '空闲', order: null, issueType: '', issueNote: '', issueAt: '', issueBy: '', issueApprovedBy: '', issueEvidencePhoto: '', issueEvidencePhotoName: '' })), orders: [], reservations: [], deposits: [], withdrawals: [], expenses: [], procurements: [], incidents: [], roomIssueReviews: [], inventoryReviews: [], inventory: Object.fromEntries(inventoryProducts(catalog).map(item => [item.id, { count: null, threshold: item.inventoryThreshold ?? 10, unit: item.baseUnit }])), consumables: Object.fromEntries(consumableProducts(catalog).map(item => [item.id, { count: null, opened: 0, unit: item.baseUnit, threshold: item.inventoryThreshold ?? 10 }])), ledger: [], notices: [], handovers: [], processed: [], serial: 0 };
 }
-// gift 共用原数量与快照规则；approveGift 仍保持原 demo 调用。
+// gift and approveGift share the original quantity, inventory and snapshot rules.
 function grantBonus(state, order, productId, halves, source, time, requestedBy, execution = { mode: 'demo' }) {
   if (!execution || !['demo', 'trusted'].includes(execution.mode)) throw TypeError('赠酒执行模式无效');
   const context = execution.mode === 'trusted' ? assertTrustedExecutionContext(execution.context) : null;
@@ -72,6 +72,33 @@ function executeGift(s, data, person, time, execution = { mode: 'demo' }) {
   const excessHalves = data.halves - directHalves;
   if (directHalves) grantBonus(s, order, p.id, directHalves, '每增购2打赠半打', time, undefined, execution);
   if (excessHalves) order.giftRequests.push({ id: ++s.serial, product: p.id, productId: p.id, productNameSnapshot: p.name, categorySnapshot: p.category, baseUnitSnapshot: p.baseUnit, saleOptionId: 'half', saleOptionNameSnapshot: halfOption.name, halves: excessHalves, saleQuantity: excessHalves, baseQuantityPerSaleUnit: halfOption.baseQuantity, bottles: excessHalves * halfOption.baseQuantity, totalBaseQuantity: excessHalves * halfOption.baseQuantity, referenceValueCents: excessHalves * halfOption.priceCents, allowanceAtRequest: directHalves, status: '待确认', requestedBy: person, requestedById: context ? '' : s.user, ...(context ? { submittedByPrincipalId: context.principalId } : {}), submittedAt: time, time, decidedBy: '', decidedAt: '', decisionNote: '', snapshotStatus: 'current' });
+}
+// Gift decisions retain original business rules; applicant identity comes only from locked state.
+function executeGiftDecision(s, action, data, person, time, authorizeReviewer, execution = { mode: 'demo' }) {
+  if (!execution || !['demo', 'trusted'].includes(execution.mode)) throw TypeError('Invalid gift review execution mode');
+  const context = execution.mode === 'trusted' ? assertTrustedExecutionContext(execution.context) : null;
+  if (context) requireTrustedPermission(context, 'gift.approve');
+  else need(s, ['店长','老板'], 'gift.approve');
+  const order = s.orders.find(order => order.id === data.order);
+  if (!order || order.status !== '营业中') throw new BusinessRejection('账单已变化，请返回房间重新查看');
+  const request = (order.giftRequests || []).find(item => item.id === data.request);
+  if (!request || request.status !== '待确认') throw new BusinessRejection('赠酒水申请已处理');
+  let selfReview;
+  if (context) {
+    const applicant = request.submittedByPrincipalId;
+    if (typeof applicant !== 'string' || !applicant || applicant.trim() !== applicant || applicant.length > 191) {
+      throw new AuthorizationDenied('untrusted-gift-applicant');
+    }
+    selfReview = applicant === context.principalId;
+    if (selfReview) requireTrustedPermission(context, 'review.self');
+    person = context.actorSnapshot?.displayName ?? null;
+    time = context.dbNow;
+  } else selfReview = authorizeReviewer(request.requestedById);
+  const decisionNote = String(data.decisionNote || '').trim().slice(0, 300);
+  if (action === 'rejectGift' && !decisionNote) throw new BusinessRejection('请填写驳回原因');
+  request.status = action === 'approveGift' ? '已批准' : '已驳回'; request.decidedBy = person; request.decidedAt = time; request.decisionNote = decisionNote; request.selfReviewAuthorized = selfReview;
+  if (context) request.decidedByPrincipalId = context.principalId;
+  if (action === 'approveGift') grantBonus(s, order, request.product, request.halves, '老板／店长确认赠送', time, request.requestedBy, execution);
 }
 // 目录命令的私有业务校验；demo 与 trusted 共用原规则。
 function normalizeSaleOptions(options, sellable) {
@@ -203,7 +230,7 @@ function executeExchange(s, data, person, time, execution = { mode: 'demo' }) {
 export function transact(original, action, data = {}, key, execution = { mode: 'demo' }) {
   if (!execution || !['demo', 'trusted'].includes(execution.mode)) throw TypeError('事务执行模式无效');
   const context = execution.mode === 'trusted' ? assertTrustedExecutionContext(execution.context) : null;
-  if (context && !['clean', 'markRoomIssue', 'clearRoomIssue', 'approveRoomIssue', 'rejectRoomIssue', ...CATALOG_COMMAND_ACTIONS, 'cancelReservation', 'deposit', 'withdraw', 'reserve', 'sale', 'retailSale', ...ORDER_ADDITION_ACTIONS, 'exchange', 'stock', 'consumableStock', 'approveInventory', 'rejectInventory', 'gift'].includes(action)) throw new AuthorizationDenied('trusted-action-not-enabled');
+  if (context && !['clean', 'markRoomIssue', 'clearRoomIssue', 'approveRoomIssue', 'rejectRoomIssue', ...CATALOG_COMMAND_ACTIONS, 'cancelReservation', 'deposit', 'withdraw', 'reserve', 'sale', 'retailSale', ...ORDER_ADDITION_ACTIONS, 'exchange', 'stock', 'consumableStock', 'approveInventory', 'rejectInventory', 'gift', 'approveGift', 'rejectGift'].includes(action)) throw new AuthorizationDenied('trusted-action-not-enabled');
   if (!key) throw new BusinessRejection('缺少操作编号');
   if (original.processed.includes(key)) return original;
   const s = structuredClone(original);
@@ -223,6 +250,7 @@ export function transact(original, action, data = {}, key, execution = { mode: '
     else if (ORDER_ADDITION_ACTIONS.includes(action)) executeOrderAddition(s, action, data, undefined, undefined, execution);
     else if (action === 'exchange') executeExchange(s, data, undefined, undefined, execution);
     else if (action === 'gift') executeGift(s, data, undefined, undefined, execution);
+    else if (action === 'approveGift' || action === 'rejectGift') executeGiftDecision(s, action, data, undefined, undefined, undefined, execution);
     else if (action === 'stock') submitStock(s, data, undefined, undefined, execution);
     else if (action === 'consumableStock') submitConsumableStock(s, data, undefined, undefined, execution);
     else if (action === 'approveInventory' || action === 'rejectInventory') decideInventory(s, action, data, undefined, undefined, undefined, execution);
@@ -294,14 +322,7 @@ export function transact(original, action, data = {}, key, execution = { mode: '
   } else if (action === 'gift') {
     executeGift(s, data, person, time);
   } else if (action === 'approveGift' || action === 'rejectGift') {
-    need(s, ['店长','老板'], 'gift.approve'); active();
-    const request = (order.giftRequests || []).find(item => item.id === data.request);
-    if (!request || request.status !== '待确认') throw new BusinessRejection('赠酒水申请已处理');
-    const selfReview = authorizeReviewer(request.requestedById);
-    const decisionNote = String(data.decisionNote || '').trim().slice(0, 300);
-    if (action === 'rejectGift' && !decisionNote) throw new BusinessRejection('请填写驳回原因');
-    request.status = action === 'approveGift' ? '已批准' : '已驳回'; request.decidedBy = person; request.decidedAt = time; request.decisionNote = decisionNote; request.selfReviewAuthorized = selfReview;
-    if (action === 'approveGift') grantBonus(s, order, request.product, request.halves, '老板／店长确认赠送', time, request.requestedBy);
+    executeGiftDecision(s, action, data, person, time, authorizeReviewer);
   } else if (action === 'exchange') {
     executeExchange(s, data, person, time);
   } else if (action === 'serveExtra') {

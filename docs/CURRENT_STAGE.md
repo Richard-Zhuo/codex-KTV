@@ -332,6 +332,28 @@ JavaScript 修改后实际尝试 npm test，PowerShell 报 The term 'npm' is not
 
 本批只做一个独立提交，parent 为 2f53c8f；main／origin/main 保持已同步基线，新提交不 push，不进入 gift 审批或其他下一批，不部署。无范围偏离。
 
+## P0-1 Stage 2C.3 trusted gift 审批（2026-10-04）
+
+本轮先核实已验收 gift 提交 048cd23 的直接 parent 为 2f53c8f；clean main 从 2f53c8f ff-only 到 048cd23，没有 merge commit。合入后完整 node --test --test-isolation=none 实际 865 total／859 pass／0 fail／6 skip，auth 29、employee 30、ledger 11、trusted 241 均真实执行。fetch 后确认 origin/main 无新增、仅本地领先一提交，再普通 push；main = origin/main = 048cd23，0／0、clean。旧 Track A／B 与 PostgreSQL 工作树未改。
+
+随后从 clean main 直接建立 codex/p0-1-stage2c-gift-review，核实初始分支 HEAD = main HEAD = 048cd23。本批只新增 approveGift／rejectGift 到 trusted-enabled，共二十四动作；其他 21 个 eligible action 仍 fail closed。未新增 schema、依赖、真实账号／映射、岗位或 policy attributes 限制；ledger application／MySQL store／auth／command-policy 及 Stage 1 fingerprint、revision、terminal replay 顺序均未改变。
+
+用例以有效 synthetic session、当前 gift.approve、正确 revision、锁内营业中订单和待确认 giftRequest 为前置。rules.js 在 demo actor／clock 求值前分流到私有 executeGiftDecision；只按该申请的 submittedByPrincipalId 比较 context.principalId，本人还需 review.self。payload 的申请人／selfReview／approver、身份、权限、role、clock、商品或数量均不能覆盖锁内事实；legacy 缺失或无效的稳定 principal，两动作均抛 AuthorizationDenied，不改 state／revision，不写 terminal／success audit，不占 key，不按姓名、旧演示 ID 或员工关系猜映射。
+
+两动作保存 decidedByPrincipalId = session actor，decidedAt 只取冻结 dbNow，decidedBy 仅取可信显示快照（当前 null），原 requestedBy 快照保留。批准复用原 grantBonus 及库存管道，显式传同一 execution；新赠送／流水的 actual actor 与 time 来自 context。原请求数量、half 规格、当前目录用于新赠送快照、库存 null／0／counted、赠送不增加应收、原申请及历史记录均保持。驳回不扣库、不生成赠送；demo 原行为保持，无员工 resolver。
+
+使用 tdd 技能在既有公开 trusted ledger 边界先跑首条用例：1 total／0 pass／1 fail／0 skip，原因为 trusted-action-not-enabled；最小接入后通过。新增 24 项数据库无关测试与 25 项真实 MySQL 子用例，复用原受保护十表 fixture，没有 DDL／清理范围变化。定向 node --test --test-isolation=none ledger/trusted-gift-review.test.js ledger/trusted-gift.test.js ledger/trusted-clean.test.js rules.test.js inventory.test.js ledger/command-policy.test.js 实际 183 total／182 pass／0 fail／1 skip，保留原 rules 平台券 Known Issue。验证本人双权限、非本人具体权限、legacy／伪造拒绝、不占键与补权限后同键成功、认证失效、指纹冲突、原领域拒绝／库存／JSON 快照和 demo 对照。
+
+首轮真实 MySQL 实际 336 total／334 pass／2 fail／0 skip：新增赠酒审批 25／25 均通过，但一条旧 stock 用例仍把本批 gift 审批视为未迁移，使子用例及父套件失败。仅更新该门禁断言为当前 missing-permission，继续验证库存权限不能取得 gift 审批权；生产实现未因此改变。重跑真实定向 node --test --test-isolation=none ledger/trusted-clean.integration.test.js auth/mysql-auth.integration.test.js ledger/mysql-store.integration.test.js employees/mysql-roster.integration.test.js：336 total／336 pass／0 fail／0 skip；trusted 266／266（新增审批 25／25）、auth 29／29（revalidation 13／13）、employee 30／30、ledger 11／11 全真实执行。现场 MySQL 8.4.11／jbhh_ktv_test／InnoDB 已核实，URL 可读但不输出。
+
+成功用例先由有效申请人通过 trusted gift 创建真实申请，再由另一 session principal 审批；同一 connection 中 head → account → session → 当前 grants → 一次 dbNow → existing operation → domain → state／result／audit／COMMIT，不 touch session activity，不读取 employee。撤权并新建 pool 重连后原 actor 返回原终态、不会重新赠送／扣库／改变决定，新 key 拒绝；disabled／revoked／idle／absolute／credential version 失效均先于 operation 查找。相同 key 的 actor／action／payload／expectedRevision 冲突保持。
+
+批准和驳回的同 key 竞争、approve／reject 的同旧 revision 竞争均验证两个实际不同 CONNECTION_ID：同 key 只执行一次；不同 key 一笔 committed、一笔 revision-conflict，只产生一次决定、revision、库存／赠送变化。未知异常在领域变化后完整回滚；真实 success audit CHECK SQL 故障在 head UPDATE 和 operation INSERT 后触发，验证申请、赠送、库存／流水、state、revision、operation、audit 全部回滚，修复后原 key 可重试。retail.room=null、count=null／0、历史未知价格／名称／规格／基础数量及原员工归属保持。
+
+JavaScript 修改后实际尝试 npm test，PowerShell 报 The term 'npm' is not recognized，进程未启动，未取得 npm 通过证据。最终完整 node --test --test-isolation=none：914 total／908 pass／0 fail／6 skip，退出码 0；上述 MySQL 套件全真实执行且 0 skip，原六项 Known Issues 的名称及 skip 与本轮 main 回归一致。测试后只读确认十张 fixture 表均不存在，不 CREATE／DROP database，不操作其他表。
+
+本批仅一个独立提交，parent 为 048cd23；main／origin/main 保持已同步基线，新提交不 push，不进入下一批，不部署。赠酒业务规则不变，无范围偏离。
+
 ## 本轮隔离集成候选（2026-09-29）
 
 来源：用户交付的 `jbhh-ktv-full.zip`，基线 `ca726b2`；纯重构检查点 `74c3f55`；业务修复终点 `6aa01ba`。Track B 来源为 `codex/offsite-contracts@3193635`。候选位于独立工作树的 `codex/track-a-integration`，主工作区未提交内容保留；未合并 `main`、未推送。
@@ -468,7 +490,7 @@ JavaScript 修改后实际尝试 npm test，PowerShell 报 The term 'npm' is not
 
 ## 下一步
 
-只读快照预检器、Stage 1A／1A.1／1A.2 协议、Stage 1B-MySQL 适配器、Stage 2A 纯命令策略及 Stage 2B 独立认证基础已完成；Stage 1B.1 和 Stage 2B 已分别在专用 MySQL 8.4 测试库取得真实验收证据。Stage 2C.1 同事务认证、2C.2 clean 及 2C.3 房间异常、目录维护、取消预约、存取酒、reserve、sale／retailSale、serveExtra／otherCharge、exchange、房间恢复 approve／reject、stock／consumableStock、approveInventory／rejectInventory 及 gift 提交已通过真实数据库验收；gift approve／reject 和其他未列动作仍未迁移，各批及线性整合验收见上节；员工名册、关联审计与事务内归属解析已真实验收，resolver 已仅接 trusted reserve／sale／retailSale，其余正式 action 和审核尚未迁移，HTTP／客户端及 2D 未开始，当前停止在本批。正式营业日和班次规则已确认的部分见 [REQUIREMENTS](./REQUIREMENTS.md)，运行实现仍属后续任务。
+只读快照预检器、Stage 1A／1A.1／1A.2 协议、Stage 1B-MySQL 适配器、Stage 2A 纯命令策略及 Stage 2B 独立认证基础已完成；Stage 1B.1 和 Stage 2B 已分别在专用 MySQL 8.4 测试库取得真实验收证据。Stage 2C.1 同事务认证、2C.2 clean 及 2C.3 房间异常、目录维护、取消预约、存取酒、reserve、sale／retailSale、serveExtra／otherCharge、exchange、房间恢复 approve／reject、stock／consumableStock、approveInventory／rejectInventory 及 gift 提交／approveGift／rejectGift 已通过真实数据库验收；其他未列动作仍未迁移，各批及线性整合验收见上节；员工名册、关联审计与事务内归属解析已真实验收，resolver 已仅接 trusted reserve／sale／retailSale，其余正式 action 和审核尚未迁移，HTTP／客户端及 2D 未开始，当前停止在本批。正式营业日和班次规则已确认的部分见 [REQUIREMENTS](./REQUIREMENTS.md)，运行实现仍属后续任务。
 
 ## 阶段停止条件
 

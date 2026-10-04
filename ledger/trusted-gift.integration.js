@@ -171,9 +171,9 @@ export async function testTrustedGift({ t, pool, setup, auth, table, provision, 
     assert.equal(o.giftRequests.at(-1).saleOptionNameSnapshot,'Current Half');assert.equal(o.bonusGifts.at(-1).referenceValueCents,5900);assert.equal(total(o),52900);
   });
 
-  await t.test('gift: approveGift/rejectGift remain disabled despite all gift grants and a new trusted applicant', async () => {
+  await t.test('gift: other approvals remain disabled despite gift grants and a new trusted applicant', async () => {
     const login=await provision(['order.gift','gift.approve','review.self']),id='gift-review-blocked';await seedFor(id);const run=runFor(id);await run.app.execute(giftCommand(),login.credential);
-    const before=await inspect(id);for(const action of ['approveGift','rejectGift']){
+    const before=await inspect(id);for(const action of ['approveExpense','rejectExpense','approveIncidentResolution','rejectIncidentResolution','approveCredit','rejectCredit','approveRepay','rejectRepay','approveRounding','rejectRounding']){
       await assert.rejects(run.app.execute({operationKey:action,expectedRevision:1,action,payload:{order:'synthetic-gift-room',request:giftOrder(before.head.state).giftRequests.at(-1).id}},login.credential),
         e=>denied(e)&&e.reason==='trusted-action-not-enabled');await assertUnchanged(id,before);
     }
