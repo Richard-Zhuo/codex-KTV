@@ -40,7 +40,7 @@ KNOWN BUSINESS ISSUE 命名的测试以 `test.skip` 保留仍未解决问题的�
 
 当前免零生效、余额和房态已按 [REQUIREMENTS](./REQUIREMENTS.md) 修复 K01／K06：待审不结账，批准后重新核对余额为零才关单，驳回保留付款和余款；outstanding 只扣已生效免零。offsite.contract.test.js 的两项旧跳过复现已转为正式正向回归，rounding-finality.test.js 与真实 MySQL 用例覆盖完整流程。K05 双口径与未知历史 fail-safe 策略以 [REQUIREMENTS](./REQUIREMENTS.md) 为准。所有当前 trusted 付款路径（collect／pay／settle／retailSale／approveRepayment）保存稳定 paymentId、可信 occurredAt 和 recordedByPrincipalId，回款还保存 approvedByPrincipalId；资金仅计 root payments，不再次累加 credit.repayments。历史／demo 不补造字段，退款尚未实现。
 
-## 反向交易 specification cases（免零额度分流已实现；其他门禁仍待实现）
+## 反向交易 specification cases（免零分流与平台券本地门禁已实现；美团生产未启用）
 
 每个用例的允许发起条件、成功证据、测试资源就绪和异常停止点分开记录。以下均要求原记录保留、操作键幂等、业务失败时订单/付款/库存/房态不发生部分变化；拒绝审计可追加。
 
@@ -89,4 +89,4 @@ KNOWN BUSINESS ISSUE 命名的测试以 `test.skip` 保留仍未解决问题的�
 
 ## trusted 免零申请与决定身份
 
-settle 的普通 ≤¥10／超额与特殊情况审核流程不改；新需审 review 保存 submittedByPrincipalId 与 DB submittedAt。两决定仅信锁定 state 中的申请 principal：具体 rounding.approve，本人额外 review.self；超额本人批准还须配置的 DB rounding.self.excess，本人驳回不要求此属性。legacy 两决定 fail closed，决定保存 decidedByPrincipalId／DB decidedAt，姓名非身份键；授权拒绝不占 key，重放不新增付款／免零／审核。K01／K06 已按上文生效／余额／房态契约修复，原两项 skip 转正式回归；K05 跨日资金 skip 已转正式回归，K04 的 trusted 连续交班已按 REQUIREMENTS 修复并转正式，仍保留 K07／K10 两项 skip。入口与证据见 [MODULE_MAP](./MODULE_MAP.md) 和 [CURRENT_STAGE](./CURRENT_STAGE.md)。
+settle 的普通 ≤¥10／超额与特殊情况审核流程不改；新需审 review 保存 submittedByPrincipalId 与 DB submittedAt。两决定仅信锁定 state 中的申请 principal：具体 rounding.approve，本人额外 review.self；超额本人批准还须配置的 DB rounding.self.excess，本人驳回不要求此属性。legacy 两决定 fail closed，决定保存 decidedByPrincipalId／DB decidedAt，姓名非身份键；授权拒绝不占 key，重放不新增付款／免零／审核。K01／K06 已按上文生效／余额／房态契约修复，原两项 skip 转正式回归；K05 跨日资金 skip 已转正式回归，K04 的 trusted 连续交班已按 REQUIREMENTS 修复并转正式，K07 本地核销门禁／唯一订单绑定现已修复并转正式，仅 K10 保留 skip。Meituan production redemption = NOT ENABLED。入口与证据见 [MODULE_MAP](./MODULE_MAP.md) 和 [CURRENT_STAGE](./CURRENT_STAGE.md)。

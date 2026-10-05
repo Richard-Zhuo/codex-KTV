@@ -148,7 +148,7 @@ export async function testTrustedExpense({ t, pool, setup, auth, table, provisio
     const id = 'expense-blocked'; await seedFor(id); const run = runFor(id); await run.app.execute(expenseCommand(), login.credential); const before = await inspect(id);
     for (const action of ['open']) {
       await assert.rejects(run.app.execute({ ...expenseCommand(action, 1), action }, login.credential),
-        e => denied(e) && e.reason === 'trusted-action-not-enabled'); await assertUnchanged(id, before);
+        e => denied(e) && e.reason === (action==='open'?'missing-permission':'trusted-action-not-enabled')); await assertUnchanged(id, before);
     }
   });
 

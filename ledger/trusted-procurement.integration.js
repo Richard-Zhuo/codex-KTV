@@ -285,7 +285,7 @@ export async function testTrustedProcurement({ t, pool, setup, auth, table, prov
     const login = await provision(['procurement.create', 'room.open', 'rounding.approve', 'payment.collect', 'payment.settle', 'handover']);
     const id = 'procurement-not-enabled'; await pending(id); const before = await inspect(id), run = runFor(id);
     for (const action of ['open'])
-      await assert.rejects(run.app.execute({ ...procurementCommand(action), action }, login.credential), error => denied(error) && error.reason === 'trusted-action-not-enabled');
+      await assert.rejects(run.app.execute({ ...procurementCommand(action), action }, login.credential), error => denied(error) && error.reason === (action==='open'?'missing-permission':'trusted-action-not-enabled'));
     await assertUnchanged(id, before); assert.equal(run.executions(), 0);
   });
 }

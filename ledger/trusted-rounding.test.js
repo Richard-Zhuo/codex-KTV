@@ -195,7 +195,7 @@ test('rounding: missing revalidation/context and untrusted context copies fail c
   const valid=fixture();await valid.app.execute(settleCommand(),valid.credential);
   assert.throws(()=>settleOrder(valid.state,paymentOrder(valid.state),settleCommand().payload,'fake','1900',{mode:'trusted',context:{...valid.context()}}),TypeError);
   assert.throws(()=>decideRounding(valid.state,paymentOrder(valid.state),'approveRounding',{},'fake','1900',()=>true,{mode:'trusted'}),TypeError);
-  const all=fixture({permissions:['handover','room.open']});for(const action of ['open'])await assert.rejects(all.app.execute({...settleCommand(action),action},all.credential),e=>denied(e)&&e.reason==='trusted-action-not-enabled');await noEffects(all);
+  const all=fixture({permissions:['handover','room.open']});for(const action of ['open'])await assert.rejects(all.app.execute({...settleCommand(action),action},all.credential),e=>denied(e)&&e.reason===(action==='open'?'missing-permission':'trusted-action-not-enabled'));await noEffects(all);
 });
 
 test('approveRounding: revoked excess attribute denies new key before handled-state terminal, old key replays; recovered key never redecides',async()=>{

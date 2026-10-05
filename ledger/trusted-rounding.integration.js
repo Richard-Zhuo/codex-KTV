@@ -402,6 +402,6 @@ export async function testTrustedRounding({t,pool,setup,auth,table,provision,see
     const missing=createTrustedLedgerApplication({store:createMySqlLedgerStore({pool,ledgerId:id,database})});await assert.rejects(missing.execute(settleCommand(),login.credential),/revalidation port/);
     const fake=runFor(id,{bind:c=>{const inner=authStore.bindSessionRevalidation(c);return{revalidateSessionInTransaction:async credential=>({...await inner.revalidateSessionInTransaction(credential)})};}});
     await assert.rejects(fake.app.execute(settleCommand('copy'),login.credential),TypeError);
-    for(const action of ['open'])await assert.rejects(runFor(id).app.execute({...settleCommand(action),action},login.credential),e=>denied(e)&&e.reason==='trusted-action-not-enabled');await assertUnchanged(id,before);
+    for(const action of ['open'])await assert.rejects(runFor(id).app.execute({...settleCommand(action),action},login.credential),e=>denied(e)&&e.reason===(action==='open'?'missing-permission':'trusted-action-not-enabled'));await assertUnchanged(id,before);
   });
 }

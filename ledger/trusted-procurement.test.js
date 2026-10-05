@@ -206,10 +206,10 @@ test('procurement: missing/copied context, invalid mode and missing revalidation
   assert.throws(() => submitProcurement(structuredClone(noGrant.state), procurementCommand().payload, 'fake', 'fake', { mode: 'trusted', context: noGrant.context() }), denied);
 });
 
-test('procurement: the remaining open action still fails closed with explicit grants', async () => {
+test('procurement: create and room.open cannot replace staff.record for trusted open', async () => {
   const f = fixture({ permissions: ['procurement.create', 'room.open', 'rounding.approve', 'payment.collect', 'payment.settle', 'handover'] });
   for (const action of ['open']) {
-    await assert.rejects(f.app.execute({ ...procurementCommand(action), action }, f.credential), e => denied(e) && e.reason === 'trusted-action-not-enabled');
+    await assert.rejects(f.app.execute({ ...procurementCommand(action), action }, f.credential), e => denied(e) && e.reason === (action==='open'?'missing-permission':'trusted-action-not-enabled'));
   }
   await noEffects(f);
 });

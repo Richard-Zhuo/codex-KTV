@@ -1,3 +1,8 @@
-// 共同基础：营业时段判断。纯函数，使用本地设备时间。
-// 语义冻结（Phase 2）：14-18 点为 day，18-02 点为 night，其余 closed，与原 rules.js 逐字节一致。
-export function slot(time) { const h = new Date(time).getHours(); return h >= 14 && h < 18 ? 'day' : h >= 18 || h < 2 ? 'night' : 'closed'; }
+// 共同营业时段：14-18 为 day，18-02 为 night，其余 closed。
+// Demo 保留设备本地时间；trusted open 必须显式传入服务器门店时区。
+export function slot(time, timeZone) {
+  const instant = new Date(time);
+  const hour = timeZone === undefined ? instant.getHours() : Number(new Intl.DateTimeFormat('en-US',
+    { timeZone, hour: '2-digit', hourCycle: 'h23' }).format(instant));
+  return hour >= 14 && hour < 18 ? 'day' : hour >= 18 || hour < 2 ? 'night' : 'closed';
+}

@@ -238,7 +238,7 @@ export async function testTrustedPayments({ t, pool, setup, auth, table, provisi
       revalidateSessionInTransaction:async credential=>({...await inner.revalidateSessionInTransaction(credential)})};}});
     await assert.rejects(fake.app.execute(paymentCommand('pay','fake'),login.credential),TypeError);
     const run=runFor(id);for(const action of [ 'open'])
-      await assert.rejects(run.app.execute(paymentCommand(action,action),login.credential),error=>denied(error)&&error.reason==='trusted-action-not-enabled');
+      await assert.rejects(run.app.execute(paymentCommand(action,action),login.credential),error=>denied(error)&&error.reason===(action==='open'?'missing-permission':'trusted-action-not-enabled'));
     await assertUnchanged(id,before);assert.equal(run.executions(),0);
   });
 }

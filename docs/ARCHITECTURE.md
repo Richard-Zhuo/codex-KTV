@@ -1,5 +1,13 @@
 ### 平台券领域与外部副作用边界（R.1）
 
+## trusted open 与平台绑定
+
+ledger/voucher-opening.js 在 auth／existing terminal／新授权／revision／employee／business-day snapshot 后，验证仅内部 redemption ID 并使用同 connection voucher binding。vouchers/binding.js 的 transaction-bound port 不 BEGIN/COMMIT/ROLLBACK/release；先锁且检验 REDEEMED 当前门店未绑定记录，返回冻结证据和显式套餐映射，领域成功后才写 linkedOrderId/version。无映射 fail closed；不能通过产品名、旧 role 或 payload 补全。
+
+createMySqlLedgerStore 的可选 bindVoucherRedemptions 仅绑定当前 connection，不借第二个连接。固定顺序 head→auth→employee→voucher→domain state/link→head/operation/audit；同一 ledger 的 voucher orchestration/event 也先 head，不能倒序 voucher→head。本地业务提交失败完整回滚 link；已成功的 provider fact 属于更早独立事务，开房失败不会抹去或重新 consume。事件对已绑定券逆向只产生异常，不修改历史订单。
+
+rooms.js:openRoom 显式 demo/trusted，可信 actor 与 attributed employee 分开；shared/identity.js 的 withTrustedRoomOpening 仅接受内部冻结证据与服务器新订单 UUID。snapshot 仍保留原套餐／商品／基础数量逻辑；只在真实证据与当前套餐匹配时覆盖房费。quote 不接浏览器 evidence、不把待验券计作覆盖。trusted 使用显式 store zone 判断原 14-18／18-02 时段并冻结 noon-v1，demo 保留原设备时间。历史数据不自动迁移。
+
 vouchers/application.js 是独立 orchestration，使用 vouchers/domain.js 的集中状态转换与 PlatformVoucherGateway DTO；领域不接触美团原始 JSON。vouchers/gateway.js 定义四方法 port 和显式 DTO mapping boundary；vouchers/gateways.js 的 MeituanSkillGateway 只保留 config／credential／transport／mapping seam，所有真实方法均拒绝，Meituan production redemption = NOT ENABLED。没有网络或 mt-tech 调用。FakePlatformVoucherGateway 有可观察调用次数，并要求显式 test mode 与隔离 test store。
 
 vouchers/mysql-store.js 的 runAtomic 只运行本地数据库工作：同一 connection BEGIN、锁 ledger head、同连接 session 重验、voucher operation／redemption、COMMIT/release。认领 A 提交后才 inspect/consume；证据 B 另开短事务。调用方不得把 provider promise 放进 createTrustedLedgerApplication/transact。认领成功后重试读取本地 receipt；UNKNOWN 终态不可重写，独立 query key 更新 redemption。A 或 B COMMIT 结果不明时抛出专门 outcome-unknown，不把数据库断连伪装成 provider FAILED。A 失败完整回滚；B 失败保留已认领 attempt，后续 query 收敛，不能撤销已发生的外部效果。
@@ -18,7 +26,7 @@ state snapshot 仍是过渡账本模型；新增 provider 元数据不代表完�
 
 shared/business-day.js:businessDateFor(occurredAt, {timeZone}) 是独立纯计算规则，BUSINESS_DAY_POLICY 标明 noon-v1／12:00。时间必须是带显式 offset 的有效 ISO 时间戳，门店时区必须显式提供；缺失／无效值直接失败，不使用设备默认时区、state.clock 或 order.time 猜测未知历史。当地 12:00 前归前一日，12:00:00 起归当天；只返回日期，不改写源时间戳。
 
-K05 只扩展过渡 snapshot：ledger/application.js 在 session revalidation、旧 operation lookup、当前授权／revision 与 employee resolver 之后，为新的 retailSale 使用 dbNow 和显式 businessTimeZone 构造 orderBusinessDaySnapshot；branded trusted context 携带该不可变快照，sales.js 创建订单时保存。重放不重算日期。open 仍 demo／正式拒绝，未来可复用共享快照工厂，不能用旧时钟回填。真实门店时区和历史处置仍见 OPEN_BUSINESS_DECISIONS；测试中的 Asia/Shanghai 仅是显式 synthetic 配置。
+K05 只扩展过渡 snapshot：ledger/application.js 在 session revalidation、旧 operation lookup、当前授权／revision 与 employee resolver 之后，为新的 retailSale 使用 dbNow 和显式 businessTimeZone 构造 orderBusinessDaySnapshot；branded trusted context 携带该不可变快照，sales.js 创建订单时保存。重放不重算日期。trusted open 现同样复用工厂保存冻结日期，并通过显式 store zone 判原营业时段；不回填历史日期。真实门店时区和历史处置仍见 OPEN_BUSINESS_DECISIONS；测试中的 Asia/Shanghai 仅是显式 synthetic 配置。
 
 ## K04 trusted 连续交班
 

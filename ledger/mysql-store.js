@@ -65,12 +65,13 @@ export class LedgerCommitOutcomeUnknown extends Error {
   }
 }
 
-export function createMySqlLedgerStore({ pool, ledgerId, database, bindSessionRevalidation, bindEmployeeResolver }) {
+export function createMySqlLedgerStore({ pool, ledgerId, database, bindSessionRevalidation, bindEmployeeResolver, bindVoucherRedemptions }) {
   if (typeof pool?.getConnection !== 'function' || typeof ledgerId !== 'string' ||
       !ledgerId || ledgerId.trim() !== ledgerId || ledgerId.length > 64 ||
       typeof database !== 'string' || !/^[a-z][a-z0-9_]{0,63}$/.test(database) ||
       (bindSessionRevalidation !== undefined && typeof bindSessionRevalidation !== 'function') ||
-      (bindEmployeeResolver !== undefined && typeof bindEmployeeResolver !== 'function')) {
+      (bindEmployeeResolver !== undefined && typeof bindEmployeeResolver !== 'function') ||
+      (bindVoucherRedemptions !== undefined && typeof bindVoucherRedemptions !== 'function')) {
     throw TypeError('MySQL 账本连接、标识或数据库名无效');
   }
   const quote = String.fromCharCode(96);
@@ -175,6 +176,11 @@ export function createMySqlLedgerStore({ pool, ledgerId, database, bindSessionRe
           throw TypeError('事务内 employee resolver port 无效');
         }
         transaction.employeeResolver = port;
+      }
+      if (bindVoucherRedemptions) {
+        const port = bindVoucherRedemptions(connection); // Binding is inert until auth/policy/revision allow a new open.
+        if (typeof port?.lockForOpen !== 'function' || typeof port?.linkToOrder !== 'function') throw TypeError('同事务 voucher binding port 无效');
+        transaction.voucherBinding = port;
       }
       const response = await work(transaction);
       if (!proposed) {

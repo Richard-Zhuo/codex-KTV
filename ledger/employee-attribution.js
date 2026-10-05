@@ -1,9 +1,9 @@
-// Shared attribution for the three migrated employee-credited commands.
+// Shared attribution for migrated employee-credited commands.
 import { EmployeeRosterError } from '../employees/errors.js';
 import { BusinessRejection } from '../shared/business-error.js';
 import { withTrustedCreditedEmployee, withTrustedAssigneeEmployee } from '../shared/identity.js';
 
-export const EMPLOYEE_ATTRIBUTED_ACTIONS = Object.freeze(['reserve', 'sale', 'retailSale']);
+export const EMPLOYEE_ATTRIBUTED_ACTIONS = Object.freeze(['reserve', 'sale', 'retailSale', 'open']);
 
 // data.employee remains a business input, but now names a stable employee UUID.
 // The request itself is never changed: both aliases remain in its fingerprint.
@@ -15,7 +15,7 @@ export function employeePolicyPayload(payload) {
 export async function resolveEmployeeContext(transaction, context, payload, action) {
   if (!EMPLOYEE_ATTRIBUTED_ACTIONS.includes(action) && action !== 'incident') throw TypeError('未迁移的员工归属动作');
   const incident = action === 'incident';
-  const label = incident ? '客诉／异常负责人' : action === 'reserve' ? '预约' : '销售';
+  const label = incident ? '客诉／异常负责人' : action === 'reserve' ? '预约' : action === 'open' ? '开房' : '销售';
   if (typeof transaction.employeeResolver?.resolveCreditedEmployeeInTransaction !== 'function') {
     throw TypeError(`正式${label}缺少同事务 employee resolver port`);
   }

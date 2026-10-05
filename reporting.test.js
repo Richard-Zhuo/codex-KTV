@@ -151,7 +151,10 @@ function scenarioB() {
   s = apply(s, 'gift', { order: id, product: 'bw', halves: 1 });
   s = apply(s, 'otherCharge', { order: id, category: '小吃', amount: 1000 });
   s = apply(s, 'settle', { order: id, payments: [{ method: '微信', amount: total(s.orders[0]) }] });
-  s = apply(s, 'open', { room: 'V06', beer: 'bw', openSource: '美团' });
+  s = apply(s, 'open', { room: 'V06', beer: 'bw' });
+  // Historical fixture only: preserve the old pending-voucher display without creating new unverified coverage.
+  Object.assign(s.orders.at(-1), { openSource:'美团', base:0, gift:0, packageBaseCents:0, packageGiftValueCents:0, packagePriceCents:0,
+    voucher:{provider:'美团',status:'待验券',covered:16800,interface:'platform-voucher-scan'} });
   const d2 = s.orders.at(-1).id;
   s = apply(s, 'settle', { order: d2, payments: [] });
   return s;

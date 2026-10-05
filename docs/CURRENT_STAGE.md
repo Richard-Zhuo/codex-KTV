@@ -1,4 +1,16 @@
-### R.1 平台券领域层（2026-10-06）
+## R.1 trusted open／K07（2026-10-06）
+
+第二个线性提交直接基于 a6952ad（parent 4b7257e）。普通与平台 open 均进入 trusted-enabled；session actor/current grants/DB UTC 时间只来自同连接重验。正式开房同时要求现有 room.open 与 staff.record，并通过现有 employee resolver 保存独立 creditedEmployeeId／姓名快照。新 trusted room order 使用服务器 UUID；demo 序号与历史记录不改。noon-v1 businessDate/rule version/显式 store time zone 创建时冻结，营业时段只对 trusted open 使用该显式时区，不读 demo clock。
+
+固定锁顺序为 ledger head→auth account/session/grants/attributes→旧 operation lookup／新 key policy 与 revision→employee current read→voucher redemption FOR UPDATE→领域 snapshot→voucher link→head/operation/audit→COMMIT；所有 voucher/provider 本地写路径也先锁同 ledger head，外部调用仍在 A/B 事务之外。已保存 operation 在 auth 后直接 replay，撤权或券后来被撤销不重新开房或重绑。
+
+平台 payload 只引用 voucherRedemptionId。绑定 port 同连接验证 ledger/provider/store、REDEEMED、unlinked 和业务 flow evidence；provider product 与 local package 只能由显式服务器配置映射，缺配置拒绝且不占 key。open 原子提交房单、房态、库存、匹配预约到店状态、redemption.linkedOrderId、revision/result/audit。provider 成功而 room/inventory/revision/SQL 失败时保留 REDEEMED+unlinked；后续用新 open key（未知故障可原 key）继续，不再 consume。
+
+quote 对未核销平台券只提供待验证预览、covered=0 与原套餐实价；demo 平台 open 没有服务端能力即拒绝。旧历史待验券记录保留，reporting 测试仅用历史 fixture，不修改报表算法。K07 skip 已转正式：未可信核销不能覆盖房费／开房；MySQL 验证同券最多绑定一单。仅 K10 旧 SQL retail 草案保留 skip。本轮没有迁移或修复 K10，不改 ¥10、K05、12:00/payment occurredAt，未接 HTTP/UI、真实 webhook 或门店账号。
+
+Meituan production redemption = NOT ENABLED。Fake 测试通过仅证明本地领域门禁／原子性，不证明正式业务授权、真实 CLI 契约、provider 幂等或核销上线。必须继续完成 REQUIREMENTS 所列启用条件。最终完整 node --test --test-isolation=none --test-reporter=tap：1770／1769／0／1，退出码 0，仅 K10 skip。四真实 MySQL fixture 合计 758／758／0／0（含父 test／目标保护；auth 47、employee 40、ledger 21、trusted 650）；新增 voucher 20／20、open 28／28 均实际执行。MySQL 8.4.11／jbhh_ktv_test／InnoDB，独立 CONNECTION_ID=2197／2199。同券双设备至多绑定一单；head／operation／audit／redemption SQL 故障及未知异常全部回滚；provider 成功但本地开房失败仍 REDEEMED+unlinked，继续开房不再次 consume。open/binding 单元 12／12，规则／报表／open／binding 定向 76／76／0／0。实际尝试 npm test，仍报 The term 'npm' is not recognized，未取得 npm 运行证据。未新增依赖；两个新提交仅本地，不 push、不部署。
+
+### 第一个提交：R.1 平台券领域层（2026-10-06）
 
 先核实 4b7257e parent=fbf802f，ff-only 合入 main，完整真实 MySQL 回归 1691／1689／0／2；fetch 核实远端无新增后普通 push，main=origin/main=4b7257e、0/0、clean。新分支 codex/p0-1-platform-voucher 直接基于该 main；旧 Track A/B/PostgreSQL 工作区未清理。
 

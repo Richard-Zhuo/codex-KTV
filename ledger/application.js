@@ -5,6 +5,7 @@ import { BusinessRejection } from '../shared/business-error.js';
 import { orderBusinessDaySnapshot } from '../shared/business-day.js';
 import { withTrustedOrderBusinessDay } from '../shared/identity.js';
 import { EMPLOYEE_ATTRIBUTED_ACTIONS, resolveEmployeeContext } from './employee-attribution.js';
+import { resolveVoucherOpeningContext, linkOpenedVoucher } from './voucher-opening.js';
 import { resolveIncidentActorContext } from './incident-resolution.js';
 import { prepareSessionCredential, revalidateCommandSession, authorizeTrustedExecution } from './trusted-execution.js';
 
@@ -106,17 +107,18 @@ export function createLedgerApplication({ store, principal, executionMode = 'dem
           return { status: 'idempotency-conflict', ledgerId, operationKey: request.operationKey, currentRevision, reason: 'untracked-domain-key' };
         }
         if (!Number.isSafeInteger(currentRevision + 1)) throw RangeError('revision 已达到安全整数上限');
-        let nextState;
+        let nextState, executionContext;
         try {
           // Resolve the explicitly credited employee or incident assignee only for migrated actions, after auth, replay lookup,
           // policy and revision checks, on the same locked transaction.
-          let executionContext = trusted && (EMPLOYEE_ATTRIBUTED_ACTIONS.includes(request.action) || request.action === 'incident')
+          executionContext = trusted && (EMPLOYEE_ATTRIBUTED_ACTIONS.includes(request.action) || request.action === 'incident')
             ? await resolveEmployeeContext(transaction, context, request.payload, request.action)
             : trusted && request.action === 'resolveIncident' ? await resolveIncidentActorContext(transaction, context) : context;
-          if (trusted && request.action === 'retailSale') {
+          if (trusted && ['retailSale', 'open'].includes(request.action)) {
             executionContext = withTrustedOrderBusinessDay(executionContext,
               orderBusinessDaySnapshot(context.dbNow, { timeZone: businessTimeZone }));
           }
+          if (trusted && request.action === 'open') executionContext = await resolveVoucherOpeningContext(transaction, executionContext, request.payload);
           nextState = transactCommand(state, request.action, request.payload, request.operationKey,
             trusted ? { mode: 'trusted', context: executionContext } : { mode: 'demo' });
         } catch (error) {
@@ -127,6 +129,7 @@ export function createLedgerApplication({ store, principal, executionMode = 'dem
         if (nextState === state || !Array.isArray(nextState?.processed) || !nextState.processed.includes(request.operationKey)) {
           throw Error('领域事务未确认操作键，停止提交');
         }
+        if (trusted && request.action === 'open') await linkOpenedVoucher(transaction, executionContext, state, nextState);
         const revision = currentRevision + 1;
         const committedAt = await (transaction.commitTimestamp?.() ?? (trusted ? context.dbNow : now()));
         if (typeof committedAt !== 'string' || !/T.+(?:Z|[+-]\d{2}:\d{2})$/.test(committedAt) || !Number.isFinite(Date.parse(committedAt))) throw TypeError('成功审计时间无效');

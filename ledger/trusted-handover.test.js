@@ -153,8 +153,8 @@ test('handover: missing port/context or copied context cannot fall back to demo,
  const f=handoverFixture({permissions:['handover','room.open']});await f.app.execute(handoverCommand(),f.credential);
  assert.throws(()=>transact(f.state,'handover',{actualCash:1},'missing',{mode:'trusted'}),TypeError);
  assert.throws(()=>submitHandover(f.state,{actualCash:1},undefined,undefined,{mode:'trusted',context:{...f.context()}}),TypeError);
- await assert.rejects(f.app.execute({...handoverCommand('open',1),action:'open'},f.credential),e=>denied(e)&&e.reason==='trusted-action-not-enabled');
- assert.equal(TRUSTED_ENABLED_ACTIONS.includes('handover'),true);assert.equal(TRUSTED_ENABLED_ACTIONS.includes('open'),false);
+ await assert.rejects(f.app.execute({...handoverCommand('open',1),action:'open'},f.credential),e=>denied(e)&&e.reason==='missing-permission');
+ assert.equal(TRUSTED_ENABLED_ACTIONS.includes('handover'),true);assert.equal(TRUSTED_ENABLED_ACTIONS.includes('open'),true);
 });
 
 test('handover: cash total cannot overflow safe integer cents or advance the previous boundary',async()=>{

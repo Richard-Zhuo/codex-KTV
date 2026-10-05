@@ -68,7 +68,7 @@ for(const action of ORDER_ADDITION_TEST_ACTIONS){
     }
   });
   test(action+': unsupported credited employee cannot confer authorization or introduce attribution',async()=>{
-    assert.deepEqual(EMPLOYEE_ATTRIBUTED_ACTIONS,['reserve','sale','retailSale']);const f=fixture(action);
+    assert.deepEqual(EMPLOYEE_ATTRIBUTED_ACTIONS,['reserve','sale','retailSale','open']);const f=fixture(action);
     await assert.rejects(f.app.execute(request('attribution',0,{creditedEmployeeId:'10000000-0000-4000-8000-000000000001'}),f.credential),e=>denied(e)&&e.reason==='invalid-attribution');
     await noEffects(f);assert.equal((await f.app.execute(request('attribution'),f.credential)).status,'committed');
   });

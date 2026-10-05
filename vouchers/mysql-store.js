@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { createTransactionBoundVoucherBinding } from './binding.js';
 import { decodeLedgerJson } from '../ledger/mysql-snapshot.js';
 
 const fields = [
@@ -25,7 +26,7 @@ export class VoucherCommitOutcomeUnknown extends Error {
   constructor(cause) { super('Voucher database commit outcome unknown; query the original key, never repeat consume', { cause });
     this.code = 'VOUCHER_COMMIT_OUTCOME_UNKNOWN'; }
 }
-export function createMySqlVoucherStore({ pool, database, ledgerId, provider, storeId, bindSessionRevalidation }) {
+export function createMySqlVoucherStore({ pool, database, ledgerId, provider, storeId, bindSessionRevalidation, packageMappings = [] }) {
   if (typeof pool?.getConnection !== 'function' || !/^[A-Za-z][A-Za-z0-9_]*$/.test(database || '') ||
       typeof ledgerId !== 'string' || !ledgerId || ledgerId.length > 64 ||
       !['meituan','douyin'].includes(provider) || typeof storeId !== 'string' || !storeId || storeId.length > 191 ||
@@ -100,6 +101,12 @@ export function createMySqlVoucherStore({ pool, database, ledgerId, provider, st
     };
   }
   return { testOnly: database === 'jbhh_ktv_test', ledgerId, provider, storeId,
+    bindVoucherRedemptions(connection) {
+      if (typeof connection?.execute !== 'function') throw TypeError('Caller MySQL connection required');
+      const tx = port(connection);
+      return createTransactionBoundVoucherBinding({ ledgerId, provider, storeId, packageMappings,
+        port: { lockRedemption: tx.getRedemption, writeRedemption: tx.writeRedemption } });
+    },
     async runAtomic(work) {
       const connection = await pool.getConnection(); let begun = false, committing = false, destroy = false;
       try {

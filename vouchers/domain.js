@@ -19,3 +19,9 @@ export function transitionRedemption(record, target) {
   }
   return { ...record, status: target, version: record.version + 1 };
 }
+
+export function bindRedemptionToOrder(record,orderId) {
+  if(record?.status!=='REDEEMED'||record.linkedOrderId!==null||typeof orderId!=='string'||!orderId||orderId.length>120)throw new VoucherError('VOUCHER_BINDING_REJECTED');
+  if(!Number.isSafeInteger(record.version+1))throw RangeError('Voucher version limit');
+  return {...record,linkedOrderId:orderId,version:record.version+1};
+}

@@ -270,7 +270,7 @@ export async function testTrustedIncidentReviews({ t, pool, setup, auth, table, 
     const id = 'incident-review-closed'; await pending(id, login.principalId); const before = await inspect(id);
     for (const action of ['open'])
       await assert.rejects(runFor(id).app.execute({ ...incidentReviewCommand(action, action), action }, login.credential),
-        error => denied(error) && error.reason === 'trusted-action-not-enabled');
+        error => denied(error) && error.reason === (action==='open'?'missing-permission':'trusted-action-not-enabled'));
     await assertUnchanged(id, before);
   });
 }

@@ -209,7 +209,7 @@ test('incident: review, rounding, payments and other remaining actions still fai
   const f = fixture({ permissions: ['incident.create', 'incident.resolve', 'incident.resolve.approve', 'rounding.approve',
     'payment.collect', 'payment.settle', 'procurement.create', 'handover', 'room.open'] });
   for (const action of [ 'open']) {
-    await assert.rejects(f.app.execute({ ...incidentCommand(action), action }, f.credential), e => denied(e) && e.reason === 'trusted-action-not-enabled');
+    await assert.rejects(f.app.execute({ ...incidentCommand(action), action }, f.credential), e => denied(e) && e.reason === (action==='open'?'missing-permission':'trusted-action-not-enabled'));
   }
   await unchanged(f);
 });

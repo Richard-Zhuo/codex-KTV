@@ -223,9 +223,9 @@ test('pay: already-paid balance allows no new payments and keeps the original ze
   assert.equal(paymentOrder(head.state).status, '已结账'); assert.equal(head.state.rooms[0].status, '待清洁');
 });
 
-test('payments: open stays formally disabled even with their permissions', async () => {
+test('payments: money grants and room.open alone cannot authorize employee-credited open', async () => {
   const f = fixture({ permissions: ['payment.collect','payment.settle','rounding.approve','handover','room.open'] });
   for (const action of [ 'open'])
-    await assert.rejects(f.app.execute(paymentCommand(action, action), f.credential), error => denied(error) && error.reason === 'trusted-action-not-enabled');
+    await assert.rejects(f.app.execute(paymentCommand(action, action), f.credential), error => denied(error) && error.reason === (action==='open'?'missing-permission':'trusted-action-not-enabled'));
   await noEffects(f); assert.equal(f.executions(), 0);
 });

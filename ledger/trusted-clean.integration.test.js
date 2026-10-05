@@ -1,4 +1,5 @@
 import test from 'node:test';
+import { testTrustedOpen } from './trusted-open.integration.js';
 import { testPlatformVouchers } from './platform-voucher.integration.js';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
@@ -557,6 +558,7 @@ test('MySQL trusted clean vertical slice in jbhh_ktv_test',
       await testTrustedProcurement({ t, pool, setup, auth, table, provision, seed, inspect, application,
         assertUnchanged, wrapConnection, poolOptions, database });
       await testPlatformVouchers({ t, pool, setup, auth, provision, seed, inspect, table, database, poolOptions, wrapConnection });
+      await testTrustedOpen({ t, pool, setup, auth, provision, seed, inspect, roster, table, database, poolOptions, wrapConnection });
     } finally {
       try { if (pool) await pool.end(); }
       finally {

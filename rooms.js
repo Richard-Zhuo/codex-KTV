@@ -32,15 +32,15 @@ function delegatedEmployee(state, data) {
 }
 export function platformVoucher(source, amount) {
   const provider = String(source || '').trim();
-  return PLATFORM_OPENING_SOURCES.includes(provider) ? { provider, status: '待验券', covered: amount, interface: 'platform-voucher-scan' } : null;
+  return PLATFORM_OPENING_SOURCES.includes(provider) ? { provider, status: '待验券', covered: 0, referenceValueCents: amount, interface: 'platform-voucher-scan' } : null;
 }
-export function quote(type, time, beer = 'bw', openSource = '', catalog = DEFAULT_CATALOG) {
-  const period = slot(time); if (period === 'closed') throw new BusinessRejection('现在仅接受预订，请选择营业时段到店');
+export function quote(type, time, beer = 'bw', openSource = '', catalog = DEFAULT_CATALOG, timeZone) {
+  const period = slot(time, timeZone); if (period === 'closed') throw new BusinessRejection('现在仅接受预订，请选择营业时段到店');
   assertCatalogPackagePrices(catalog);
   const packageItem = roomPackage(catalog, type, period);
   if (period === 'day') {
     const voucher = platformVoucher(openSource, packageItem.priceCents);
-    return { period, packageId: packageItem.id, packageName: packageItem.name, packageBaseCents: packageItem.basePriceCents, packageGiftValueCents: 0, base: voucher ? 0 : packageItem.priceCents, gift: 0, total: voucher ? 0 : packageItem.priceCents, bottles: 0, dozen: 0, extras: [], voucher };
+    return { period, packageId: packageItem.id, packageName: packageItem.name, packageBaseCents: packageItem.basePriceCents, packageGiftValueCents: 0, base: packageItem.priceCents, gift: 0, total: packageItem.priceCents, bottles: 0, dozen: 0, extras: [], voucher };
   }
   const p = product(beer, catalog);
   const giftRule = packageItem.openingGift;
@@ -49,7 +49,7 @@ export function quote(type, time, beer = 'bw', openSource = '', catalog = DEFAUL
   const gift = packageItem.includedValueCents || 0;
   const voucher = platformVoucher(openSource, packageItem.priceCents);
   const fixedExtras = (packageItem.components || []).filter(component => component.kind === 'fixed').map(component => ({ product: component.productId, productId: component.productId, count: component.baseQuantity }));
-  return { period, packageId: packageItem.id, packageName: packageItem.name, packageBaseCents: packageItem.basePriceCents, packageGiftValueCents: gift, openingGift: structuredClone(giftRule), base: voucher ? 0 : packageItem.basePriceCents, gift: voucher ? 0 : gift, total: voucher ? 0 : packageItem.priceCents, dozen, bottles: giftRule.baseQuantityByProduct[p.id], extras: fixedExtras, voucher };
+  return { period, packageId: packageItem.id, packageName: packageItem.name, packageBaseCents: packageItem.basePriceCents, packageGiftValueCents: gift, openingGift: structuredClone(giftRule), base: packageItem.basePriceCents, gift, total: packageItem.priceCents, dozen, bottles: giftRule.baseQuantityByProduct[p.id], extras: fixedExtras, voucher };
 }
 export function canExchange(from, to, catalog = DEFAULT_CATALOG) { const a = product(from, catalog), b = product(to, catalog); return a.id !== b.id && !b.selectionOnly && saleOptions(b).length > 0 && a.exchangeLevel && b.exchangeLevel && a.exchangeLevel !== 4 && b.exchangeLevel >= a.exchangeLevel; }
 export function reservationTarget(baseTime, dayOffset, session) {
@@ -89,17 +89,47 @@ export function release(s, order) { const r = s.rooms.find(r => r.order === orde
 
 // —— 命令层：由 rules.js 的 transact 分支委托调用，参数与原分支一致 ——
 
-export function openRoom(s, room, data, person, operator, time) {
-  const delegated = delegatedEmployee(s, data);
-  if (delegated) person = delegated.name; else need(s, ['开单员','老板'], 'room.open');
+export function openRoom(s, room, data, person, operator, time, execution = { mode: 'demo' }) {
+  let delegated, attribution = {}, context = null;
+  if (execution?.mode === 'trusted') {
+    context = assertTrustedExecutionContext(execution.context);
+    requireTrustedPermission(context, 'room.open'); requireTrustedPermission(context, 'staff.record');
+    if (!context.creditedEmployeeId || (data.creditedEmployeeId ?? data.employee) !== context.creditedEmployeeId ||
+        (data.employee !== undefined && data.employee !== context.creditedEmployeeId) ||
+        typeof context.creditedEmployeeNameSnapshot !== 'string' || !context.openingOrderId ||
+        !Object.isFrozen(context.orderBusinessDay)) throw TypeError('缺少事务内可信开房员工／订单／营业日快照');
+    person = context.creditedEmployeeNameSnapshot; operator = context.principalId; time = context.dbNow;
+    delegated = { id: context.creditedEmployeeId };
+    attribution = { actualActorPrincipalId: context.principalId, creditedEmployeeId: context.creditedEmployeeId,
+      creditedEmployeeNameSnapshot: context.creditedEmployeeNameSnapshot, ...context.orderBusinessDay,
+      ...(context.voucherRedemption ? { voucherRedemptionId: context.voucherRedemption.redemptionId } : {}) };
+  } else if (execution?.mode === 'demo') {
+    delegated = delegatedEmployee(s, data);
+    if (delegated) person = delegated.name; else need(s, ['开单员','老板'], 'room.open');
+  } else throw TypeError('开房执行模式无效');
   if (!room || !['空闲','待清洁','已预订'].includes(room.status)) throw new BusinessRejection('房间已在使用');
   if (pendingRoomIssueReview(s, room.id)) throw new BusinessRejection('房间恢复申请正在审核，暂不能开房');
   if (room.status === '待清洁' && !data.acceptDirty) throw new BusinessRejection('请先确认房间可以接待客人');
-  const openSource = String(data.openSource ?? '').trim();
+  let openSource = String(data.openSource ?? '').trim();
   if (!OPENING_SOURCES.includes(openSource)) throw new BusinessRejection('请选择有效的开房渠道');
-  const q = quote(room.type, time, data.beer, openSource, s.catalog);
+  const proof = context?.voucherRedemption;
+  if (proof) {
+    const providerSource = proof.provider === 'meituan' ? '美团' : '抖音';
+    if (openSource && openSource !== providerSource) throw new BusinessRejection('平台券与开房渠道不一致');
+    openSource = providerSource;
+  } else if (PLATFORM_OPENING_SOURCES.includes(openSource) || data.voucherRedemptionId !== undefined) {
+    throw new BusinessRejection('平台券须先完成服务端可信核销，不能按待验券开房');
+  }
+  const q = quote(room.type, time, data.beer, '', s.catalog, context?.orderBusinessDay.businessTimeZone);
+  if (proof) {
+    if (!proof.allowedPackageIds.includes(q.packageId)) throw new BusinessRejection('已核销券不能覆盖当前套餐');
+    q.voucher = { provider: openSource, status: 'REDEEMED', covered: q.total,
+      redemptionId: proof.redemptionId, providerFlowId: proof.providerFlowId,
+      productId: proof.productId, productNameSnapshot: proof.productNameSnapshot, interface: 'server-redemption' };
+    q.base = 0; q.gift = 0; q.total = 0;
+  }
   const booking = s.reservations.find(r => r.room === room.id && reservationActiveAt(r, time));
-  const id = `D${++s.serial}`;
+  const sequence = ++s.serial; const id = context ? context.openingOrderId : `D${sequence}`;
   let drinks = [];
   if (q.bottles && data.beer === 'drink') {
     if (!Array.isArray(data.initialMix) || !data.initialMix.length) throw new BusinessRejection('请选择首次配给客人的酒水种类和支数');
@@ -111,16 +141,16 @@ export function openRoom(s, room, data, person, operator, time) {
     }
     if ([...merged.values()].reduce((sum, count) => sum + count, 0) !== q.bottles) throw new BusinessRejection(`首次配酒水合计必须是${q.bottles}支`);
     drinks = [...merged].map(([productId, count]) => ({ id: ++s.serial, product: productId, productId, ...productSnapshot(s.catalog, productId, count), count }));
-    for (const line of drinks) recordInventoryChange(s, line.product, -line.count, '开房首次配酒水', time);
+    for (const line of drinks) recordInventoryChange(s, line.product, -line.count, '开房首次配酒水', time, {}, execution);
   } else if (q.bottles) {
     drinks = [{ id: ++s.serial, product: data.beer, productId: data.beer, ...productSnapshot(s.catalog, data.beer, q.bottles), count: q.bottles }];
-    recordInventoryChange(s, data.beer, -q.bottles, '开房赠饮', time);
+    recordInventoryChange(s, data.beer, -q.bottles, '开房赠饮', time, {}, execution);
   }
   const resolvedComponents = [
     ...drinks.map(line => productSnapshot(s.catalog, productIdOf(line), line.count, { kind: 'opening-drink', totalBaseQuantity: line.count })),
     ...q.extras.map(extra => productSnapshot(s.catalog, extra.productId || extra.product, extra.count, { kind: 'package-component', totalBaseQuantity: extra.count }))
   ];
-  s.orders.push({ id, kind: 'room', room: room.id, time, createdAt: time, person, recordedBy: operator, employeeId: delegated?.id || '', openedBy: person, openSource: openSource || '线下', voucher: q.voucher, reservedBy: booking?.person || '', reservationSource: booking?.source || '', status: '营业中', packageId: q.packageId, packageNameSnapshot: q.packageName, packagePriceCents: q.total, packageBaseCents: q.base, packageGiftValueCents: q.gift, packageReferenceGiftValueCents: q.packageGiftValueCents, base: q.base, gift: q.gift, period: q.period, openingGiftReferenceValueCents: q.packageGiftValueCents, drinks, resolvedComponents, extras: q.extras.map(extra => ({ ...extra, served: false })), sales: [], otherCharges: [], bonusGifts: [], giftRequests: [], payments: [], rounding: 0, roundingType: '', roundingNote: '', roundingReview: null, credit: null, exchanges: [] });
+  s.orders.push({ id, kind: 'room', room: room.id, time, createdAt: time, person, recordedBy: operator, employeeId: delegated?.id || '', ...attribution, openedBy: person, openSource: openSource || '线下', voucher: q.voucher, reservedBy: booking?.person || '', reservationSource: booking?.source || '', status: '营业中', packageId: q.packageId, packageNameSnapshot: q.packageName, packagePriceCents: q.total, packageBaseCents: q.base, packageGiftValueCents: q.gift, packageReferenceGiftValueCents: q.packageGiftValueCents, base: q.base, gift: q.gift, period: q.period, openingGiftReferenceValueCents: q.packageGiftValueCents, drinks, resolvedComponents, extras: q.extras.map(extra => ({ ...extra, served: false })), sales: [], otherCharges: [], bonusGifts: [], giftRequests: [], payments: [], rounding: 0, roundingType: '', roundingNote: '', roundingReview: null, credit: null, exchanges: [] });
   room.status = '营业中'; room.order = id;
   if (booking) booking.status = '已到店';
 }

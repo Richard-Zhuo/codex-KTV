@@ -236,7 +236,7 @@ test('repayment decisions: review permission does not enable rounding, payments 
  const f=fixture({permissions:['credit.repay.approve','review.self','rounding.approve','payment.collect','payment.settle',
   'incident.create','incident.resolve','incident.resolve.approve','procurement.create','handover','room.open']});
  for(const action of [ 'open']){
-  await assert.rejects(f.app.execute({...repaymentReviewCommand(action),action},f.credential),e=>denied(e)&&e.reason==='trusted-action-not-enabled');await assertNoEffects(f);
+  await assert.rejects(f.app.execute({...repaymentReviewCommand(action),action},f.credential),e=>denied(e)&&e.reason===(action==='open'?'missing-permission':'trusted-action-not-enabled'));await assertNoEffects(f);
  }
 });
 

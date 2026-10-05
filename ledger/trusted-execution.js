@@ -1,11 +1,11 @@
 // Migrated execution is a separate gate from Stage 2A eligibility.
 import { authorizeCommand } from './command-policy.js';
 import { EMPLOYEE_ATTRIBUTED_ACTIONS, employeePolicyPayload } from './employee-attribution.js';
-import { assertTrustedExecutionContext, AuthorizationDenied } from '../shared/identity.js';
+import { assertTrustedExecutionContext, requireTrustedPermission, AuthorizationDenied } from '../shared/identity.js';
 
 export const TRUSTED_ENABLED_ACTIONS = Object.freeze(['clean', 'markRoomIssue', 'clearRoomIssue',
   'createCatalogProduct', 'updateCatalogProduct', 'updateCatalogPackage', 'cancelReservation', 'deposit', 'withdraw', 'reserve', 'sale', 'retailSale', 'serveExtra', 'otherCharge', 'exchange',
-  'approveRoomIssue', 'rejectRoomIssue', 'stock', 'consumableStock', 'approveInventory', 'rejectInventory', 'gift', 'approveGift', 'rejectGift', 'expense', 'approveExpense', 'rejectExpense', 'credit', 'approve', 'reject', 'repay', 'approveRepayment', 'rejectRepayment', 'incident', 'resolveIncident', 'approveIncidentResolution', 'rejectIncidentResolution', 'procurement', 'collect', 'pay', 'settle', 'approveRounding', 'rejectRounding', 'handover']);
+  'approveRoomIssue', 'rejectRoomIssue', 'stock', 'consumableStock', 'approveInventory', 'rejectInventory', 'gift', 'approveGift', 'rejectGift', 'expense', 'approveExpense', 'rejectExpense', 'credit', 'approve', 'reject', 'repay', 'approveRepayment', 'rejectRepayment', 'incident', 'resolveIncident', 'approveIncidentResolution', 'rejectIncidentResolution', 'procurement', 'collect', 'pay', 'settle', 'approveRounding', 'rejectRounding', 'handover', 'open']);
 const enabled = new Set(TRUSTED_ENABLED_ACTIONS);
 
 export class SessionAuthenticationRequired extends Error {
@@ -42,6 +42,7 @@ export async function revalidateCommandSession(transaction, credential) {
 export function authorizeTrustedExecution(context, request) {
   assertTrustedExecutionContext(context);
   if (!enabled.has(request.action)) throw new AuthorizationDenied('trusted-action-not-enabled');
+  if (request.action === 'open') { requireTrustedPermission(context, 'room.open'); requireTrustedPermission(context, 'staff.record'); }
   const policy = authorizeCommand({ principal: context.principal, action: request.action, payload: EMPLOYEE_ATTRIBUTED_ACTIONS.includes(request.action) ? employeePolicyPayload(request.payload) : request.payload });
   if (!policy.allowed) throw new AuthorizationDenied(policy.reason);
   return policy;

@@ -1,12 +1,12 @@
 ### 平台券验证路线（R.1）
 
-数据库无关契约：node --test --test-isolation=none vouchers/domain.test.js vouchers/gateways.test.js vouchers/application.test.js。真实数据库仍用 LEDGER_MYSQL_TEST_URL，严格校验 URL 与实际 database=jbhh_ktv_test、版本及 InnoDB；绝不输出 URL／密码。
+数据库无关契约：node --test --test-isolation=none vouchers/domain.test.js vouchers/gateways.test.js vouchers/application.test.js。open/binding：node --test --test-isolation=none ledger/trusted-open.test.js vouchers/binding.test.js。真实数据库仍用 LEDGER_MYSQL_TEST_URL，严格校验 URL 与实际 database=jbhh_ktv_test、版本及 InnoDB；绝不输出 URL／密码。
 
-ledger/trusted-clean.integration.test.js 复用现有 fixture lock，新增明确的 voucher 四表和 migration 007。ledger/platform-voucher.integration.js 验 migration、provider 调用锁外取锁、重连、UNKNOWN、独立连接竞争、claim/evidence/event SQL 失败及消息去重。fixture 为固定十五表；ledger 三表依原授权预清理，其他表必须本轮明确创建才能清理，遇到已有未知数据拒绝。没有动态表名或全局数据库权限。
+ledger/trusted-clean.integration.test.js 复用现有 fixture lock，新增明确的 voucher 四表和 migration 007。ledger/platform-voucher.integration.js 验 migration、provider 调用锁外取锁、重连、UNKNOWN、独立连接竞争、claim/evidence/event SQL 失败及消息去重。ledger/trusted-open.integration.js 在同一 guarded fixture 验同连接锁序、原子开房、双设备竞争、replay 与数据库故障。fixture 为固定十五表；ledger 三表依原授权预清理，其他表必须本轮明确创建才能清理，遇到已有未知数据拒绝。没有动态表名或全局数据库权限。
 
 完整验证：node --test --test-isolation=none --test-reporter=tap。JavaScript 修改后仍先尝试 npm test；无 npm 时报告具体失败并执行本项目对应的 Node 测试。Fake 只接受显式 test mode，不使用真实券、门店或凭据；Meituan production redemption = NOT ENABLED。
 
- 开发与验证环境
+# 开发与验证环境
 
 本文件是项目命令、工具链、端口、数据位置和验证路线的唯一维护位置。命令状态分为：
 
@@ -53,7 +53,7 @@ ledger/trusted-clean.integration.test.js 复用现有 fixture lock，新增明�
 | 房间恢复审批 trusted 定向与原领域回归 | `node --test --test-isolation=none ledger/trusted-room-issue-review.test.js ledger/trusted-clean.test.js rooms.test.js rules.test.js ledger/command-policy.test.js` | 本次执行 | 锁内稳定申请人、本人双权限、legacy 拒绝不占键、决定 principal、原房态规则与 demo 对照；结果见 CURRENT_STAGE |
 | 换酒 trusted 定向与原领域回归 | `node --test --test-isolation=none ledger/trusted-exchange.test.js ledger/trusted-clean.test.js rules.test.js inventory.test.js sales.test.js` | 本次执行 | 三类换酒来源、库存两步原子性、快照／金额、actor／权限／DB 时间、不占键／replay；结果见 CURRENT_STAGE，不连接数据库，保留该集合原平台券 skip |
 | 存取酒单元与原领域回归 | `node --test --test-isolation=none ledger/trusted-clean.test.js operations.test.js` | 本次执行 | 新存取酒 trusted 契约与原业务矩阵；不连接数据库 |
-| trusted 命令 MySQL 集成测试 | `node --test --test-isolation=none ledger/trusted-clean.integration.test.js` | 本次执行 | procurement 创建及关联 expense、incident 创建／处理／恢复审核、repay 申请／审批、credit 申请／决定、expense 申请／审批、gift 提交／审批、库存申请与审核、房间恢复 approve／reject、换酒、配品／其他消费、销售／预约及既有房间／目录／存取酒用例共用专用库 fixture；沿用原十张已知 fixture 表并迁移／创建 auth_policy_attributes，共十一张，拒绝预存 auth／employee 表，不操作其他表 |
+| trusted 命令 MySQL 集成测试 | `node --test --test-isolation=none ledger/trusted-clean.integration.test.js` | 本次执行 | procurement 创建及关联 expense、incident 创建／处理／恢复审核、repay 申请／审批、credit 申请／决定、expense 申请／审批、gift 提交／审批、库存申请与审核、房间恢复 approve／reject、换酒、配品／其他消费、销售／预约及既有房间／目录／存取酒用例共用专用库 fixture；原十一张 fixture 表加 migration 007 的 voucher 四表，共十五张；拒绝预存 auth／employee／voucher 表，不操作其他表 |
 | collect／pay trusted 定向回归 | `node --test --test-isolation=none ledger/trusted-payments.test.js ledger/trusted-clean.test.js ledger/command-policy.test.js sales.test.js rules.test.js` | 本次执行 | 可信付款 ID／发生时间／操作者、原 charge／全额结账、拒绝不占键／撤权重放／回滚；真实 MySQL helper 复用原 guarded 十一表 fixture，结果见 CURRENT_STAGE |
 | procurement trusted 定向回归 | `node --test --test-isolation=none ledger/trusted-procurement.test.js ledger/trusted-expense.test.js ledger/trusted-expense-review.test.js ledger/trusted-clean.test.js ledger/command-policy.test.js operations.test.js` | 本次执行 | 采购与关联费用同一可信申请人、原业务规则、成对原子性、重试／竞争／回滚；MySQL helper 复用原 guarded 十一表 fixture，结果见 CURRENT_STAGE |
 | incident resolution review trusted 定向回归 | `node --test --test-isolation=none ledger/trusted-incident-review.test.js ledger/trusted-incident-resolution.test.js ledger/trusted-incident.test.js ledger/trusted-clean.test.js ledger/command-policy.test.js operations.test.js` | 本次执行 | 本次申请 principal 的本人审核、legacy 拒绝、原批准／驳回规则；真实数据库 helper 复用既有 trusted 十一表 fixture，证据见 CURRENT_STAGE |

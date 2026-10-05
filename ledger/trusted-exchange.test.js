@@ -75,7 +75,7 @@ test('exchange: only order.exchange grants authority; denial consumes no key and
 });
 
 test('exchange: no new employee attribution or resolver; credited employee cannot authorize or replace the actor', async () => {
-  assert.deepEqual(EMPLOYEE_ATTRIBUTED_ACTIONS, ['reserve', 'sale', 'retailSale']); const f = fixture();
+  assert.deepEqual(EMPLOYEE_ATTRIBUTED_ACTIONS, ['reserve', 'sale', 'retailSale', 'open']); const f = fixture();
   await assert.rejects(f.app.execute(exchangeCommand('attribution', 0, { creditedEmployeeId: '10000000-0000-4000-8000-000000000001' }), f.credential),
     error => denied(error) && error.reason === 'invalid-attribution');
   await assertNoEffects(f); assert.equal((await f.app.execute(exchangeCommand('attribution'), f.credential)).status, 'committed');

@@ -166,3 +166,16 @@ export function withTrustedOrderBusinessDay(context, snapshot) {
       typeof snapshot.businessTimeZone !== 'string' || !snapshot.businessTimeZone) throw TypeError('缺少可信开单营业日快照');
   return registerTrustedExecutionContext(Object.freeze({ ...context, orderBusinessDay: snapshot }));
 }
+
+export function withTrustedRoomOpening(context, { orderId, voucherRedemption = null }) {
+  assertTrustedExecutionContext(context);
+  const uuid = id => typeof id === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
+  if (!uuid(orderId)) throw TypeError('缺少服务端新房单 UUID');
+  if (voucherRedemption !== null && (!Object.isFrozen(voucherRedemption) || !uuid(voucherRedemption.redemptionId) ||
+      !['meituan','douyin'].includes(voucherRedemption.provider) || !voucherRedemption.storeId ||
+      !voucherRedemption.providerFlowId || !Number.isSafeInteger(voucherRedemption.version) ||
+      !Array.isArray(voucherRedemption.allowedPackageIds) || !Object.isFrozen(voucherRedemption.allowedPackageIds))) {
+    throw TypeError('缺少事务内平台券证据');
+  }
+  return registerTrustedExecutionContext(Object.freeze({ ...context, openingOrderId: orderId, voucherRedemption }));
+}

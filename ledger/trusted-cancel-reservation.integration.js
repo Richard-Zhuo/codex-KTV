@@ -223,7 +223,7 @@ export async function runTrustedCancelReservationIntegration(t, {
     const login = await provision(['room.reserve']), id = 'cancel-not-reserve';
     await seed(id, prepare); const before = await inspect(id), run = application(id);
     await assert.rejects(run.app.execute({ ...command('blocked'), action: 'open' }, login.credential),
-      error => denied(error) && error.reason === 'trusted-action-not-enabled');
+      error => denied(error) && error.reason === 'missing-permission');
     assert.equal(run.executions(), 0); await assertUnchanged(id, before);
   });
 }
