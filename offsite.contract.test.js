@@ -341,14 +341,26 @@ test('K04 已修：trusted 交班按连续现金区间，差额后的下一班�
   assert.equal(records[2].previousHandoverId, records[1].handoverId);
 });
 
-test.skip('KNOWN BUSINESS ISSUE：旧 SQL 房单表要求 room_id 非空，无法原样承载 retail.room=null', async () => {
-  const { readFileSync } = await import('node:fs');
-  const schema = readFileSync(new URL('./database/schema.sql', import.meta.url), 'utf8');
-  const roomOrders = schema.slice(
-    schema.indexOf('CREATE TABLE room_orders ('),
-    schema.indexOf('CREATE TABLE order_items (')
-  );
-  assert.match(roomOrders, /room_id bigint NOT NULL REFERENCES rooms\(id\)/);
+test('K10 resolved: current order and snapshot contracts require a real room only for room orders', async () => {
+  const { encodeLedgerSnapshot, decodeLedgerSnapshot } = await import('./ledger/mysql-snapshot.js');
+  const original = fresh();
+  original.inventory.bw.count = 30; // Prepared counted fixture; inventory approval has separate contracts.
+  const before = structuredClone(original);
+  for (const room of [null, '', 'RETAIL', 'unknown-room']) {
+    assert.throws(() => run(original, 'open', { room, beer: 'bw' }), /房间/);
+    assert.deepEqual(original, before);
+  }
+  let state = run(original, 'open', { room: 'V01', beer: 'bw' });
+  const rooms = structuredClone(state.rooms);
+  state = run(state, 'retailSale', {
+    items: [{product:'bw',spec:'single',count:1}],
+    payments: [{method:'现金',amount:1000}]
+  });
+  const encoded = encodeLedgerSnapshot(state);
+  const loaded = decodeLedgerSnapshot(encoded.json,encoded.checksum);
+  assert.deepEqual(loaded.orders.map(order => [order.kind,order.room]), [['room','V01'],['retail',null]]);
+  assert.deepEqual(loaded.rooms,rooms);
+  assert.equal(loaded.rooms.some(room=>room.id==='RETAIL'||room.id===''),false);
 });
 
 test('采购合同：记录订量和费用关联，但仅采购不增加库存', () => {

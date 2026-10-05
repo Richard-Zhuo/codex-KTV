@@ -1,3 +1,8 @@
+-- LEGACY / NOT USED FOR CURRENT MYSQL
+-- Historical PostgreSQL artifact only; do not initialize or deploy the current system with this file.
+-- Current schema authority: versioned MySQL migrations in database/migrations/ (see database/README.md).
+-- Historical DDL/data below is preserved; it is not a current business contract or account seed.
+
 -- 当前演示配置的基础主数据。先执行 schema.sql。
 BEGIN;
 

@@ -188,7 +188,7 @@ Meituan production redemption = NOT ENABLED。Fake Gateway 仅用于显式隔离
 - “切换演示身份”“调整练习时间”和“恢复演示数据”属于 DEMO / training tooling，不是正式生产业务能力；本轮暂留员工系统，正式后端和数据库接入时另行处理。
 - 演示业务状态保存在当前浏览器 `localStorage`；不同设备、浏览器、`localhost` 与局域网地址不会自动共享。
 - 已保存的演示记录若无法安全加载（含旧套餐价格不一致），必须保留原始主记录并停止保存；可解析的历史订单与付款笔数供只读核对，完整原文可查看复制。人工核对并修正当前套餐配置后才可显式重检恢复；不得借修正当前价格改写历史成交金额或付款。
-- 既有 `database/schema.sql` 等 PostgreSQL 文件只保留为历史设计基线；正式数据库方向为 MySQL，当前静态页面不执行 SQL。
+- 当前唯一 schema authority 为 database/migrations/ 的 versioned MySQL migrations（MySQL 8.4 / InnoDB）。schema.sql/seed.sql/kdocs-import.md 为 LEGACY / NOT USED FOR CURRENT MYSQL，只保留历史参考，不初始化、部署或约束当前 JSON ledger，不维护第二套准生产 PostgreSQL schema；当前静态页面不执行 SQL。
 
 ## K05：正式营业额与资金双口径
 

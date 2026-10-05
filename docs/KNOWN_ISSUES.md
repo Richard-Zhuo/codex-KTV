@@ -1,6 +1,6 @@
 # 已知业务问题与隔离边界
 
-状态：2026-10-06，K01／K06 已解决，offsite.contract.test.js 对应两个 test.skip 已转为正式正向回归；K05 也已修复并转正式回归；K04 连续 trusted 交班也已修复并转正式回归，K07 平台券门禁已修并转正式测试，仅 K10 旧 SQL retail 草案保留 skip。Meituan production redemption = NOT ENABLED；K07 关闭不代表真实美团核销上线。K02／K03 为历史已修项目，其他部分解决项不因此变为完成。真实 MySQL 及完整本轮结果见 [CURRENT_STAGE](./CURRENT_STAGE.md)。目标规则见 [OFFSITE_CONTRACTS](./OFFSITE_CONTRACTS.md) 与 [P0 矩阵](./OFFSITE_P0_MATRIX.md)。
+状态：2026-10-06，K01／K06 已解决，offsite.contract.test.js 对应两个 test.skip 已转为正式正向回归；K05 也已修复并转正式回归；K04 连续 trusted 交班也已修复并转正式回归，K07 平台券门禁已修并转正式测试，K10 也按唯一 MySQL schema authority 关闭，原 skip 转正式；当前隔离测试 Known Issues=0、实际 skip=0。Meituan production redemption = NOT ENABLED；K07 关闭不代表真实美团核销上线。K02／K03 为历史已修项目，其他部分解决项不因此变为完成。真实 MySQL 及完整本轮结果见 [CURRENT_STAGE](./CURRENT_STAGE.md)。目标规则见 [OFFSITE_CONTRACTS](./OFFSITE_CONTRACTS.md) 与 [P0 矩阵](./OFFSITE_P0_MATRIX.md)。
 
 | ID | 当前状态与证据 | 脱岗 P0 剩余要求 |
 |---|---|---|
@@ -13,6 +13,6 @@
 | K07 待验平台券覆盖房费 | 已修：rules.test.js 原 skip 转正式；trusted-open 单元/真实 MySQL 验服务端 REDEEMED 同店未绑定门禁、唯一绑定及失败保持 unlinked | Meituan production redemption = NOT ENABLED；真实授权、凭据、CLI 契约、幂等范围、安全测试券/环境、webhook 验签及产品/套餐配置仍未完成，不宣称已上线 |
 | K08 挂账驳回 | 原申请及决定现保留在 `order.creditHistory`，审核历史可查；旧单仍可能在释放房后游离 | 给游离单可见异常队列及可执行收清、撤销流程 |
 | K09 本机数据损坏 | 异常加载一律停写，原始主记录不覆盖；恢复页可查看原文，独立备份不覆盖已有不同备份；`persistence.test.js`、`recovery.test.js` 覆盖 | 正式共享账本仍需可验证备份、告警、隔离恢复与演练 |
-| K10 数据库与零售 | 未解决；`room_orders.room_id` 仍非空，`offsite.contract.test.js` 标为问题 | 正式迁移须容纳 `retail.room=null` 且保留房单引用 |
+| K10 数据库与零售 | 已关闭：MySQL migrations 为唯一当前 authority；旧 PostgreSQL 文件标 LEGACY；原 skip 转正式，真实 MySQL 验 room/retail 共存、有效房间与零售 null、重连及 migration 重复策略 | 旧 DDL 不改为第二套生产 schema；无虚拟 room，正式导入/部署仍未完成 |
 
 K01／K06／K05／K04 已取得真实 MySQL 事务回归，历史演示修复证据仍按原范围解释；均不代表 14 天脱岗可运营。其他关键 P0 缺口包括可信共享账本、真人账号、撤单、退款、冲正、逐渠道对账、正式营业日和班次、可靠审计与异常恢复。

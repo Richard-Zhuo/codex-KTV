@@ -98,6 +98,35 @@ test('MySQL 8.4 InnoDB ledger integration in jbhh_ktv_test',
         return { head, operations, audit };
       };
 
+      await t.test('K10: current MySQL ledger commits room and retail together without a fabricated room', async () => {
+        await seed('k10-orders',state=>{state.clock=new Date(2026,9,5,20).toISOString();});
+        for (const [index, room] of [null,'','RETAIL','unknown-room'].entries()) {
+          const result = await app('k10-orders').execute({
+            operationKey:'invalid-room-'+index,expectedRevision:0,action:'open',payload:{room,beer:'bw'}
+          });
+          assert.equal(result.status,'business-rejected');
+          const actual = await inspect('k10-orders');
+          assert.equal(actual.head.revision,0);assert.equal(actual.head.state.orders.length,0);
+          assert.equal(actual.audit.length,0);
+        }
+        const opened = await app('k10-orders').execute({
+          operationKey:'real-room',expectedRevision:0,action:'open',payload:{room:'V01',beer:'bw'}
+        });
+        assert.equal(opened.status,'committed');
+        const roomState = structuredClone((await inspect('k10-orders')).head.state.rooms);
+        assert.equal((await app('k10-orders').execute(sale('real-retail',1))).status,'committed');
+        const freshPool = mysql.createPool({uri:testUrl,database,connectionLimit:1});
+        try {
+          const actual = await createMySqlLedgerStore({pool:freshPool,ledgerId:'k10-orders',database}).read();
+          assert.equal(actual.revision,2);
+          assert.deepEqual(actual.state.orders.map(order=>[order.kind,order.room]),[['room','V01'],['retail',null]]);
+          assert.deepEqual(actual.state.rooms,roomState);
+          assert.equal(actual.state.rooms.some(room=>room.id==='RETAIL'||room.id===''),false);
+          assert.equal(actual.state.inventory.bw.count,0);
+          assert.equal(actual.state.inventory.qd.count,null);
+        } finally {await freshPool.end();}
+      });
+
       await t.test('first commit persists state, result, audit, checksum and historical sale snapshots', async () => {
         const seeded = await seed('retail');
         const expectedSale = transact(seeded, 'retailSale', payload(), 'retail-1').orders[0].sales[0];

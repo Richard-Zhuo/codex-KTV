@@ -1,3 +1,8 @@
+-- LEGACY / NOT USED FOR CURRENT MYSQL
+-- Historical PostgreSQL artifact only; do not initialize or deploy the current system with this file.
+-- Current schema authority: versioned MySQL migrations in database/migrations/ (see database/README.md).
+-- Historical DDL/data below is preserved; it is not a current business contract or account seed.
+
 -- 金碧辉煌 KTV 关系型数据库基线
 -- 目标数据库：PostgreSQL 16+
 -- 金额统一使用整数分；时间统一使用 timestamptz；营业归属另存 business_date。

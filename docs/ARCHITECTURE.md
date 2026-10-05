@@ -114,7 +114,9 @@ flowchart TD
 
 `database/migrations/001_mysql_ledger_core.sql` 的三表均为 InnoDB，并以主键、唯一约束及外键保护操作与审计。MySQL JSON 规范化后的快照校验和只验证状态 JSON 值；它不是原始 localStorage 文本备份，未来正式导入必须另留原文及原文 SHA-256。此为单门店版本化 snapshot 过渡模型，最终领域关系模型尚未完成。真实 MySQL 8.4.11／InnoDB 的 migration、行锁竞争、重连持久性和回滚证据见 [CURRENT_STAGE](./CURRENT_STAGE.md)；适配器未接入浏览器或 HTTP；独立 Node trusted 入口仅对已迁移的三十八个房间／目录／存取酒／预约／销售／配品与其他消费／换酒／房间恢复审核／库存申请／审核、赠酒提交／审批及 expense 申请／审批及 credit 申请／决定、repay 申请／审批与 incident 创建／处理／恢复审核和采购动作使用 session 身份，具体集合见下文。
 
-旧 `database/schema.sql`、`seed.sql` 和 `codex/p0-1-trusted-ledger@7d3c23c` PostgreSQL 适配器只保留历史设计／实验参考。PostgreSQL 实验未取得真实数据库验收，也未推送或部署；它不是当前正式数据库方向。
+当前唯一 schema authority 是 `database/migrations/` 的 versioned MySQL migrations（001..007），含 InnoDB 过渡 JSON ledger 与 auth/employee/voucher 元数据；JSON orders 保留 room/retail 判别，retail.room=null，不靠虚拟房间。SQL 执行与重复/部分失败边界以 [数据库说明](../database/README.md) 为准。
+
+旧 `database/schema.sql`、`seed.sql` 均标明 LEGACY / NOT USED FOR CURRENT MYSQL，当前运行/部署不执行它们；`database.test.js` 只以 MySQL 为当前结构权威，旧文件仅保全历史完整性。它们和 `codex/p0-1-trusted-ledger@7d3c23c` PostgreSQL 适配器只保留历史设计／实验参考。PostgreSQL 实验未取得真实数据库验收，也未推送或部署；它不是当前正式数据库方向。
 
 ## P0-1 Stage 2A 可信命令策略（已迁移三十八动作接入）
 
@@ -249,4 +251,4 @@ approveIncidentResolution／rejectIncidentResolution 在 demo operator／clock �
 | 正式员工名册与关联审计 | 独立 `employees/` 服务与 MySQL store | employees／employee_events 管理为独立内部能力；销售归属解析接 reserve／sale／retailSale，负责人解析接 incident，客户端未接入 |
 | MySQL auth 账号、凭据、grants、session、事件 | 独立 `auth/` 服务与存储适配器 | 专用测试库已真实验收；已迁移三十八动作的 Node trusted 命令取 session 身份，浏览器尚未接入 |
 
-旧 PostgreSQL `database/schema.sql` 的 `room_orders.room_id` 仍要求非空，不能直接承载当前无房零售。正式系统需要受信任的 API、真实身份、服务端事务、审计、并发版本、支付与退款证据、可验证备份及数据库迁移。
+K10 已按唯一 schema authority 关闭：旧 PostgreSQL `database/schema.sql` 的 `room_orders.room_id` 仍保持当时非空 DDL，仅为 legacy artifact；它不约束当前 MySQL JSON snapshot，当前 room/retail 共存已实测，不继续维护第二套准生产 SQL。正式系统需要受信任的 API、真实身份、服务端事务、审计、并发版本、支付与退款证据、可验证备份及数据库迁移。

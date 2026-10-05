@@ -1,3 +1,19 @@
+## K10：唯一 MySQL schema authority／legacy 隔离（2026-10-06）
+
+先核实 a6952ad parent=4b7257e、354b363 parent=a6952ad，依次 ff-only 合入 main，不建 merge commit。合入后真实完整回归 1770／1769／0／1；fetch 确认远端无新增，普通 push 后 main=origin/main=354b363、0/0、clean。
+
+首次后台测试中断留下 fixture，保护门拒绝预存表。只读核对 UTC 创建时间、30 个 synthetic-clean 账号、29 个 clean/issue ledger 标识和无锁持有者，仅清理本轮确认创建的十三表，保留数据库，不修改 guard；随后取得上述完整通过证据。旧 Track A/B/PostgreSQL 工作区未动。
+
+独立分支 codex/p0-1-k10-schema-authority 直接基于 354b363。审计确认旧 schema.sql/seed.sql 没有运行或部署入口，仅旧 database.test.js 和原 K10 skip 读取 SQL；根 README 和 SQL 标头仍可能误导当前 authority。现在唯一有效结构指向 database/migrations/ 的 MySQL 001..007。旧 SQL/seed/import mapping 明确 LEGACY / NOT USED FOR CURRENT MYSQL；旧 DDL 原样保留，不改 room_id NOT NULL、不建立第二套可部署 PostgreSQL schema。
+
+当前 database.test.js 改查 MySQL migration/JSON ledger 与 auth/employee 元数据，不把历史岗位/姓名 seed 当正式配置；保留标明 legacy 的 CSV/Bug9 完整性测试。原 K10 skip 转为 room/retail 订单及 active snapshot 正向契约，新增真实 MySQL 共存/无伪造房间/重连/零库存与 null 回归；依旧保留已有 migration 重复执行、并发与 rollback 验证。没有生产业务 JavaScript、依赖或 migration 内容变化，不更改 room/retail、金额/库存/时间/权限规则。
+
+K10 定向三文件真实执行 49／49／0／0。最终完整 node --test --test-isolation=none --test-reporter=tap 为 1771／1771／0／0、退出码 0；原 K10 skip 已转正式，无 test.skip。MySQL 8.4.11／jbhh_ktv_test／InnoDB；四 fixture 及目标 guard 合计 759／759／0／0（auth 47、employee 40、ledger 22、trusted 650；不计独立 employee store 配置单元），全部真实连接执行。voucher/open 并发使用两个独立 CONNECTION_ID=2412／2414。新 K10 MySQL 用例拒绝 null/空/RETAIL/未知 room，拒绝只留下业务终态、不改 revision/订单/审计；真实房单与 retail.room=null 同一 snapshot 往返且重连保持，库存 0 与 null 可区分，保留既有 migration 重复策略及所有 SQL/未知故障 rollback 用例。实际尝试 npm test，仍报 The term 'npm' is not recognized，未取得 npm 运行证据。schema.sql/seed.sql diff 仅五行 legacy 注释，原 DDL/data 未修改。
+
+本轮只关闭 K10 schema authority 问题；零 skip 不表示运营准备完成。K08 游离欠款处置、K09 生产恢复、drawer cash-out、真人配置、HTTP/session transport/UI、正式导入、部署/监控仍要各自验收。Meituan production redemption = NOT ENABLED。K10 新提交不合入/push；提交后最终技术验收只读，不开始 HTTP/UI 或真实美团。
+
+以下为前批次事实与历史验收，不覆盖本节。
+
 ## R.1 trusted open／K07（2026-10-06）
 
 第二个线性提交直接基于 a6952ad（parent 4b7257e）。普通与平台 open 均进入 trusted-enabled；session actor/current grants/DB UTC 时间只来自同连接重验。正式开房同时要求现有 room.open 与 staff.record，并通过现有 employee resolver 保存独立 creditedEmployeeId／姓名快照。新 trusted room order 使用服务器 UUID；demo 序号与历史记录不改。noon-v1 businessDate/rule version/显式 store time zone 创建时冻结，营业时段只对 trusted open 使用该显式时区，不读 demo clock。

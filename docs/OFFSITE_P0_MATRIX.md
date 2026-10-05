@@ -24,7 +24,7 @@
 - 需要的审批：动作本身有审批要求时执行。
 - 异常停止点：账本不可读或状态不明时停止新交易。
 - 当前代码是否已经支持：Stage 1A／1A.1／1A.2 的 actor、错误分类与终态协议有单进程测试；MySQL 适配器单元测试已覆盖控制流，但真实数据库事务未验证，共享运行账本仍未接入。
-- 现有测试覆盖：ledger/application.test.js 验 actor、终态和重试；mysql-store.test.js 验数据库无关控制流，mysql-store.integration.test.js 因无专用库跳过；entry.test.js、database.test.js 只查静态边界。
+- 现有测试覆盖：ledger/application.test.js 验 actor、终态和重试；mysql-store.test.js 验数据库无关控制流，mysql-store.integration.test.js 在专用 jbhh_ktv_test 真实执行；entry.test.js、database.test.js 只查静态边界。
 - 缺失测试：双设备一致性、跨进程／数据库并发冲突、重启后的持久幂等、断线重试与迁移核对。
 
 ## 02 真人账号与最小权限
@@ -622,7 +622,7 @@
 - 需要的审批：审计查询范围待确认。
 - 异常停止点：审计不可写时暂停高风险交易。
 - 当前代码是否已经支持：否；SQL 仅设计表。
-- 现有测试覆盖：database.test.js 检查 audit_events 基线间接存在。
+- 现有测试覆盖：database.test.js 检查当前 MySQL migration authority；ledger/MySQL/trusted 测试验证 success audit 与业务同事务。旧 audit_events PostgreSQL 草案只保留历史参考，未实现异常监控/正式审计查询入口。
 - 缺失测试：成功/拒绝审计、敏感字段排除、不可篡改。
 
 ## 28 异常恢复

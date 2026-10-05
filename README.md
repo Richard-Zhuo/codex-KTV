@@ -9,7 +9,7 @@
 - “我的”：个人业务归属、页面配色、员工补录、采购、支出／报销、客诉／异常、库存、交班和练习工具。
 - 系统后台：只保留当前真实存在的员工身份与具体权限管理，不承载日常营业审核或营业报表。
 - 报表：在员工系统中按权限查看日／周／月本机演示账单汇总。
-- 数据准备：`database/` 提供 PostgreSQL 16 关系型基线和历史报表导入映射；运行中的页面尚未连接数据库。
+- 数据准备：`database/migrations/` 的 versioned MySQL migrations 是当前唯一 schema authority（MySQL 8.4 / InnoDB / JSON ledger snapshot）；旧 PostgreSQL SQL/seed 仅为 LEGACY / NOT USED FOR CURRENT MYSQL。运行中的页面仍未连接可信账本。
 
 ## 最短上手路线
 
@@ -27,7 +27,7 @@
 - [最小代码阅读地图](./docs/MODULE_MAP.md)
 - [系统架构](./docs/ARCHITECTURE.md)
 - [店员练习手册](./店员练习手册.md)
-- [数据库基线与导入说明](./database/README.md)
+- [MySQL schema authority 与历史导入边界](./database/README.md)
 - [历史记录](./docs/archive/README.md)
 
 旧的 [交付说明](./交付说明.md) 和 [验收清单](./验收清单.md) 保留为兼容入口，不再维护第二套当前规则。

@@ -15,7 +15,7 @@
 | backend.view 只允许系统后台入口；业务审核看具体权限；本人审核还需 review.self | rules.test.js；offsite.contract.test.js「权限合同」 | 服务端每次动作重验权；页面隐藏不能充当授权 |
 | 挂账申请 → 审批 → 已挂账 → 回款申请 → 回款审核 → order.payments；待审回款不计实收 | rules.test.js；offsite.contract.test.js「挂账合同」 | credit.remaining = 原挂账额 − 已批准回款；还款记录与付款同额且关联 |
 | room、retail、商品、分类、销售人员、付款展示、日/周/月及历史快照报表 | offsite.report.test.js；rules.test.js | 新报表可换实现，但相同输入的正向营业结果应一致 |
-| 旧数据金额已知则保留，价格未知保持未知；导入前先暂存校验 | catalog.test.js、database.test.js | 禁止按迁移当天目录现价重估旧账或倒扣今日库存 |
+| 旧数据金额已知则保留，价格未知保持未知；导入前先暂存校验 | catalog.test.js、snapshot-preflight.test.js、persistence.test.js | 禁止按迁移当天目录现价重估旧账或倒扣今日库存 |
 
 KNOWN BUSINESS ISSUE 命名的测试以 `test.skip` 保留仍未解决问题的复现，**不计入通过门槛，也不是目标行为**。K01/K02/K03/K06 已换成修复后断言，剩余四项跳过复现继续明确标为问题，状态见 [KNOWN_ISSUES](./KNOWN_ISSUES.md)。报表测试已直接调用 `reporting.js`，保留日期、分类、金额和快照的业务语义。
 
@@ -81,7 +81,7 @@ KNOWN BUSINESS ISSUE 命名的测试以 `test.skip` 保留仍未解决问题的�
 
 ## 迁移与数据安全的交付条件
 
-- 正式数据模型必须同时容纳 room 单与 room=null 的 retail 单。当前 database/schema.sql 的 room_orders.room_id 非空，仅是旧设计基线；不得直接声称可承载当前零售。
+- 当前唯一 schema authority 为 versioned MySQL migrations。JSON ledger 必须同时容纳引用真实房间的 room 单与 room=null 的 retail 单；K10 已转正向领域/真实 MySQL 回归。旧 database/schema.sql/seed.sql 标明 LEGACY / NOT USED FOR CURRENT MYSQL，不是当前部署结构，不造 roomId 或回填历史事实。
 - 迁移前后抽样核对：订单数、订单 kind、原房引用、每笔付款和渠道、原始成交价格/名称快照、库存期初与计账流水、审批历史及操作键。历史无单笔付款 ID 时先建立可追映射和歧义清单，不能猜对应关系。
 - 历史已知成交金额保留；缺价格、名称、赠饮参考值时标未知。导入历史营业只写历史记录，不倒扣当前库存，不猜支付方式。
 - 可回滚的迁移副本先验证，再切换可信数据源；损坏输入不静默初始化新账本。恢复演练须核对订单、付款、库存和房态四类样本。
@@ -89,4 +89,4 @@ KNOWN BUSINESS ISSUE 命名的测试以 `test.skip` 保留仍未解决问题的�
 
 ## trusted 免零申请与决定身份
 
-settle 的普通 ≤¥10／超额与特殊情况审核流程不改；新需审 review 保存 submittedByPrincipalId 与 DB submittedAt。两决定仅信锁定 state 中的申请 principal：具体 rounding.approve，本人额外 review.self；超额本人批准还须配置的 DB rounding.self.excess，本人驳回不要求此属性。legacy 两决定 fail closed，决定保存 decidedByPrincipalId／DB decidedAt，姓名非身份键；授权拒绝不占 key，重放不新增付款／免零／审核。K01／K06 已按上文生效／余额／房态契约修复，原两项 skip 转正式回归；K05 跨日资金 skip 已转正式回归，K04 的 trusted 连续交班已按 REQUIREMENTS 修复并转正式，K07 本地核销门禁／唯一订单绑定现已修复并转正式，仅 K10 保留 skip。Meituan production redemption = NOT ENABLED。入口与证据见 [MODULE_MAP](./MODULE_MAP.md) 和 [CURRENT_STAGE](./CURRENT_STAGE.md)。
+settle 的普通 ≤¥10／超额与特殊情况审核流程不改；新需审 review 保存 submittedByPrincipalId 与 DB submittedAt。两决定仅信锁定 state 中的申请 principal：具体 rounding.approve，本人额外 review.self；超额本人批准还须配置的 DB rounding.self.excess，本人驳回不要求此属性。legacy 两决定 fail closed，决定保存 decidedByPrincipalId／DB decidedAt，姓名非身份键；授权拒绝不占 key，重放不新增付款／免零／审核。K01／K06 已按上文生效／余额／房态契约修复，原两项 skip 转正式回归；K05 跨日资金 skip 已转正式回归，K04 的 trusted 连续交班已按 REQUIREMENTS 修复并转正式，K07 本地核销门禁／唯一订单绑定现已修复并转正式，K10 schema authority 也已关闭；当前完整测试不再以 skip 隔离这些问题。运营缺口仍独立验收。Meituan production redemption = NOT ENABLED。入口与证据见 [MODULE_MAP](./MODULE_MAP.md) 和 [CURRENT_STAGE](./CURRENT_STAGE.md)。

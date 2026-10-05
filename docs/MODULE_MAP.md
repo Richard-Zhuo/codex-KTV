@@ -56,7 +56,7 @@
 | 审核中心投影 | `reviewInbox.js` 的 `pendingBusinessReviewCount`／`reviewHistoryRows` | `operations.test.js`、`offsite.contract.test.js` | 只读投影；挂账驳回历史可查，游离旧单仍待处置 |
 | K04 trusted 连续现金交班 | handover.js:submitHandover／paymentBoundary／intervalCash、rules.js:transact、ledger/trusted-execution.js | ledger/trusted-handover.test.js、offsite.contract.test.js 转正式、guarded fixture 调用 ledger/trusted-handover.integration.js、test-support/trusted-handover-fixture.js | 首次实点 bootstrap；以上次 actualCash 和新现金 payment ID 集合差计算，非现金只统计；旧 demo 链不复用，新不明事实拒绝。重连重放、真实双连接、相同时间／跨 12:00、SQL／未知错误回滚；未建 shift／出流动作或 UI |
 | 报表选择器与展示 | `reporting.js` 的 `reportViewModel`／`reportPeriodMatch`／`reportTotals`；`ui/pages/reports.js` 的 `reportPage` | `reporting.test.js`、`reporting-ledger.test.js`、`offsite.report.test.js`、guarded fixture 的 `ledger/k05-reporting.integration.js` | Track B 直接调用新模块，不截取 `app.js` 源码；K05 正式双口径已修：selectRevenueOrders 按冻结日期；selectPaymentFlows 遍历 root payment 自身 occurredAt，不加回款镜像；正式 query 需明确两个区间，旧 demo 页面隔离保留 |
-| 旧 PostgreSQL 关系型草案与历史导入 | `database/schema.sql`、`database/seed.sql`、`database/kdocs-import.md` | `database.test.js`、`offsite.contract.test.js` | 旧 SQL 仅作历史设计参考；`room_orders.room_id` 仍不兼容无房零售 |
+| 当前 schema authority／K10 | `database/migrations/` 编号 MySQL migrations、`ledger/mysql-store.js`／`mysql-snapshot.js` | `database.test.js`、`offsite.contract.test.js`、`ledger/mysql-store.integration.test.js` | MySQL JSON ledger 支持 room/retail，真实 room 引用／retail.room=null，不造房间；旧 schema.sql／seed.sql／kdocs-import.md 明确 LEGACY / NOT USED FOR CURRENT MYSQL，不作为执行/部署或真人配置入口 |
 | 主题和视觉 | `theme.js`、`style.css` | `theme.test.js`；真实浏览器验收 | 视觉证据与 Node 规则测试分开 |
 
 ## 最短路线

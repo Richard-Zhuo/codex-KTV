@@ -1,3 +1,7 @@
+### K10 验证路线
+
+node --test --test-isolation=none --test-reporter=tap database.test.js offsite.contract.test.js ledger/mysql-store.integration.test.js 验唯一 MySQL authority、legacy 禁用入口、真实 room/retail JSON 往返与重复 migration 策略。沿用专用 jbhh_ktv_test 的原三表 fixture、目标校验及 fixture 锁，不增加数据库权限或 cleanup 范围。完整结果见 CURRENT_STAGE。
+
 ### 平台券验证路线（R.1）
 
 数据库无关契约：node --test --test-isolation=none vouchers/domain.test.js vouchers/gateways.test.js vouchers/application.test.js。open/binding：node --test --test-isolation=none ledger/trusted-open.test.js vouchers/binding.test.js。真实数据库仍用 LEDGER_MYSQL_TEST_URL，严格校验 URL 与实际 database=jbhh_ktv_test、版本及 InnoDB；绝不输出 URL／密码。
@@ -67,8 +71,8 @@ ledger/trusted-clean.integration.test.js 复用现有 fixture lock，新增明�
 | MySQL 认证／重验集成测试 | `AUTH_MYSQL_TEST_URL` 或已确认的 `LEDGER_MYSQL_TEST_URL` 指向 `jbhh_ktv_test` 后运行 `node --test --test-isolation=none auth/mysql-auth.integration.test.js` | 本次执行 | 保留原 Stage 2B 16 项，并在同一 auth fixture 调用 2C.1 重验／锁竞争及 attributes 用例；本轮数据库证据见 CURRENT_STAGE。拒绝预存 auth 表，只删除本次创建的六张 auth 表（含 attributes），不动 ledger 表或数据库本身 |
 | 隔离浏览器恢复演练 | `node docs/verification/browser-recovery-harness.mjs` | 历史执行 | 上轮仅绑定 `127.0.0.1` 的随机端口，使用合成已付款订单演练停写、复制、人工修正及显式重检；本轮未重跑，见 [浏览器记录](./verification/track-a-b-browser-recovery-2026-09-29.md) |
 | 单文件语法诊断 | `node --check app.js` 等 | 历史使用／诊断 | 不能替代 `npm test` |
-| 旧 PostgreSQL 基线命令 | `psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f database/schema.sql` | 历史参考 | 不是当前 MySQL 方向的执行入口；不要对正式库运行 |
-| 旧 PostgreSQL seed 命令 | `psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f database/seed.sql` | 历史参考 | 不适用于 MySQL 过渡账本 |
+| 旧 PostgreSQL schema artifact | `database/schema.sql`（LEGACY） | 禁用执行入口 | 不用于初始化/迁移/部署当前 MySQL；当前 authority 见 database/README.md |
+| 旧 PostgreSQL seed artifact | `database/seed.sql`（LEGACY） | 禁用执行入口 | 历史数据不构成真人账号/权限 seed |
 
 独立 clean、原 auth、原 ledger 和 employee 集成 fixture 共用 `test-support/mysql-fixture-lock.js`，具名锁只串行建表／清理的 fixture 生命周期，不串行或替代生产命令的 InnoDB 行锁。各套 SQL 只作用于已约定的专用测试表，绝不创建或删除数据库。
 
