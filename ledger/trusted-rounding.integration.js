@@ -35,8 +35,14 @@ export async function testTrustedRounding({t,pool,setup,auth,table,provision,see
     assert.equal(Boolean(order.roundingReview),special||difference>1000);
     if(order.roundingReview){assert.equal(order.roundingReview.status,'待审核');assert.equal(order.roundingReview.submittedByPrincipalId,login.principalId);
       assert.equal(order.roundingReview.submittedAt,dbNow);assert.equal(order.roundingReview.submittedBy,null);assert.equal(order.roundingReview.submittedById,'');}
-    assert.equal(order.status,'已结账');assert.equal(order.closedAt,dbNow);assert.equal(actual.head.state.rooms[0].status,'待清洁');assert.equal(actual.head.state.rooms[0].order,null);
-    assert.equal(outstanding(order),difference); // K06 stays, including approved waivers; K01 closed/pending stays.
+    if(special||difference>1000){
+      assert.equal(order.status,'营业中');assert.equal(Object.hasOwn(order,'closedAt'),false);
+      assert.deepEqual(actual.head.state.rooms,original.rooms);assert.equal(outstanding(order),difference);
+    }else{
+      assert.equal(order.status,'已结账');assert.equal(order.closedAt,dbNow);
+      assert.equal(actual.head.state.rooms[0].status,'待清洁');assert.equal(actual.head.state.rooms[0].order,null);
+      assert.equal(outstanding(order),0);
+    }
     for(const key of ['inventory','consumables','ledger','catalog','serial','user','clock','permissions','capabilities','administrator','reservations','deposits','expenses','procurements','incidents','handovers'])assert.deepEqual(actual.head.state[key],original[key]);
     for(const key of ['sales','otherCharges','time','createdAt','packageNameSnapshot','packagePriceCents','employeeId'])assert.deepEqual(order[key],old[key]);
     assert.deepEqual(actual.head.state.orders[0],original.orders[0]);assert.equal(actual.head.state.orders[0].room,null);
@@ -48,7 +54,17 @@ export async function testTrustedRounding({t,pool,setup,auth,table,provision,see
     assert.equal(review.decidedAt,dbNow);assert.equal(review.decidedBy,null);
     assert.equal(review.selfReviewAuthorized,review.submittedByPrincipalId===login.principalId);
     const withoutReview=state=>{const copy=structuredClone(state);delete paymentOrder(copy).roundingReview;delete copy.processed;return copy;};
-    assert.deepEqual(withoutReview(actual.head.state),withoutReview(original));
+    const expected=structuredClone(original);
+    if(action==='approveRounding'){
+      paymentOrder(expected).status='已结账';paymentOrder(expected).closedAt=dbNow;
+      expected.rooms[0].status='待清洁';expected.rooms[0].order=null;
+      assert.equal(outstanding(order),0);
+    }else{
+      assert.equal(order.status,'营业中');assert.equal(Object.hasOwn(order,'closedAt'),false);
+      assert.equal(outstanding(order),paymentOrder(original).rounding);
+    }
+    assert.deepEqual(order.payments,paymentOrder(original).payments);
+    assert.deepEqual(withoutReview(actual.head.state),withoutReview(expected));
     assert.deepEqual(actual.head.state.processed.slice(0,original.processed.length),original.processed);
     assert.equal(actual.head.state.processed.length,original.processed.length+1);
     assert.equal(actual.head.revision,1);assert.equal(actual.operations.length,1);assert.equal(actual.audit.length,1);
@@ -73,7 +89,7 @@ export async function testTrustedRounding({t,pool,setup,auth,table,provision,see
       assert.equal(reportPeriodMatch(paymentOrder(actual.head.state),run.context().dbNow,'day'),false);assert.equal(Object.hasOwn(paymentOrder(actual.head.state),'businessDate'),false);
     }finally{await connection.rollback();connection.release();}
   });
-  for(const difference of [0,500,999,1000,1001])await t.test('settle trusted: MySQL ordinary '+difference+' cents boundary, K01/K06 unchanged',async()=>{
+  for(const difference of [0,500,999,1000,1001])await t.test('settle trusted: MySQL ordinary '+difference+' cents boundary, pending cannot close and effective waiver clears outstanding',async()=>{
     const login=await provisionFor('settle'),id='rounding-boundary-'+difference,original=await pending(id),run=runFor(id);
     await run.app.execute(settleCommand('boundary',0,difference),login.credential);paymentFacts(await inspect(id),original,login,run.context().dbNow,difference);
   });
@@ -141,7 +157,9 @@ export async function testTrustedRounding({t,pool,setup,auth,table,provision,see
     const paid=await inspect(id);await run.app.execute(roundingCommand('approveRounding','approve',1),login.credential);const actual=await inspect(id),order=paymentOrder(actual.head.state);
     assert.equal(actual.head.revision,2);assert.equal(actual.operations.length,2);assert.equal(actual.audit.length,2);
     assert.equal(order.roundingReview.submittedByPrincipalId,login.principalId);assert.equal(order.roundingReview.decidedByPrincipalId,login.principalId);
-    assert.deepEqual(order.payments,paymentOrder(paid.head.state).payments);assert.equal(outstanding(order),1001);assert.deepEqual(actual.head.state.rooms,paid.head.state.rooms);
+    assert.deepEqual(order.payments,paymentOrder(paid.head.state).payments);assert.equal(outstanding(order),0);
+    assert.equal(paymentOrder(paid.head.state).status,'营业中');assert.equal(paid.head.state.rooms[0].order,order.id);
+    assert.equal(order.status,'已结账');assert.equal(actual.head.state.rooms[0].status,'待清洁');assert.equal(actual.head.state.rooms[0].order,null);
   });
 
   for(const action of actions){
@@ -216,8 +234,19 @@ export async function testTrustedRounding({t,pool,setup,auth,table,provision,see
         unlock();const results=await Promise.all([firstWork,secondWork]);
         if(sameKey)assert.deepEqual(results[0],results[1]);else assert.deepEqual(results.map(r=>r.status),['committed','revision-conflict']);
         const actual=await inspect(id);assert.equal(actual.head.revision,1);assert.equal(actual.audit.length,1);assert.equal(actual.operations.length,sameKey?1:2);assert.equal(first.executions()+second.executions(),1);
-        if(action==='settle'){assert.equal(paymentOrder(actual.head.state).payments.length,paymentOrder(original).payments.length+2);assert.equal(paymentOrder(actual.head.state).roundingReview.status,'待审核');}
-        else{assert.deepEqual(paymentOrder(actual.head.state).payments,paymentOrder(original).payments);assert.equal(paymentOrder(actual.head.state).roundingReview.status,action==='approveRounding'?'已批准':'已驳回');}
+        const order=paymentOrder(actual.head.state);
+        if(action==='settle'){
+          assert.equal(order.payments.length,paymentOrder(original).payments.length+2);assert.equal(order.roundingReview.status,'待审核');
+        }else{
+          assert.deepEqual(order.payments,paymentOrder(original).payments);assert.equal(order.roundingReview.status,action==='approveRounding'?'已批准':'已驳回');
+        }
+        if(action==='approveRounding'){
+          assert.equal(order.status,'已结账');assert.equal(outstanding(order),0);assert.equal(actual.head.state.rooms[0].order,null);
+          assert.equal(actual.head.state.rooms[0].status,'待清洁');
+        }else{
+          assert.equal(order.status,'营业中');assert.equal(outstanding(order),1001);assert.equal(Object.hasOwn(order,'closedAt'),false);
+          assert.deepEqual(actual.head.state.rooms,original.rooms);
+        }
         t.diagnostic(action+' rounding race: independent CONNECTION_ID '+aId.id+' / '+bId.id+'; one business effect and one revision');
       }finally{clearTimeout(timer);unlock();await Promise.allSettled([firstWork,secondWork].filter(Boolean));try{await a.rollback();await b.rollback();}finally{a.release();b.release();}}
     });
@@ -233,13 +262,141 @@ export async function testTrustedRounding({t,pool,setup,auth,table,provision,see
       const losingAction=results[0].status==='committed'?'rejectRounding':'approveRounding';
       assert.equal((await second.app.execute(roundingCommand(losingAction,'new-after-refresh',1),login.credential)).status,'business-rejected');
       const actual=await inspect(id);assert.deepEqual(actual.head,before.head);assert.deepEqual(actual.audit,before.audit);
+      const order=paymentOrder(actual.head.state),approved=order.roundingReview.status==='已批准';
+      assert.equal(order.roundingReview.status,results[0].status==='committed'?'已批准':'已驳回');
+      assert.equal(order.status,approved?'已结账':'营业中');assert.equal(outstanding(order),approved?0:1001);
+      assert.equal(actual.head.state.rooms[0].status,approved?'待清洁':'营业中');
+      assert.equal(actual.head.state.rooms[0].order,approved?null:order.id);
       assert.equal(actual.head.revision,1);assert.equal(actual.audit.length,1);t.diagnostic('opposite decisions: independent CONNECTION_ID '+aId.id+' / '+bId.id);
     }finally{await a.rollback();await b.rollback();a.release();b.release();}
   });
   await t.test('settle trusted: actual release TypeError cannot leave payment/review/closed-order or terminal',async()=>{
     const login=await provisionFor('settle'),id='rounding-release-fault';await pending(id);const before=await inspect(id),run=runFor(id,{transactCommand:(state,...args)=>transact({...state,rooms:{}},...args)});
-    await assert.rejects(run.app.execute(settleCommand(),login.credential),TypeError);await assertUnchanged(id,before);assert.equal(sqlAt(run,'ledger_heads','UPDATE'),-1);
+    await assert.rejects(run.app.execute(settleCommand('release-fault',0,1000),login.credential),TypeError);await assertUnchanged(id,before);assert.equal(sqlAt(run,'ledger_heads','UPDATE'),-1);
   });
+
+  const exactRoom = state => {
+    const order = paymentOrder(state);
+    Object.assign(order, { packageBaseCents: 16800, packageGiftValueCents: 0, base: 16800, gift: 0,
+      packagePriceCents: 16800, sales: [], otherCharges: [], payments: [] });
+  };
+  await t.test('K01/K06 MySQL: exact 168/160/8 directly settles, one real payment and one replay result', async () => {
+    const login = await provisionFor('settle'), id = 'finality-small-exact';
+    await pending(id, exactRoom); const run = runFor(id);
+    const cmd = settleCommand('direct', 0, 800, { payments: [{ method: '现金', amount: 16000 }] });
+    const first = await run.app.execute(cmd, login.credential), before = await inspect(id), order = paymentOrder(before.head.state);
+    assert.equal(first.status, 'committed'); assert.equal(order.payments.length, 1);
+    assert.equal(order.payments[0].amount, 16000); assert.equal(order.payments[0].recordedByPrincipalId, login.principalId);
+    assert.equal(order.payments[0].occurredAt, run.context().dbNow); assert.equal(order.rounding, 800);
+    assert.equal(order.roundingReview, null); assert.equal(outstanding(order), 0);
+    assert.equal(order.status, '已结账'); assert.equal(before.head.state.rooms[0].status, '待清洁');
+    assert.equal(before.head.state.rooms[0].order, null);
+    await auth.revokePermission({ principalId: login.principalId, permissionId: 'payment.settle' });
+    assert.deepEqual(await run.app.execute(cmd, login.credential), first); assert.equal(run.executions(), 1);
+    await assert.rejects(run.app.execute({ ...cmd, operationKey: 'new', expectedRevision: 1 }, login.credential), denied);
+    await assertUnchanged(id, before);
+  });
+  for (const action of ['approveRounding', 'rejectRounding']) await t.test('K01/K06 MySQL: exact 168/150/18 ' + action + ' preserves payment, finality and replay after revoke', async () => {
+    const login = await provision(['payment.settle', 'rounding.approve', 'review.self']), id = 'finality-exact-' + action;
+    if (action === 'approveRounding') { await configure(login); await attribute(login); }
+    await pending(id, exactRoom); const run = runFor(id);
+    const settle = settleCommand('request', 0, 1800, { payments: [{ method: '现金', amount: 15000 }] });
+    const settled = await run.app.execute(settle, login.credential), requested = await inspect(id), request = paymentOrder(requested.head.state);
+    assert.equal(requested.head.revision, 1); assert.equal(request.payments.length, 1); assert.equal(request.payments[0].amount, 15000);
+    assert.equal(request.roundingReview.status, '待审核'); assert.equal(request.roundingReview.amount, 1800);
+    assert.equal(request.roundingReview.submittedByPrincipalId, login.principalId); assert.equal(outstanding(request), 1800);
+    assert.equal(request.status, '营业中'); assert.equal(Object.hasOwn(request, 'closedAt'), false);
+    assert.equal(requested.head.state.rooms[0].status, '营业中'); assert.equal(requested.head.state.rooms[0].order, request.id);
+    await auth.revokePermission({ principalId: login.principalId, permissionId: 'payment.settle' });
+    assert.deepEqual(await run.app.execute(settle, login.credential), settled); await assertUnchanged(id, requested);
+    const decision = roundingCommand(action, 'decision', 1), result = await run.app.execute(decision, login.credential);
+    const decided = await inspect(id), order = paymentOrder(decided.head.state), approved = action === 'approveRounding';
+    assert.equal(result.status, 'committed'); assert.equal(decided.head.revision, 2);
+    assert.equal(decided.operations.length, 2); assert.equal(decided.audit.length, 2);
+    assert.deepEqual(order.payments, request.payments); assert.equal(order.roundingReview.decidedByPrincipalId, login.principalId);
+    assert.equal(outstanding(order), approved ? 0 : 1800); assert.equal(order.status, approved ? '已结账' : '营业中');
+    assert.equal(decided.head.state.rooms[0].status, approved ? '待清洁' : '营业中');
+    assert.equal(decided.head.state.rooms[0].order, approved ? null : order.id);
+    if (!approved) assert.equal(Object.hasOwn(order, 'closedAt'), false);
+    await auth.revokePermission({ principalId: login.principalId, permissionId: 'rounding.approve' });
+    if (approved) await attribute(login, 'revokePolicyAttribute');
+    assert.deepEqual(await run.app.execute(decision, login.credential), result);
+    assert.deepEqual(await run.app.execute(settle, login.credential), settled);
+    await assert.rejects(run.app.execute(roundingCommand(action, 'denied-after-revoke', 2), login.credential), denied);
+    await assertUnchanged(id, decided);
+    if (!approved) {
+      await auth.grantPermission({ principalId: login.principalId, permissionId: 'payment.settle' });
+      const pay = { operationKey: 'supplement', expectedRevision: 2, action: 'pay',
+        payload: { order: order.id, payments: [{ method: '微信', amount: 1800 }] } };
+      const paid = await run.app.execute(pay, login.credential), snapshot = await inspect(id), closed = paymentOrder(snapshot.head.state);
+      assert.equal(closed.payments.length, 2); assert.deepEqual(closed.payments[0], order.payments[0]);
+      assert.equal(closed.payments[1].amount, 1800); assert.equal(outstanding(closed), 0);
+      assert.equal(closed.roundingHistory[0].roundingReview.status, '已驳回'); assert.equal(closed.status, '已结账');
+      assert.deepEqual(await run.app.execute(pay, login.credential), paid); await assertUnchanged(id, snapshot);
+    }
+  });
+  for (const action of ['pay', 'settle']) await t.test('K06 MySQL: prior approved waiver survives later ' + action + ' and does not become a payment', async () => {
+    const login = await provision(['payment.settle', 'rounding.approve', 'review.self', 'order.sale']), id = 'finality-history-' + action;
+    await configure(login); await attribute(login); await pending(id, exactRoom); const run = runFor(id);
+    await run.app.execute(settleCommand('initial', 0, 1800, { payments: [{ method: '现金', amount: 15000 }] }), login.credential);
+    await run.app.execute({ operationKey: 'additional', expectedRevision: 1, action: 'otherCharge',
+      payload: { order: paymentOrder((await inspect(id)).head.state).id, category: '其他', item: 'Synthetic service', amount: 5000 } }, login.credential);
+    await run.app.execute(roundingCommand('approveRounding', 'approve', 2), login.credential);
+    const before = await inspect(id), order = paymentOrder(before.head.state);
+    assert.equal(order.status, '营业中'); assert.equal(outstanding(order), 5000); assert.equal(before.head.state.rooms[0].order, order.id);
+    const cmd = { operationKey: 'final', expectedRevision: 3, action,
+      payload: { order: order.id, payments: [{ method: '微信', amount: action === 'pay' ? 5000 : 4200 }] } };
+    const result = await run.app.execute(cmd, login.credential), after = await inspect(id), closed = paymentOrder(after.head.state);
+    assert.equal(after.head.revision, 4); assert.equal(after.audit.length, 4); assert.equal(closed.payments.length, 2);
+    assert.deepEqual(closed.payments[0], order.payments[0]); assert.equal(closed.roundingHistory.length, 1);
+    assert.deepEqual(closed.roundingHistory[0].roundingReview, order.roundingReview);
+    assert.equal(closed.roundingHistory[0].rounding, 1800); assert.equal(closed.rounding, action === 'pay' ? 0 : 800);
+    assert.equal(outstanding(closed), 0); assert.equal(closed.status, '已结账'); assert.equal(after.head.state.rooms[0].order, null);
+    assert.deepEqual(await run.app.execute(cmd, login.credential), result); await assertUnchanged(id, after);
+  });
+  await t.test('K06 MySQL: multiple collect payments/channels and a direct waiver reconcile all actual payments', async () => {
+    const login = await provision(['payment.collect', 'payment.settle']), id = 'finality-multiple-collect';
+    const original = await pending(id), run = runFor(id), orderId = paymentOrder(original).id;
+    await run.app.execute({ operationKey: 'collect-other', expectedRevision: 0, action: 'collect',
+      payload: { order: orderId, charge: 'other:810', payments: [{ method: '现金', amount: 1000 }, { method: '微信', amount: 2000 }] } }, login.credential);
+    await run.app.execute({ operationKey: 'collect-sale', expectedRevision: 1, action: 'collect',
+      payload: { order: orderId, charge: 'sale:800', payments: [{ method: '支付宝', amount: 1000 }, { method: '现金', amount: 1400 }] } }, login.credential);
+    const before = paymentOrder((await inspect(id)).head.state);
+    assert.equal(outstanding(before), 15800);
+    await run.app.execute(settleCommand('final', 2, 800, { payments: [{ method: '现金', amount: 15000 }] }), login.credential);
+    const after = await inspect(id), order = paymentOrder(after.head.state);
+    assert.equal(after.head.revision, 3); assert.equal(order.payments.length, 6);
+    assert.deepEqual(order.payments.slice(0, 5), before.payments); assert.equal(order.rounding, 800); assert.equal(outstanding(order), 0);
+    assert.equal(order.payments.reduce((sum, payment) => sum + payment.amount, 0), 21400);
+    assert.equal(order.status, '已结账'); assert.equal(after.head.state.rooms[0].status, '待清洁');
+  });
+  await t.test('K01 MySQL: approval release exception rolls back the decision, effectiveness, order, room, revision and key', async () => {
+    const login = await provisionFor('approveRounding'), id = 'finality-approve-release-fault';
+    await pending(id, prepared('approveRounding', login)); const before = await inspect(id);
+    const run = runFor(id, { transactCommand: (state, ...args) => transact({ ...state, rooms: {} }, ...args) });
+    await assert.rejects(run.app.execute(roundingCommand(), login.credential), TypeError);
+    assert.equal(sqlAt(run, 'ledger_heads', 'UPDATE'), -1); assert.ok(run.calls.some(call => call.kind === 'rollback'));
+    await assertUnchanged(id, before);
+    assert.equal((await runFor(id).app.execute(roundingCommand(), login.credential)).status, 'committed');
+  });
+  await t.test('K01/K06 MySQL: direct-waiver SQL failures after UPDATE roll payment and closed room back together', async () => {
+    const login = await provisionFor('settle');
+    for (const name of ['ledger_operations', 'ledger_success_audit']) {
+      const id = 'finality-direct-sql-' + (name === 'ledger_operations' ? 'op' : 'audit');
+      await pending(id, exactRoom); const before = await inspect(id), run = runFor(id), constraint = 'chk_finality_direct_fault';
+      const cmd = settleCommand('direct', 0, 800, { payments: [{ method: '现金', amount: 16000 }] });
+      await setup.query('ALTER TABLE ' + table(name) + ' ADD CONSTRAINT ' + constraint + " CHECK (ledger_id <> '" + id + "')");
+      try {
+        await assert.rejects(run.app.execute(cmd, login.credential), error => error.code === 'ER_CHECK_CONSTRAINT_VIOLATED');
+        assert.ok(sqlAt(run, 'ledger_heads', 'UPDATE') >= 0); assert.ok(run.calls.some(call => call.kind === 'rollback'));
+        await assertUnchanged(id, before);
+      } finally { await setup.query('ALTER TABLE ' + table(name) + ' DROP CHECK ' + constraint); }
+      const result = await run.app.execute(cmd, login.credential), committed = await inspect(id);
+      assert.equal(result.status, 'committed'); assert.equal(outstanding(paymentOrder(committed.head.state)), 0);
+      assert.equal(committed.head.state.rooms[0].status, '待清洁'); assert.equal(committed.head.revision, 1);
+    }
+  });
+
   await t.test('rounding trusted: missing port/copied context fail closed, handover and open remain unenabled',async()=>{
     const login=await provision(['payment.settle','rounding.approve','review.self','handover','room.open']),id='rounding-fail-closed';await pending(id);const before=await inspect(id);
     const missing=createTrustedLedgerApplication({store:createMySqlLedgerStore({pool,ledgerId:id,database})});await assert.rejects(missing.execute(settleCommand(),login.credential),/revalidation port/);

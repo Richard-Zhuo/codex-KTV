@@ -254,14 +254,15 @@ export function transact(original, action, data = {}, key, execution = { mode: '
       if (!order || order.status !== '营业中') throw new BusinessRejection('账单已变化，请返回房间重新查看');
       if (action === 'collect') collectPayment(s, order, data, undefined, undefined, execution);
       else {
-        if (action === 'pay') payOrder(s, order, data, undefined, undefined, execution);
-        else settleOrder(s, order, data, undefined, undefined, execution);
-        release(s, order);
+        const outcome = action === 'pay' ? payOrder(s, order, data, undefined, undefined, execution)
+          : settleOrder(s, order, data, undefined, undefined, execution);
+        if (outcome.release) release(s, order);
       }
     }
     else if (action === 'approveRounding' || action === 'rejectRounding') {
       const order = s.orders.find(order => order.id === data.order);
-      decideRounding(s, order, action, data, undefined, undefined, undefined, execution);
+      const outcome = decideRounding(s, order, action, data, undefined, undefined, undefined, execution);
+      if (outcome.release) release(s, order);
     }
     else if (action === 'credit') {
       const order = s.orders.find(order => order.id === data.order);
@@ -370,10 +371,11 @@ export function transact(original, action, data = {}, key, execution = { mode: '
     collectPayment(s, order, data, person, time);
   } else if (action === 'settle' || action === 'pay') {
     active();
-    if (action === 'settle') settleOrder(s, order, data, person, time); else payOrder(s, order, data, person, time);
-    release(s, order);
+    const outcome = action === 'settle' ? settleOrder(s, order, data, person, time) : payOrder(s, order, data, person, time);
+    if (outcome.release) release(s, order);
   } else if (action === 'approveRounding' || action === 'rejectRounding') {
-    decideRounding(s, order, action, data, person, time, authorizeReviewer);
+    const outcome = decideRounding(s, order, action, data, person, time, authorizeReviewer);
+    if (outcome.release) release(s, order);
   } else if (action === 'credit') {
     active();
     applyCredit(s, order, data, person, time);

@@ -166,7 +166,7 @@ test('多笔付款：分次收钱累计、结账免零记录与超收拒绝', ()
   assert.throws(() => apply(s2, 'settle', { order: s2.orders[0].id, payments: [{ method: '现金', amount: 16801 }] }), /不能超过/);
 });
 
-test('特殊差额需要店长审核：批准前后 roundingReview 状态与 collected 不变', () => {
+test('特殊差额需要店长审核：待审占房，批准结清，驳回保留实收及余额', () => {
   let s = stocked(initialState());
   s.clock = at('20:00');
   s.user = 'shaoBoss';
@@ -175,13 +175,19 @@ test('特殊差额需要店长审核：批准前后 roundingReview 状态与 col
   s = apply(s, 'settle', { order: id, payments: [{ method: '现金', amount: 14000 }], differenceType: '特殊情况', differenceNote: '客人醉酒闹事减免' });
   assert.equal(s.orders[0].rounding, 2800);
   assert.equal(s.orders[0].roundingReview.status, '待审核');
-  assert.equal(s.orders[0].status, '已结账');
+  assert.equal(s.orders[0].status, '营业中');
+  assert.equal(outstanding(s.orders[0]), 2800);
+  assert.equal(s.rooms.find(r => r.id === 'V01').order, id);
   const collectedBefore = collected(s);
   // 店长批准（提交人 shaoBoss 本人不持 review.self → 由老板娘/店长身份 wife 审批）
   s.user = 'wife';
   s = apply(s, 'approveRounding', { order: id });
   assert.equal(s.orders[0].roundingReview.status, '已批准');
   assert.equal(collected(s), collectedBefore);
+  assert.equal(outstanding(s.orders[0]), 0);
+  assert.equal(s.orders[0].status, '已结账');
+  assert.equal(s.rooms.find(r => r.id === 'V01').status, '待清洁');
+  assert.equal(s.rooms.find(r => r.id === 'V01').order, null);
   // 驳回需要原因
   let s2 = stocked(initialState());
   s2.clock = at('20:00');
@@ -190,6 +196,11 @@ test('特殊差额需要店长审核：批准前后 roundingReview 状态与 col
   s2 = apply(s2, 'settle', { order: s2.orders[0].id, payments: [{ method: '现金', amount: 14000 }], differenceType: '特殊情况', differenceNote: '需要驳回' });
   s2.user = 'wife';
   assert.throws(() => apply(s2, 'rejectRounding', { order: s2.orders[0].id }), /驳回原因/);
+  s2 = apply(s2, 'rejectRounding', { order: s2.orders[0].id, decisionNote: '不同意减免' });
+  assert.equal(s2.orders[0].roundingReview.status, '已驳回');
+  assert.equal(collected(s2), 14000); assert.equal(outstanding(s2.orders[0]), 2800);
+  assert.equal(s2.orders[0].status, '营业中');
+  assert.equal(s2.rooms.find(r => r.id === 'V01').order, s2.orders[0].id);
 });
 
 test('采购联动支出：低于阈值直接已记录，超过阈值需老板审批', () => {

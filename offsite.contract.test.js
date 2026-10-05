@@ -130,14 +130,16 @@ test('金额合同：原始应收、已付、免零及实收分别保留', () =>
   assert.equal(order.status, '已结账');
 });
 
-test.skip('KNOWN BUSINESS ISSUE：已结账免零后 outstanding helper 仍显示差额', () => {
+test('K06 回归：已生效免零抵扣 outstanding，免零不计入实收', () => {
   let state = opened();
   state = run(state, 'settle', {
     order: state.orders[0].id, payments: [{ method: '现金', amount: 16000 }]
   });
   assert.equal(state.orders[0].status, '已结账');
   assert.equal(state.orders[0].rounding, 800);
-  assert.equal(outstanding(state.orders[0]), 800);
+  assert.equal(outstanding(state.orders[0]), 0);
+  assert.equal(collected(state), 16000);
+  assert.equal(state.orders[0].payments.length, 1);
 });
 
 test('目录合同：运行时目录改价只影响新销售，旧订单持成交快照', () => {
@@ -268,7 +270,7 @@ test('库存审批合同：申请期间余额不变，批准时才留下有来�
   assert.equal(state.inventoryReviews.at(-1).status, '已批准');
 });
 
-test.skip('KNOWN BUSINESS ISSUE：168 元房单只收 0.01 元仍被记 167.99 元免零并结账', () => {
+test('K01 回归：超额免零待审期间保留付款、余额及营业房态', () => {
   let state = opened();
   state = run(state, 'settle', {
     order: state.orders[0].id, payments: [{ method: '现金', amount: 1 }]
@@ -276,8 +278,11 @@ test.skip('KNOWN BUSINESS ISSUE：168 元房单只收 0.01 元仍被记 167.99 �
   assert.equal(total(state.orders[0]), 16800);
   assert.equal(state.orders[0].rounding, 16799);
   assert.equal(collected(state), 1);
-  assert.equal(state.orders[0].status, '已结账');
-  assert.equal(state.rooms.find(r => r.id === 'V01').status, '待清洁');
+  assert.equal(state.orders[0].roundingReview.status, '待审核');
+  assert.equal(outstanding(state.orders[0]), 16799);
+  assert.equal(state.orders[0].status, '营业中');
+  assert.equal(state.rooms.find(r => r.id === 'V01').status, '营业中');
+  assert.equal(state.rooms.find(r => r.id === 'V01').order, state.orders[0].id);
 });
 
 test('K02 回归：拒绝不一致套餐价格，报价与账单使用同一金额', () => {

@@ -1,18 +1,18 @@
 # 已知业务问题与隔离边界
 
-状态：2026-09-29，Track A `6aa01ba` 与 Track B `3193635` 的隔离集成候选。`KNOWN BUSINESS ISSUE` 复现已标为 `test.skip`，保留排查步骤但不作为通过门槛；修复时应改为正向断言。K02、K03 已改为修复后断言；其他复现继续保留问题标签。目标规则见 [OFFSITE_CONTRACTS](./OFFSITE_CONTRACTS.md) 与 [P0 矩阵](./OFFSITE_P0_MATRIX.md)。
+状态：2026-10-05，本批仅解决 K01／K06，offsite.contract.test.js 对应两个 test.skip 已转为正式正向回归；原 K04／K05／K07／K10 四项跳过复现保持。K02／K03 为历史已修项目，其他部分解决项不因此变为完成。真实 MySQL 及完整本轮结果见 [CURRENT_STAGE](./CURRENT_STAGE.md)。目标规则见 [OFFSITE_CONTRACTS](./OFFSITE_CONTRACTS.md) 与 [P0 矩阵](./OFFSITE_P0_MATRIX.md)。
 
 | ID | 当前状态与证据 | 脱岗 P0 剩余要求 |
 |---|---|---|
-| K01 大额免零 | 未解决；`offsite.contract.test.js` 复现 168 元房单只收 0.01 元却结账 | 已确认 ≤ 10 元直免、> 10 元审批及真人自批限制；实现前超限应保持待收 |
+| K01 大额免零 | 已修；settle 的 pending review 保持营业／占房，批准余额为零才与决定一同关单／转待清洁，驳回保留付款和余额。原 168 元／0.01 元 test.skip 转正，rounding-finality.test.js 及 trusted MySQL 覆盖重放、双连接和整体 rollback | ¥10、具体权限／review.self／rounding.self.excess 不改；不重开或推断历史错误订单，不宣称真人映射／正式运营已完成 |
 | K02 套餐不等式 | 演示规则已修；报价和事务拒绝不一致价格，旧数据加载进入只读核对页并保留历史订单、付款及原文，`offsite.contract.test.js`、`persistence.test.js` 有正向断言 | 正式价格版本、审批、生效时间仍未实现 |
 | K03 高额挂账越层批准 | 演示规则已修；`sales.js` 同查具体权限与指定岗位，Track B 测试改为拒绝越层的断言 | 真人身份、远程审批与权限审计仍未实现 |
 | K04 全历史累计交班 | 未解决；第二班仍累计首班收款，`offsite.contract.test.js` 标为问题 | 按班次及渠道归集 |
 | K05 跨日资金归属 | 未解决；`offsite.report.test.js` 标为问题 | 06:00 切换；订单营业额按开单 `businessDate`，每笔付款按真实 `occurredAt` 所属营业日，回款及将来退款按各自发生日 |
-| K06 免零后 `outstanding` 差额 | 未解决；`offsite.contract.test.js` 标为问题 | 区分原始应收、有效应收、免零及真正未收 |
+| K06 免零后 `outstanding` 差额 | 已修；outstanding 扣明确生效直免或已批准免零，pending／rejected／不明历史不扣，可选 roundingHistory 保留后续结算前的事实；原 test.skip 转正，覆盖多笔付款／多渠道／后续 pay 与 settle | 免零非付款，不改原付款／报表／businessDate；未知历史事实不回填 |
 | K07 待验平台券覆盖房费 | 未解决；`rules.test.js` 的现状断言 | 核销成功后方可按券方案开房；失败券不得当作已支付或已覆盖房费 |
 | K08 挂账驳回 | 原申请及决定现保留在 `order.creditHistory`，审核历史可查；旧单仍可能在释放房后游离 | 给游离单可见异常队列及可执行收清、撤销流程 |
 | K09 本机数据损坏 | 异常加载一律停写，原始主记录不覆盖；恢复页可查看原文，独立备份不覆盖已有不同备份；`persistence.test.js`、`recovery.test.js` 覆盖 | 正式共享账本仍需可验证备份、告警、隔离恢复与演练 |
 | K10 数据库与零售 | 未解决；`room_orders.room_id` 仍非空，`offsite.contract.test.js` 标为问题 | 正式迁移须容纳 `retail.room=null` 且保留房单引用 |
 
-以上“已修”仅限本机演示规则及自动测试，不代表 14 天脱岗可运营。其他关键 P0 缺口包括可信共享账本、真人账号、撤单、退款、冲正、逐渠道对账、正式营业日和班次、可靠审计与异常恢复。
+本批 K01／K06 已取得真实 MySQL 事务回归，历史演示修复证据仍按原范围解释；均不代表 14 天脱岗可运营。其他关键 P0 缺口包括可信共享账本、真人账号、撤单、退款、冲正、逐渠道对账、正式营业日和班次、可靠审计与异常恢复。

@@ -23,7 +23,23 @@ function productSnapshot(catalog, id, baseQuantity, extra = {}) {
 function quantity(n) { if (!Number.isSafeInteger(n) || n <= 0) throw new BusinessRejection('数量必须是大于零的整数'); }
 
 export const total = order => (order.packageBaseCents ?? order.base ?? 0) + (order.packageGiftValueCents ?? order.gift ?? 0) + (order.sales || []).reduce((sum, line) => sum + (line.amountCents ?? line.amount ?? 0), 0) + (order.otherCharges || []).reduce((sum, line) => sum + (line.amountCents ?? line.amount ?? 0), 0);
-export const outstanding = order => Math.max(0, total(order) - (order.payments || []).reduce((sum, payment) => sum + payment.amount, 0));
+// Pending/rejected/ambiguous reviews never reduce the amount still owed.
+function effectiveRoundingCents(order) {
+  const records = [...(Array.isArray(order.roundingHistory) ? order.roundingHistory : []), order];
+  return records.reduce((sum, record) => {
+    const amount = record?.rounding;
+    if (!Number.isSafeInteger(amount) || amount <= 0) return sum;
+    const review = record.roundingReview;
+    if (review !== null) return review?.status === '已批准' && review.amount === amount ? sum + amount : sum;
+    return record.roundingType === '免零' && amount <= SMALL_ROUNDING_LIMIT_CENTS ? sum + amount : sum;
+  }, 0);
+}
+export const outstanding = order => Math.max(0, total(order) - (order.payments || []).reduce((sum, payment) => sum + payment.amount, 0) - effectiveRoundingCents(order));
+function closeSettledOrder(order, time) {
+  if (order.status !== '营业中' || outstanding(order) !== 0) return { release: false };
+  order.status = '已结账'; order.closedAt = time;
+  return { release: true };
+}
 // collected（实收汇总）自 rules.js 迁入（Phase 5）：payments 口径的跨订单汇总选择器，供交班与报表使用。
 export const collected = state => state.orders.reduce((sum, o) => sum + (o.payments || []).reduce((n,p) => n+p.amount, 0), 0);
 export function collectableCharges(order, catalog = DEFAULT_CATALOG) {
@@ -206,6 +222,14 @@ export function collectPayment(s, order, data, person, time, execution = { mode:
   const payments = validatePayments(data.payments, charge.remaining);
   appendPaymentRecords(s, order, payments, charge.id, identity);
 }
+// Retain superseded waiver facts; only proven effective entries reduce outstanding.
+function preserveRounding(order) {
+  if (!order.rounding && !order.roundingReview) return;
+  order.roundingHistory ??= [];
+  order.roundingHistory.push(structuredClone({ rounding: order.rounding,
+    roundingType: order.roundingType, roundingNote: order.roundingNote,
+    roundingReview: order.roundingReview }));
+}
 export function settleOrder(s, order, data, person, time, execution = { mode: 'demo' }) {
   const identity = paymentExecution(s, 'payment.settle', person, time, execution);
   const context = identity.context;
@@ -213,10 +237,12 @@ export function settleOrder(s, order, data, person, time, execution = { mode: 'd
   if ((order.giftRequests || []).some(item => item.status === '待确认')) throw new BusinessRejection('还有待确认的赠酒水申请，请先处理');
   const due = outstanding(order), settlement = validateSettlementPayments(data.payments, due, data.differenceType, data.differenceNote);
   appendPaymentRecords(s, order, settlement.payments, 'settlement', identity);
+  preserveRounding(order);
   order.rounding = settlement.rounding;
   order.roundingType = settlement.differenceType;
   order.roundingNote = settlement.differenceNote;
   order.roundingReview = settlement.needsReview ? { status: '待审核', amount: settlement.rounding, note: settlement.differenceNote, submittedBy: person, submittedById: context ? '' : s.user, ...(context ? { submittedByPrincipalId: context.principalId } : {}), submittedAt: time, approver: '店长', decidedBy: '', decidedAt: '', decisionNote: '' } : null;
+  if (settlement.needsReview) return { release: false };
   order.status = '已结账'; order.closedAt = time;
   return { release: true };
 }
@@ -226,6 +252,7 @@ export function payOrder(s, order, data, person, time, execution = { mode: 'demo
   if ((order.giftRequests || []).some(item => item.status === '待确认')) throw new BusinessRejection('还有待确认的赠酒水申请，请先处理');
   const due = outstanding(order), settlement = { payments: validatePayments(data.payments, due), rounding: 0, differenceType: '', differenceNote: '', needsReview: false };
   appendPaymentRecords(s, order, settlement.payments, 'settlement', identity);
+  preserveRounding(order);
   order.rounding = settlement.rounding;
   order.roundingType = settlement.differenceType;
   order.roundingNote = settlement.differenceNote;
@@ -268,6 +295,7 @@ export function decideRounding(s, order, action, data, person, time, authorizeRe
   review.status = action === 'approveRounding' ? '已批准' : '已驳回';
   review.decidedBy = person; review.decidedAt = time; review.decisionNote = decisionNote; review.selfReviewAuthorized = selfReview;
   if (context) review.decidedByPrincipalId = context.principalId;
+  return action === 'approveRounding' ? closeSettledOrder(order, time) : { release: false };
 }
 export function applyCredit(s, order, data, person, time, execution = { mode: 'demo' }) {
   if (!execution || !['demo', 'trusted'].includes(execution.mode)) throw TypeError('挂账执行模式无效');

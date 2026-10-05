@@ -6,7 +6,7 @@
 
 rules.js 的显式 trusted 分支调用 sales.js:settleOrder／decideRounding，只有本批三项增加到 TRUSTED_ENABLED_ACTIONS。settle 使用同一 paymentExecution／appendPaymentRecords；待审 review 保存 session submittedByPrincipalId 与 dbNow。decideRounding 从锁定 state 读取申请 principal 和实际免零差额，不接受 payload 自审、身份、岗位或属性；需 rounding.approve＋本人 review.self，仅超额本人批准再查 configured DB rounding.self.excess。缺可信 principal／分值不明确时 authorization-denied，不写 terminal；决定记录 decidedByPrincipalId 和 dbNow。新 key 的当前资格检查先于“已处理”状态的业务终态，避免撤销属性后由业务拒绝占键；旧 key 仍先返回已持久化原终态。
 
-普通 ≤1000 分无 review，>1000 分以及显式特殊情况按旧流程待审；审核无权改变旧结账／房态／outstanding 语义，K01／K06 保留。有效原 actor 重放先返回旧终态，再谈新 key 当前授权，权限／属性撤销不改写已提交的决定。未知／SQL 故障整体回滚。
+普通 ≤1000 分无 review 并直接生效；>1000 分以及显式特殊情况待审。K01／K06 修复后，sales.js:settleOrder 返回是否释放房间，待审只记真实 payment 和 review，不关闭订单；decideRounding 批准后通过 closeSettledOrder 以 outstanding=0 判断关单，rules.js 同一 transact 调用 rooms.js:release，驳回不改订单／房态或付款。sales.js:effectiveRoundingCents 只计算已确认直免及金额一致的已批准 review，outstanding 扣除其总额并不小于零。后续 pay／settle 的 preserveRounding 将被替换的当前免零快照追加到可选 roundingHistory，历史状态不推断，pending／rejected／不明记录不抵扣。仅扩展 snapshot，不新增表或第二套资金事实，不修改 reporting／businessDate。有效原 actor 重放先返回旧终态，再谈新 key 当前授权，权限／属性撤销不改写已提交的决定。未知／SQL 故障整体回滚。
 
 ## trusted collect／pay／settle 新付款事实
 

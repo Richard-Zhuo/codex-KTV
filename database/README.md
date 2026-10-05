@@ -125,4 +125,4 @@ import_batches
 
 ## trusted settle／免零审批验收边界
 
-本批不新增表、列或 migration；新付款及 review 的稳定 principal／付款 ID／DB 时间保存在同一个 state_json snapshot，operation／audit 元数据与 state 同事务提交。ledger/trusted-rounding.integration.js 复用原 guarded 十一表 fixture，新增用例不建立或清理额外表；故障注入仅对 ledger_operations／ledger_success_audit 添加再删除本轮 CHECK，双连接竞争核实 CONNECTION_ID 不同。不改变历史 JSON 事实、不回填旧 payment／申请人、不改 reporting／businessDate；handover／open 尚未迁移。
+本批不新增表、列或 migration；新付款及 review 的稳定 principal／付款 ID／DB 时间保存在同一个 state_json snapshot，operation／audit 元数据与 state 同事务提交。ledger/trusted-rounding.integration.js 复用原 guarded 十一表 fixture，新增用例不建立或清理额外表；故障注入仅对 ledger_operations／ledger_success_audit 添加再删除本轮 CHECK，双连接竞争核实 CONNECTION_ID 不同。K01／K06 修复仅增加可选 roundingHistory 保存被后续结算替换的免零快照；不推断旧 review 状态、不回填旧 payment／申请人，计算及关单规则见 [REQUIREMENTS](../docs/REQUIREMENTS.md)。不改 reporting／businessDate；handover／open 尚未迁移。

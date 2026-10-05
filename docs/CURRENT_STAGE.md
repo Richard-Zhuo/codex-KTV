@@ -2,6 +2,20 @@
 
 更新日期：2026-10-05。本文件是当前进度的唯一汇总入口。
 
+## K01／K06 免零生效、余额与结清修复（2026-10-05）
+
+先核实 d9f9124 parent=a66377f，ff-only 合入 main，无 merge commit。合入后真实完整回归 1568／1562／0／6；fetch 核实远端无新提交，普通 push 后 main=origin/main=d9f9124、0/0、clean。从该干净基线创建 codex/p0-1-rounding-k01-k06，本批仅修 K01／K06，不迁移 handover／open。
+
+sales.js:settleOrder 普通 ≤1000 分直接免零与真实付款一并生效、结清及释放房；>1000 分及特殊情况只记录 payment 和 pending review，订单继续营业、房间保持占用。decideRounding 批准后才使免零生效，经 closeSettledOrder 重新核对 outstanding=0 才关单，由 rules.js 同一 transact 调用 rooms.js:release；尚有新增收费余额时继续营业。驳回不生效、不关单／释放房，不改已收 payment，不退款或自动二次结算。
+
+sales.js:outstanding 扣除原付款合计及 effectiveRoundingCents，余额不小于零。只承认明确无 review 的普通 ≤1000 分直免，以及金额一致且明确已批准的 review；pending、rejected、状态／金额不明的 legacy 均不抵扣。后续合法 pay／settle 覆盖当前字段前，用可选 roundingHistory 保留原免零事实快照，使已批准免零不会在补款时丢失；无需新 migration，不补造历史状态，不把免零变成 payment。付款 UUID／occurredAt／principal、¥10、具体审核权限／review.self／rounding.self.excess、ledger/application/store/fingerprint/revision、reporting/businessDate 均保持；历史错误订单不批量重开或自动修复。
+
+本轮最终定向四文件单元测试 87／87／0／0（含新增 rounding-finality 20 项及原 trusted rounding 47 项）。原 offsite.contract.test.js 的 K01／K06 两项 test.skip 转为正式正向断言；characterization-core.test.js 的特殊情况旧断言曾要求待审即结账，完整回归发现后按本轮授权改为待审占房、批准结清及驳回保留余额。既有 trusted 用例的身份／权限／attributes 组合、终态／冲突和撤权 replay 保留，仅更新已修业务状态断言。
+
+真实 MySQL 8.4.11、jbhh_ktv_test、InnoDB 已实连核实，未输出 URL／密码。四文件 MySQL 回归 679／679／0／0，其中免零 64 项实际执行；七项真实双连接竞争核实不同 CONNECTION_ID，付款／申请／决定只执行一次，approve/reject 只有一个终态。原键在撤权后重放、授权拒绝不占键、pending replay 保持占房、批准 replay 不重复免零／关单均通过。operation／audit 中途 SQL CHECK 故障、未知异常、实际 settle／approval release TypeError 均整体 rollback；直接免零 payment／order／room 与批准决定／余额／room／revision／operation／audit 同一原子提交。
+
+最后 JavaScript 修改后实际尝试 npm test，环境仍无 npm（The term npm is not recognized），未取得 npm 运行证据；实际完整 node --test --test-isolation=none 最终 1596／1592／0／4，退出码 0，auth／employee／ledger／trusted MySQL 均真实执行。剩余四项 skip 的名称与收尾基线逐项一致：K04、K05、K07、K10；仅移除 K01／K06 两项跳过。无新增依赖或数据库结构，无 HTTP／UI、正式导入、退款等范围扩张。仅本批一个独立提交，不合入／push 新修复、不进入下一阶段、不部署。下方是各次交付的历史记录，K01／K06 的旧保留说明不再代表当前实现。
+
 ## P0-1 Stage 2C.3 settle／免零审批 trusted 迁移（2026-10-05）
 
 先核实 a66377f 的 parent 为 3cdd29a，ff-only 合入 main，真实完整回归 1465／1459／0／6 后 fetch 核实远端无新增并普通 push；main=origin/main=a66377f、0/0、clean。从该干净基线创建 codex/p0-1-stage2c-settle-rounding。

@@ -41,33 +41,41 @@ async function noEffects(f) {
   const head = await f.memory.read(); assert.deepEqual(head.state, f.state); assert.equal(head.revision, 0);
   assert.equal(head.operationResults.size, 0); assert.equal(head.audit.length, 0);
 }
-test('settle: session actor, frozen payment facts, pending review and closed room commit atomically without fixing K01/K06', async () => {
+test('settle: session actor, frozen payment facts, pending review and occupied room commit atomically', async () => {
   const f=fixture(), result=await f.app.execute(settleCommand(),f.credential), head=await f.memory.read(), order=paymentOrder(head.state);
   assert.equal(result.status,'committed'); assert.equal(head.revision,1); assert.equal(result.actorId,principalId);
   assert.equal(order.payments.length,3); assert.equal(new Set(order.payments.slice(1).map(p=>p.paymentId)).size,2);
   for(const p of order.payments.slice(1)){assert.match(p.paymentId,/^[0-9a-f-]{36}$/);assert.equal(p.occurredAt,dbNow);assert.equal(p.recordedByPrincipalId,principalId);assert.equal(p.person,null);}
   assert.equal(order.rounding,1001); assert.equal(order.roundingReview.status,'待审核');
   assert.equal(order.roundingReview.submittedByPrincipalId,principalId); assert.equal(order.roundingReview.submittedAt,dbNow);
-  assert.equal(order.status,'已结账'); assert.equal(head.state.rooms[0].status,'待清洁'); assert.equal(outstanding(order),1001);
+  assert.equal(order.status,'营业中'); assert.equal(head.state.rooms[0].status,'营业中'); assert.equal(head.state.rooms[0].order,order.id); assert.equal(outstanding(order),1001);
   assert.equal(head.operationResults.size,1); assert.equal(head.audit.length,1);
 });
 
-for(const action of ['approveRounding','rejectRounding']) test(action+': locked applicant plus self-review, frozen decision actor/time and unchanged order/room/payment facts',async()=>{
+for(const action of ['approveRounding','rejectRounding']) test(action+': locked applicant plus self-review, frozen decision actor/time, effective approval and unchanged payments',async()=>{
   const f=fixture({permissions:['rounding.approve','review.self'],attributes:action==='approveRounding'?['rounding.self.excess']:null,
     prepare:state=>seedPendingRounding(state)}),cmd=roundingCommand(action,'decide',0,{submittedByPrincipalId:otherPrincipalId,selfReview:false,approver:'fake'});
   const result=await f.app.execute(cmd,f.credential),head=await f.memory.read(),order=paymentOrder(head.state);
   assert.equal(result.status,'committed');assert.equal(order.roundingReview.status,action==='approveRounding'?'已批准':'已驳回');
   assert.equal(order.roundingReview.decidedByPrincipalId,principalId);assert.equal(order.roundingReview.decidedBy,null);
   assert.equal(order.roundingReview.decidedAt,dbNow);assert.equal(order.roundingReview.selfReviewAuthorized,true);
-  assert.deepEqual(order.payments,paymentOrder(f.state).payments);assert.deepEqual(head.state.rooms,f.state.rooms);
-  assert.equal(order.status,'已结账');assert.equal(outstanding(order),1001);
+  assert.deepEqual(order.payments,paymentOrder(f.state).payments);
+  if(action==='approveRounding') {
+    assert.equal(order.status,'已结账');assert.equal(outstanding(order),0);
+    assert.equal(head.state.rooms[0].status,'待清洁');assert.equal(head.state.rooms[0].order,null);
+  } else {
+    assert.equal(order.status,'营业中');assert.equal(outstanding(order),1001);
+    assert.deepEqual(head.state.rooms,f.state.rooms);assert.equal(Object.hasOwn(order,'closedAt'),false);
+  }
 });
 
-for(const difference of [0,500,999,1000,1001]) test('settle ordinary boundary '+difference+' cents keeps original review threshold and K01/K06',async()=>{
+for(const difference of [0,500,999,1000,1001]) test('settle ordinary boundary '+difference+' cents keeps the original threshold and only effective rounding settles the order',async()=>{
   const f=fixture(),cmd=settleCommand('boundary',0,difference);await f.app.execute(cmd,f.credential);
   const head=await f.memory.read(),order=paymentOrder(head.state);
   assert.equal(order.rounding,difference);assert.equal(Boolean(order.roundingReview),difference>1000);
-  assert.equal(order.status,'已结账');assert.equal(head.state.rooms[0].status,'待清洁');assert.equal(outstanding(order),difference);
+  assert.equal(order.status,difference>1000?'营业中':'已结账');
+  assert.equal(head.state.rooms[0].status,difference>1000?'营业中':'待清洁');
+  assert.equal(outstanding(order),difference>1000?difference:0);
   assert.deepEqual(order.sales,paymentOrder(f.state).sales);assert.equal(head.state.inventory.qd.count,null);assert.equal(head.state.inventory.bw.count,0);
 });
 for(const difference of [999,1000,1001]) test('settle special difference '+difference+' cents still requires note and review',async()=>{
