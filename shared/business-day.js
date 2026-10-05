@@ -25,3 +25,9 @@ export function businessDateFor(occurredAt, { timeZone } = {}) {
   previous.setUTCDate(previous.getUTCDate() - 1);
   return previous.toISOString().slice(0, 10);
 }
+
+// Shared order-creation capability. Never call this on existing/historical orders.
+export function orderBusinessDaySnapshot(createdAt, { timeZone } = {}) {
+  return Object.freeze({ businessDate: businessDateFor(createdAt, { timeZone }),
+    businessDayRuleVersion: BUSINESS_DAY_POLICY.version, businessTimeZone: timeZone });
+}

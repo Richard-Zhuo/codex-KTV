@@ -24,7 +24,8 @@ export async function testTrustedRepaymentReviews({t,pool,setup,auth,table,provi
   assert.equal(order.payments.length,before.payments.length+(approved?1:0));assert.equal(order.credit.repayments.length,before.credit.repayments.length+(approved?1:0));
   assert.deepEqual(order.payments.slice(0,before.payments.length),before.payments);assert.deepEqual(order.credit.repayments.slice(0,before.credit.repayments.length),before.credit.repayments);
   assert.equal(collected(actual)-collected(original),approved?prior.amount:0);
-  if(approved){const payment=order.payments.at(-1);assert.deepEqual(payment,{amount:prior.amount,method:prior.method,chargeId:'credit-repayment',time:request.decidedAt,
+  if(approved){const payment=order.payments.at(-1),{paymentId,occurredAt,recordedByPrincipalId,...compatible}=payment;
+   assert.match(paymentId,/^[0-9a-f-]{36}$/);assert.equal(occurredAt,request.decidedAt);assert.equal(recordedByPrincipalId,actor);assert.deepEqual(compatible,{amount:prior.amount,method:prior.method,chargeId:'credit-repayment',time:request.decidedAt,
    person:prior.submittedBy,approvedBy:null,repaymentRequestId:prior.id,approvedByPrincipalId:actor});assert.deepEqual(order.credit.repayments.at(-1),payment);}
  }
 
@@ -177,11 +178,11 @@ export async function testTrustedRepaymentReviews({t,pool,setup,auth,table,provi
   }
  });
 
- await t.test('repayment approval: whole remaining closes credit and preserves original payment time model without changing reporting',async()=>{
+ await t.test('repayment approval: whole remaining closes credit with trusted occurredAt and compatible original time',async()=>{
   const login=await provision(['credit.repay.approve']),id='rr-whole',original=await seedFor(id,s=>{repaymentRequest(s).amount=69500;repaymentRequest(s).method='支付宝';}),run=runFor(id),cmd=repaymentReviewCommand();
   const first=await run.app.execute(cmd,login.credential),actual=await inspect(id);money(actual.head.state,original,'approveRepayment',login.principalId);
   assert.equal(repayOrder(actual.head.state).status,'已回款');assert.equal(repayOrder(actual.head.state).credit.remaining,0);assert.equal(repayOrder(actual.head.state).time,repayOrder(original).time);
-  assert.equal(repayOrder(actual.head.state).payments.at(-1).time,run.context().dbNow);assert.equal(Object.hasOwn(repayOrder(actual.head.state).payments.at(-1),'occurredAt'),false);
+  assert.equal(repayOrder(actual.head.state).payments.at(-1).time,run.context().dbNow);assert.equal(repayOrder(actual.head.state).payments.at(-1).occurredAt,run.context().dbNow);
   assert.deepEqual(await run.app.execute(cmd,login.credential),first);await assertUnchanged(id,actual);
  });
 

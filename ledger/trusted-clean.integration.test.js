@@ -17,6 +17,7 @@ import { testTrustedCatalogCommands } from './trusted-catalog.integration.js';
 import { runTrustedCancelReservationIntegration } from './trusted-cancel-reservation.integration.js';
 import { testTrustedDeposits } from './trusted-deposits.integration.js';
 import { testTrustedReserve } from './trusted-reserve.integration.js';
+import { testK05Reporting } from './k05-reporting.integration.js';
 import { testTrustedSales } from './trusted-sales.integration.js';
 import { testTrustedOrderAdditions } from './trusted-order-additions.integration.js';
 import { testTrustedExchange } from './trusted-exchange.integration.js';
@@ -151,11 +152,11 @@ test('MySQL trusted clean vertical slice in jbhh_ktv_test',
         destroy() { connection.destroy(); }
       });
       const application = (id, { connectionPool = pool, bind = authStore.bindSessionRevalidation,
-        employeeBind = employeeStore.bindEmployeeResolver, transactCommand = transact, calls = [] } = {}) => {
+        employeeBind = employeeStore.bindEmployeeResolver, transactCommand = transact, businessTimeZone = 'Asia/Shanghai', calls = [] } = {}) => {
         let executions = 0, context;
         const watched = { async getConnection() { return wrapConnection(await connectionPool.getConnection(), calls); } };
         const store = createMySqlLedgerStore({ pool: watched, ledgerId: id, database, bindSessionRevalidation: bind, bindEmployeeResolver: employeeBind ?? undefined });
-        const app = createTrustedLedgerApplication({ store, transactCommand: (...args) => {
+        const app = createTrustedLedgerApplication({ store, businessTimeZone, transactCommand: (...args) => {
           executions++; context = args[4].context; calls.push({ kind: 'transact' });
           return transactCommand(...args);
         } });
@@ -545,6 +546,8 @@ test('MySQL trusted clean vertical slice in jbhh_ktv_test',
       await testTrustedPayments({ t, pool, setup, auth, table, provision, seed, inspect, application,
         assertUnchanged, wrapConnection, poolOptions, database });
       await testTrustedRounding({ t, pool, setup, auth, table, provision, seed, inspect, application,
+        assertUnchanged, wrapConnection, poolOptions, database });
+      await testK05Reporting({ t, pool, setup, auth, table, provision, seed, inspect, application, roster,
         assertUnchanged, wrapConnection, poolOptions, database });
       await testTrustedProcurement({ t, pool, setup, auth, table, provision, seed, inspect, application,
         assertUnchanged, wrapConnection, poolOptions, database });

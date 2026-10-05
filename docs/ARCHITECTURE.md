@@ -6,7 +6,11 @@
 
 shared/business-day.js:businessDateFor(occurredAt, {timeZone}) 是独立纯计算规则，BUSINESS_DAY_POLICY 标明 noon-v1／12:00。时间必须是带显式 offset 的有效 ISO 时间戳，门店时区必须显式提供；缺失／无效值直接失败，不使用设备默认时区、state.clock 或 order.time 猜测未知历史。当地 12:00 前归前一日，12:00:00 起归当天；只返回日期，不改写源时间戳。
 
-当前订单创建尚未保存 businessDate，reporting 仍选 order.time，K05 未修。后续接入须在开单时冻结日期／门店时区／规则版本，历史已确定日期不得按 noon-v1 重算；订单营业额按该快照归属，付款资金另按真实 occurredAt 查询。当前门店时区配置、生效前历史处置仍见 OPEN_BUSINESS_DECISIONS，不能从历史 SQL 默认值代替正式配置。本轮不接入 open／handover、不修改付款或报表；MySQL 验证仅覆盖纯规则结果的 JSON 快照往返。
+K05 只扩展过渡 snapshot：ledger/application.js 在 session revalidation、旧 operation lookup、当前授权／revision 与 employee resolver 之后，为新的 retailSale 使用 dbNow 和显式 businessTimeZone 构造 orderBusinessDaySnapshot；branded trusted context 携带该不可变快照，sales.js 创建订单时保存。重放不重算日期。open 仍 demo／正式拒绝，未来可复用共享快照工厂，不能用旧时钟回填。真实门店时区和历史处置仍见 OPEN_BUSINESS_DECISIONS；测试中的 Asia/Shanghai 仅是显式 synthetic 配置。
+
+## K05 报表边界
+
+reporting.js:selectRevenueOrders 只读冻结 businessDate；selectPaymentFlows 遍历全部 root payments，独立按明确带 offset 的真实时间区间选择，保留微秒边界。正式 reportViewModel 要求显式日期区间与 paymentInterval，返回独立 cashFlow／revenueAmbiguities；legacy 无冻结日期或无可信付款时间产生 ambiguity，完整性标记为 false，绝不据当前 cutoff／order.time／旧练习 time 猜值。原自然日演示接口隔离保留，缺少正式查询不能为冻结订单回退。域选择器不依赖 HTTP、UI 或机器时区，无新表和迁移。
 
 ## trusted settle／免零决定
 
@@ -18,7 +22,7 @@ rules.js 的显式 trusted 分支调用 sales.js:settleOrder／decideRounding，
 
 ledger/application 的 session→既有 operation→新 key 授权／revision 顺序及 mysql-store 原子提交未改。collect／pay 已迁移，settle 本批复用同一付款路径；rules.js 显式 trusted 分派不进入 demo identity／clock 分支，sales.js 的 paymentExecution 只消费 branded context。原校验成功后 appendPaymentRecords 在服务端执行中使用 Node 内置 crypto.randomUUID，查本账本保留的付款 ID，碰撞作为未知错误回滚，绝不接受客户端 paymentId。每笔新 payment 保存 paymentId、occurredAt=context.dbNow、recordedByPrincipalId=context.principalId；person 为 actorSnapshot 的显示名或 null，time 为同一 DB 时间兼容字段。字段仅向后兼容追加，不补造旧付款。
 
-请求重试先读已存 operation，故不重新执行 UUID 生成或付款、结账、房态变化；未知／SQL 故障不留 payment、revision、operation 或 audit，故障修复后原 key 可重试。collect 仍收足单个当前 charge 并保持营业；pay 仍全额结清且无免零。reporting 仍按 order.time，K05 保持未解决；settle／rounding 审核见上节；handover、open 仍正式拒绝。不增加生产依赖、表或客户端入口。
+请求重试先读已存 operation，故不重新执行 UUID 生成或付款、结账、房态变化；未知／SQL 故障不留 payment、revision、operation 或 audit，故障修复后原 key 可重试。collect 仍收足单个当前 charge 并保持营业；pay 仍全额结清且无免零。正式 reporting 双口径见本节补充：settle／rounding 审核见上节；handover、open 仍正式拒绝。不增加生产依赖、表或客户端入口。
 
 ## 系统边界
 
@@ -174,9 +178,9 @@ context 的 WeakSet 标记和 permission guard 放在已存在的、浏览器兼
 
 `approve`／`reject` 仅作为 credit decision，在 demo 身份／时钟求值前进入 sales.js:decideCredit 的显式 trusted 分支。该函数只从锁内 order.credit 读取 submittedByPrincipalId，要求 credit.approve；与 session principal 相同则叠加 review.self。两动作均需要 policyAttributesConfigured=true；保留原 approver 审批级别路由：店长级（≤100000 分）需 credit.approval.manager 或 credit.approval.boss，老板级（>100000 分）仅 boss。保存 amount 必须是正整数分并与已存级别一致，未知／矛盾事实授权拒绝，不重算余额或改写级别。approver 不是审核人字段，姓名／角色／payload 不提供属性。决定写 decidedByPrincipalId=context.principalId，decisionBy 只取可信显示快照（当前 null），decisionAt=dbNow；批准转已挂账，驳回先归档含稳定决定 ID 的 credit 再清除、转营业中，不重新占已释放房间，原金额、期限、快照、payment／库存保持。legacy 无可信申请人两动作都授权拒绝，不占 key；撤 permission／manager／boss 后有效原 actor 重连重放原终态，新 key 使用当前事实。006 只增量扩展两个 metadata CHECK，不配置真人属性。ledger application／store／指纹／终态流程不改；未知／SQL 故障完整回滚，回款申请及审批见下文。
 
-`repay` 在 demo operator／clock 求值前进入 `sales.js:submitRepay` 的显式 trusted 模式。只从 branded context 检查 credit.repay、取 session principal 与冻结 dbNow；新 order.credit.repaymentRequests 条目保存 submittedByPrincipalId，submittedById 留空，submittedBy 仅取可信显示快照（当前 null），submittedAt 取 dbNow。原已挂账订单、正整数分金额、扣除待审核申请后的可用余额及付款方式校验共用原规则；只追加待审核申请，不扣 credit.remaining，不写 credit.repayments 或 order.payments，不改房态、库存、历史金额／商品快照。原 credit 申请人、姓名或 payload 身份不能替代新申请 actor；无需 employee resolver 或 policy attribute。授权拒绝不占 key，有效原 actor 撤权后重放旧终态，新 key 检查当前 permission；未知／SQL 故障完整回滚。回款审批见下一段；独立收款、免零、结账及跨日资金归属仍未迁移或修复，demo 行为保持。
+`repay` 在 demo operator／clock 求值前进入 `sales.js:submitRepay` 的显式 trusted 模式。只从 branded context 检查 credit.repay、取 session principal 与冻结 dbNow；新 order.credit.repaymentRequests 条目保存 submittedByPrincipalId，submittedById 留空，submittedBy 仅取可信显示快照（当前 null），submittedAt 取 dbNow。原已挂账订单、正整数分金额、扣除待审核申请后的可用余额及付款方式校验共用原规则；只追加待审核申请，不扣 credit.remaining，不写 credit.repayments 或 order.payments，不改房态、库存、历史金额／商品快照。原 credit 申请人、姓名或 payload 身份不能替代新申请 actor；无需 employee resolver 或 policy attribute。授权拒绝不占 key，有效原 actor 撤权后重放旧终态，新 key 检查当前 permission；未知／SQL 故障完整回滚。回款审批见下一段；独立收款、免零与跨日资金归属见本文件相应章节；demo 申请行为保持。
 
-`approveRepayment`／`rejectRepayment` 在 demo 身份／clock 求值前进入 `sales.js:decideRepayment` 的显式 trusted 模式。保留原订单 credit 存在、按 Number(request) 选择本次待审核 repaymentRequest 的校验；只从该锁内申请的 submittedByPrincipalId 比较 session principal，不用原 credit 经办人、其他申请、旧演示 ID、姓名或 payload 判断本人。必须 credit.repay.approve，本人另需 review.self；legacy 缺有效 principal 两动作都授权拒绝，不写终态、不占 key。决定写 decidedByPrincipalId，decidedBy 仅可信显示快照，decidedAt 只用冻结 dbNow。批准原命令体生成一笔 payment，由 credit.repayments 与 order.payments 同额引用，保存 approvedByPrincipalId，approvedBy 只作审核人显示快照、person 仍为该申请提交人的显示快照；原余额扣减、归零转已回款及驳回原因／状态规则不改。驳回不写 payment、不减余额。全部申请／资金／历史变化在隔离 state 中生成，再由原 ledger 一事务提交 state、revision、operation、audit；未知／SQL 故障全回滚。payment 沿用 time 字段取 dbNow，不新增资金日期口径或改写 reporting，原跨日 Known Issue 保持。有效原 actor 撤审核／自审权限后重放已有终态，新 key 使用当前权限；失效认证先于 lookup 拒绝。无 employee resolver、岗位属性限制或新 schema。
+`approveRepayment`／`rejectRepayment` 在 demo 身份／clock 求值前进入 `sales.js:decideRepayment` 的显式 trusted 模式。保留原订单 credit 存在、按 Number(request) 选择本次待审核 repaymentRequest 的校验；只从该锁内申请的 submittedByPrincipalId 比较 session principal，不用原 credit 经办人、其他申请、旧演示 ID、姓名或 payload 判断本人。必须 credit.repay.approve，本人另需 review.self；legacy 缺有效 principal 两动作都授权拒绝，不写终态、不占 key。决定写 decidedByPrincipalId，decidedBy 仅可信显示快照，decidedAt 只用冻结 dbNow。批准原命令体生成一笔 payment，由 credit.repayments 与 order.payments 同额引用，保存 approvedByPrincipalId，approvedBy 只作审核人显示快照、person 仍为该申请提交人的显示快照；原余额扣减、归零转已回款及驳回原因／状态规则不改。驳回不写 payment、不减余额。全部申请／资金／历史变化在隔离 state 中生成，再由原 ledger 一事务提交 state、revision、operation、audit；未知／SQL 故障全回滚。新批准 payment 通过 appendPaymentRecords 保存 UUID paymentId、occurredAt 和 recordedByPrincipalId，兼容 time；资金只按 root payment 自身时间筛选，不再次计回款历史。有效原 actor 撤审核／自审权限后重放已有终态，新 key 使用当前权限；失效认证先于 lookup 拒绝。无 employee resolver、岗位属性限制或新 schema。
 
 incident 在 demo operator／clock 求值前进入 incidents.js:submitIncident 的显式 trusted 模式，只检查 context.permissionIds 的 incident.create；submittedByPrincipalId／actualActorPrincipalId 取 session principal，person 仅可信显示快照（当前 null），createdAt 只取冻结 dbNow。ledger application 仅对新 key、已认证且通过 policy／revision 的 incident 调用原 transaction-bound employee resolver，以 assigneeEmployeeId 或 assignee 的一致 UUID 查 enabled 员工；withTrustedAssigneeEmployee 保存独立负责人快照，不复用销售 creditedEmployeeId。记录 assigneeEmployeeId、assigneeEmployeeNameSnapshot，兼容显示 assignee／assigneeId；无关联账号或关联账号 disabled 不替代员工 enabled 状态。原显式 date、room、type、description 和待处理业务语义不改，不读旧 USERS 或姓名推断负责人。现有 terminal replay 不再解析员工，授权拒绝不占 key；unknown／SQL 故障完整回滚；处理结果及恢复审核接入见下节。
 

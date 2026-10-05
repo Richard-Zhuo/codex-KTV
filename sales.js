@@ -174,16 +174,20 @@ export function submitSale(s, order, data, person, operator, time, execution = {
 export function submitRetailSale(s, data, person, operator, time, execution = { mode: 'demo' }) {
   const identity = saleIdentity(s, data, person, operator, time, execution, true);
   ({ person, operator, time } = identity);
+  const businessDay = execution.mode === 'trusted' ? execution.context.orderBusinessDay : null;
+  if (execution.mode === 'trusted' && (!businessDay || typeof businessDay !== 'object' || !Object.isFrozen(businessDay))) throw TypeError('缺少可信开单营业日快照');
   const rows = prepareSaleRows(s, data);
   const amount = rows.reduce((sum, row) => sum + row.amountCents, 0);
   if (!Number.isSafeInteger(amount) || amount <= 0) throw new BusinessRejection('成交金额无效');
   const payments = validatePayments(data.payments, amount);
   const id = `D${++s.serial}`;
-  const retailOrder = { id, kind: 'retail', room: null, time, createdAt: time, paidAt: time, closedAt: time, person, recordedBy: operator, employeeId: identity.employeeId, ...identity.attribution, status: '已结账', packageId: null, packageNameSnapshot: null, packagePriceCents: 0, packageBaseCents: 0, packageGiftValueCents: 0, base: 0, gift: 0, drinks: [], resolvedComponents: [], extras: [], sales: [], otherCharges: [], bonusGifts: [], giftRequests: [], payments: [], rounding: 0, roundingType: '', roundingNote: '', roundingReview: null, credit: null, exchanges: [] };
+  const retailOrder = { id, kind: 'retail', room: null, time, createdAt: time, ...businessDay, paidAt: time, closedAt: time, person, recordedBy: operator, employeeId: identity.employeeId, ...identity.attribution, status: '已结账', packageId: null, packageNameSnapshot: null, packagePriceCents: 0, packageBaseCents: 0, packageGiftValueCents: 0, base: 0, gift: 0, drinks: [], resolvedComponents: [], extras: [], sales: [], otherCharges: [], bonusGifts: [], giftRequests: [], payments: [], rounding: 0, roundingType: '', roundingNote: '', roundingReview: null, credit: null, exchanges: [] };
   s.orders.push(retailOrder);
   appendSaleRows(s, retailOrder, rows, person, operator, identity.employeeId, time, '零售销售', identity.attribution, execution);
-  retailOrder.payments.push(...payments.map(payment => ({ ...payment, chargeId: 'retail', time, person: operator,
-    ...(execution.mode === 'trusted' ? { actualActorPrincipalId: execution.context.principalId } : {}) })));
+  if (execution.mode === 'trusted') {
+    const records = appendPaymentRecords(s, retailOrder, payments, 'retail', { context: execution.context, person: operator, time });
+    for (const record of records) record.actualActorPrincipalId = execution.context.principalId;
+  } else retailOrder.payments.push(...payments.map(payment => ({ ...payment, chargeId: 'retail', time, person: operator })));
 }
 // The trusted server command creates new facts; demo and historical records stay untouched.
 function paymentExecution(state, permission, person, time, execution) {
@@ -213,6 +217,7 @@ function appendPaymentRecords(state, order, payments, chargeId, identity) {
       recordedByPrincipalId: context.principalId, person, time };
   });
   order.payments.push(...records);
+  return records;
 }
 export function collectPayment(s, order, data, person, time, execution = { mode: 'demo' }) {
   const identity = paymentExecution(s, 'payment.collect', person, time, execution);
@@ -405,8 +410,17 @@ export function decideRepayment(s, order, action, data, person, time, authorizeR
   if (action === 'rejectRepayment' && !decisionNote) throw new BusinessRejection('请填写驳回原因');
   if (action === 'approveRepayment') {
     if (order.status !== '已挂账' || request.amount > order.credit.remaining) throw new BusinessRejection('挂账余额已经变化，请驳回后重新登记');
-    const payment = { amount: request.amount, method: request.method, chargeId: 'credit-repayment', time, person: request.submittedBy, approvedBy: person, repaymentRequestId: request.id, ...(context ? { approvedByPrincipalId: context.principalId } : {}) };
-    order.credit.repayments.push(payment); order.payments.push(payment); order.credit.remaining -= request.amount;
+    let payment;
+    if (context) {
+      [payment] = appendPaymentRecords(s, order, [{ amount: request.amount, method: request.method }], 'credit-repayment',
+        { context, person: request.submittedBy, time });
+      Object.assign(payment, { approvedBy: person, repaymentRequestId: request.id, approvedByPrincipalId: context.principalId });
+    } else {
+      payment = { amount: request.amount, method: request.method, chargeId: 'credit-repayment', time,
+        person: request.submittedBy, approvedBy: person, repaymentRequestId: request.id };
+      order.payments.push(payment);
+    }
+    order.credit.repayments.push(payment); order.credit.remaining -= request.amount;
     if (!order.credit.remaining) order.status = '已回款';
   }
   request.status = action === 'approveRepayment' ? '已批准' : '已驳回'; request.decidedBy = person; request.decidedAt = time; request.decisionNote = decisionNote; request.selfReviewAuthorized = selfReview;

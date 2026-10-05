@@ -53,7 +53,9 @@ test('repayment review: non-applicant approval commits one payment, remaining ba
  assert.equal(request.status,'已批准');assert.equal(request.decidedByPrincipalId,f.auth.id);assert.equal(request.decidedBy,null);
  assert.equal(request.decidedAt,dbNow);assert.equal(request.selfReviewAuthorized,false);assert.equal(request.decisionNote,'Synthetic decision note');
  assert.equal(order.payments.length,before.payments.length+1);assert.equal(order.credit.repayments.length,before.credit.repayments.length+1);
- assert.deepEqual(payment,{amount:15000,method:'现金',chargeId:'credit-repayment',time:dbNow,person:'Historical applicant',approvedBy:null,repaymentRequestId:991,approvedByPrincipalId:f.auth.id});
+ const {paymentId,occurredAt,recordedByPrincipalId,...compatiblePayment}=payment;
+ assert.match(paymentId,/^[0-9a-f-]{36}$/);assert.equal(occurredAt,dbNow);assert.equal(recordedByPrincipalId,f.auth.id);
+ assert.deepEqual(compatiblePayment,{amount:15000,method:'现金',chargeId:'credit-repayment',time:dbNow,person:'Historical applicant',approvedBy:null,repaymentRequestId:991,approvedByPrincipalId:f.auth.id});
  assert.deepEqual(order.credit.repayments.at(-1),payment);assert.equal(order.credit.remaining,54500);assert.equal(order.status,'已挂账');
  assert.equal(head.operationResults.size,1);assert.equal(head.audit.length,1);assert.equal(head.audit[0].actorId,f.auth.id);
 });
@@ -80,8 +82,8 @@ for(const action of REPAYMENT_REVIEW_ACTIONS){
   if(action==='approveRepayment'){
    assert.deepEqual(order.payments.slice(0,-1),before.payments);assert.deepEqual(order.credit.repayments.slice(0,-1),before.credit.repayments);
    assert.equal(order.payments.length,before.payments.length+1);assert.equal(order.credit.repayments.length,before.credit.repayments.length+1);
-   const {approvedByPrincipalId,approvedBy,...payment}=order.payments.at(-1),{approvedBy:demoName,...originalPayment}=demoOrder.payments.at(-1);
-   assert.deepEqual(payment,originalPayment);assert.equal(approvedByPrincipalId,f.auth.id);assert.equal(collected(head.state)-collected(f.state),15000);
+   const {paymentId,occurredAt,recordedByPrincipalId,approvedByPrincipalId,approvedBy,...payment}=order.payments.at(-1),{approvedBy:demoName,...originalPayment}=demoOrder.payments.at(-1);
+   assert.deepEqual(payment,originalPayment);assert.match(paymentId,/^[0-9a-f-]{36}$/);assert.equal(occurredAt,dbNow);assert.equal(recordedByPrincipalId,f.auth.id);assert.equal(approvedByPrincipalId,f.auth.id);assert.equal(collected(head.state)-collected(f.state),15000);
   }else{
    assert.deepEqual(order.payments,before.payments);assert.deepEqual(order.credit.repayments,before.credit.repayments);
    assert.equal(order.credit.remaining,69500);assert.equal(collected(head.state),collected(f.state));
@@ -149,7 +151,7 @@ for(const action of REPAYMENT_REVIEW_ACTIONS){
  test('repayment '+action+': trusted domain needs branded context and never reads demo facts or calls demo reviewer',async()=>{
   const f=fixture();await f.app.execute(repaymentReviewCommand(action),f.credential);const state={};
   for(const field of ['user','permissions','clock','capabilities','administrator'])Object.defineProperty(state,field,{get(){assert.fail('trusted review read demo '+field);}});
-  const order=structuredClone(repayOrder(f.state));decideRepayment(state,order,action,repaymentReviewCommand(action).payload,'fake','1900-01-01',()=>assert.fail('demo reviewer'),{mode:'trusted',context:f.context()});
+  const order=structuredClone(repayOrder(f.state));state.orders=[order];decideRepayment(state,order,action,repaymentReviewCommand(action).payload,'fake','1900-01-01',()=>assert.fail('demo reviewer'),{mode:'trusted',context:f.context()});
   assert.equal(order.credit.repaymentRequests[1].decidedByPrincipalId,f.auth.id);assert.equal(order.credit.repaymentRequests[1].decidedAt,dbNow);
   for(const context of [undefined,{...f.context()}])assert.throws(()=>decideRepayment(f.state,repayOrder(f.state),action,repaymentReviewCommand(action).payload,undefined,undefined,undefined,{mode:'trusted',context}),/可信认证上下文/);
   assert.throws(()=>decideRepayment(f.state,repayOrder(f.state),action,repaymentReviewCommand(action).payload,undefined,undefined,undefined,{mode:'unknown'}),/执行模式/);
@@ -236,4 +238,14 @@ test('repayment decisions: review permission does not enable rounding, payments 
  for(const action of ['handover', 'open']){
   await assert.rejects(f.app.execute({...repaymentReviewCommand(action),action},f.credential),e=>denied(e)&&e.reason==='trusted-action-not-enabled');await assertNoEffects(f);
  }
+});
+
+test('K05: approved repayment has one unique payment fact shared with repayment history and preserved by replay',async()=>{
+ const f=fixture(),cmd=repaymentReviewCommand(),first=await f.app.execute(cmd,f.credential),head=await f.memory.read();
+ const order=repayOrder(head.state),payment=order.payments.at(-1);
+ assert.match(payment.paymentId,/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/);
+ assert.equal(payment.occurredAt,dbNow);assert.equal(payment.recordedByPrincipalId,f.auth.id);
+ assert.equal(payment.approvedByPrincipalId,f.auth.id);assert.deepEqual(order.credit.repayments.at(-1),payment);
+ f.auth.permissions=[];assert.deepEqual(await f.app.execute(cmd,f.credential),first);
+ assert.deepEqual(await f.memory.read(),head);assert.equal(f.executions(),1);
 });

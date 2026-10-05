@@ -157,3 +157,12 @@ export function requireTrustedPermission(context, permission) {
   assertTrustedExecutionContext(context);
   if (!context.permissionIds.includes(permission)) throw new AuthorizationDenied('missing-permission');
 }
+
+// Internal server capability, attached after session revalidation from dbNow and explicit store configuration.
+export function withTrustedOrderBusinessDay(context, snapshot) {
+  assertTrustedExecutionContext(context);
+  if (!Object.isFrozen(snapshot) || !/^\d{4}-\d{2}-\d{2}$/.test(snapshot?.businessDate) ||
+      typeof snapshot.businessDayRuleVersion !== 'string' || !snapshot.businessDayRuleVersion ||
+      typeof snapshot.businessTimeZone !== 'string' || !snapshot.businessTimeZone) throw TypeError('缺少可信开单营业日快照');
+  return registerTrustedExecutionContext(Object.freeze({ ...context, orderBusinessDay: snapshot }));
+}

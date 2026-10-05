@@ -2,6 +2,22 @@
 
 更新日期：2026-10-05。本文件是当前进度的唯一汇总入口。
 
+## Batch 1：K05 跨日资金归属（2026-10-05）
+
+开始核实干净 main=origin/main=47aa324，独立分支 codex/p0-1-k05-payment-reporting 直接从该提交建立。仅修 K05，一个独立提交；不合入／push 新提交，不部署，不开放 handover／open，也不修 K04／K07／K10。
+
+shared/business-day.js:orderBusinessDaySnapshot 共用现有 noon-v1／12:00 算法。盘点新订单入口仅 rooms.js:openRoom 与 sales.js:submitRetailSale；前者仍为 demo、未 trusted-enabled，本批不补造其正式日期。新 trusted retailSale 的 ledger application 在锁内 session context／旧 operation／当前授权／revision／employee resolver 之后，用 dbNow 和显式服务端 businessTimeZone 构造 branded 开单快照；保存 businessDate、businessDayRuleVersion、businessTimeZone。缺时区拒绝新开单且不占键；重放先返回原终态，不重算。测试时区 Asia/Shanghai 是 synthetic 显式配置，真实门店配置决策仍 OPEN。
+
+sales.js:appendPaymentRecords 复用于 retailSale 与 approveRepayment，和 collect／pay／settle 一样生成安全随机 UUID paymentId、真实 occurredAt=dbNow、recordedByPrincipalId；回款另存 approvedByPrincipalId，root payments 与 credit.repayments 引用同一付款，历史字段保留不回填。金额、渠道、库存基础数量、商品快照及批准余额／状态均保持原语义。
+
+reporting.js:selectRevenueOrders 按冻结日期；selectPaymentFlows 遍历全部 root payments，按每笔真实 occurredAt 的显式时间区间筛选，不加 credit.repayments 或 rounding。正式 reportViewModel 的 query 独立提供营业日期区间与 paymentInterval，不读 demo clock；旧自然日演示入口保留，冻结订单缺正式区间时明确失败。历史无冻结日期、无可信资金时间或损坏时间报告 ambiguity／complete=false，不用 time／order.time／当前日期猜测。需求为唯一业务口径，完整接口见 MODULE_MAP。
+
+真实连接验证 MySQL 8.4.11／jbhh_ktv_test／InnoDB，URL／密码不输出。新增 ledger/k05-reporting.integration.js 9／9／0／0：重连撤权 replay 保留 ID、两个独立 CONNECTION_ID 竞争、audit SQL CHECK 中途失败及未知异常整体 rollback、JSON 微秒／跨日／未知历史投影。旧回款断言按新增可信字段更新，仍逐字段验兼容旧事实；全部既有 auth／revalidation／employee／ledger／trusted MySQL 回归真实执行，未退化 skip。四集成测试文件在完整日志中统计为 689／689／0／0（含父 test 与目标校验；auth 47、employee 40、ledger 21、trusted 581）。
+
+修改 JavaScript 后实际尝试 npm test，环境仍报 The term 'npm' is not recognized，未取得 npm 执行证据。直接执行当前 Node v24 的 node --test --test-isolation=none；K05 定向六文件 104／104／0／0，完整 1642／1639／0／3，退出码 0。offsite.report.test.js 的 K05 skip 已转正式；仅剩 K04 全历史交班、K07 待验券与 K10 旧 SQL retail 草案三项 skip。11:59:59／12:00:00／12:00:01、凌晨／晚间与跨日多笔／回款不双计均通过。无新依赖、schema、HTTP／UI、正式导入或其他动作迁移。
+
+以下为历史阶段与当时验证证据，不覆盖本节当前 K05 状态。
+
 ## 营业日正式切换为 12:00（2026-10-05）
 
 先核实 db4ec73 parent=d9f9124，ff-only 合入 main。合入后真实完整回归 1596／1592／0／4，auth／employee／ledger／trusted MySQL 均实际执行；fetch 核实远端无新增后普通 push，main=origin/main=db4ec73、0/0、clean。从该基线建立 codex/p0-1-business-day-noon。本批只改变正式营业日 cutoff，不迁移 open／handover或修其他 Known Issues。

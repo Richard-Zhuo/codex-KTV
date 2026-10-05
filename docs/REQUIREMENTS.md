@@ -119,17 +119,17 @@
 - “收钱”只收最近一笔未收增购；没有增购待收时收开房费用。收钱后房间继续营业。
 - “结账”汇总剩余未收费用，完成后房间才转待清洁。
 - 收钱和结账均支持微信、支付宝、现金、美团、抖音多笔付款，合计必须匹配。
-- 正式 trusted collect／pay 分别只检查 payment.collect／payment.settle；实际操作者、权限和付款时间只取同事务 session context。collect／pay／settle 的新 payment 生成安全随机 UUID paymentId，保存 occurredAt=dbNow、recordedByPrincipalId；person/time 只作可信兼容快照，不复制客户端身份或 ID。旧付款不回填，不按姓名推断。collect 收足当前 charge 后继续营业，pay 无免零且收足全部余款后转待清洁；原金额、渠道、charge 顺序和赠酒待确认阻断不变。付款、订单／房态、revision、operation、audit 同一原子提交；拒绝授权不占 key，重试原 key 只返回原终态。仅记录 occurredAt，不修改 reporting、businessDate 或 K05。
+- 正式 trusted collect／pay 分别只检查 payment.collect／payment.settle；实际操作者、权限和付款时间只取同事务 session context。collect／pay／settle 的新 payment 生成安全随机 UUID paymentId，保存 occurredAt=dbNow、recordedByPrincipalId；person/time 只作可信兼容快照，不复制客户端身份或 ID。旧付款不回填，不按姓名推断。collect 收足当前 charge 后继续营业，pay 无免零且收足全部余款后转待清洁；原金额、渠道、charge 顺序和赠酒待确认阻断不变。付款、订单／房态、revision、operation、audit 同一原子提交；拒绝授权不占 key，重试原 key 只返回原终态。可信付款的独立资金口径与营业日冻结见下文 K05 契约。
 - 正式 trusted settle 保持 payment.settle 及现有金额／说明校验，结清时机遵循本条修复后的免零生效规则。需审核的 roundingReview 保存 session 的 submittedByPrincipalId 和冻结 DB submittedAt；approveRounding／rejectRounding 从锁定 review 读取此 principal，均要求 rounding.approve，本人另需 review.self。只有实际免零 >1000 分的本人批准再要求已配置的 DB rounding.self.excess；本人驳回和 ≤1000 分特殊情况本人批准不要求该属性。payload 身份／角色／属性无效；legacy 无可信申请 principal 或免零事实无法安全解释时两决定均授权拒绝且不占 key。决定保存 decidedByPrincipalId／DB decidedAt，姓名仅显示。K01／K06 本批修复：需审核时仅提交真实 payment 和 pending review，订单保持营业、房间保持占用；批准使免零生效，重新核对余额为零时才与决定一同关单及转待清洁。驳回不生效，已收 payment 保留，不退款、不自动补款或再结算。
 - 正式免零差额不超过 10 元时，现场可直接免零，主要用于凑整 5 元或整 10 元（例如应付 168 元下调至 160 元）；免零不得超过实际未收金额或造成负数应付；超过 10 元须进入审批，未经批准不得当作已收或完成合法结账。卓老板可以批准本人超额免零；老板娘、邵叔、雄老板不能自批，须由其他有权人员批准。卓益没有最终结账权限，不能借免零审批绕过该限制。普通 ≤10 元直接免零与真实付款、关单和房态在同一事务生效；显式特殊情况仍需说明并审核。
-- `outstanding = max(0, total − 原有有效 payments 合计 − 已生效免零)`。当前 `rounding` 与可选 `roundingHistory` 只计入明确无 review 的普通 ≤1000 分直免，以及金额一致且状态明确为已批准的 review；pending、rejected、状态或金额不明的 legacy 记录均不抵扣。后续合法 pay／settle 替换当前免零字段前保留原事实快照，不回填未知状态。免零不生成 payment、不计资金流水；不改变 K05、businessDate 或 reporting。
+- `outstanding = max(0, total − 原有有效 payments 合计 − 已生效免零)`。当前 `rounding` 与可选 `roundingHistory` 只计入明确无 review 的普通 ≤1000 分直免，以及金额一致且状态明确为已批准的 review；pending、rejected、状态或金额不明的 legacy 记录均不抵扣。后续合法 pay／settle 替换当前免零字段前保留原事实快照，不回填未知状态。免零不生成 payment、不计资金流水；不把免零计入资金流水；双口径报表见下文。
 - 所有演示身份均可从结账申请挂账。手机号或顾客姓名至少填写一个，挂账备注和经办签名必填；只挂尚未收取的余额。
 - 挂账金额不超过 1000 元由店长审批，超过 1000 元由老板审批；提单起 24 小时到期，挂账不计入实收。
 - 正式 trusted `credit` 申请创建只使用 session context 的 `credit.apply`、principal 和冻结 `dbNow`。新 `order.credit` 保存 `submittedByPrincipalId`，`submittedById` 不填演示 ID，`person` 仅作可信显示快照；payload 身份／权限／时钟不得覆盖。顾客姓名、手机号和签名仍是业务输入；金额只取原未收余额，期限仍为提单后 24 小时，原待审批和房态释放语义保持。原 approver 岗位标签仅保留既有业务路由，创建链不判断 manager／boss 属性；决定链见下一条，回款申请见下文。授权拒绝不占操作键，既有终态重放及完整 rollback 保持。
 - 正式 credit 的 approve／reject 均从锁内 order.credit 读取 submittedByPrincipalId；必须有 credit.approve，本人额外需要 review.self。两动作保留相同金额分级：≤1000 元需要已配置的 credit.approval.manager 或 credit.approval.boss，>1000 元仅 credit.approval.boss；boss 覆盖 manager 资格。approver 是申请时保存的审批级别，不是审核人身份；不依据角色、姓名、payload 或当前未收余额补造级别。未知／矛盾的保存金额与级别、legacy 缺可信申请人均 fail closed，不占操作键。决定保存 decidedByPrincipalId，decisionBy 仅显示快照（当前 null），decisionAt 使用冻结 dbNow；原批准转已挂账、驳回归档并清除当前 credit／转营业中且不重新占房等语义不变。撤销 permission／属性后有效原 actor 的旧 key 仍取原终态，新 key 验当前资格；SQL 故障完整 rollback。
 - 回款先登记金额和方式，审核通过后才扣减欠款并计入实收；存酒不能抵欠款。
-- 正式 trusted repay 只使用 session context 的 credit.repay、principal 和冻结 dbNow；新 repaymentRequests 保存 submittedByPrincipalId，submittedById 不填演示 ID，submittedBy 只作可信显示快照，submittedAt 只用 dbNow。姓名、角色、payload 身份／权限／时钟不能覆盖。保留原已挂账订单、正整数分金额、付款方式及扣除待审申请后余额的校验；仅创建待审核申请，不扣挂账余额、不生成 payment／已确认回款，不改变订单状态、房态、库存或历史快照。授权拒绝不占键，既有终态 replay／冲突与完整 rollback 保持；回款审核见下一条；跨日资金归属仍属后续任务。
-- 正式 approveRepayment／rejectRepayment 只从锁内本次 repaymentRequest.submittedByPrincipalId 判断本人，不能用原 credit 经办人；需 credit.repay.approve，本人另需 review.self。legacy 申请无有效 principal 两动作都 fail closed，不猜姓名／旧 ID。决定保存 decidedByPrincipalId；批准 payment／回款记录保存 approvedByPrincipalId，原姓名字段只作显示快照，时间只用冻结 dbNow，payload 身份／权限／时间不能覆盖。批准的申请决定、一笔 payment、挂账余额、相关历史与 ledger revision／result／audit 同事务提交，任一步失败全回滚；同 key 重放和双连接竞争不得重复资金效果。驳回不生成 payment、不减余额，原金额／状态／原因规则不变。授权拒绝不占 key；有效原 actor 撤权后旧 key 返回原终态，新 key 验当前资格。沿用原 payment.time 与报表算法，本批不修跨日资金归属。
+- 正式 trusted repay 只使用 session context 的 credit.repay、principal 和冻结 dbNow；新 repaymentRequests 保存 submittedByPrincipalId，submittedById 不填演示 ID，submittedBy 只作可信显示快照，submittedAt 只用 dbNow。姓名、角色、payload 身份／权限／时钟不能覆盖。保留原已挂账订单、正整数分金额、付款方式及扣除待审申请后余额的校验；仅创建待审核申请，不扣挂账余额、不生成 payment／已确认回款，不改变订单状态、房态、库存或历史快照。授权拒绝不占键，既有终态 replay／冲突与完整 rollback 保持；回款审核见下一条；跨日资金筛选见下文，不把申请本身计入资金。
+- 正式 approveRepayment／rejectRepayment 只从锁内本次 repaymentRequest.submittedByPrincipalId 判断本人，不能用原 credit 经办人；需 credit.repay.approve，本人另需 review.self。legacy 申请无有效 principal 两动作都 fail closed，不猜姓名／旧 ID。决定保存 decidedByPrincipalId；批准 payment／回款记录保存 approvedByPrincipalId，原姓名字段只作显示快照，时间只用冻结 dbNow，payload 身份／权限／时间不能覆盖。批准的申请决定、一笔 payment、挂账余额、相关历史与 ledger revision／result／audit 同事务提交，任一步失败全回滚；同 key 重放和双连接竞争不得重复资金效果。驳回不生成 payment、不减余额，原金额／状态／原因规则不变。授权拒绝不占 key；有效原 actor 撤权后旧 key 返回原终态，新 key 验当前资格。新 trusted 批准付款复用安全 UUID paymentId、occurredAt=dbNow、recordedByPrincipalId，同时保留 approvedByPrincipalId；原 time 仅兼容显示，资金只从 order.payments 计一次。
 - 交班必须分别填写实点收款合计和前台现金；前台现金只留档，不重复计入实收差异。
 - 当前门店没有固定现金备用金制度；交班与现金应有数只能使用实际清点和已记录的期初现金，不预设固定开班金额。
 - 已回款挂账以简洁折叠卡片显示，点击后再查看经办、开单、预订和备注详情。
@@ -165,7 +165,7 @@
 
 ## 已确认：报表、主题与数据边界
 
-- 系统营业日切换点正式为每天 12:00，门店通常约凌晨 02:00 结束营业；两者不是同一时间。00:00:00–11:59:59 开立的订单归前一个 `businessDate`，12:00:00 起归当天。营业额按订单开单所属 `businessDate` 归属；每笔付款的资金流水按其真实 `occurredAt` 及相应营业日归属，不能全部从 `order.time` 推导。正式实现须保存原始时间和采用的规则版本，回款与将来退款的资金事件同样按各自实际发生时间归属。`shared/business-day.js:businessDateFor` 已提供版本化 12:00 纯计算规则，必须显式配置门店时区；当前订单创建和 reporting 尚未接入，历史日期不按新规则重算，付款 `occurredAt` 不改写。
+- 系统营业日切换点正式为每天 12:00，门店通常约凌晨 02:00 结束营业；两者不是同一时间。00:00:00–11:59:59 开立的订单归前一个 `businessDate`，12:00:00 起归当天。营业额按订单开单所属 `businessDate` 归属；每笔付款的资金流水按其真实 `occurredAt` 及相应营业日归属，不能全部从 `order.time` 推导。正式实现须保存原始时间和采用的规则版本，回款与将来退款的资金事件同样按各自实际发生时间归属。`shared/business-day.js:businessDateFor` 已提供版本化 12:00 纯计算规则，必须显式配置门店时区；当前新 trusted retailSale 在创建时冻结 businessDate、businessDayRuleVersion=noon-v1、businessTimeZone；服务端必须显式配置时区，缺失则拒绝新开单且不占操作键。唯一其他新订单入口 open 仍为 demo、未 trusted-enable；共享 orderBusinessDaySnapshot 能力已准备，不据练习时钟补正式日期。已确定的历史日期永不按现行 cutoff 重算。
 - 报表按日／周／月切换；房间视图只列统计周期内开过房的房间，并另列独立零售交易。房间与零售商品销售都计入营业账单汇总，按销售行的名称、分类、单位、成交金额和人员快照统计；商品改名、改价后不得改变历史报表，不按 `category === '烟'` 等分类写专门统计分支。
 - 房间视图继续列房费、套餐赠饮、商品销售、后续赠送、付款方式、免零和挂账备注；套餐赠饮不填赠送人，后续赠送单列参考值与赠送人。套餐免费果盘、小吃不作为付费商品销售。
 - “我的”提供日间、夜间、自动三种主题。自动模式使用设备实际时间 06:00–19:00 为日间，其余为夜间，与手动练习时间无关。
@@ -173,6 +173,14 @@
 - 演示业务状态保存在当前浏览器 `localStorage`；不同设备、浏览器、`localhost` 与局域网地址不会自动共享。
 - 已保存的演示记录若无法安全加载（含旧套餐价格不一致），必须保留原始主记录并停止保存；可解析的历史订单与付款笔数供只读核对，完整原文可查看复制。人工核对并修正当前套餐配置后才可显式重检恢复；不得借修正当前价格改写历史成交金额或付款。
 - 既有 `database/schema.sql` 等 PostgreSQL 文件只保留为历史设计基线；正式数据库方向为 MySQL，当前静态页面不执行 SQL。
+
+## K05：正式营业额与资金双口径
+
+- reporting.js:selectRevenueOrders 只按订单冻结 businessDate 查询，区间为 [fromBusinessDate,toBusinessDate)；未知／非法历史日期明确报告 ORDER_BUSINESS_DATE_UNKNOWN，不用当前规则或 order.time 补造。
+- selectPaymentFlows 遍历所有订单的 canonical payments，按每笔自己的 occurredAt 与显式 offset 的 [from,to) 时间区间筛选，保留数据库微秒精度和原时间戳。只按 payment 统计，绝不叠加 credit.repayments，也不把 rounding 当资金。
+- reportViewModel(state,period,query) 的正式 query 必须包含两个独立区间：fromBusinessDate／toBusinessDate 与 paymentInterval={from,to}。营业额 totals 与 cashFlow 各自计算，不读取 state.clock、不先用订单日期筛掉付款。未提供 query 的原演示日／周／月接口保留；遇到冻结日期必须要求显式查询，不能落回设备默认时区。页面与 HTTP 未接入。
+- 新 trusted collect／pay／settle／retailSale／approveRepayment 的付款均由既有 appendPaymentRecords 生成 UUID、DB occurredAt 和 recordedByPrincipalId；回款还保留 approvedByPrincipalId，root payments 与回款历史引用同一事实。重放不执行生成器，订单／库存／挂账变化和 operation／audit 同一事务。
+- 当前旧 time 字段没有独立可信来源标记，姓名、principal 或订单时间不能单独证明它是数据库资金时间，因此不做 occurredAt ?? time 回退。未知／损坏时间从区间合计排除，并通过 ambiguities、complete=false 暴露；合计只是可证明部分，不可宣称完整资金日结。不回填或猜测历史数据。
 
 ## 已确认：当前单机演示非目标（不适用于脱岗 MVP）
 

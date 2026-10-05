@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { initialState } from './rules.js';
 import {
   reportPeriodMatch, reportOrder, reportTotals, reportBreakdown,
-  reportPaymentMethods, reportSaleDetails
+  reportPaymentMethods, reportSaleDetails, selectRevenueOrders, selectPaymentFlows
 } from './reporting.js';
 // UI 模块在导入时注册外观事件；给 Node 测试一个最小浏览器事件入口。
 globalThis.window = { addEventListener() {} };
@@ -140,17 +140,15 @@ test('报表合同：当前改名改价不重算旧销售名称、分类与成�
   ]);
 });
 
-test.skip('KNOWN BUSINESS ISSUE：跨日付款被归到订单开立日而非付款发生日', () => {
-  const state = fixture();
-  state.orders = [{
-    ...state.orders[0], time: localAt(9, 27), createdAt: localAt(9, 27),
-    payments: [{ method: '现金', amount: 21800, time: localAt(9, 28) }]
-  }];
-  const report = harness(state);
-  assert.equal(state.orders.filter(report.match).length, 0);
-  assert.doesNotMatch(report.page(), /旧名百威/);
-  state.clock = localAt(9, 27);
-  report.setState(state);
-  assert.equal(state.orders.filter(report.match).length, 1);
-  assert.match(report.page(), /旧名百威/);
+test('K05 fixed: cross-day funds follow payment occurredAt while revenue stays on frozen businessDate', () => {
+ const state=fixture();
+ state.orders=[{...state.orders[0],businessDate:'2026-10-04',businessDayRuleVersion:'noon-v1',
+  time:'2026-10-04T20:00:00+08:00',createdAt:'2026-10-04T20:00:00+08:00',
+  payments:[{paymentId:'synthetic-cross-day',method:'现金',amount:21800,occurredAt:'2026-10-05T14:00:00+08:00'}]}];
+ const revenue=selectRevenueOrders(state,{fromBusinessDate:'2026-10-04',toBusinessDate:'2026-10-05'});
+ assert.equal(revenue.orders.length,1);assert.equal(revenue.orders[0].businessDate,'2026-10-04');
+ assert.equal(selectRevenueOrders(state,{fromBusinessDate:'2026-10-05',toBusinessDate:'2026-10-06'}).orders.length,0);
+ assert.equal(selectPaymentFlows(state,{from:'2026-10-04T12:00:00+08:00',to:'2026-10-05T12:00:00+08:00'}).totalCents,0);
+ const paid=selectPaymentFlows(state,{from:'2026-10-05T12:00:00+08:00',to:'2026-10-06T12:00:00+08:00'});
+ assert.equal(paid.totalCents,21800);assert.equal(paid.payments[0].occurredAt,'2026-10-05T14:00:00+08:00');
 });

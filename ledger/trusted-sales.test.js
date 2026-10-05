@@ -13,7 +13,7 @@ const employeeId='10000000-0000-4000-8000-000000000001';
 const secondId='10000000-0000-4000-8000-000000000002';
 const dbNow='2026-10-04T12:00:00.123456Z';
 const denied=e=>e instanceof AuthorizationDenied&&e.status==='authorization-denied';
-function fixture(action,{permissions=action==='sale'?['staff.record']:['retail.sale','staff.record'],setup=()=>{},resolver=true,execute=transact}={}) {
+function fixture(action,{permissions=action==='sale'?['staff.record']:['retail.sale','staff.record'],setup=()=>{},resolver=true,execute=transact,clock=dbNow,businessTimeZone='Asia/Shanghai',configureBusinessDay=true}={}) {
   const state=initialState();state.user='not-a-demo-user';state.clock='invalid-demo-clock';
   state.administrator=true;state.permissions={administrator:['管理员']};state.capabilities={administrator:['*']};
   state.orders=[{id:'history',kind:'retail',room:null,sales:[{productNameSnapshot:'unknown historical',pricePerSaleUnitCents:null}],payments:[]}];
@@ -27,7 +27,7 @@ function fixture(action,{permissions=action==='sale'?['staff.record']:['retail.s
     lockAccount:async()=>{events.push('account');return {principalId:auth.id,enabled:auth.enabled,credentialVersion: auth.version, policyAttributesConfigured: false};},
     lockSessionById:async()=>{events.push('session');return {principalId:auth.id,sessionId:'synthetic-session',tokenDigest:digest,
       revoked:auth.revoked,credentialVersion:auth.sessionVersion,idleExpiresAt:auth.idle,absoluteExpiresAt:auth.absolute};},
-    listGrants:async()=>{events.push('grants');return auth.permissions;},listPolicyAttributes:async()=>[],readDbNow:async()=>{events.push('db-now');return dbNow;}};
+    listGrants:async()=>{events.push('grants');return auth.permissions;},listPolicyAttributes:async()=>[],readDbNow:async()=>{events.push('db-now');return clock;}};
   let context,executions=0,hasResolver=resolver,failure=null;
   const store={ledgerId:memory.ledgerId,runAtomic:work=>memory.runAtomic(tx=>{
     events.push('head');const lookup=tx.findOperationResult;
@@ -37,9 +37,9 @@ function fixture(action,{permissions=action==='sale'?['staff.record']:['retail.s
       events.push('employee');if(failure)throw failure;return employees.get(id)??null;
     }}});return work(tx);
   })};
-  const app=createTrustedLedgerApplication({store,transactCommand:(...args)=>{events.push('transact');executions++;context=args[4].context;return execute(...args);}});
+  const app=createTrustedLedgerApplication({store,...(configureBusinessDay ? { businessTimeZone } : {}),transactCommand:(...args)=>{events.push('transact');executions++;context=args[4].context;return execute(...args);}});
   return {app,state,memory,auth,employees,events,credential:{tokenDigest:digest},context:()=>context,executions:()=>executions,
-    setResolver:value=>{hasResolver=value;},failResolver:error=>{failure=error;}};
+    setResolver:value=>{hasResolver=value;},failResolver:error=>{failure=error;},setClock:value=>{clock=value;}};
 }
 async function noEffects(f) {const head=await f.memory.read();assert.deepEqual(head.state,f.state);assert.equal(head.revision,0);
   assert.equal(head.operationResults.size,0);assert.equal(head.audit.length,0);}
@@ -159,3 +159,40 @@ for (const action of SALES_TEST_ACTIONS) {
     assert.equal(head.state.inventory.bw.count,76);assert.equal(head.state.ledger.length,1);assert.equal(head.state.inventory.synthetic_service,undefined);
   });
 }
+
+test('K05: retailSale freezes business date from dbNow and explicit store zone before noon', async () => {
+  const f=fixture('retailSale',{clock:'2026-10-05T03:59:59.000000Z',businessTimeZone:'Asia/Shanghai'});
+  await f.app.execute(salesCommand('retailSale',employeeId,'dated-retail',0),f.credential);
+  const saved=soldOrder((await f.memory.read()).state,'retailSale');
+  assert.equal(saved.businessDate,'2026-10-04');
+  assert.equal(saved.businessDayRuleVersion,'noon-v1');
+  assert.equal(saved.businessTimeZone,'Asia/Shanghai');
+});
+
+test('K05: trusted retail payments have unique server IDs, real times and actor; replay preserves them',async()=>{
+ const f=fixture('retailSale'),cmd=salesCommand('retailSale',employeeId,'payment-facts');
+ const first=await f.app.execute(cmd,f.credential),head=await f.memory.read(),order=soldOrder(head.state,'retailSale');
+ assert.equal(new Set(order.payments.map(p=>p.paymentId)).size,2);
+ for(const payment of order.payments){
+  assert.match(payment.paymentId,/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/);
+  assert.equal(payment.occurredAt,dbNow);assert.equal(payment.recordedByPrincipalId,f.auth.id);
+ }
+ f.auth.permissions=[];assert.deepEqual(await f.app.execute(cmd,f.credential),first);
+ assert.deepEqual(await f.memory.read(),head);assert.equal(f.executions(),1);
+});
+
+for(const [time,date]of [['2026-10-05T03:59:59.000000Z','2026-10-04'],['2026-10-05T04:00:00.000000Z','2026-10-05'],
+ ['2026-10-05T04:00:01.000000Z','2026-10-05'],['2026-10-04T18:00:00.000000Z','2026-10-04'],['2026-10-05T12:00:00.000000Z','2026-10-05']]){
+ test('K05: retail freezes '+time+' as '+date+'; replay never recomputes',async()=>{
+  const f=fixture('retailSale',{clock:time}),cmd=salesCommand('retailSale',employeeId,'date-freeze');
+  const first=await f.app.execute(cmd,f.credential),head=await f.memory.read(),order=soldOrder(head.state,'retailSale');
+  assert.equal(order.businessDate,date);assert.equal(order.businessDayRuleVersion,'noon-v1');
+  assert.ok(order.payments.every(p=>p.occurredAt===time));f.setClock('2026-10-06T12:00:00.000000Z');
+  assert.deepEqual(await f.app.execute(cmd,f.credential),first);assert.deepEqual(await f.memory.read(),head);
+ });
+}
+test('K05: new trusted retail order without configured store time zone fails without consuming operation key',async()=>{
+ const f=fixture('retailSale',{configureBusinessDay:false});
+ await assert.rejects(f.app.execute(salesCommand('retailSale',employeeId,'no-zone'),f.credential),/explicit store timeZone/);
+ await noEffects(f);assert.equal(f.executions(),0);
+});

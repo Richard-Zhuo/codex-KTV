@@ -10,7 +10,7 @@ procurement 仅接入既有 trusted 入口，无新 migration／表。采购及�
 
 ## 营业日规则与历史 SQL
 
-当前正式营业日 cutoff 是 12:00，计算入口和未接入边界见 [ARCHITECTURE](../docs/ARCHITECTURE.md)。本轮无 MySQL migration；纯日期结果可原样保存在现有 state_json。旧 PostgreSQL schema.sql 的 06:00 default 属于当时设计，保留历史原文，已不代表当前规则；不要运行该草案来配置正式营业日或推断历史归属。MySQL JSON 也不能替代原始时间／原文备份。
+当前正式营业日 cutoff 是 12:00，计算入口和 K05 snapshot／报表边界见 [ARCHITECTURE](../docs/ARCHITECTURE.md)。本轮无 MySQL migration；纯日期结果可原样保存在现有 state_json。旧 PostgreSQL schema.sql 的 06:00 default 属于当时设计，保留历史原文，已不代表当前规则；不要运行该草案来配置正式营业日或推断历史归属。MySQL JSON 也不能替代原始时间／原文备份。
 
 ## 当前方向：MySQL 8.4 LTS／InnoDB 过渡账本
 
@@ -129,4 +129,8 @@ import_batches
 
 ## trusted settle／免零审批验收边界
 
-本批不新增表、列或 migration；新付款及 review 的稳定 principal／付款 ID／DB 时间保存在同一个 state_json snapshot，operation／audit 元数据与 state 同事务提交。ledger/trusted-rounding.integration.js 复用原 guarded 十一表 fixture，新增用例不建立或清理额外表；故障注入仅对 ledger_operations／ledger_success_audit 添加再删除本轮 CHECK，双连接竞争核实 CONNECTION_ID 不同。K01／K06 修复仅增加可选 roundingHistory 保存被后续结算替换的免零快照；不推断旧 review 状态、不回填旧 payment／申请人，计算及关单规则见 [REQUIREMENTS](../docs/REQUIREMENTS.md)。不改 reporting／businessDate；handover／open 尚未迁移。
+本批不新增表、列或 migration；新付款及 review 的稳定 principal／付款 ID／DB 时间保存在同一个 state_json snapshot，operation／audit 元数据与 state 同事务提交。ledger/trusted-rounding.integration.js 复用原 guarded 十一表 fixture，新增用例不建立或清理额外表；故障注入仅对 ledger_operations／ledger_success_audit 添加再删除本轮 CHECK，双连接竞争核实 CONNECTION_ID 不同。K01／K06 修复仅增加可选 roundingHistory 保存被后续结算替换的免零快照；不推断旧 review 状态、不回填旧 payment／申请人，计算及关单规则见 [REQUIREMENTS](../docs/REQUIREMENTS.md)。K05 对 reporting／businessDate 的扩展见下节；handover／open 尚未迁移。
+
+## K05 snapshot 与资金选择器
+
+本批无新 schema／migration／依赖；new trusted retailSale 的 businessDate／businessDayRuleVersion／businessTimeZone，以及 retailSale／approveRepayment 的 paymentId／occurredAt／recordedByPrincipalId（回款另有 approvedByPrincipalId）同属原 state_json。未知历史不补造，不把 MySQL JSON 当原始文本备份。ledger/k05-reporting.integration.js 复用原严格 guarded 十一表 fixture；无扩大清理范围，SQL 故障仅为 ledger_success_audit 的临时 CHECK。资金筛选不汇总 credit.repayments，完整契约见 REQUIREMENTS。

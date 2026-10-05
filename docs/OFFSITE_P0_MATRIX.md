@@ -507,7 +507,7 @@
 - 需要的审批：更改关账归属需指定审批。
 - 异常停止点：营业日无法判定时暂停关账。
 - 当前代码是否已经支持：否；仅 SQL 设计字段。
-- 现有测试覆盖：offsite.report.test.js 验当前自然日筛选；跨日资金缺陷复现已跳过，不作通过证据。
+- 现有测试覆盖：offsite.report.test.js 的 K05 skip 已转正式；reporting-ledger.test.js 验冻结日期／跨日多笔／未知历史，ledger/k05-reporting.integration.js 在既有 guarded fixture 验真实资金事实、重连、竞争与回滚；demo 自然日回归隔离保留。
 - 缺失测试：docs/OFFSITE_CONTRACTS.md 的 B1-B4 未来规格自动化。
 
 ## 23 班次

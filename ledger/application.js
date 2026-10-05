@@ -2,6 +2,8 @@
 import { createHash } from 'node:crypto';
 import { transact } from '../rules.js';
 import { BusinessRejection } from '../shared/business-error.js';
+import { orderBusinessDaySnapshot } from '../shared/business-day.js';
+import { withTrustedOrderBusinessDay } from '../shared/identity.js';
 import { EMPLOYEE_ATTRIBUTED_ACTIONS, resolveEmployeeContext } from './employee-attribution.js';
 import { resolveIncidentActorContext } from './incident-resolution.js';
 import { prepareSessionCredential, revalidateCommandSession, authorizeTrustedExecution } from './trusted-execution.js';
@@ -50,17 +52,21 @@ function prepare(command) {
   };
 }
 
-// Formal entry: no caller-supplied principal, permissions or clock configuration.
+// Formal entry: no request principal, permissions or clock. Store time zone is explicit server configuration.
 export function createTrustedLedgerApplication(options) {
-  if (!plainObject(options) || Reflect.ownKeys(options).some(key => !['store', 'transactCommand'].includes(key))) {
-    throw TypeError('正式账本入口只能配置 store 与领域执行器');
+  if (!plainObject(options) || Reflect.ownKeys(options).some(key => !['store', 'transactCommand', 'businessTimeZone'].includes(key))) {
+    throw TypeError('正式账本入口只能配置 store、领域执行器与门店时区');
   }
   return createLedgerApplication({ ...options, executionMode: 'trusted' });
 }
 
 // Store port: runAtomic holds one ledger's transaction lock from read to commit;
 // commit stages state, result and success audit together, or persists none of them.
-export function createLedgerApplication({ store, principal, executionMode = 'demo', transactCommand = transact, now = () => new Date().toISOString() }) {
+export function createLedgerApplication({ store, principal, executionMode = 'demo', businessTimeZone, transactCommand = transact, now = () => new Date().toISOString() }) {
+  if (businessTimeZone !== undefined) {
+    if (typeof businessTimeZone !== 'string' || !businessTimeZone.trim()) throw TypeError('门店时区必须显式配置');
+    new Intl.DateTimeFormat('en', { timeZone: businessTimeZone });
+  }
   const ledgerId = store?.ledgerId;
   const trusted = executionMode === 'trusted';
   const legacyActorId = principal?.id; // Explicit Stage 1 / demo path only.
@@ -104,9 +110,13 @@ export function createLedgerApplication({ store, principal, executionMode = 'dem
         try {
           // Resolve the explicitly credited employee or incident assignee only for migrated actions, after auth, replay lookup,
           // policy and revision checks, on the same locked transaction.
-          const executionContext = trusted && (EMPLOYEE_ATTRIBUTED_ACTIONS.includes(request.action) || request.action === 'incident')
+          let executionContext = trusted && (EMPLOYEE_ATTRIBUTED_ACTIONS.includes(request.action) || request.action === 'incident')
             ? await resolveEmployeeContext(transaction, context, request.payload, request.action)
             : trusted && request.action === 'resolveIncident' ? await resolveIncidentActorContext(transaction, context) : context;
+          if (trusted && request.action === 'retailSale') {
+            executionContext = withTrustedOrderBusinessDay(executionContext,
+              orderBusinessDaySnapshot(context.dbNow, { timeZone: businessTimeZone }));
+          }
           nextState = transactCommand(state, request.action, request.payload, request.operationKey,
             trusted ? { mode: 'trusted', context: executionContext } : { mode: 'demo' });
         } catch (error) {

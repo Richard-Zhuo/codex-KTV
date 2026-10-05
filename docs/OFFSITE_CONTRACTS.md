@@ -23,7 +23,7 @@ KNOWN BUSINESS ISSUE 命名的测试以 `test.skip` 保留仍未解决问题的�
 
 - 卓老板、老板娘、邵叔、雄老板可完成收款、独立零售、房单结账和交班；卓益可加购但不能独立完成最终结账。真人与演示账号 ID 的映射仍待核实。
 - 免零差额 ≤ 10 元可现场直接处理，> 10 元须审批；仅卓老板可批准本人超额免零，老板娘、邵叔、雄老板须由其他有权人批准。卓益不能借审批绕过结账权限。
-- 门店通常约 02:00 结束营业，`businessDate` 切换点正式为 12:00；营业额按订单开单所属营业日，付款资金按各笔真实 `occurredAt` 所属营业日。12:00 纯计算规则已建立，但订单创建与报表尚未接入该双口径；不回填未知历史归属，不改写真实付款时间。
+- 门店通常约 02:00 结束营业，`businessDate` 切换点正式为 12:00；营业额按订单开单所属营业日，付款资金按各笔真实 `occurredAt` 所属营业日。K05 已接入新 trusted 零售开单冻结日期与独立资金筛选，正式查询显式区分日期和真实时间区间；不回填未知历史归属，不改写真实付款时间。
 - 美团／抖音等平台券须核销成功后才按券方案开房；失败时通常重新购买可用券，少数情况转店内收款码线下支付。门店没有固定现金备用金制度。
 
 ## 跨页面金额口径
@@ -38,7 +38,7 @@ KNOWN BUSINESS ISSUE 命名的测试以 `test.skip` 保留仍未解决问题的�
 6. 平台券覆盖额和现金/电子渠道实收分列；券核销成功是按券方案开房的前置条件，失败券不能伪装已支付或已覆盖房费。
 7. 营业额按订单开单所属 `businessDate` 及原成交快照归属；每笔付款的资金流水按真实 `occurredAt` 所属营业日归属，回款及将来退款也按各自资金事件时间处理。不能让房卡、结账页和报表各自重写金额公式，也不能全从 `order.time` 推导资金日。
 
-当前免零生效、余额和房态已按 [REQUIREMENTS](./REQUIREMENTS.md) 修复 K01／K06：待审不结账，批准后重新核对余额为零才关单，驳回保留付款和余款；outstanding 只扣已生效免零。offsite.contract.test.js 的两项旧跳过复现已转为正式正向回归，rounding-finality.test.js 与真实 MySQL 用例覆盖完整流程。报表口径仍为原实现。仅 trusted collect／pay／settle 的新付款保存稳定 paymentId、可信 occurredAt 和 recordedByPrincipalId；历史、演示及其他付款链不补造这些字段，当前仍不能安全实施退款，K05 报表口径不变。
+当前免零生效、余额和房态已按 [REQUIREMENTS](./REQUIREMENTS.md) 修复 K01／K06：待审不结账，批准后重新核对余额为零才关单，驳回保留付款和余款；outstanding 只扣已生效免零。offsite.contract.test.js 的两项旧跳过复现已转为正式正向回归，rounding-finality.test.js 与真实 MySQL 用例覆盖完整流程。K05 双口径与未知历史 fail-safe 策略以 [REQUIREMENTS](./REQUIREMENTS.md) 为准。所有当前 trusted 付款路径（collect／pay／settle／retailSale／approveRepayment）保存稳定 paymentId、可信 occurredAt 和 recordedByPrincipalId，回款还保存 approvedByPrincipalId；资金仅计 root payments，不再次累加 credit.repayments。历史／demo 不补造字段，退款尚未实现。
 
 ## 反向交易 specification cases（免零额度分流已实现；其他门禁仍待实现）
 
@@ -89,4 +89,4 @@ KNOWN BUSINESS ISSUE 命名的测试以 `test.skip` 保留仍未解决问题的�
 
 ## trusted 免零申请与决定身份
 
-settle 的普通 ≤¥10／超额与特殊情况审核流程不改；新需审 review 保存 submittedByPrincipalId 与 DB submittedAt。两决定仅信锁定 state 中的申请 principal：具体 rounding.approve，本人额外 review.self；超额本人批准还须配置的 DB rounding.self.excess，本人驳回不要求此属性。legacy 两决定 fail closed，决定保存 decidedByPrincipalId／DB decidedAt，姓名非身份键；授权拒绝不占 key，重放不新增付款／免零／审核。K01／K06 已按上文生效／余额／房态契约修复，原两项 skip 转正式回归；K05 及其余四项跳过复现保持。入口与证据见 [MODULE_MAP](./MODULE_MAP.md) 和 [CURRENT_STAGE](./CURRENT_STAGE.md)。
+settle 的普通 ≤¥10／超额与特殊情况审核流程不改；新需审 review 保存 submittedByPrincipalId 与 DB submittedAt。两决定仅信锁定 state 中的申请 principal：具体 rounding.approve，本人额外 review.self；超额本人批准还须配置的 DB rounding.self.excess，本人驳回不要求此属性。legacy 两决定 fail closed，决定保存 decidedByPrincipalId／DB decidedAt，姓名非身份键；授权拒绝不占 key，重放不新增付款／免零／审核。K01／K06 已按上文生效／余额／房态契约修复，原两项 skip 转正式回归；K05 跨日资金 skip 已转正式回归，仍保留 K04／K07／K10 三项 skip。入口与证据见 [MODULE_MAP](./MODULE_MAP.md) 和 [CURRENT_STAGE](./CURRENT_STAGE.md)。

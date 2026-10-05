@@ -28,15 +28,18 @@ export const reportMoney = centsValue => money(Number(centsValue || 0));
 export const reportQuantity = value => Number(value || 0).toFixed(2).replace(/\.00$/,'').replace(/(\.\d)0$/,'$1');
 export const reportDateKey = value => { const d = new Date(value); return `${d.getFullYear()}-${d.getMonth()+1}-${d.getDate()}`; };
 export function reservationDate(time) { return new Date(time).toLocaleDateString('zh-CN',{month:'numeric',day:'numeric'}); }
-export function reportPeriodMatch(order, clock, reportPeriod) {
+export function reportPeriodMatch(order, clock, reportPeriod, businessDateRange) {
   if (!order) return false;
+  if (businessDateRange) return selectRevenueOrders({ orders: [order] }, businessDateRange).orders.length === 1;
+  // The legacy natural-calendar path is demo-only; frozen ledger dates require an explicit query range.
+  if (Object.hasOwn(order, 'businessDate')) throw TypeError('frozen revenue requires an explicit business date range');
   const current = new Date(clock), time = new Date(order.time);
   if (reportPeriod === 'month') return current.getFullYear()===time.getFullYear() && current.getMonth()===time.getMonth();
   if (reportPeriod === 'week') { const start = new Date(current); start.setHours(0,0,0,0); const day=(start.getDay()+6)%7; start.setDate(start.getDate()-day); const end=new Date(start); end.setDate(start.getDate()+7); return time>=start && time<end; }
   return reportDateKey(clock) === reportDateKey(order.time);
 }
-export function reportOrder(state, roomId, reportPeriod) {
-  const orders = state.orders.filter(order=>order.kind!=='retail' && order.room===roomId && reportPeriodMatch(order, state.clock, reportPeriod)).sort((a,b)=>Date.parse(a.time)-Date.parse(b.time));
+export function reportOrder(state, roomId, reportPeriod, businessDateRange) {
+  const orders = state.orders.filter(order=>order.kind!=='retail' && order.room===roomId && reportPeriodMatch(order, businessDateRange ? undefined : state.clock, reportPeriod, businessDateRange)).sort((a,b)=>Date.parse(a.time)-Date.parse(b.time));
   if (!orders.length) return null;
   const base=orders.reduce((sum,order)=>sum+Number(order.packageBaseCents ?? order.base ?? 0),0), gift=orders.reduce((sum,order)=>sum+Number(order.packageGiftValueCents ?? order.gift ?? 0),0);
   return { ...orders.at(-1), periodOrders:orders, packageBaseCents:base, packageGiftValueCents:gift, base, gift, drinks:orders.flatMap(order=>order.drinks||[]), extras:orders.flatMap(order=>order.extras||[]), sales:orders.flatMap(order=>order.sales||[]), otherCharges:orders.flatMap(order=>order.otherCharges||[]), bonusGifts:orders.flatMap(order=>order.bonusGifts||[]), payments:orders.flatMap(order=>order.payments||[]), rounding:orders.reduce((sum,order)=>sum+Number(order.rounding||0),0), status:orders.at(-1).status, voucher:orders.find(order=>order.voucher)?.voucher };
@@ -102,12 +105,78 @@ export function reportNotes(order, reportPeriod) {
 }
 // 视图模型：reportPage 头部的聚合常量（自 HEAD app.js reportPage 逐行迁出），
 // 另将房间行的 sales／other 汇总并入 rows，报表 UI 不再自行聚合。
-export function reportViewModel(state, reportPeriod) {
-  const periodOrders=state.orders.filter(order=>reportPeriodMatch(order, state.clock, reportPeriod)), roomOrders=periodOrders.filter(order=>order.kind!=='retail'), retailOrders=periodOrders.filter(order=>order.kind==='retail');
-  const rows=state.rooms.map(room=>({room,order:reportOrder(state, room.id, reportPeriod)})).filter(row=>row.order).map(row=>({...row,sales:(row.order.sales||[]).reduce((sum,line)=>sum+Number(line.amountCents ?? line.amount ?? 0),0), other:(row.order.otherCharges||[]).reduce((sum,line)=>sum+Number(line.amountCents ?? line.amount ?? 0),0)}));
+export function reportViewModel(state, reportPeriod, query) {
+  // Explicit date and timestamp intervals are separate server inputs, never derived from demo clock.
+  const revenue = query ? selectRevenueOrders(state, query) : null;
+  const cashFlow = query ? selectPaymentFlows(state, query.paymentInterval) : null;
+  const periodOrders=revenue ? revenue.orders : state.orders.filter(order=>reportPeriodMatch(order, state.clock, reportPeriod)), roomOrders=periodOrders.filter(order=>order.kind!=='retail'), retailOrders=periodOrders.filter(order=>order.kind==='retail');
+  const rows=state.rooms.map(room=>({room,order:reportOrder(state, room.id, reportPeriod, query)})).filter(row=>row.order).map(row=>({...row,sales:(row.order.sales||[]).reduce((sum,line)=>sum+Number(line.amountCents ?? line.amount ?? 0),0), other:(row.order.otherCharges||[]).reduce((sum,line)=>sum+Number(line.amountCents ?? line.amount ?? 0),0)}));
   const totals=reportTotals(periodOrders), roomTotals=reportTotals(roomOrders);
   const roomSales=roomOrders.flatMap(order=>order.sales||[]).reduce((sum,line)=>sum+Number(line.amountCents ?? line.amount ?? 0),0);
   const roomOther=roomOrders.flatMap(order=>order.otherCharges||[]).reduce((sum,line)=>sum+Number(line.amountCents ?? line.amount ?? 0),0);
   const categoryRows=reportBreakdown(periodOrders,'category'), sellerRows=reportBreakdown(periodOrders,'seller');
-  return { periodOrders, roomOrders, retailOrders, rows, totals, roomTotals, roomSales, roomOther, categoryRows, sellerRows };
+  return { periodOrders, roomOrders, retailOrders, rows, totals, roomTotals, roomSales, roomOther, categoryRows, sellerRows,
+    ...(query ? { revenueAmbiguities: revenue.ambiguities, revenueComplete: revenue.complete, cashFlow } : {}) };
+}
+
+// Formal revenue queries use only frozen dates. Missing historical facts are exposed, never recalculated.
+function validBusinessDate(value) {
+  if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const time = Date.parse(value + 'T00:00:00Z');
+  return Number.isFinite(time) && new Date(time).toISOString().slice(0, 10) === value;
+}
+export function selectRevenueOrders(state, { fromBusinessDate, toBusinessDate }) {
+  if (!validBusinessDate(fromBusinessDate) || !validBusinessDate(toBusinessDate) || fromBusinessDate >= toBusinessDate) {
+    throw TypeError('营业额查询需要明确的起止营业日（左闭右开）');
+  }
+  const orders = [], ambiguities = [];
+  for (const order of state.orders) {
+    if (!validBusinessDate(order?.businessDate)) {
+      ambiguities.push({ code: 'ORDER_BUSINESS_DATE_UNKNOWN', orderId: order?.id ?? null });
+    } else if (order.businessDate >= fromBusinessDate && order.businessDate < toBusinessDate) orders.push(order);
+  }
+  return { orders, ambiguities, complete: ambiguities.length === 0 };
+}
+
+// Preserve MySQL's microsecond precision; query boundaries never depend on a device time zone.
+function paymentInstant(value) {
+  if (typeof value !== 'string') return null;
+  const match = /^\d{4}-\d{2}-\d{2}T(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.(\d{1,6}))?(?:Z|[+-](?:[01]\d|2[0-3]):[0-5]\d)$/.exec(value);
+  if (!match) return null;
+  const millis = Date.parse(value), day = Date.parse(value.slice(0, 10) + 'T00:00:00Z');
+  if (!Number.isFinite(millis) || !Number.isFinite(day) || new Date(day).toISOString().slice(0, 10) !== value.slice(0, 10)) return null;
+  return BigInt(millis) * 1000n + BigInt((match[1] || '').padEnd(6, '0').slice(3));
+}
+export function selectPaymentFlows(state, { from, to }) {
+  const start = paymentInstant(from), end = paymentInstant(to);
+  if (start === null || end === null || start >= end) throw TypeError('资金查询需要带时区的起止真实时间（左闭右开）');
+  const payments = [], ambiguities = [], channels = new Map();
+  let totalCents = 0;
+  // order.payments is the canonical money fact; credit.repayments is only a link/projection.
+  for (const order of state.orders) {
+    if (!Array.isArray(order?.payments)) {
+      ambiguities.push({ code: 'ORDER_PAYMENTS_UNKNOWN', orderId: order?.id ?? null });
+      continue;
+    }
+    for (const [paymentIndex, payment] of order.payments.entries()) {
+      const reference = { orderId: order.id, paymentIndex };
+      const occurred = paymentInstant(payment?.occurredAt);
+      if (occurred === null) {
+        // No existing field independently attests an old demo time; even a principal/name is insufficient.
+        ambiguities.push({ ...reference, code: payment?.occurredAt == null ? 'PAYMENT_TIME_AMBIGUOUS' : 'PAYMENT_OCCURRED_AT_INVALID' });
+        continue;
+      }
+      if (!Number.isSafeInteger(payment.amount) || payment.amount <= 0) {
+        ambiguities.push({ ...reference, code: 'PAYMENT_AMOUNT_INVALID' });
+        continue;
+      }
+      if (occurred < start || occurred >= end) continue;
+      if (!Number.isSafeInteger(totalCents + payment.amount)) throw RangeError('资金合计超出安全整数范围');
+      payments.push({ ...payment, ...reference });
+      totalCents += payment.amount;
+      channels.set(payment.method, (channels.get(payment.method) || 0) + payment.amount);
+    }
+  }
+  return { payments, totalCents, byChannel: [...channels].map(([method, amountCents]) => ({ method, amountCents })),
+    ambiguities, complete: ambiguities.length === 0 };
 }
