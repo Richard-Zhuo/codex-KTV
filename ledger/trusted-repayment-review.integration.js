@@ -204,9 +204,9 @@ export async function testTrustedRepaymentReviews({t,pool,setup,auth,table,provi
   const saved=await inspect(id);assert.deepEqual(await run.app.execute(cmd,reviewer.credential),saved.operations.find(r=>r.operation_key==='approve').terminal_result);await assertUnchanged(id,saved);
  });
 
- await t.test('repayment decisions: review grants cannot enable remaining rounding, standalone payment, open or handover actions',async()=>{
+ await t.test('repayment decisions: review grants cannot enable remaining rounding, open or handover actions',async()=>{
   const login=await provision(['credit.repay.approve','review.self','rounding.approve','payment.collect','payment.settle','incident.create','incident.resolve','incident.resolve.approve','procurement.create','handover','room.open']),id='rr-closed';await seedFor(id);const run=runFor(id),before=await inspect(id);
-  for(const action of ['approveRounding','rejectRounding','collect','settle','pay','handover','open']){
+  for(const action of ['approveRounding','rejectRounding','settle','handover','open']){
    await assert.rejects(run.app.execute({...repaymentReviewCommand(action),action},login.credential),e=>denied(e)&&e.reason==='trusted-action-not-enabled');await assertUnchanged(id,before);
   }
  });

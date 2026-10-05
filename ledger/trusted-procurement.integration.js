@@ -281,10 +281,10 @@ export async function testTrustedProcurement({ t, pool, setup, auth, table, prov
     });
   }
 
-  await t.test('procurement: the seven remaining eligible actions still fail closed despite concrete permissions', async () => {
+  await t.test('procurement: the five remaining eligible actions still fail closed despite concrete permissions', async () => {
     const login = await provision(['procurement.create', 'room.open', 'rounding.approve', 'payment.collect', 'payment.settle', 'handover']);
     const id = 'procurement-not-enabled'; await pending(id); const before = await inspect(id), run = runFor(id);
-    for (const action of ['open', 'collect', 'settle', 'pay', 'approveRounding', 'rejectRounding', 'handover'])
+    for (const action of ['open', 'settle', 'approveRounding', 'rejectRounding', 'handover'])
       await assert.rejects(run.app.execute({ ...procurementCommand(action), action }, login.credential), error => denied(error) && error.reason === 'trusted-action-not-enabled');
     await assertUnchanged(id, before); assert.equal(run.executions(), 0);
   });

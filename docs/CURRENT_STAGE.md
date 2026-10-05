@@ -2,6 +2,14 @@
 
 更新日期：2026-10-05。本文件是当前进度的唯一汇总入口。
 
+## P0-1 Stage 2C.3 collect／pay trusted 付款（2026-10-05）
+
+从干净 main=origin/main@3cdd29a 创建 codex/p0-1-stage2c-collect-pay，分支起点与 main 相同。只新增 collect／pay 的 trusted-enabled 和显式 domain 执行路径；payment.collect／payment.settle、session principal、冻结 DB 时间是唯一可信来源。新付款保存服务端随机 UUID paymentId、occurredAt、recordedByPrincipalId，person/time 仅兼容快照；旧付款和历史商品事实不改写、不回填。原 charge 收款、五渠道、多笔、全额无免零结账及房态语义保持。
+
+ledger application／MySQL adapter 协议和 schema 未改：原终态先于当前 action 授权，授权拒绝不占 key，付款／订单／房态／revision／result／audit 原子提交。两真实连接竞争、重连撤权 replay、SQL／未知异常回滚通过既有 guarded fixture 验证。停止在本批：settle、approveRounding、rejectRounding、handover、open 仍未迁移；不接 HTTP/UI，不改 ¥10、businessDate 或报表，原六项 Known Issues 继续保留。
+
+本轮最终验收：按约定实际尝试 npm test，环境无 npm（The term npm is not recognized），未取得 npm 运行证据；实际运行 node --test --test-isolation=none。collect／pay 新单元 25/25，定向五文件 162 total／161 pass／0 fail／1 skip（原平台券）；四文件真实 MySQL 回归 615／615／0／0，含新增付款集成 26/26；完整 1465／1459／0／6。真实环境为 MySQL 8.4.11、jbhh_ktv_test、InnoDB，URL／密码未输出。四个 collect／pay 竞争用例分别确认不同 CONNECTION_ID；旧 revision 最多一次资金批次，同 key 只一次执行，重连和撤权不生成新 paymentId；operation／audit 中途 CHECK 失败与未知异常完整回滚。旧六项 skip 与稳定 main 基线逐项一致，K05 不改变。原 auth（含 revalidation）、employee、ledger 和全部 trusted 回归实际执行，无数据库 skip。没有新增依赖或 migration，没有 push／部署，停止在本批。
+
 ## 当前基线与业务契约纠偏（2026-09-29）
 
 Track A＋B 集成提交 `81e1a4c` 已在 `main`；下方“隔离集成候选尚未合并 main”的文字是当时的历史记录，不再代表当前 Git 状态。本轮收到门店对完整营业职责、当时的≤5 元免零（本轮门店已改为≤10 元）和超额审批自批限制、暂定 06:00 营业日、订单营业额与逐笔付款资金分日归属、平台券先核销和无固定备用金的明确确认，已更新 [REQUIREMENTS](./REQUIREMENTS.md)、[OFFSITE_CONTRACTS](./OFFSITE_CONTRACTS.md)、[OPEN BUSINESS DECISIONS](./OPEN_BUSINESS_DECISIONS.md) 与 [P0 矩阵](./OFFSITE_P0_MATRIX.md)。这些是目标契约纠偏，当前演示代码并未因此实现新规则；K01、K05、K07 仍见 [KNOWN_ISSUES](./KNOWN_ISSUES.md)。真人与历史演示账号 ID 的映射继续待确认。

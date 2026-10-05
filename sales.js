@@ -168,13 +168,42 @@ export function submitRetailSale(s, data, person, operator, time, execution = { 
   retailOrder.payments.push(...payments.map(payment => ({ ...payment, chargeId: 'retail', time, person: operator,
     ...(execution.mode === 'trusted' ? { actualActorPrincipalId: execution.context.principalId } : {}) })));
 }
-export function collectPayment(s, order, data, person, time) {
-  need(s, ['收银员','老板'], 'payment.collect');
+// The trusted server command creates new facts; demo and historical records stay untouched.
+function paymentExecution(state, permission, person, time, execution) {
+  if (!execution || !['demo', 'trusted'].includes(execution.mode)) throw TypeError('收款执行模式无效');
+  const context = execution.mode === 'trusted' ? assertTrustedExecutionContext(execution.context) : null;
+  if (context) {
+    requireTrustedPermission(context, permission);
+    return { context, person: context.actorSnapshot?.displayName ?? null, time: context.dbNow };
+  }
+  need(state, ['收银员','老板'], permission);
+  return { context: null, person, time };
+}
+function appendPaymentRecords(state, order, payments, chargeId, identity) {
+  const { context, person, time } = identity;
+  if (!context) {
+    order.payments.push(...payments.map(payment => ({ ...payment, chargeId, time, person })));
+    return;
+  }
+  // Node's crypto.randomUUID is a CSPRNG; no client ID or identity is copied.
+  // Reject a collision against all retained payments rather than reusing an ID.
+  const usedIds = new Set(state.orders.flatMap(item => item.payments || []).map(payment => payment?.paymentId));
+  const records = payments.map(({ method, amount }) => {
+    const paymentId = globalThis.crypto.randomUUID();
+    if (usedIds.has(paymentId)) throw Error('付款 ID 冲突，停止提交');
+    usedIds.add(paymentId);
+    return { method, amount, chargeId, paymentId, occurredAt: time,
+      recordedByPrincipalId: context.principalId, person, time };
+  });
+  order.payments.push(...records);
+}
+export function collectPayment(s, order, data, person, time, execution = { mode: 'demo' }) {
+  const identity = paymentExecution(s, 'payment.collect', person, time, execution);
   const charge = nextCollectCharge(order, s.catalog);
   if (!charge) throw new BusinessRejection('本单没有待收费用');
   if (data.charge !== charge.id) throw new BusinessRejection('账单已变化，请重新打开收钱页面');
   const payments = validatePayments(data.payments, charge.remaining);
-  order.payments.push(...payments.map(payment => ({ ...payment, chargeId: charge.id, time, person })));
+  appendPaymentRecords(s, order, payments, charge.id, identity);
 }
 export function settleOrder(s, order, data, person, time) {
   need(s, ['收银员','老板'], 'payment.settle');
@@ -188,15 +217,16 @@ export function settleOrder(s, order, data, person, time) {
   order.status = '已结账'; order.closedAt = time;
   return { release: true };
 }
-export function payOrder(s, order, data, person, time) {
-  need(s, ['收银员','老板'], 'payment.settle');
+export function payOrder(s, order, data, person, time, execution = { mode: 'demo' }) {
+  const identity = paymentExecution(s, 'payment.settle', person, time, execution);
+  ({ person, time } = identity);
   if ((order.giftRequests || []).some(item => item.status === '待确认')) throw new BusinessRejection('还有待确认的赠酒水申请，请先处理');
   const due = outstanding(order), settlement = { payments: validatePayments(data.payments, due), rounding: 0, differenceType: '', differenceNote: '', needsReview: false };
-  order.payments.push(...settlement.payments.map(payment => ({ ...payment, chargeId: 'settlement', time, person })));
+  appendPaymentRecords(s, order, settlement.payments, 'settlement', identity);
   order.rounding = settlement.rounding;
   order.roundingType = settlement.differenceType;
   order.roundingNote = settlement.differenceNote;
-  order.roundingReview = settlement.needsReview ? { status: '待审核', amount: settlement.rounding, note: settlement.differenceNote, submittedBy: person, submittedById: s.user, submittedAt: time, approver: '店长', decidedBy: '', decidedAt: '', decisionNote: '' } : null;
+  order.roundingReview = null; // pay never creates a rounding review.
   order.status = '已结账'; order.closedAt = time;
   return { release: true };
 }
