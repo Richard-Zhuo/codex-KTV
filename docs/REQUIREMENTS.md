@@ -130,7 +130,11 @@
 - 回款先登记金额和方式，审核通过后才扣减欠款并计入实收；存酒不能抵欠款。
 - 正式 trusted repay 只使用 session context 的 credit.repay、principal 和冻结 dbNow；新 repaymentRequests 保存 submittedByPrincipalId，submittedById 不填演示 ID，submittedBy 只作可信显示快照，submittedAt 只用 dbNow。姓名、角色、payload 身份／权限／时钟不能覆盖。保留原已挂账订单、正整数分金额、付款方式及扣除待审申请后余额的校验；仅创建待审核申请，不扣挂账余额、不生成 payment／已确认回款，不改变订单状态、房态、库存或历史快照。授权拒绝不占键，既有终态 replay／冲突与完整 rollback 保持；回款审核见下一条；跨日资金筛选见下文，不把申请本身计入资金。
 - 正式 approveRepayment／rejectRepayment 只从锁内本次 repaymentRequest.submittedByPrincipalId 判断本人，不能用原 credit 经办人；需 credit.repay.approve，本人另需 review.self。legacy 申请无有效 principal 两动作都 fail closed，不猜姓名／旧 ID。决定保存 decidedByPrincipalId；批准 payment／回款记录保存 approvedByPrincipalId，原姓名字段只作显示快照，时间只用冻结 dbNow，payload 身份／权限／时间不能覆盖。批准的申请决定、一笔 payment、挂账余额、相关历史与 ledger revision／result／audit 同事务提交，任一步失败全回滚；同 key 重放和双连接竞争不得重复资金效果。驳回不生成 payment、不减余额，原金额／状态／原因规则不变。授权拒绝不占 key；有效原 actor 撤权后旧 key 返回原终态，新 key 验当前资格。新 trusted 批准付款复用安全 UUID paymentId、occurredAt=dbNow、recordedByPrincipalId，同时保留 approvedByPrincipalId；原 time 仅兼容显示，资金只从 order.payments 计一次。
-- 交班必须分别填写实点收款合计和前台现金；前台现金只留档，不重复计入实收差异。
+- Demo 交班保留实点收款合计与前台现金的旧界面；正式 trusted handover 只输入 actualCash（整数分、非负），使用当前 handover 权限及同事务 session principal／冻结 dbNow，不接受 payload 的 expected／previous／身份或时间。
+- 正式交班采用连续现金抽屉链：第一次 bootstrap 保存实际清点，expectedCash=actualCash、difference=0；后续 expectedCash=上次 actualCash+本区间现金增加−本区间已证明的现金减少，difference=actualCash−expectedCash。差额后的下一轮仍以上次 actualCash 为基线，不绑定 12:00 营业日，不预设备用金。
+- 当前明确现金增加只来自 canonical order.payments 中新出现的可信 paymentId／occurredAt／recordedByPrincipalId 且 method=现金；非现金只作区间渠道统计，credit.repayments 镜像不再计。deposit／withdraw 是存取酒；expense／procurement 没有抽屉资金来源事实，即使 method=现金也不能推断为抽屉支出，当前没有可认定的现金出流。真实抽屉支出的来源与登记规则仍为 OPEN，不宣称已覆盖该场景。
+- 每次交班保存 handoverId／occurredAt／submittedByPrincipalId、actualCash／expectedCash／difference、previousHandoverId、bootstrap、版本化累计 payment ID 边界（含不可变事实签名）。首次基线吸收旧付款但不推算过去金额；旧 demo handover 永不成为可信前序。后续新增不明付款或边界事实被删改时停止计算，不猜时间、来源或退款。付款 ID 集合差保证同时间戳与跨 12:00 的每笔付款只计一次。
+- 交班、稳定边界、revision、operation、success audit 一同提交；失败不前移边界，重放不消费第二次区间，两个旧 revision 命令最多一个成功。有效原 actor 撤权后可取旧终态，新 key 必须验当前 handover 权限；授权拒绝不占 key。
 - 当前门店没有固定现金备用金制度；交班与现金应有数只能使用实际清点和已记录的期初现金，不预设固定开班金额。
 - 已回款挂账以简洁折叠卡片显示，点击后再查看经办、开单、预订和备注详情。
 

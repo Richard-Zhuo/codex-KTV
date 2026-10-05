@@ -265,10 +265,10 @@ export async function testTrustedIncidentReviews({ t, pool, setup, auth, table, 
     await t.test(action + ': two independent connections retry the identical key with exactly one decision', { timeout: 10000 },
       () => compete('incident-review-same-' + action, [action, action], true));
   }
-  await t.test('incident review: the two remaining eligible actions still fail closed even with their grants', async () => {
+  await t.test('incident review: the remaining open action still fails closed even with their grants', async () => {
     const login = await provision(['incident.resolve.approve', 'rounding.approve', 'payment.collect', 'payment.settle', 'procurement.create', 'handover', 'room.open']);
     const id = 'incident-review-closed'; await pending(id, login.principalId); const before = await inspect(id);
-    for (const action of ['open', 'handover'])
+    for (const action of ['open'])
       await assert.rejects(runFor(id).app.execute({ ...incidentReviewCommand(action, action), action }, login.credential),
         error => denied(error) && error.reason === 'trusted-action-not-enabled');
     await assertUnchanged(id, before);

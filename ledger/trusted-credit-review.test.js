@@ -229,7 +229,7 @@ test('credit decisions: same key retries or competing approve/reject decide once
 test('credit decisions: approval grants and attributes do not enable the remaining unmigrated actions',async()=>{
   const f=fixture({permissions:['credit.approve','review.self','credit.repay','credit.repay.approve','rounding.approve','room.open',
     'payment.collect','payment.settle','procurement.create','incident.create','incident.resolve','incident.resolve.approve','handover'],attributes:[manager,boss]});
-  for(const action of ['open', 'handover']){
+  for(const action of ['open']){
     await assert.rejects(f.app.execute(creditReviewCommand(action),f.credential),e=>denied(e)&&e.reason==='trusted-action-not-enabled');await assertNoEffects(f);
   }
 });

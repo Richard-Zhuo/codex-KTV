@@ -204,7 +204,7 @@ test('expense: missing or forged context and session binding fail closed without
 test('expense: remaining unconverted actions stay disabled despite specific grants', async () => {
   const f = fixture({ permissions: ['expense.create','expense.approve','procurement.create','incident.create','credit.apply',
     'credit.repay','rounding.approve','room.open','payment.collect','payment.settle','handover','review.self'] });
-  for (const action of ['approveCredit', 'rejectCredit', 'approveRepay', 'rejectRepay', 'open', 'handover']) {
+  for (const action of ['approveCredit', 'rejectCredit', 'approveRepay', 'rejectRepay', 'open']) {
     await assert.rejects(f.app.execute({ ...expenseCommand(action), action }, f.credential), e => denied(e) && e.reason === 'trusted-action-not-enabled');
     await assertNoEffects(f);
   }

@@ -17,6 +17,7 @@ import { testTrustedCatalogCommands } from './trusted-catalog.integration.js';
 import { runTrustedCancelReservationIntegration } from './trusted-cancel-reservation.integration.js';
 import { testTrustedDeposits } from './trusted-deposits.integration.js';
 import { testTrustedReserve } from './trusted-reserve.integration.js';
+import { testTrustedHandover } from './trusted-handover.integration.js';
 import { testK05Reporting } from './k05-reporting.integration.js';
 import { testTrustedSales } from './trusted-sales.integration.js';
 import { testTrustedOrderAdditions } from './trusted-order-additions.integration.js';
@@ -546,6 +547,8 @@ test('MySQL trusted clean vertical slice in jbhh_ktv_test',
       await testTrustedPayments({ t, pool, setup, auth, table, provision, seed, inspect, application,
         assertUnchanged, wrapConnection, poolOptions, database });
       await testTrustedRounding({ t, pool, setup, auth, table, provision, seed, inspect, application,
+        assertUnchanged, wrapConnection, poolOptions, database });
+      await testTrustedHandover({ t, pool, setup, auth, table, provision, seed, inspect, application, roster,
         assertUnchanged, wrapConnection, poolOptions, database });
       await testK05Reporting({ t, pool, setup, auth, table, provision, seed, inspect, application, roster,
         assertUnchanged, wrapConnection, poolOptions, database });

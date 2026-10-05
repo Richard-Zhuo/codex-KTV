@@ -65,8 +65,8 @@ KNOWN BUSINESS ISSUE 命名的测试以 `test.skip` 保留仍未解决问题的�
 |---|---|---|---|
 | B1 | 房间 9 月 29 日 11:50 开、12:10 收款；切换点 12:00 | 订单营业额归 9 月 28 日，付款资金归 9 月 29 日；分别留原始时间与规则版本 | 资源：确定门店时区和生效的 12:00 规则；时间或规则版本缺失时停止归属 |
 | B2 | 9 月 28 日挂账，9 月 29 日回款申请、审核，另有 9 月 30 日退款 | 挂账日记录债权；回款只在确认资金发生的营业日入实收；退款只在真实退钱日扣净实收 | 资源：每笔事件时间和凭据；缺任一发生时间停止资金日结 |
-| B3 | 班次甲结束，班次乙开始；两班各有独立付款，房单跨班继续营业 | 每笔资金只归一个班次；第二次交班应点数不含甲班付款，房单保持同一原单 | 资源：两名交接人和起止时间；无唯一班次归属停止交班 |
-| B4 | 本班期初实点现金 40 元（仅本用例值，非固定备用金），现金收 168 元、现金退款 20 元、现金支出 30 元 | 期末应有现金 158 元；各班按实际期初数计算，现金不当作销售收入 | 资源：期初/期末实点与支出、退款凭据；任一来源不明保留差异 |
+| B3 | 首次 trusted 实点 bootstrap；之后连续交班，付款可跨 12:00 或有相同 occurredAt | expectedCash 以上次 actualCash 加本区间新现金为准；付款 ID 快照保证一次归属，订单不因交班改变 | 资源：可信交班链及付款 ID 边界；新增不明付款或边界删改时停止计算；接班签收另行定义 |
+| B4（未来出流规格） | 实点基线 40 元（非固定备用金），现金收 168 元、已证明的抽屉退款 20 元和支出 30 元 | 来源齐全时 expectedCash=158 元；当前退款及抽屉出流登记尚未实现，不从 expense／procurement 猜来源 | 资源：真实退款／支出来源事实；缺失时不得宣称此场景已支持 |
 | B5 | 微信系统额多 100 元、现金系统额少 100 元，总合计相等 | 两个渠道分别显示 +100/-100 差异，不显示整体“已平” | 资源：各渠道外部凭据；未解差异进入次班待办 |
 | B6 | 同一渠道账面付款被冲正，另有真实退款 | 渠道列表分别显示错录修正和现金/线上流出；净额按事件计算，不重复减款 | 资源：原付款、冲正与退款引用；无法区分两者时暂停关账 |
 
@@ -89,4 +89,4 @@ KNOWN BUSINESS ISSUE 命名的测试以 `test.skip` 保留仍未解决问题的�
 
 ## trusted 免零申请与决定身份
 
-settle 的普通 ≤¥10／超额与特殊情况审核流程不改；新需审 review 保存 submittedByPrincipalId 与 DB submittedAt。两决定仅信锁定 state 中的申请 principal：具体 rounding.approve，本人额外 review.self；超额本人批准还须配置的 DB rounding.self.excess，本人驳回不要求此属性。legacy 两决定 fail closed，决定保存 decidedByPrincipalId／DB decidedAt，姓名非身份键；授权拒绝不占 key，重放不新增付款／免零／审核。K01／K06 已按上文生效／余额／房态契约修复，原两项 skip 转正式回归；K05 跨日资金 skip 已转正式回归，仍保留 K04／K07／K10 三项 skip。入口与证据见 [MODULE_MAP](./MODULE_MAP.md) 和 [CURRENT_STAGE](./CURRENT_STAGE.md)。
+settle 的普通 ≤¥10／超额与特殊情况审核流程不改；新需审 review 保存 submittedByPrincipalId 与 DB submittedAt。两决定仅信锁定 state 中的申请 principal：具体 rounding.approve，本人额外 review.self；超额本人批准还须配置的 DB rounding.self.excess，本人驳回不要求此属性。legacy 两决定 fail closed，决定保存 decidedByPrincipalId／DB decidedAt，姓名非身份键；授权拒绝不占 key，重放不新增付款／免零／审核。K01／K06 已按上文生效／余额／房态契约修复，原两项 skip 转正式回归；K05 跨日资金 skip 已转正式回归，K04 的 trusted 连续交班已按 REQUIREMENTS 修复并转正式，仍保留 K07／K10 两项 skip。入口与证据见 [MODULE_MAP](./MODULE_MAP.md) 和 [CURRENT_STAGE](./CURRENT_STAGE.md)。

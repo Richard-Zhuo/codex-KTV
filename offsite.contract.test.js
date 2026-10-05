@@ -1,3 +1,4 @@
+import { handoverFixture, handoverCommand, drawerPay } from './test-support/trusted-handover-fixture.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { initialState, transact } from './rules.js';
@@ -327,15 +328,17 @@ test('K03 回归：高额挂账仅指定老板岗位可审批', () => {
   assert.equal(state.orders[0].credit.decisionBy, '卓老板');
 });
 
-test.skip('KNOWN BUSINESS ISSUE：重复交班沿用全历史累计实收', () => {
-  let state = opened();
-  state = run(state, 'pay', {
-    order: state.orders[0].id, payments: [{ method: '现金', amount: 16800 }]
-  });
-  state = run(state, 'handover', { actual: 16800, drawerCash: 16800 });
-  state = run(state, 'handover', { actual: 0, drawerCash: 0 });
-  assert.deepEqual(state.handovers.map(h => h.expected), [16800, 16800]);
-  assert.equal(state.handovers[1].difference, -16800);
+test('K04 已修：trusted 交班按连续现金区间，差额后的下一班从实际现金开始', async () => {
+  const fixture = handoverFixture();
+  await fixture.app.execute(handoverCommand('baseline'), fixture.credential);
+  await fixture.app.execute(drawerPay(), fixture.credential);
+  await fixture.app.execute(handoverCommand('second', 2, 58000), fixture.credential);
+  await fixture.app.execute(handoverCommand('third', 3, 58000), fixture.credential);
+  const records = (await fixture.memory.read()).state.handovers.slice(1);
+  assert.deepEqual(records.map(h => h.expectedCash), [50000, 60000, 58000]);
+  assert.deepEqual(records.map(h => h.difference), [0, -2000, 0]);
+  assert.equal(records[2].intervalCashIn, 0);
+  assert.equal(records[2].previousHandoverId, records[1].handoverId);
 });
 
 test.skip('KNOWN BUSINESS ISSUE：旧 SQL 房单表要求 room_id 非空，无法原样承载 retail.room=null', async () => {

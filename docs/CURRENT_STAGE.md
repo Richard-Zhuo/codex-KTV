@@ -1,6 +1,22 @@
 # 当前阶段
 
-更新日期：2026-10-05。本文件是当前进度的唯一汇总入口。
+更新日期：2026-10-06。本文件是当前进度的唯一汇总入口。
+
+## K04：连续现金交班与 trusted handover（2026-10-06）
+
+先核实 fbf802f parent=47aa324，ff-only 合入 main，无 merge commit。真实完整 node --test --test-isolation=none --test-reporter=tap 为 1642／1639／0／3；fetch 核实远端没有新增，普通 push 后 main=origin/main=fbf802f、0/0、clean。从该基线建立 codex/p0-1-k04-trusted-handover，停止在一个本地提交，不 push 新提交。
+
+仅新增 handover 到 trusted-enabled。handover.js:submitHandover 显式区分 demo／trusted；demo 旧合计和 UI 保留，trusted 只信同连接 session principal／具体 handover 权限／冻结 DB 时间和锁定 snapshot。用户仅提交实际清点 actualCash（整数分、非负）；expected／previous／actor／role／permissions／clock 等 payload 字段不能影响计算或身份。ledger application、MySQL schema、operationKey／fingerprint／revision／terminal 协议不改。
+
+首次 trusted 交班用实际现金建立 bootstrap，expected=actual、difference=0，不复用任何旧 demo handover 或累计历史金额。后续以上次 actualCash 而非 expectedCash 加新区间真实现金为应有数，保存稳定 UUID handoverId、occurredAt、submittedByPrincipalId、actualCash／expectedCash／difference、previousHandoverId、bootstrap、版本标记和累计 cashBoundary。payment-set-v1 的 ID 集合差与不可变事实签名确保同时间戳、跨 12:00 的付款恰好计算一次；删改旧付款、损坏链或新增无法证明的付款拒绝计算，不猜值。
+
+现金增加只计 canonical order.payments 的可信现金 payment；非现金只保留 intervalByChannel，不加 expectedCash，credit.repayments 镜像不再累加。deposit／withdraw 实际是存取酒；expense／procurement 没有抽屉资金来源，不能因为 method=现金就扣现金。当前无可认定现金出流，intervalCashOut=0；真实出流登记、来源、接班签收和差异核销仍 OPEN，不宣称完整覆盖这些场景。需求与契约同步，不新增排班、event store、真人映射或出流规则。
+
+K04 的 offsite.contract.test.js 跳过复现转正向 trusted 连续区间测试；只剩 K07 待验平台券与 K10 旧 SQL retail 草案跳过。已有批次的“未迁移”集合断言只移除本次已迁的 handover，保留原测试和 open fail closed。新增单元验证首条／后续链、actual 差额基线、同时间／跨 12:00、伪造字段、坏边界、授权不占键、终态／撤权和未知错误回滚；guarded 十一表 MySQL fixture 添加真实零售／回款现金来源、重连、四组独立双连接及 heads／operation／audit CHECK 中途失败与未知故障回滚。曾发现时间边界测试给付款／交班误用同一 key，账本正确拒绝，修正夹具使用独立 key；未扩大生产修改范围。
+
+本轮定向交班三文件 60／59／0／1（其中 K10 保留 skip），新增单元 28／28／0／0；新增 K04 MySQL 子测试 21／21／0／0。最终 node --test --test-isolation=none --test-reporter=tap 为 1691／1689／0／2、退出码 0；四真实 MySQL 文件合计 710／710／0／0（含父 test 和目标校验；auth 47、employee 40、ledger 21、trusted 602），原 auth／revalidation／ledger 真实回归均保留。四组竞争逐一核实不同 CONNECTION_ID（1614／1616），每组最多一个新边界；同 key 返回同终态。heads／operation／audit CHECK 及未知异常均完整 rollback，失败 key 不消费区间且可在故障修复后重试。完整回归暴露的两处旧精确集合断言仅按本批 43→44 同步，没有修改 auth／policy 行为。剩余两 skip 的名称逐一核实仅为 K07 和 K10。实际尝试 npm test，环境仍报 The term 'npm' is not recognized，未取得 npm 执行证据；使用现有 Node v24 直接执行完整测试。MySQL 8.4.11／jbhh_ktv_test／InnoDB 已实连核实，URL／密码未输出。无依赖或 migration 增加；不改 K05 reporting、12:00／¥10、payment occurredAt、K07／K10、open、HTTP／UI。
+
+以下为历史阶段和当时证据，不覆盖上述当前 K04 状态。
 
 ## Batch 1：K05 跨日资金归属（2026-10-05）
 

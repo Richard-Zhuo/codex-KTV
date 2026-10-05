@@ -8,6 +8,12 @@ shared/business-day.js:businessDateFor(occurredAt, {timeZone}) 是独立纯计�
 
 K05 只扩展过渡 snapshot：ledger/application.js 在 session revalidation、旧 operation lookup、当前授权／revision 与 employee resolver 之后，为新的 retailSale 使用 dbNow 和显式 businessTimeZone 构造 orderBusinessDaySnapshot；branded trusted context 携带该不可变快照，sales.js 创建订单时保存。重放不重算日期。open 仍 demo／正式拒绝，未来可复用共享快照工厂，不能用旧时钟回填。真实门店时区和历史处置仍见 OPEN_BUSINESS_DECISIONS；测试中的 Asia/Shanghai 仅是显式 synthetic 配置。
 
+## K04 trusted 连续交班
+
+rules.js:transact 在 demo 身份／时钟求值前，委托 handover.js:submitHandover 的显式 trusted 模式；只增加 handover 到已迁移集合，open 保持关闭。沿用现有 ledger head → 同连接 auth → 旧 operation → 新 key 当前权限／revision → domain → 原子提交，application、MySQL adapter/schema 和 Stage 1 协议不改。
+
+首条 trusted 交班是实点 bootstrap，旧 demo 记录只保留显示。后续通过 cashBoundary 的累计 canonical payment ID／不可变事实签名做集合差，不按时间比较或 businessDate 划班；同微秒的付款也恰好消费一次。新状态保存有版本标记的 handoverId／previousHandoverId 链及 actualCash 基线。仅 method=现金的可信付款增加抽屉现金；其他渠道只统计。存取酒无资金效果，expense／procurement 没有抽屉资金来源事实，不作出流。旧不明付款仅在 bootstrap 吸收为边界，不伪造时间；新不明付款或旧边界删改则拒绝计算。现金出流来源、登记和接班签收仍 OPEN，这不是完整排班或事件溯源模型。
+
 ## K05 报表边界
 
 reporting.js:selectRevenueOrders 只读冻结 businessDate；selectPaymentFlows 遍历全部 root payments，独立按明确带 offset 的真实时间区间选择，保留微秒边界。正式 reportViewModel 要求显式日期区间与 paymentInterval，返回独立 cashFlow／revenueAmbiguities；legacy 无冻结日期或无可信付款时间产生 ambiguity，完整性标记为 false，绝不据当前 cutoff／order.time／旧练习 time 猜值。原自然日演示接口隔离保留，缺少正式查询不能为冻结订单回退。域选择器不依赖 HTTP、UI 或机器时区，无新表和迁移。
@@ -22,7 +28,7 @@ rules.js 的显式 trusted 分支调用 sales.js:settleOrder／decideRounding，
 
 ledger/application 的 session→既有 operation→新 key 授权／revision 顺序及 mysql-store 原子提交未改。collect／pay 已迁移，settle 本批复用同一付款路径；rules.js 显式 trusted 分派不进入 demo identity／clock 分支，sales.js 的 paymentExecution 只消费 branded context。原校验成功后 appendPaymentRecords 在服务端执行中使用 Node 内置 crypto.randomUUID，查本账本保留的付款 ID，碰撞作为未知错误回滚，绝不接受客户端 paymentId。每笔新 payment 保存 paymentId、occurredAt=context.dbNow、recordedByPrincipalId=context.principalId；person 为 actorSnapshot 的显示名或 null，time 为同一 DB 时间兼容字段。字段仅向后兼容追加，不补造旧付款。
 
-请求重试先读已存 operation，故不重新执行 UUID 生成或付款、结账、房态变化；未知／SQL 故障不留 payment、revision、operation 或 audit，故障修复后原 key 可重试。collect 仍收足单个当前 charge 并保持营业；pay 仍全额结清且无免零。正式 reporting 双口径见本节补充：settle／rounding 审核见上节；handover、open 仍正式拒绝。不增加生产依赖、表或客户端入口。
+请求重试先读已存 operation，故不重新执行 UUID 生成或付款、结账、房态变化；未知／SQL 故障不留 payment、revision、operation 或 audit，故障修复后原 key 可重试。collect 仍收足单个当前 charge 并保持营业；pay 仍全额结清且无免零。正式 reporting 双口径见本节补充：settle／rounding 审核见上节；open 仍正式拒绝；handover 的后续 trusted 迁移见下节。不增加生产依赖、表或客户端入口。
 
 ## 系统边界
 
@@ -206,7 +212,7 @@ approveIncidentResolution／rejectIncidentResolution 在 demo operator／clock �
 
 `rules.js:transact` 在 demo 身份／clock 求值前委托 `procurement.js:submitProcurement` 的显式 trusted 模式，仅从 branded context 检查 `procurement.create`、读取 session principal 与冻结 dbNow。新采购及关联 expense 同写 `submittedByPrincipalId`；person 只作当前可信显示快照（当前 null），关联 expense 的 submittedById 留空。原采购没有 employee 归属，不调用 resolver、不增加 expense.create／审批属性要求。共用原采购日期、项目／单位／说明、数量／整数金额、付款方式／性质、报销严格超过 500 元的待审及 expenseId 关联规则，旧记录和历史快照不改写；不入库或创建订单 payment。
 
-同一次 transact 隔离克隆内先生成关联 expense，再生成采购；两者与 state／revision／operation／audit 仍由既有 ledger MySQL 事务整体提交。领域拒绝保留终态，授权拒绝不占键，未知异常或 SQL 中途失败全部回滚；同 key 重连／撤权重放返回原终态，不重建两条记录。真实双连接由 ledger head 行锁保证旧 revision 或相同 key 只产生一次成对效果。已迁移 expense 决定继续原关联采购状态同步，不借本次修改。剩余 open、handover 仍 fail closed；collect／pay／settle 与免零决定的后续迁移见本文件上节，无新 schema、依赖、HTTP／UI 或真人映射。
+同一次 transact 隔离克隆内先生成关联 expense，再生成采购；两者与 state／revision／operation／audit 仍由既有 ledger MySQL 事务整体提交。领域拒绝保留终态，授权拒绝不占键，未知异常或 SQL 中途失败全部回滚；同 key 重连／撤权重放返回原终态，不重建两条记录。真实双连接由 ledger head 行锁保证旧 revision 或相同 key 只产生一次成对效果。已迁移 expense 决定继续原关联采购状态同步，不借本次修改。剩余 open 仍 fail closed；handover 的后续迁移见上节；collect／pay／settle 与免零决定的后续迁移见本文件上节，无新 schema、依赖、HTTP／UI 或真人映射。
 
 ## 状态所有权
 

@@ -189,13 +189,13 @@ test('settle: fully paid/zero due preserves original zero-rounding and creates n
   await f.app.execute(settleCommand('zero',0,1001,{payments:[]}),f.credential);const order=paymentOrder((await f.memory.read()).state);
   assert.equal(order.payments.length,2);assert.equal(order.rounding,0);assert.equal(order.roundingReview,null);assert.equal(order.status,'已结账');
 });
-test('rounding: missing revalidation/context and untrusted context copies fail closed; handover/open stay disabled',async()=>{
+test('rounding: missing revalidation/context and untrusted context copies fail closed; open stays disabled',async()=>{
   const f=fixture({bind:false});await assert.rejects(f.app.execute(settleCommand(),f.credential),/revalidation port/);await noEffects(f);
   for(const action of actions){assert.throws(()=>transact(f.state,action,make(action).payload,'no-context',{mode:'trusted'}),TypeError);}
   const valid=fixture();await valid.app.execute(settleCommand(),valid.credential);
   assert.throws(()=>settleOrder(valid.state,paymentOrder(valid.state),settleCommand().payload,'fake','1900',{mode:'trusted',context:{...valid.context()}}),TypeError);
   assert.throws(()=>decideRounding(valid.state,paymentOrder(valid.state),'approveRounding',{},'fake','1900',()=>true,{mode:'trusted'}),TypeError);
-  const all=fixture({permissions:['handover','room.open']});for(const action of ['handover','open'])await assert.rejects(all.app.execute({...settleCommand(action),action},all.credential),e=>denied(e)&&e.reason==='trusted-action-not-enabled');await noEffects(all);
+  const all=fixture({permissions:['handover','room.open']});for(const action of ['open'])await assert.rejects(all.app.execute({...settleCommand(action),action},all.credential),e=>denied(e)&&e.reason==='trusted-action-not-enabled');await noEffects(all);
 });
 
 test('approveRounding: revoked excess attribute denies new key before handled-state terminal, old key replays; recovered key never redecides',async()=>{

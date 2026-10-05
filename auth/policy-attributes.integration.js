@@ -325,7 +325,7 @@ export async function verifyPolicyAttributes(t, { pool, database, qualified, att
     await auth.grantPermission({ principalId: login.principalId,permissionId:'review.self' });
     context = await read(login);
     assert.equal(authorizeReviewCommand({ principal: context.principal,action:'approveRounding',reviewFacts }).allowed,true);
-    assert.equal(TRUSTED_ENABLED_ACTIONS.length,43);
+    assert.equal(TRUSTED_ENABLED_ACTIONS.length,44);
     assert.equal(TRUSTED_ENABLED_ACTIONS.includes('approveRounding'),true);
     assert.equal(authorizeTrustedExecution(context,{action:'approveRounding',payload:{}}).allowed,true); // Locked review facts remain the domain's responsibility.
   });

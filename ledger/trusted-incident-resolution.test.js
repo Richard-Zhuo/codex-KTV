@@ -130,7 +130,7 @@ test('resolveIncident: unknown resolver/domain faults roll back without consumin
 test('resolveIncident: all remaining not-yet-migrated actions stay closed',async()=>{
  assert.ok(TRUSTED_ENABLED_ACTIONS.includes('resolveIncident'));
  const f=fixture({permissions:['incident.resolve','incident.resolve.approve','rounding.approve','payment.collect','payment.settle','procurement.create','handover','room.open']});
- for(const action of ['open', 'handover']){
+ for(const action of ['open']){
   await assert.rejects(f.app.execute({...resolutionCommand(action),action},f.credential),e=>denied(e)&&e.reason==='trusted-action-not-enabled');
  }await unchanged(f);
 });

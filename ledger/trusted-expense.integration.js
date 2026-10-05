@@ -146,7 +146,7 @@ export async function testTrustedExpense({ t, pool, setup, auth, table, provisio
   await t.test('expense: the remaining unconverted actions stay closed despite concrete grants', async () => {
     const login = await provision(['expense.create','expense.approve','review.self','procurement.create','incident.create','credit.apply','credit.repay','room.open','payment.collect','payment.settle','handover']);
     const id = 'expense-blocked'; await seedFor(id); const run = runFor(id); await run.app.execute(expenseCommand(), login.credential); const before = await inspect(id);
-    for (const action of ['open', 'handover']) {
+    for (const action of ['open']) {
       await assert.rejects(run.app.execute({ ...expenseCommand(action, 1), action }, login.credential),
         e => denied(e) && e.reason === 'trusted-action-not-enabled'); await assertUnchanged(id, before);
     }
