@@ -1,0 +1,91 @@
+-- Platform voucher local intents and provider facts. MySQL 8.4 / InnoDB.
+-- Run once after 001..006; DDL is not an atomic transaction. No secrets or seed data.
+CREATE TABLE voucher_redemptions (
+  id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  ledger_id VARCHAR(64) NOT NULL,
+  provider VARCHAR(32) NOT NULL,
+  store_id VARCHAR(191) NOT NULL,
+  external_order_id VARCHAR(191) NULL,
+  external_voucher_id VARCHAR(191) NULL,
+  voucher_code_hash CHAR(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  voucher_code_masked VARCHAR(128) NOT NULL,
+  product_id VARCHAR(191) NULL,
+  product_name_snapshot VARCHAR(191) NULL,
+  status VARCHAR(16) NOT NULL,
+  version BIGINT UNSIGNED NOT NULL,
+  requested_by_principal_id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  operation_key VARCHAR(120) NOT NULL,
+  provider_request_id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  provider_flow_id VARCHAR(191) NULL,
+  provider_trace_id VARCHAR(191) NULL,
+  requested_at DATETIME(6) NOT NULL,
+  redeemed_at DATETIME(6) NULL,
+  reversed_at DATETIME(6) NULL,
+  refunded_at DATETIME(6) NULL,
+  linked_order_id VARCHAR(120) NULL,
+  created_at DATETIME(6) NOT NULL DEFAULT (UTC_TIMESTAMP(6)),
+  updated_at DATETIME(6) NOT NULL DEFAULT (UTC_TIMESTAMP(6)),
+  PRIMARY KEY (id),
+  UNIQUE KEY uq_voucher_linked_order (linked_order_id),
+  UNIQUE KEY uq_voucher_local_code (provider, store_id, voucher_code_hash),
+  UNIQUE KEY uq_voucher_provider_attempt (provider, store_id, provider_request_id),
+  KEY ix_voucher_order (provider, store_id, external_order_id),
+  KEY ix_voucher_external (provider, store_id, external_voucher_id),
+  KEY ix_voucher_flow (provider, store_id, provider_flow_id),
+  KEY ix_voucher_trace (provider, store_id, provider_trace_id),
+  CONSTRAINT fk_voucher_ledger FOREIGN KEY (ledger_id) REFERENCES ledger_heads(ledger_id) ON DELETE RESTRICT,
+  CONSTRAINT fk_voucher_request_actor FOREIGN KEY (requested_by_principal_id) REFERENCES auth_accounts(principal_id) ON DELETE RESTRICT,
+  CONSTRAINT chk_voucher_status CHECK (status IN ('PENDING','REDEEMING','REDEEMED','FAILED','UNKNOWN','REVERSED','REFUNDED')),
+  CONSTRAINT chk_voucher_version CHECK (version <= 9007199254740991)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
+
+CREATE TABLE voucher_operations (
+  ledger_id VARCHAR(64) NOT NULL,
+  operation_key VARCHAR(120) NOT NULL,
+  actor_principal_id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  action VARCHAR(32) NOT NULL,
+  fingerprint CHAR(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  fingerprint_version SMALLINT UNSIGNED NOT NULL DEFAULT 1,
+  expected_revision BIGINT UNSIGNED NOT NULL,
+  redemption_id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin NULL,
+  completed TINYINT(1) NOT NULL,
+  result_json JSON NOT NULL,
+  created_at DATETIME(6) NOT NULL DEFAULT (UTC_TIMESTAMP(6)),
+  completed_at DATETIME(6) NULL,
+  PRIMARY KEY (ledger_id, operation_key),
+  CONSTRAINT fk_voucher_operation_ledger FOREIGN KEY (ledger_id) REFERENCES ledger_heads(ledger_id) ON DELETE RESTRICT,
+  CONSTRAINT fk_voucher_operation_actor FOREIGN KEY (actor_principal_id) REFERENCES auth_accounts(principal_id) ON DELETE RESTRICT,
+  CONSTRAINT fk_voucher_operation_redemption FOREIGN KEY (redemption_id) REFERENCES voucher_redemptions(id) ON DELETE RESTRICT,
+  CONSTRAINT chk_voucher_operation_completed CHECK (completed IN (0,1)),
+  CONSTRAINT chk_voucher_operation_version CHECK (fingerprint_version = 1),
+  CONSTRAINT chk_voucher_operation_result CHECK (JSON_TYPE(result_json) = 'OBJECT')
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
+
+CREATE TABLE provider_events (
+  provider VARCHAR(32) NOT NULL,
+  external_message_id VARCHAR(191) NOT NULL,
+  store_id VARCHAR(191) NOT NULL,
+  ledger_id VARCHAR(64) NOT NULL,
+  provider_envelope_message_id VARCHAR(191) NULL,
+  event_type VARCHAR(16) NOT NULL,
+  external_order_id VARCHAR(191) NOT NULL,
+  payload_hash CHAR(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  event_time DATETIME(6) NULL,
+  received_at DATETIME(6) NOT NULL DEFAULT (UTC_TIMESTAMP(6)),
+  processed_at DATETIME(6) NOT NULL DEFAULT (UTC_TIMESTAMP(6)),
+  result_json JSON NOT NULL,
+  PRIMARY KEY (provider, external_message_id),
+  CONSTRAINT fk_provider_event_ledger FOREIGN KEY (ledger_id) REFERENCES ledger_heads(ledger_id) ON DELETE RESTRICT,
+  CONSTRAINT chk_provider_event_result CHECK (JSON_TYPE(result_json) = 'OBJECT')
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
+
+CREATE TABLE voucher_exceptions (
+  exception_id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  redemption_id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  source_key VARCHAR(191) NOT NULL,
+  reason VARCHAR(64) NOT NULL,
+  created_at DATETIME(6) NOT NULL DEFAULT (UTC_TIMESTAMP(6)),
+  PRIMARY KEY (exception_id),
+  UNIQUE KEY uq_voucher_exception_source (redemption_id, source_key),
+  CONSTRAINT fk_voucher_exception_redemption FOREIGN KEY (redemption_id) REFERENCES voucher_redemptions(id) ON DELETE RESTRICT
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;

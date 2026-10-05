@@ -1,4 +1,14 @@
-# 当前阶段
+### R.1 平台券领域层（2026-10-06）
+
+先核实 4b7257e parent=fbf802f，ff-only 合入 main，完整真实 MySQL 回归 1691／1689／0／2；fetch 核实远端无新增后普通 push，main=origin/main=4b7257e、0/0、clean。新分支 codex/p0-1-platform-voucher 直接基于该 main；旧 Track A/B/PostgreSQL 工作区未清理。
+
+本提交只实现集中 state machine、独立 A/provider/B orchestration、MySQL migration 007 四表、Fake Gateway、未启用的 MeituanSkillGateway 与领域事件处理。UNKNOWN 原 key 不再 consume，独立新 query key 收敛；证据／事件异常不会覆盖 terminal。申请 principal 从同连接 session，provider context 独立；券码只持久化 HMAC/masked，flow 与 trace 分离。所有真实美团调用仍拒绝，Meituan production redemption = NOT ENABLED。
+
+本提交不接 open，K07/K10 暂保留 skip。已验证单位契约 19／19／0／0，真实 trusted fixture 622／622／0／0（保留原 600 子测试、新增 20 voucher 子测试及父/目标保护）。并发核实两个不同 CONNECTION_ID，provider 调用期间独立 connection 的 ledger/account NOWAIT 锁均可取得；claim/evidence/event 三种 CHECK SQL 故障均验证回滚。证据保存失败保留 A 的认领事实，replay 不再消费，独立 query 能恢复。完整 node --test --test-isolation=none --test-reporter=tap 为 1730／1728／0／2；四真实 MySQL 文件合计 730／730／0／0（auth 47、employee 40、ledger 21、trusted/voucher 622），仅 K07/K10 skip。实际尝试 npm test，环境报 The term npm is not recognized，未取得 npm 执行证据。没有新增依赖、HTTP/UI 或真实美团调用。
+
+以下为此前阶段和当时证据，不覆盖本节。
+
+ 当前阶段
 
 更新日期：2026-10-06。本文件是当前进度的唯一汇总入口。
 

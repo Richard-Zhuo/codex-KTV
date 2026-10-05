@@ -1,4 +1,16 @@
-# 系统架构
+### 平台券领域与外部副作用边界（R.1）
+
+vouchers/application.js 是独立 orchestration，使用 vouchers/domain.js 的集中状态转换与 PlatformVoucherGateway DTO；领域不接触美团原始 JSON。vouchers/gateway.js 定义四方法 port 和显式 DTO mapping boundary；vouchers/gateways.js 的 MeituanSkillGateway 只保留 config／credential／transport／mapping seam，所有真实方法均拒绝，Meituan production redemption = NOT ENABLED。没有网络或 mt-tech 调用。FakePlatformVoucherGateway 有可观察调用次数，并要求显式 test mode 与隔离 test store。
+
+vouchers/mysql-store.js 的 runAtomic 只运行本地数据库工作：同一 connection BEGIN、锁 ledger head、同连接 session 重验、voucher operation／redemption、COMMIT/release。认领 A 提交后才 inspect/consume；证据 B 另开短事务。调用方不得把 provider promise 放进 createTrustedLedgerApplication/transact。认领成功后重试读取本地 receipt；UNKNOWN 终态不可重写，独立 query key 更新 redemption。A 或 B COMMIT 结果不明时抛出专门 outcome-unknown，不把数据库断连伪装成 provider FAILED。A 失败完整回滚；B 失败保留已认领 attempt，后续 query 收敛，不能撤销已发生的外部效果。
+
+外部 attempt 的 voucher_operations 使用独立 voucher command receipt 空间（ledger_id＋operation_key），Stage 1 ledger_operations 的 action/fingerprint/revision/terminal 协议保留。claim/query 不改变业务 snapshot 或 ledger revision；真正开房才通过 ledger transaction 提交 snapshot/revision/audit。新 key 先认证再查旧 receipt，仅无旧 receipt 才用当前 room.open permission；旧 key 仍要求有效原 actor session。暂不新增核销 permission，真实启用前的最终权限配置仍待确认。
+
+receiveProviderEvent 只接受内部 verified provider capability；本阶段没有 HTTP webhook 或验签入口。事件先保存 canonical business message ID／envelope ID／payload hash，重复返回旧结果；不能明确关联或非法状态转换的事件保存 reconciliation-required，关联记录产生 voucher_exception。订单已绑定时的 REVERSED/REFUNDED 只改 provider fact 并产生待办，不改业务 snapshot。尚未匹配的事件留待后续可信 reconciliation，不猜业务记录。
+
+state snapshot 仍是过渡账本模型；新增 provider 元数据不代表完成领域关系化、localStorage 导入或美团上线。
+
+ 系统架构
 
 本文件描述已集成的 Track A＋B 单机演示运行边界，以及尚未接入客户端的 P0-1 账本、Stage 2A 命令策略、Stage 2B 认证基础和 Stage 2C.1 同连接重验、2C.2 clean 与 2C.3 房间异常／目录维护／取消预约／存取酒、预约、销售、配品／其他消费及换酒小批的可信执行能力。具体入口见 [MODULE_MAP](./MODULE_MAP.md)，验证结果见 [CURRENT_STAGE](./CURRENT_STAGE.md)。
 

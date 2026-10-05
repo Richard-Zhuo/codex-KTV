@@ -1,4 +1,16 @@
-# 已确认需求与产品边界
+### 已确认：平台券核销（R.1）
+
+平台券只有服务端可信 redemption 为 REDEEMED、属于当前门店且未绑定订单时，才能覆盖房费。浏览器只能引用内部 voucherRedemptionId；券码、verified/redeemed 标记或 Skill 原始 JSON 不能作为开房证据。同一 redemption 最多绑定一个订单；provider 撤销／退款不能自动删除订单、付款、库存或历史成交，而应保留事实并产生异常待办。
+
+生命周期集中维护：PENDING→REDEEMING；REDEEMING→REDEEMED/FAILED/UNKNOWN；UNKNOWN→REDEEMED/FAILED/REVERSED/REFUNDED；REDEEMED→REVERSED/REFUNDED。REVERSED/REFUNDED 默认终态。超时、断连、无法解析或无法关联到本次 attempt 一律 UNKNOWN；只有独立查询或可信事件的确定证据才能把 UNKNOWN 转为 FAILED，不能因网络错误判定失败或再次核销。乱序／无法合法转换的事件保留并进入 reconciliation/exception，不覆盖当前状态。
+
+本地先以短事务保存 attempt、稳定 providerRequestId 与 REDEEMING，再在无 ledger head lock／MySQL transaction 时调用 provider，最后以第二短事务保存证据。相同 operationKey 在认领后重试不再调用 provider；已保存 UNKNOWN 为原 key 终态，后续查询使用新 operationKey 更新同一 redemption。未完成的认领也不会再次 consume，可通过独立查询收敛。权限不足没有本地 attempt 或外部副作用。provider actor 与员工 session principal 不混用。
+
+券码是保留前导零及长度的 string；持久层仅保存服务器 secret 的 HMAC-SHA256 和 masked 值，不能保存明文或把 traceId 当成业务 flowId。providerRequestId 的本地唯一范围是 provider＋storeId，不代表 provider exactly-once 已获证明。业务 messageId 是事件去重键，公共 envelope msgId 另存。
+
+Meituan production redemption = NOT ENABLED。Fake Gateway 仅用于显式隔离测试。真实启用前仍须完成门店业务授权、appAuthToken/developer credential 配置、mt-tech 实际响应契约、requestId 幂等范围与有效期、安全测试券／环境、正式 webhook 验签入口，以及 provider 商品与本地套餐的明确配置；不从名称猜映射。
+
+ 已确认需求与产品边界
 
 本文件是当前产品需求的唯一维护位置。它说明“系统应该怎样”，不以当前代码是否已经实现来改写用户已确认的要求；实现状态见 [CURRENT_STAGE](./CURRENT_STAGE.md)。
 

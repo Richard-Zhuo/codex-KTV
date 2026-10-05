@@ -1,4 +1,12 @@
-# 开发与验证环境
+### 平台券验证路线（R.1）
+
+数据库无关契约：node --test --test-isolation=none vouchers/domain.test.js vouchers/gateways.test.js vouchers/application.test.js。真实数据库仍用 LEDGER_MYSQL_TEST_URL，严格校验 URL 与实际 database=jbhh_ktv_test、版本及 InnoDB；绝不输出 URL／密码。
+
+ledger/trusted-clean.integration.test.js 复用现有 fixture lock，新增明确的 voucher 四表和 migration 007。ledger/platform-voucher.integration.js 验 migration、provider 调用锁外取锁、重连、UNKNOWN、独立连接竞争、claim/evidence/event SQL 失败及消息去重。fixture 为固定十五表；ledger 三表依原授权预清理，其他表必须本轮明确创建才能清理，遇到已有未知数据拒绝。没有动态表名或全局数据库权限。
+
+完整验证：node --test --test-isolation=none --test-reporter=tap。JavaScript 修改后仍先尝试 npm test；无 npm 时报告具体失败并执行本项目对应的 Node 测试。Fake 只接受显式 test mode，不使用真实券、门店或凭据；Meituan production redemption = NOT ENABLED。
+
+ 开发与验证环境
 
 本文件是项目命令、工具链、端口、数据位置和验证路线的唯一维护位置。命令状态分为：
 

@@ -1,4 +1,12 @@
-# 数据库边界
+### Migration 007：平台券元数据
+
+database/migrations/007_mysql_platform_vouchers.sql 在 001..006 后一次执行，四表明确 ENGINE=InnoDB。voucher_redemptions 保存作用域、HMAC/masked 券码、稳定 request/flow/trace ID、产品显示快照、provider 状态／乐观 version、申请 principal、UTC 时间及 nullable linkedOrderId。linked_order_id 唯一；provider/store/request_id 复合唯一；同 provider/store/code hash 保守地只建立一次本地核销 intent。flowId/traceId/externalOrderId/externalVoucherId 只有索引，不假设全局唯一。
+
+voucher_operations 的主键为 ledger_id/operation_key，保存 actor/action/fingerprint/v1/expected revision/claim 或终态 JSON；独立于业务 ledger_operations。provider_events 主键为 provider/business external_message_id，envelope msgId 独立，保存 payload hash、事件／接收／处理时间和处理结果，不保存完整 webhook payload。voucher_exceptions 以 redemption/source 去重，承载乱序 reconcile 与已绑定订单逆向 provider 异常。申请 actor、ledger、operation→redemption、exception→redemption 均有 FK；订单仍在 snapshot，linkedOrderId 不伪造关系表 FK。
+
+DDL 非事务化；重复执行明确报表已存在，不静默当作升级完成。仅由显式 migration 发布流程执行；本阶段实际执行只在 guarded jbhh_ktv_test。fixture 只创建并清理固定列表中本轮创建的表，不 CREATE/DROP DATABASE，也不连接未知数据库。服务器 HMAC key 稳定注入，不生成或保存生产 secret；密钥轮换／历史导入另行设计。
+
+ 数据库边界
 
 正式数据库方向现为 MySQL 8.4 LTS + InnoDB。既有 `schema.sql`、`seed.sql` 和历史导入映射保留为旧 PostgreSQL 关系型设计参考，不作为当前可执行的正式数据库结构。现有页面仍使用 localStorage；本目录 SQL 不会自动迁移或覆盖演示数据。
 

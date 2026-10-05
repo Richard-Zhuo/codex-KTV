@@ -4,6 +4,7 @@
 
 | 改动目标 | 入口与稳定符号 | 主要测试 | 边界 |
 |---|---|---|---|
+| 平台券领域／外部副作用 | vouchers/domain.js、application.js:createPlatformVoucherApplication；gateway.js:PlatformVoucherGateway；mysql-store.js:createMySqlVoucherStore | vouchers/*.test.js、ledger/platform-voucher.integration.js（guarded fixture） | 集中状态机；短事务 A→锁外 provider→短事务 B；UNKNOWN 新查询 key；Meituan production redemption = NOT ENABLED；open 在下一独立提交接入 |
 | 员工及系统管理入口、静态资源 | `index.html`、`admin.html`；`server.js` 的 `files` | `entry.test.js` | 静态白名单须列出新增浏览器模块；无业务 API |
 | 启动、事件分发与页面状态 | `app.js`；`ui/context.js` 的 `ctx`；`ui/shell.js` 的 `persist`／`commit`／`render` | `entry.test.js`、`bugs-evidence-app.test.js` | 保存成功后才切换页面状态；浏览器 UI 不决定最终权限 |
 | 页面、表单与对话框 | `ui/pages/`、`ui/dialogs/`、`ui/forms.js` | `entry.test.js`、相关领域测试 | 新页面函数在所属模块，不再放入 `app.js` |
