@@ -231,8 +231,7 @@ export async function testTrustedIncident({ t, pool, setup, auth, table, provisi
   await t.test('incident: review and all other untrusted actions remain closed even with their grants', async () => {
     const login = await provision(['incident.create', 'incident.resolve', 'incident.resolve.approve', 'rounding.approve',
       'payment.collect', 'payment.settle', 'procurement.create', 'handover', 'room.open']), id = 'incident-closed'; await seed(id); const before = await inspect(id);
-    for (const action of ['approveRounding', 'rejectRounding',
-      'settle', 'handover', 'open']) {
+    for (const action of ['handover', 'open']) {
       await assert.rejects(application(id).app.execute({ ...incidentCommand(action, randomUUID()), action }, login.credential), e => denied(e) && e.reason === 'trusted-action-not-enabled');
     }
     await assertUnchanged(id, before);

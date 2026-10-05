@@ -119,7 +119,8 @@
 - “收钱”只收最近一笔未收增购；没有增购待收时收开房费用。收钱后房间继续营业。
 - “结账”汇总剩余未收费用，完成后房间才转待清洁。
 - 收钱和结账均支持微信、支付宝、现金、美团、抖音多笔付款，合计必须匹配。
-- 正式 trusted collect／pay 分别只检查 payment.collect／payment.settle；实际操作者、权限和付款时间只取同事务 session context。仅这两动作的新 payment 生成安全随机 UUID paymentId，保存 occurredAt=dbNow、recordedByPrincipalId；person/time 只作可信兼容快照，不复制客户端身份或 ID。旧付款不回填，不按姓名推断。collect 收足当前 charge 后继续营业，pay 无免零且收足全部余款后转待清洁；原金额、渠道、charge 顺序和赠酒待确认阻断不变。付款、订单／房态、revision、operation、audit 同一原子提交；拒绝授权不占 key，重试原 key 只返回原终态。仅记录 occurredAt，不修改 reporting、businessDate 或 K05。
+- 正式 trusted collect／pay 分别只检查 payment.collect／payment.settle；实际操作者、权限和付款时间只取同事务 session context。collect／pay／settle 的新 payment 生成安全随机 UUID paymentId，保存 occurredAt=dbNow、recordedByPrincipalId；person/time 只作可信兼容快照，不复制客户端身份或 ID。旧付款不回填，不按姓名推断。collect 收足当前 charge 后继续营业，pay 无免零且收足全部余款后转待清洁；原金额、渠道、charge 顺序和赠酒待确认阻断不变。付款、订单／房态、revision、operation、audit 同一原子提交；拒绝授权不占 key，重试原 key 只返回原终态。仅记录 occurredAt，不修改 reporting、businessDate 或 K05。
+- 正式 trusted settle 保持 payment.settle 及现有金额／说明／结账规则。需审核的 roundingReview 保存 session 的 submittedByPrincipalId 和冻结 DB submittedAt；approveRounding／rejectRounding 从锁定 review 读取此 principal，均要求 rounding.approve，本人另需 review.self。只有实际免零 >1000 分的本人批准再要求已配置的 DB rounding.self.excess；本人驳回和 ≤1000 分特殊情况本人批准不要求该属性。payload 身份／角色／属性无效；legacy 无可信申请 principal 或免零事实无法安全解释时两决定均授权拒绝且不占 key。决定保存 decidedByPrincipalId／DB decidedAt，姓名仅显示。待审即结账和 outstanding 未扣免零仍为 K01／K06 的现状，不能当目标契约或顺手修复。
 - 正式免零差额不超过 10 元时，现场可直接免零，主要用于凑整 5 元或整 10 元（例如应付 168 元下调至 160 元）；免零不得超过实际未收金额或造成负数应付；超过 10 元须进入审批，未经批准不得当作已收或完成合法结账。卓老板可以批准本人超额免零；老板娘、邵叔、雄老板不能自批，须由其他有权人员批准。卓益没有最终结账权限，不能借免零审批绕过该限制。当前演示“任意金额少收即免零并结账”不是目标行为。
 - 所有演示身份均可从结账申请挂账。手机号或顾客姓名至少填写一个，挂账备注和经办签名必填；只挂尚未收取的余额。
 - 挂账金额不超过 1000 元由店长审批，超过 1000 元由老板审批；提单起 24 小时到期，挂账不计入实收。

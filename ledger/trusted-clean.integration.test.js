@@ -36,6 +36,7 @@ import { testTrustedIncidentResolution } from './trusted-incident-resolution.int
 import { testTrustedIncidentReviews } from './trusted-incident-review.integration.js';
 import { testTrustedProcurement } from './trusted-procurement.integration.js';
 import { testTrustedPayments } from './trusted-payments.integration.js';
+import { testTrustedRounding } from './trusted-rounding.integration.js';
 import { createMySqlEmployeeStore } from '../employees/mysql-store.js';
 import { createEmployeeService } from '../employees/service.js';
 
@@ -542,6 +543,8 @@ test('MySQL trusted clean vertical slice in jbhh_ktv_test',
       await testTrustedIncidentReviews({ t, pool, setup, auth, table, provision, seed, inspect, application, roster,
         assertUnchanged, wrapConnection, poolOptions, database });
       await testTrustedPayments({ t, pool, setup, auth, table, provision, seed, inspect, application,
+        assertUnchanged, wrapConnection, poolOptions, database });
+      await testTrustedRounding({ t, pool, setup, auth, table, provision, seed, inspect, application,
         assertUnchanged, wrapConnection, poolOptions, database });
       await testTrustedProcurement({ t, pool, setup, auth, table, provision, seed, inspect, application,
         assertUnchanged, wrapConnection, poolOptions, database });

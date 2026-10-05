@@ -9,6 +9,7 @@
 // 失败不提交由 transact 的克隆-校验-提交边界继续保证。
 // 权限闸门与自审授权经参数注入（need／authorizeReviewer），避免对 rules.js 的循环依赖。
 import { BusinessRejection } from './shared/business-error.js';
+import { EXCESS_ROUNDING_SELF } from './ledger/command-policy.js';
 import { DEFAULT_CATALOG, product, saleOption, saleOptions, productIdOf, categoryLabel } from './catalog.js';
 import { recordInventoryChange, need } from './inventory.js';
 import { USERS, effectiveUser, assertTrustedExecutionContext, requireTrustedPermission, AuthorizationDenied } from './shared/identity.js';
@@ -205,15 +206,17 @@ export function collectPayment(s, order, data, person, time, execution = { mode:
   const payments = validatePayments(data.payments, charge.remaining);
   appendPaymentRecords(s, order, payments, charge.id, identity);
 }
-export function settleOrder(s, order, data, person, time) {
-  need(s, ['收银员','老板'], 'payment.settle');
+export function settleOrder(s, order, data, person, time, execution = { mode: 'demo' }) {
+  const identity = paymentExecution(s, 'payment.settle', person, time, execution);
+  const context = identity.context;
+  ({ person, time } = identity);
   if ((order.giftRequests || []).some(item => item.status === '待确认')) throw new BusinessRejection('还有待确认的赠酒水申请，请先处理');
   const due = outstanding(order), settlement = validateSettlementPayments(data.payments, due, data.differenceType, data.differenceNote);
-  order.payments.push(...settlement.payments.map(payment => ({ ...payment, chargeId: 'settlement', time, person })));
+  appendPaymentRecords(s, order, settlement.payments, 'settlement', identity);
   order.rounding = settlement.rounding;
   order.roundingType = settlement.differenceType;
   order.roundingNote = settlement.differenceNote;
-  order.roundingReview = settlement.needsReview ? { status: '待审核', amount: settlement.rounding, note: settlement.differenceNote, submittedBy: person, submittedById: s.user, submittedAt: time, approver: '店长', decidedBy: '', decidedAt: '', decisionNote: '' } : null;
+  order.roundingReview = settlement.needsReview ? { status: '待审核', amount: settlement.rounding, note: settlement.differenceNote, submittedBy: person, submittedById: context ? '' : s.user, ...(context ? { submittedByPrincipalId: context.principalId } : {}), submittedAt: time, approver: '店长', decidedBy: '', decidedAt: '', decisionNote: '' } : null;
   order.status = '已结账'; order.closedAt = time;
   return { release: true };
 }
@@ -231,13 +234,40 @@ export function payOrder(s, order, data, person, time, execution = { mode: 'demo
   return { release: true };
 }
 
-export function decideRounding(s, order, action, data, person, time, authorizeReviewer) {
-  need(s, ['店长'], 'rounding.approve');
-  if (!order?.roundingReview || order.roundingReview.status !== '待审核') throw new BusinessRejection('特殊差额审核状态已变化');
-  const selfReview = authorizeReviewer(order.roundingReview.submittedById);
+export function decideRounding(s, order, action, data, person, time, authorizeReviewer, execution = { mode: 'demo' }) {
+  if (!execution || !['demo', 'trusted'].includes(execution.mode)) throw TypeError('免零审核执行模式无效');
+  const context = execution.mode === 'trusted' ? assertTrustedExecutionContext(execution.context) : null;
+  if (context) requireTrustedPermission(context, 'rounding.approve');
+  else need(s, ['店长'], 'rounding.approve');
+  if (!order?.roundingReview || (!context && order.roundingReview.status !== '待审核')) throw new BusinessRejection('特殊差额审核状态已变化');
+  const review = order.roundingReview;
+  let selfReview;
+  if (context) {
+    // Applicant and actual waiver amount come only from the locked ledger state.
+    const applicant = review.submittedByPrincipalId;
+    if (typeof applicant !== 'string' || !applicant || applicant.trim() !== applicant || applicant.length > 191) {
+      throw new AuthorizationDenied('untrusted-rounding-applicant');
+    }
+    if (!Number.isSafeInteger(review.amount) || review.amount <= 0 || review.amount !== order.rounding) {
+      throw new AuthorizationDenied('untrusted-rounding-amount');
+    }
+    selfReview = applicant === context.principalId;
+    if (selfReview) requireTrustedPermission(context, 'review.self');
+    // Rejecting one's own request needs self-review, never the excess-approval attribute.
+    if (action === 'approveRounding' && selfReview && review.amount > SMALL_ROUNDING_LIMIT_CENTS) {
+      if (!context.policyAttributesConfigured) throw new AuthorizationDenied('policy-attributes-unconfigured');
+      if (!context.policyAttributeIds.includes(EXCESS_ROUNDING_SELF)) throw new AuthorizationDenied('missing-policy-attribute');
+    }
+    person = context.actorSnapshot?.displayName ?? null;
+    time = context.dbNow;
+  } else selfReview = authorizeReviewer(review.submittedById);
+  // A new trusted key must pass current state-dependent authorization before becoming terminal.
+  if (context && review.status !== '待审核') throw new BusinessRejection('特殊差额审核状态已变化');
   const decisionNote = String(data.decisionNote || '').trim().slice(0, 300);
   if (action === 'rejectRounding' && !decisionNote) throw new BusinessRejection('请填写驳回原因');
-  order.roundingReview.status = action === 'approveRounding' ? '已批准' : '已驳回'; order.roundingReview.decidedBy = person; order.roundingReview.decidedAt = time; order.roundingReview.decisionNote = decisionNote; order.roundingReview.selfReviewAuthorized = selfReview;
+  review.status = action === 'approveRounding' ? '已批准' : '已驳回';
+  review.decidedBy = person; review.decidedAt = time; review.decisionNote = decisionNote; review.selfReviewAuthorized = selfReview;
+  if (context) review.decidedByPrincipalId = context.principalId;
 }
 export function applyCredit(s, order, data, person, time, execution = { mode: 'demo' }) {
   if (!execution || !['demo', 'trusted'].includes(execution.mode)) throw TypeError('挂账执行模式无效');

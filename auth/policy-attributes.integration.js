@@ -314,7 +314,7 @@ export async function verifyPolicyAttributes(t, { pool, database, qualified, att
     assert.equal((await events(login.principalId)).length, 2);
   });
 
-  await t.test('attributes: rounding.self.excess remains an additional policy fact, not an approve permission or new trusted action', async () => {
+  await t.test('attributes: rounding.self.excess remains an additional policy fact, not an approve permission or self-review permission', async () => {
     const login = await provision(); await configure(login); await api.grantPolicyAttribute(input(login), actorContext);
     const reviewFacts = createTrustedReviewFacts({ submittedByPrincipalId: login.principalId, exceptionalSelfApprovalRequired: true });
     let context = await read(login);
@@ -325,9 +325,9 @@ export async function verifyPolicyAttributes(t, { pool, database, qualified, att
     await auth.grantPermission({ principalId: login.principalId,permissionId:'review.self' });
     context = await read(login);
     assert.equal(authorizeReviewCommand({ principal: context.principal,action:'approveRounding',reviewFacts }).allowed,true);
-    assert.equal(TRUSTED_ENABLED_ACTIONS.length,40);
-    assert.equal(TRUSTED_ENABLED_ACTIONS.includes('approveRounding'),false);
-    assert.throws(()=>authorizeTrustedExecution(context,{action:'approveRounding',payload:{}}),error=>error.reason==='trusted-action-not-enabled');
+    assert.equal(TRUSTED_ENABLED_ACTIONS.length,43);
+    assert.equal(TRUSTED_ENABLED_ACTIONS.includes('approveRounding'),true);
+    assert.equal(authorizeTrustedExecution(context,{action:'approveRounding',payload:{}}).allowed,true); // Locked review facts remain the domain's responsibility.
   });
   await t.test('expense attribute: 005 repeats safely, preserves rounding, and grants/revokes current boss facts with actor/target audit', async () => {
     const login=await provision(),boss='expense.approval.boss';await configure(login);

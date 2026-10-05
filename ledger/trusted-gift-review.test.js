@@ -198,7 +198,7 @@ test('gift approvals: missing/copied context or session port never falls back to
     }
     const unbound = fixture({ bind: false }); await assert.rejects(unbound.app.execute(giftReviewCommand(action), unbound.credential), /revalidation port/); await noEffects(unbound);
   }
-  for (const action of ['expense','credit','repay','approveRounding','settle','handover','open']) {
+  for (const action of ['expense', 'credit', 'repay', 'handover', 'open']) {
     await assert.rejects(f.app.execute({ ...giftReviewCommand(action,action,1), action }, f.credential), e => denied(e) && e.reason === (['expense','credit','repay'].includes(action) ? 'missing-permission' : 'trusted-action-not-enabled'));
   }
 });

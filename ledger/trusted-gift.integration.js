@@ -173,7 +173,7 @@ export async function testTrustedGift({ t, pool, setup, auth, table, provision, 
 
   await t.test('gift: other approvals remain disabled despite gift grants and a new trusted applicant', async () => {
     const login=await provision(['order.gift','gift.approve','review.self']),id='gift-review-blocked';await seedFor(id);const run=runFor(id);await run.app.execute(giftCommand(),login.credential);
-    const before=await inspect(id);for(const action of ['approveExpense','rejectExpense','approveCredit','rejectCredit','approveRepay','rejectRepay','approveRounding','rejectRounding']){
+    const before=await inspect(id);for(const action of ['approveExpense', 'rejectExpense', 'approveCredit', 'rejectCredit', 'approveRepay', 'rejectRepay']){
       await assert.rejects(run.app.execute({operationKey:action,expectedRevision:1,action,payload:{order:'synthetic-gift-room',request:giftOrder(before.head.state).giftRequests.at(-1).id}},login.credential),
         e=>denied(e)&&e.reason===(['approveExpense','rejectExpense'].includes(action)?'missing-permission':'trusted-action-not-enabled'));await assertUnchanged(id,before);
     }

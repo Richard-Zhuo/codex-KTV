@@ -122,3 +122,7 @@ import_batches
 - “房间故障原因”可以生成已结束的历史异常说明，但不会把当前房间自动设为故障。
 - 原报表值和整行 JSON 始终保存在暂存区，方便回查、修正规则和重新导入。
 - 图片列只保存引用地址或文件标识；正式附件应进入对象存储，不把大图直接写进数据库。
+
+## trusted settle／免零审批验收边界
+
+本批不新增表、列或 migration；新付款及 review 的稳定 principal／付款 ID／DB 时间保存在同一个 state_json snapshot，operation／audit 元数据与 state 同事务提交。ledger/trusted-rounding.integration.js 复用原 guarded 十一表 fixture，新增用例不建立或清理额外表；故障注入仅对 ledger_operations／ledger_success_audit 添加再删除本轮 CHECK，双连接竞争核实 CONNECTION_ID 不同。不改变历史 JSON 事实、不回填旧 payment／申请人、不改 reporting／businessDate；handover／open 尚未迁移。

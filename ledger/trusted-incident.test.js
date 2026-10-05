@@ -208,8 +208,7 @@ test('incident: competing keys and same-key retry keep one old-revision incident
 test('incident: review, rounding, payments and other remaining actions still fail closed', async () => {
   const f = fixture({ permissions: ['incident.create', 'incident.resolve', 'incident.resolve.approve', 'rounding.approve',
     'payment.collect', 'payment.settle', 'procurement.create', 'handover', 'room.open'] });
-  for (const action of ['approveRounding', 'rejectRounding',
-    'settle', 'handover', 'open']) {
+  for (const action of ['handover', 'open']) {
     await assert.rejects(f.app.execute({ ...incidentCommand(action), action }, f.credential), e => denied(e) && e.reason === 'trusted-action-not-enabled');
   }
   await unchanged(f);

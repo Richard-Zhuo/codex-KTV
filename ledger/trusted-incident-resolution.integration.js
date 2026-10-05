@@ -160,6 +160,6 @@ export async function testTrustedIncidentResolution({t,pool,setup,auth,table,pro
  });
  await t.test('resolveIncident: all other unmigrated actions remain fail closed',async()=>{
   const login=await linked(['incident.resolve','incident.resolve.approve','rounding.approve','payment.collect','payment.settle','procurement.create','handover','room.open']),id='incident-resolution-closed';await seedFor(id,login.employee);const before=await inspect(id);
-  for(const action of ['approveRounding','rejectRounding','settle','handover','open'])await assert.rejects(application(id).app.execute({...resolutionCommand(action),action},login.credential),e=>denied(e)&&e.reason==='trusted-action-not-enabled');await assertUnchanged(id,before);
+  for(const action of ['handover', 'open'])await assert.rejects(application(id).app.execute({...resolutionCommand(action),action},login.credential),e=>denied(e)&&e.reason==='trusted-action-not-enabled');await assertUnchanged(id,before);
  });
 }

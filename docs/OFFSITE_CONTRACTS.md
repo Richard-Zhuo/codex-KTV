@@ -11,7 +11,7 @@
 | 套餐实际选择和销售行保存名称、分类、基础单位、规格、数量、成交价快照 | catalog.test.js、rules.test.js、offsite.contract.test.js「目录合同」 | 改名改价不能改变旧单、旧报表 |
 | 销售数量 × saleOption.baseQuantity = totalBaseQuantity = 库存负 delta 的绝对值 | retail.test.js；offsite.contract.test.js「库存合同」 | 百威整打基础量 12 支；未建账和不足拒绝整笔 |
 | 失败事务不留半张单、半笔付款或半条库存流水 | retail.test.js；offsite.contract.test.js「库存合同」 | 服务端事务和重试后仍成立 |
-| 房单可多次、多渠道付款；同一操作键不能重复记钱 | rules.test.js；offsite.contract.test.js「付款合同」 | trusted collect／pay 新付款有 paymentId／occurredAt／recordedByPrincipalId；历史付款不回填、不丢弃 |
+| 房单可多次、多渠道付款；同一操作键不能重复记钱 | rules.test.js；offsite.contract.test.js「付款合同」 | trusted collect／pay／settle 新付款有 paymentId／occurredAt／recordedByPrincipalId；历史付款不回填、不丢弃 |
 | backend.view 只允许系统后台入口；业务审核看具体权限；本人审核还需 review.self | rules.test.js；offsite.contract.test.js「权限合同」 | 服务端每次动作重验权；页面隐藏不能充当授权 |
 | 挂账申请 → 审批 → 已挂账 → 回款申请 → 回款审核 → order.payments；待审回款不计实收 | rules.test.js；offsite.contract.test.js「挂账合同」 | credit.remaining = 原挂账额 − 已批准回款；还款记录与付款同额且关联 |
 | room、retail、商品、分类、销售人员、付款展示、日/周/月及历史快照报表 | offsite.report.test.js；rules.test.js | 新报表可换实现，但相同输入的正向营业结果应一致 |
@@ -38,7 +38,7 @@ KNOWN BUSINESS ISSUE 命名的测试以 `test.skip` 保留仍未解决问题的�
 6. 平台券覆盖额和现金/电子渠道实收分列；券核销成功是按券方案开房的前置条件，失败券不能伪装已支付或已覆盖房费。
 7. 营业额按订单开单所属 `businessDate` 及原成交快照归属；每笔付款的资金流水按真实 `occurredAt` 所属营业日归属，回款及将来退款也按各自资金事件时间处理。不能让房卡、结账页和报表各自重写金额公式，也不能全从 `order.time` 推导资金日。
 
-现状：sales.js 的 total、outstanding、collected 与 reporting.js 的报表是单浏览器演示口径；已结账免零后的 outstanding helper 仍可能显示原差额。offsite.contract.test.js 保留该观察的跳过复现以便排查，不把它作为未来公式。仅 trusted collect／pay 的新付款保存稳定 paymentId、可信 occurredAt 和 recordedByPrincipalId；历史、演示及其他付款链不补造这些字段，当前仍不能安全实施退款，K05 报表口径不变。
+现状：sales.js 的 total、outstanding、collected 与 reporting.js 的报表是单浏览器演示口径；已结账免零后的 outstanding helper 仍可能显示原差额。offsite.contract.test.js 保留该观察的跳过复现以便排查，不把它作为未来公式。仅 trusted collect／pay／settle 的新付款保存稳定 paymentId、可信 occurredAt 和 recordedByPrincipalId；历史、演示及其他付款链不补造这些字段，当前仍不能安全实施退款，K05 报表口径不变。
 
 ## 反向交易 specification cases（免零额度分流已实现；其他门禁仍待实现）
 
@@ -86,3 +86,7 @@ KNOWN BUSINESS ISSUE 命名的测试以 `test.skip` 保留仍未解决问题的�
 - 历史已知成交金额保留；缺价格、名称、赠饮参考值时标未知。导入历史营业只写历史记录，不倒扣当前库存，不猜支付方式。
 - 可回滚的迁移副本先验证，再切换可信数据源；损坏输入不静默初始化新账本。恢复演练须核对订单、付款、库存和房态四类样本。
 - 结构迁移的测试通过只证明约定输入的行为；真正共享账本、真人身份、远程审批、备份恢复和 14 天脱岗仍须正式环境与门店验收。
+
+## trusted 免零申请与决定身份
+
+settle 的普通 ≤¥10／超额与特殊情况审核流程不改；新需审 review 保存 submittedByPrincipalId 与 DB submittedAt。两决定仅信锁定 state 中的申请 principal：具体 rounding.approve，本人额外 review.self；超额本人批准还须配置的 DB rounding.self.excess，本人驳回不要求此属性。legacy 两决定 fail closed，决定保存 decidedByPrincipalId／DB decidedAt，姓名非身份键；授权拒绝不占 key，重放不新增付款／免零／审核。K01／K06／K05 仍未解决，六项跳过复现保留。入口与证据见 [MODULE_MAP](./MODULE_MAP.md) 和 [CURRENT_STAGE](./CURRENT_STAGE.md)。

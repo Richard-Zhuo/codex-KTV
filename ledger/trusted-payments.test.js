@@ -225,7 +225,7 @@ test('pay: already-paid balance allows no new payments and keeps the original ze
 
 test('payments: settle/rounding/handover/open stay formally disabled even with their permissions', async () => {
   const f = fixture({ permissions: ['payment.collect','payment.settle','rounding.approve','handover','room.open'] });
-  for (const action of ['settle','approveRounding','rejectRounding','handover','open'])
+  for (const action of ['handover', 'open'])
     await assert.rejects(f.app.execute(paymentCommand(action, action), f.credential), error => denied(error) && error.reason === 'trusted-action-not-enabled');
   await noEffects(f); assert.equal(f.executions(), 0);
 });

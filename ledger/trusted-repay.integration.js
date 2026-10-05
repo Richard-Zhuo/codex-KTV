@@ -177,7 +177,7 @@ export async function testTrustedRepay({t,pool,setup,auth,table,provision,seed,i
  await t.test('repay: creation cannot enable rounding, payment or other unmigrated commands',async()=>{
   const login=await provision(['credit.repay','credit.repay.approve','review.self','rounding.approve','payment.collect','payment.settle','incident.create',
    'incident.resolve','incident.resolve.approve','procurement.create','handover','room.open']),id='repay-closed';await seedFor(id);const run=runFor(id),before=await inspect(id);
-  for(const action of ['approveRounding','rejectRounding','settle','handover','open']){
+  for(const action of ['handover', 'open']){
    await assert.rejects(run.app.execute({...repayCommand(action),action},login.credential),e=>denied(e)&&e.reason==='trusted-action-not-enabled');await assertUnchanged(id,before);
   }
  });

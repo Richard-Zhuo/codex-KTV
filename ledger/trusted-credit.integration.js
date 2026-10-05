@@ -117,7 +117,7 @@ export async function testTrustedCredit({t,pool,setup,auth,table,provision,seed,
 
  await t.test('credit: rounding, payments and other unconverted commands remain disabled',async()=>{
   const login=await provision(['credit.apply','credit.approve','credit.repay','credit.repay.approve','rounding.approve','payment.collect','payment.settle','incident.create','incident.resolve','incident.resolve.approve','procurement.create','handover','room.open','review.self']),id='credit-blocked';await seedFor(id);const run=runFor(id);await run.app.execute(creditCommand(),login.credential);const before=await inspect(id);
-  for(const action of ['approveRounding','rejectRounding','settle','handover','open']){
+  for(const action of ['handover', 'open']){
    await assert.rejects(run.app.execute({...creditCommand(action,1),action},login.credential),e=>denied(e)&&e.reason==='trusted-action-not-enabled');await assertUnchanged(id,before);
   }
  });

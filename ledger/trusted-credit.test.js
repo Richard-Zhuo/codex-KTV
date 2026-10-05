@@ -173,7 +173,7 @@ test('credit: missing context or connection-bound auth fails closed without demo
 
 test('credit: rounding, money and remaining business actions stay closed despite grants',async()=>{
  const f=fixture({permissions:['credit.apply','credit.approve','credit.repay','credit.repay.approve','rounding.approve','payment.collect','payment.settle','incident.create','incident.resolve','incident.resolve.approve','procurement.create','handover','room.open','review.self']});
- for(const action of ['approveRounding','rejectRounding','settle','handover','open']){
+ for(const action of ['handover', 'open']){
   await assert.rejects(f.app.execute({...creditCommand(action),action},f.credential),e=>denied(e)&&e.reason==='trusted-action-not-enabled');await assertNoEffects(f);
  }
 });

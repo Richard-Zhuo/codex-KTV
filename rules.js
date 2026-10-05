@@ -230,7 +230,7 @@ function executeExchange(s, data, person, time, execution = { mode: 'demo' }) {
 export function transact(original, action, data = {}, key, execution = { mode: 'demo' }) {
   if (!execution || !['demo', 'trusted'].includes(execution.mode)) throw TypeError('事务执行模式无效');
   const context = execution.mode === 'trusted' ? assertTrustedExecutionContext(execution.context) : null;
-  if (context && !['clean', 'markRoomIssue', 'clearRoomIssue', 'approveRoomIssue', 'rejectRoomIssue', ...CATALOG_COMMAND_ACTIONS, 'cancelReservation', 'deposit', 'withdraw', 'reserve', 'sale', 'retailSale', ...ORDER_ADDITION_ACTIONS, 'exchange', 'stock', 'consumableStock', 'approveInventory', 'rejectInventory', 'gift', 'approveGift', 'rejectGift', 'expense', 'approveExpense', 'rejectExpense', 'credit', 'approve', 'reject', 'repay', 'approveRepayment', 'rejectRepayment', 'incident', 'resolveIncident', 'approveIncidentResolution', 'rejectIncidentResolution', 'procurement', 'collect', 'pay'].includes(action)) throw new AuthorizationDenied('trusted-action-not-enabled');
+  if (context && !['clean', 'markRoomIssue', 'clearRoomIssue', 'approveRoomIssue', 'rejectRoomIssue', ...CATALOG_COMMAND_ACTIONS, 'cancelReservation', 'deposit', 'withdraw', 'reserve', 'sale', 'retailSale', ...ORDER_ADDITION_ACTIONS, 'exchange', 'stock', 'consumableStock', 'approveInventory', 'rejectInventory', 'gift', 'approveGift', 'rejectGift', 'expense', 'approveExpense', 'rejectExpense', 'credit', 'approve', 'reject', 'repay', 'approveRepayment', 'rejectRepayment', 'incident', 'resolveIncident', 'approveIncidentResolution', 'rejectIncidentResolution', 'procurement', 'collect', 'pay', 'settle', 'approveRounding', 'rejectRounding'].includes(action)) throw new AuthorizationDenied('trusted-action-not-enabled');
   if (!key) throw new BusinessRejection('缺少操作编号');
   if (original.processed.includes(key)) return original;
   const s = structuredClone(original);
@@ -249,11 +249,19 @@ export function transact(original, action, data = {}, key, execution = { mode: '
     } else if (action === 'retailSale') submitRetailSale(s, data, undefined, undefined, undefined, execution);
     else if (ORDER_ADDITION_ACTIONS.includes(action)) executeOrderAddition(s, action, data, undefined, undefined, execution);
     else if (action === 'exchange') executeExchange(s, data, undefined, undefined, execution);
-    else if (action === 'collect' || action === 'pay') {
+    else if (action === 'collect' || action === 'pay' || action === 'settle') {
       const order = s.orders.find(order => order.id === data.order);
       if (!order || order.status !== '营业中') throw new BusinessRejection('账单已变化，请返回房间重新查看');
       if (action === 'collect') collectPayment(s, order, data, undefined, undefined, execution);
-      else { payOrder(s, order, data, undefined, undefined, execution); release(s, order); }
+      else {
+        if (action === 'pay') payOrder(s, order, data, undefined, undefined, execution);
+        else settleOrder(s, order, data, undefined, undefined, execution);
+        release(s, order);
+      }
+    }
+    else if (action === 'approveRounding' || action === 'rejectRounding') {
+      const order = s.orders.find(order => order.id === data.order);
+      decideRounding(s, order, action, data, undefined, undefined, undefined, execution);
     }
     else if (action === 'credit') {
       const order = s.orders.find(order => order.id === data.order);

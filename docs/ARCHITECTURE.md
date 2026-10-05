@@ -2,11 +2,17 @@
 
 本文件描述已集成的 Track A＋B 单机演示运行边界，以及尚未接入客户端的 P0-1 账本、Stage 2A 命令策略、Stage 2B 认证基础和 Stage 2C.1 同连接重验、2C.2 clean 与 2C.3 房间异常／目录维护／取消预约／存取酒、预约、销售、配品／其他消费及换酒小批的可信执行能力。具体入口见 [MODULE_MAP](./MODULE_MAP.md)，验证结果见 [CURRENT_STAGE](./CURRENT_STAGE.md)。
 
-## trusted collect／pay 新付款事实
+## trusted settle／免零决定
 
-ledger/application 的 session→既有 operation→新 key 授权／revision 顺序及 mysql-store 原子提交未改。trusted-enabled 只新增 collect／pay；rules.js 显式 trusted 分派不进入 demo identity／clock 分支，sales.js 的 paymentExecution 只消费 branded context。原校验成功后 appendPaymentRecords 在服务端执行中使用 Node 内置 crypto.randomUUID，查本账本保留的付款 ID，碰撞作为未知错误回滚，绝不接受客户端 paymentId。每笔新 payment 保存 paymentId、occurredAt=context.dbNow、recordedByPrincipalId=context.principalId；person 为 actorSnapshot 的显示名或 null，time 为同一 DB 时间兼容字段。字段仅向后兼容追加，不补造旧付款。
+rules.js 的显式 trusted 分支调用 sales.js:settleOrder／decideRounding，只有本批三项增加到 TRUSTED_ENABLED_ACTIONS。settle 使用同一 paymentExecution／appendPaymentRecords；待审 review 保存 session submittedByPrincipalId 与 dbNow。decideRounding 从锁定 state 读取申请 principal 和实际免零差额，不接受 payload 自审、身份、岗位或属性；需 rounding.approve＋本人 review.self，仅超额本人批准再查 configured DB rounding.self.excess。缺可信 principal／分值不明确时 authorization-denied，不写 terminal；决定记录 decidedByPrincipalId 和 dbNow。新 key 的当前资格检查先于“已处理”状态的业务终态，避免撤销属性后由业务拒绝占键；旧 key 仍先返回已持久化原终态。
 
-请求重试先读已存 operation，故不重新执行 UUID 生成或付款、结账、房态变化；未知／SQL 故障不留 payment、revision、operation 或 audit，故障修复后原 key 可重试。collect 仍收足单个当前 charge 并保持营业；pay 仍全额结清且无免零。reporting 仍按 order.time，K05 保持未解决；settle／rounding 审核、handover、open 仍正式拒绝。不增加生产依赖、表或客户端入口。
+普通 ≤1000 分无 review，>1000 分以及显式特殊情况按旧流程待审；审核无权改变旧结账／房态／outstanding 语义，K01／K06 保留。有效原 actor 重放先返回旧终态，再谈新 key 当前授权，权限／属性撤销不改写已提交的决定。未知／SQL 故障整体回滚。
+
+## trusted collect／pay／settle 新付款事实
+
+ledger/application 的 session→既有 operation→新 key 授权／revision 顺序及 mysql-store 原子提交未改。collect／pay 已迁移，settle 本批复用同一付款路径；rules.js 显式 trusted 分派不进入 demo identity／clock 分支，sales.js 的 paymentExecution 只消费 branded context。原校验成功后 appendPaymentRecords 在服务端执行中使用 Node 内置 crypto.randomUUID，查本账本保留的付款 ID，碰撞作为未知错误回滚，绝不接受客户端 paymentId。每笔新 payment 保存 paymentId、occurredAt=context.dbNow、recordedByPrincipalId=context.principalId；person 为 actorSnapshot 的显示名或 null，time 为同一 DB 时间兼容字段。字段仅向后兼容追加，不补造旧付款。
+
+请求重试先读已存 operation，故不重新执行 UUID 生成或付款、结账、房态变化；未知／SQL 故障不留 payment、revision、operation 或 audit，故障修复后原 key 可重试。collect 仍收足单个当前 charge 并保持营业；pay 仍全额结清且无免零。reporting 仍按 order.time，K05 保持未解决；settle／rounding 审核见上节；handover、open 仍正式拒绝。不增加生产依赖、表或客户端入口。
 
 ## 系统边界
 
@@ -190,7 +196,7 @@ approveIncidentResolution／rejectIncidentResolution 在 demo operator／clock �
 
 `rules.js:transact` 在 demo 身份／clock 求值前委托 `procurement.js:submitProcurement` 的显式 trusted 模式，仅从 branded context 检查 `procurement.create`、读取 session principal 与冻结 dbNow。新采购及关联 expense 同写 `submittedByPrincipalId`；person 只作当前可信显示快照（当前 null），关联 expense 的 submittedById 留空。原采购没有 employee 归属，不调用 resolver、不增加 expense.create／审批属性要求。共用原采购日期、项目／单位／说明、数量／整数金额、付款方式／性质、报销严格超过 500 元的待审及 expenseId 关联规则，旧记录和历史快照不改写；不入库或创建订单 payment。
 
-同一次 transact 隔离克隆内先生成关联 expense，再生成采购；两者与 state／revision／operation／audit 仍由既有 ledger MySQL 事务整体提交。领域拒绝保留终态，授权拒绝不占键，未知异常或 SQL 中途失败全部回滚；同 key 重连／撤权重放返回原终态，不重建两条记录。真实双连接由 ledger head 行锁保证旧 revision 或相同 key 只产生一次成对效果。已迁移 expense 决定继续原关联采购状态同步，不借本次修改。其余七项 open、collect、settle、pay、approveRounding、rejectRounding、handover 仍 fail closed，无新 schema、依赖、HTTP／UI 或真人映射。
+同一次 transact 隔离克隆内先生成关联 expense，再生成采购；两者与 state／revision／operation／audit 仍由既有 ledger MySQL 事务整体提交。领域拒绝保留终态，授权拒绝不占键，未知异常或 SQL 中途失败全部回滚；同 key 重连／撤权重放返回原终态，不重建两条记录。真实双连接由 ledger head 行锁保证旧 revision 或相同 key 只产生一次成对效果。已迁移 expense 决定继续原关联采购状态同步，不借本次修改。剩余 open、handover 仍 fail closed；collect／pay／settle 与免零决定的后续迁移见本文件上节，无新 schema、依赖、HTTP／UI 或真人映射。
 
 ## 状态所有权
 

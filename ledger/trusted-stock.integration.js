@@ -199,7 +199,7 @@ export async function testTrustedStock({ t, pool, setup, auth, table, provision,
   await t.test('stock submissions: inventory grants cannot authorize gift review; other approvals remain disabled', async () => {
     const login = await provision(['inventory.opening', 'inventory.adjust', 'inventory.approve', 'review.self']), id = 'stock-approval-blocked';
     await seedFor(id, 'stock'); const run = runFor(id); await run.app.execute(stockCommand('stock'), login.credential); const before = await inspect(id);
-    for (const action of ['approveGift', 'rejectGift', 'approveExpense', 'rejectExpense', 'approve', 'reject', 'approveRepayment', 'rejectRepayment', 'approveRounding', 'rejectRounding']) {
+    for (const action of ['approveGift', 'rejectGift', 'approveExpense', 'rejectExpense', 'approve', 'reject', 'approveRepayment', 'rejectRepayment']) {
       await assert.rejects(run.app.execute({ operationKey: action, expectedRevision: 1, action,
         payload: { request: before.head.state.inventoryReviews[0].id, decisionNote: 'fake', submittedByPrincipalId: 'fake' } }, login.credential),
         error => denied(error) && error.reason === (['approveGift', 'rejectGift', 'approveExpense', 'rejectExpense', 'approve', 'reject', 'approveRepayment', 'rejectRepayment'].includes(action) ? 'missing-permission' : 'trusted-action-not-enabled'));

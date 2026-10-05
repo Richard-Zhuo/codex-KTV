@@ -2,6 +2,18 @@
 
 更新日期：2026-10-05。本文件是当前进度的唯一汇总入口。
 
+## P0-1 Stage 2C.3 settle／免零审批 trusted 迁移（2026-10-05）
+
+先核实 a66377f 的 parent 为 3cdd29a，ff-only 合入 main，真实完整回归 1465／1459／0／6 后 fetch 核实远端无新增并普通 push；main=origin/main=a66377f、0/0、clean。从该干净基线创建 codex/p0-1-stage2c-settle-rounding。
+
+只新增 settle、approveRounding、rejectRounding 的 trusted-enabled 与显式 domain 路径；actor／permission／attribute／冻结 dbNow 均由同事务 session 重验产生。settle 复用安全随机付款 UUID、occurredAt、recordedByPrincipalId，待审免零保存 submittedByPrincipalId／submittedAt；审核从锁定 review 读取申请人及与 order.rounding 一致的实际分值，不接收 payload 身份或金额替代事实。决定保存 decidedByPrincipalId／decidedAt，姓名仅为可信显示快照。新 key 先检查锁定申请对应的当前资格，再检查已处理状态；撤属性时不以业务拒绝占键，旧 key 重放顺序不变。
+
+两种决定都需要 rounding.approve，本人还需 review.self；只有 >1000 分的本人批准额外要求数据库已配置且具有 rounding.self.excess，本人驳回及 ≤1000 分特殊情况本人批准不要求此属性。旧申请缺 principal 或免零事实无法安全解释时授权拒绝，不占 key。原终态先于当前动作授权，撤权仍可重放，但失效账号／session 不能读结果；Stage 1 application／MySQL store／fingerprint／revision 协议不改。
+
+普通差额 ≤1000 分直接免零，>1000 分待审；特殊情况仍需说明和审核。原 K01 待审即结账／释放房间、K06 outstanding 不扣免零均保留；决定不恢复房态、不重开订单、不重算余额。reporting／businessDate／¥10 门店额度及原六项 Known Issues 不改；handover／open 仍 fail closed，不接 HTTP／UI，无新依赖或 migration，停止在本批。
+
+本轮实际验收：npm test 再次实际尝试，环境无 npm（The term npm is not recognized），未取得 npm 运行证据；执行 node --test --test-isolation=none。本批新单元 47/47，新 MySQL 集成 56/56；四文件真实 MySQL 回归 671／671／0／0，完整 1568／1562／0／6。MySQL 8.4.11、jbhh_ktv_test、InnoDB 已实连核实，未输出 URL／密码。六项 skip 与本轮 main@a66377f 回归的名称逐项一致，含 K01／K06／K05。七项并发用例均确认不同 CONNECTION_ID；同 key 只一次执行，旧 revision 最多一次付款批次或决定，批准／驳回竞争只有一个终态。重连撤属性重放不再执行领域，新 key 授权拒绝不占键；operation／audit 各中途 CHECK 失败、未知异常和实际 release TypeError 完整回滚。真实回归暴露并回归固定了新 key 的属性授权先于已处理状态检查，demo 与原领域状态转换不变。单个独立提交，不 push 新提交、不进入 handover／open、不部署。
+
 ## P0-1 Stage 2C.3 collect／pay trusted 付款（2026-10-05）
 
 从干净 main=origin/main@3cdd29a 创建 codex/p0-1-stage2c-collect-pay，分支起点与 main 相同。只新增 collect／pay 的 trusted-enabled 和显式 domain 执行路径；payment.collect／payment.settle、session principal、冻结 DB 时间是唯一可信来源。新付款保存服务端随机 UUID paymentId、occurredAt、recordedByPrincipalId，person/time 仅兼容快照；旧付款和历史商品事实不改写、不回填。原 charge 收款、五渠道、多笔、全额无免零结账及房态语义保持。
