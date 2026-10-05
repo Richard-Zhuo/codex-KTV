@@ -553,6 +553,24 @@ rules.js 在 demo operator／clock 求值前委托 incidents.js:decideIncidentRe
 
 最终完整 node --test --test-isolation=none 实际 1379／1373／0／6，退出码 0；四套 MySQL 全部再次真实执行，新增恢复审核数据库用例 26／26。原六项 skip 名称与本轮前置提交收尾日志完全一致；¥10 免零规则、sales／reporting、Known Issues、ledger 指纹／revision／terminal、auth／employee store、HTTP／UI 均未修改。fixture 只使用并清理原十一张已知表，最终只读核对剩余 0 张，不 CREATE／DROP DATABASE、不清理其他工作树。仅本批一个提交，不进入下一批。
 
+## Stage 2C.3 procurement trusted 采购创建（2026-10-05）
+
+先核实 5e4f1ef 的直接 parent 为 df02a93，main 与原 origin/main 仍在 df02a93；以 ff-only 前进到 5e4f1ef，无 merge commit。收尾完整 node --test --test-isolation=none 实际 1379／1373／0／6，四套 MySQL 全部实际执行；fetch 确认远端未新增后普通 push，main＝origin/main＝5e4f1ef、0／0、clean。新分支 codex/p0-1-stage2c-procurement 直接从该 HEAD 创建，本批提交 parent 必须为 5e4f1ef，新提交不合入／push。
+
+当前 procurement／expenses 源文件的旧 Bug #5 注释不能覆盖运行事实：现行 expenses.js:decideExpense 已同步关联采购状态，bugs-evidence.test.js 与原 operations 回归已明确验证修复；六项 Known Issues 不包含采购联动。本批保持该既有逻辑，仅纠正采购模块的过期注释。
+
+只新增 procurement 到 trusted-enabled，共三十八项；其余七项 open、collect、settle、pay、approveRounding、rejectRounding、handover 保持 fail closed。rules.js 在 demo operator／clock 求值前分流到 procurement.js:submitProcurement 的显式 trusted 模式；具体采购权限、principal 与记录时间只从同事务 session context 读取。采购和关联 expense 同写 submittedByPrincipalId，person 仅可信显示快照（当前 null），关联 expense 的 submittedById 留空，不用 payload 或演示身份补造。原采购无 employee 归属，不增加员工解析、expense.create 或审批属性要求。
+
+原整数金额／数量、显式 date、付款方式／性质、商品／单位／说明截断、空说明 fallback、报销严格超过 500 元的待审状态和 expenseId 关联保持。两条记录在同一隔离 transact 克隆中生成，再与 state／revision／operation／audit 同一 MySQL 事务提交；不入库、不创建订单 payment、不改写历史。授权拒绝不占 key；原领域拒绝保留终态；未知异常／SQL 故障全部回滚。旧终态早于新 key 验权，撤权后有效原 actor 可重连重放，失效账号／session 禁止读取。ledger application／store、auth／employees、fingerprint、revision、terminal 与 schema 均未修改。
+
+新增首条单元测试先在未迁移 gate 实际失败，最小实现后通过；采购新增单元 16／16，DEVELOPMENT_ENVIRONMENT 所列六文件定向 150／150／0／0。修改 JavaScript 后实际尝试 npm test：PowerShell 找不到 npm，未取得 npm 执行证据。四文件真实 MySQL 回归 589／589／0／0：auth 47／47、employee 40／40、ledger 20／20、trusted 482／482（采购新增 19／19）。实际 MySQL 8.4.11／jbhh_ktv_test／InnoDB，原 auth 16、revalidation 13、ledger 11 均真实执行，无数据库 skip。
+
+采购两种竞争实测独立 CONNECTION_ID 且第二连接等待 head 行锁，旧 revision 命令最多一组采购＋expense，相同 key 只执行一次。重连撤权重放不重建两条记录。真实 operation INSERT 与 audit INSERT CHECK 故障、expense append 后采购 append 的实际 TypeError、两条记录生成后的未知异常均全回滚；可修复故障的原 key 保持可重试。既有 approveExpense／rejectExpense 对新关联费用读取同一可信申请人，并保持原采购状态同步；没有修改该审批 action。
+
+首次本批完整回归时 MySQL84 已停止，实际 833／823／4／6；四项失败均 ECONNREFUSED，不能替代真实验收。尝试启动服务被 Windows 拒绝（Cannot open MySQL84 service），用户随后恢复服务；重新只读确认 MySQL 8.4.11／jbhh_ktv_test／InnoDB 后继续。
+
+恢复后的最终完整 node --test --test-isolation=none 实际 1414／1408／0／6，退出码 0；四套 MySQL 再次全部实际执行，新增采购单元 16／16、数据库 19／19。六项 skip 名称与本轮 incident resolution review 收尾基线完全一致；只读核对原十一张 fixture 表剩余 0 张，不 CREATE／DROP DATABASE，不操作其他表／工作树。最终 JavaScript 测试标题同步后再次尝试 npm test，仍找不到 npm。¥10 免零、sales／reporting、费用审批、Known Issues、ledger 指纹／revision／terminal 与 auth／employees 均未改动。仅本批一个独立提交，不合入／push 新提交，不进入下一批，不部署，无范围偏离。
+
 ## 本轮隔离集成候选（2026-09-29）
 
 来源：用户交付的 `jbhh-ktv-full.zip`，基线 `ca726b2`；纯重构检查点 `74c3f55`；业务修复终点 `6aa01ba`。Track B 来源为 `codex/offsite-contracts@3193635`。候选位于独立工作树的 `codex/track-a-integration`，主工作区未提交内容保留；未合并 `main`、未推送。

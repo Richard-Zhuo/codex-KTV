@@ -233,7 +233,7 @@ test('repayment decisions: same key retries and competing approve/reject decide 
 test('repayment decisions: review permission does not enable rounding, payments or other remaining unmigrated actions',async()=>{
  const f=fixture({permissions:['credit.repay.approve','review.self','rounding.approve','payment.collect','payment.settle',
   'incident.create','incident.resolve','incident.resolve.approve','procurement.create','handover','room.open']});
- for(const action of ['approveRounding','rejectRounding','collect','settle','pay','procurement','handover','open']){
+ for(const action of ['approveRounding','rejectRounding','collect','settle','pay','handover','open']){
   await assert.rejects(f.app.execute({...repaymentReviewCommand(action),action},f.credential),e=>denied(e)&&e.reason==='trusted-action-not-enabled');await assertNoEffects(f);
  }
 });

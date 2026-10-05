@@ -6,9 +6,11 @@
 incident 只新增 trusted 创建动作，复用现有 ledger snapshot／auth／employees schema，无新 migration。负责人在同一 connection 通过现有 employee resolver 解析稳定 UUID，记录 assigneeEmployeeId／assigneeEmployeeNameSnapshot 与独立 submittedByPrincipalId；处理结果现另由 trusted resolveIncident 使用显式 principal→employee 关联校验，恢复审核现由 approveIncidentResolution／rejectIncidentResolution 仅比较锁定本次申请的 submittedByPrincipalId 并保存 decidedByPrincipalId，无新增权限或表。真实验收 helper 为 ledger/trusted-incident.integration.js、ledger/trusted-incident-resolution.integration.js 与 ledger/trusted-incident-review.integration.js，沿用 guarded 十一表 fixture，结果见 CURRENT_STAGE。
 
 
+procurement 仅接入既有 trusted 入口，无新 migration／表。采购及关联 expense 在同一 state snapshot 中保存同一 session 的 submittedByPrincipalId，dbNow 来自当前连接重验；既有 ledger transaction 同时提交两者、revision、operation 与 audit，失败全回滚。真实测试 helper ledger/trusted-procurement.integration.js 复用原 guarded 十一表 fixture，涵盖重连撤权重放、两独立连接竞争、真实 operation／audit SQL 约束故障与采购关联状态的既有回归。
+
 ## 当前方向：MySQL 8.4 LTS／InnoDB 过渡账本
 
-`migrations/001_mysql_ledger_core.sql` 只建立 `ledger_heads`、`ledger_operations`、`ledger_success_audit`，三表均指定 `ENGINE=InnoDB`。`ledger/mysql-store.js:createMySqlLedgerStore` 由可信调用方显式注入 `mysql2` promise Pool、稳定 ledgerId 和已迁移的数据库名，沿用 Stage 1A 的 `runAtomic` 端口。独立 Node trusted 入口只对已迁移房间、目录、存取酒、预约、销售、订单追加、换酒及库存申请／审核及 gift 提交／审批、expense 申请／审批、credit 申请／决定、repay 申请／审批与 incident 创建／resolveIncident／两项恢复审核动作接入同事务 session 重验，具体集合见 [ARCHITECTURE](../docs/ARCHITECTURE.md)；没有真人账号、HTTP、UI 切换或正式数据导入，已有静态演示仍只用浏览器 localStorage。
+`migrations/001_mysql_ledger_core.sql` 只建立 `ledger_heads`、`ledger_operations`、`ledger_success_audit`，三表均指定 `ENGINE=InnoDB`。`ledger/mysql-store.js:createMySqlLedgerStore` 由可信调用方显式注入 `mysql2` promise Pool、稳定 ledgerId 和已迁移的数据库名，沿用 Stage 1A 的 `runAtomic` 端口。独立 Node trusted 入口只对已迁移房间、目录、存取酒、预约、销售、订单追加、换酒及库存申请／审核及 gift 提交／审批、expense 申请／审批、credit 申请／决定、repay 申请／审批与 incident 创建／resolveIncident／两项恢复审核及采购动作接入同事务 session 重验，具体集合见 [ARCHITECTURE](../docs/ARCHITECTURE.md)；没有真人账号、HTTP、UI 切换或正式数据导入，已有静态演示仍只用浏览器 localStorage。
 
 `ledger_heads.state_json` 保存版本化 MySQL JSON 快照，`state_checksum` 是按 JSON 值规范化后的 SHA-256；读回会核对。MySQL JSON 会调整文本表示，它和原始 `jbhh-demo-v1` 文本不是同一备份。未来正式导入必须另存原始 JSON 字节和原文校验和，本阶段不执行导入。此过渡账本不代表最终领域关系模型已完成。
 
