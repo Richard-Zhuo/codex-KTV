@@ -8,6 +8,10 @@ incident 只新增 trusted 创建动作，复用现有 ledger snapshot／auth／
 
 procurement 仅接入既有 trusted 入口，无新 migration／表。采购及关联 expense 在同一 state snapshot 中保存同一 session 的 submittedByPrincipalId，dbNow 来自当前连接重验；既有 ledger transaction 同时提交两者、revision、operation 与 audit，失败全回滚。真实测试 helper ledger/trusted-procurement.integration.js 复用原 guarded 十一表 fixture，涵盖重连撤权重放、两独立连接竞争、真实 operation／audit SQL 约束故障与采购关联状态的既有回归。
 
+## 营业日规则与历史 SQL
+
+当前正式营业日 cutoff 是 12:00，计算入口和未接入边界见 [ARCHITECTURE](../docs/ARCHITECTURE.md)。本轮无 MySQL migration；纯日期结果可原样保存在现有 state_json。旧 PostgreSQL schema.sql 的 06:00 default 属于当时设计，保留历史原文，已不代表当前规则；不要运行该草案来配置正式营业日或推断历史归属。MySQL JSON 也不能替代原始时间／原文备份。
+
 ## 当前方向：MySQL 8.4 LTS／InnoDB 过渡账本
 
 `migrations/001_mysql_ledger_core.sql` 只建立 `ledger_heads`、`ledger_operations`、`ledger_success_audit`，三表均指定 `ENGINE=InnoDB`。`ledger/mysql-store.js:createMySqlLedgerStore` 由可信调用方显式注入 `mysql2` promise Pool、稳定 ledgerId 和已迁移的数据库名，沿用 Stage 1A 的 `runAtomic` 端口。独立 Node trusted 入口只对已迁移房间、目录、存取酒、预约、销售、订单追加、换酒及库存申请／审核及 gift 提交／审批、expense 申请／审批、credit 申请／决定、repay 申请／审批与 incident 创建／resolveIncident／两项恢复审核及采购动作接入同事务 session 重验，具体集合见 [ARCHITECTURE](../docs/ARCHITECTURE.md)；没有真人账号、HTTP、UI 切换或正式数据导入，已有静态演示仍只用浏览器 localStorage。

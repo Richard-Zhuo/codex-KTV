@@ -2,6 +2,18 @@
 
 更新日期：2026-10-05。本文件是当前进度的唯一汇总入口。
 
+## 营业日正式切换为 12:00（2026-10-05）
+
+先核实 db4ec73 parent=d9f9124，ff-only 合入 main。合入后真实完整回归 1596／1592／0／4，auth／employee／ledger／trusted MySQL 均实际执行；fetch 核实远端无新增后普通 push，main=origin/main=db4ec73、0/0、clean。从该基线建立 codex/p0-1-business-day-noon。本批只改变正式营业日 cutoff，不迁移 open／handover或修其他 Known Issues。
+
+核查当前代码无原 06:00 计算或 businessDate 写入，只有契约和历史 PostgreSQL default；新增 shared/business-day.js:businessDateFor 的 noon-v1／12:00 纯规则，显式要求门店时区及带 offset 的有效原始时间。凌晨和 11:59:59 归前日，12:00:00／12:00:01／晚间归当日；不修改 payment occurredAt、不回填或重算历史日期，不使用设备默认时区。新规则的订单创建与 reporting 接入仍待 K05，不能把纯规则验收当作订单营业额／资金双口径已完成。门店时区配置仍 OPEN。
+
+同步当前 REQUIREMENTS／OFFSITE_CONTRACTS／P0 矩阵／OPEN BUSINESS DECISIONS／架构／模块地图与 K05 目标规则。主题 06:00 日间边界、历史 CURRENT_STAGE 和旧 PostgreSQL SQL 原文保留，不机械替换历史。业务权限、¥10、K01／K06、付款／报表均不改；剩余 K04／K05／K07／K10 四项 skip 保持。
+
+本批实际单元 16／16／0／0，定向两文件 37／37／0／0；新增 MySQL JSON 往返一项实际通过，保留原账本并发／重连／回滚回归。已实连核实 MySQL 8.4.11、jbhh_ktv_test、InnoDB，不输出 URL／密码。最后 JavaScript 修改后实际尝试 npm test，环境仍无 npm（The term npm is not recognized），未取得 npm 运行证据；完整 node --test --test-isolation=none 为 1613／1609／0／4，退出码 0，auth／employee／ledger／trusted 四组均真实执行；四项 skip 名称与 db4ec73 收尾逐项一致。无依赖／migration／业务 action／HTTP／UI 变动；只提交本批规则，后续 K04／K05／K07／K10 保持只读审计。
+
+下方为历史交付记录，原暂定 06:00 已被当前正式 12:00 规则取代。
+
 ## K01／K06 免零生效、余额与结清修复（2026-10-05）
 
 先核实 d9f9124 parent=a66377f，ff-only 合入 main，无 merge commit。合入后真实完整回归 1568／1562／0／6；fetch 核实远端无新提交，普通 push 后 main=origin/main=d9f9124、0/0、clean。从该干净基线创建 codex/p0-1-rounding-k01-k06，本批仅修 K01／K06，不迁移 handover／open。

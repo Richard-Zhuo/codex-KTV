@@ -8,7 +8,7 @@
 | K02 套餐不等式 | 演示规则已修；报价和事务拒绝不一致价格，旧数据加载进入只读核对页并保留历史订单、付款及原文，`offsite.contract.test.js`、`persistence.test.js` 有正向断言 | 正式价格版本、审批、生效时间仍未实现 |
 | K03 高额挂账越层批准 | 演示规则已修；`sales.js` 同查具体权限与指定岗位，Track B 测试改为拒绝越层的断言 | 真人身份、远程审批与权限审计仍未实现 |
 | K04 全历史累计交班 | 未解决；第二班仍累计首班收款，`offsite.contract.test.js` 标为问题 | 按班次及渠道归集 |
-| K05 跨日资金归属 | 未解决；`offsite.report.test.js` 标为问题 | 06:00 切换；订单营业额按开单 `businessDate`，每笔付款按真实 `occurredAt` 所属营业日，回款及将来退款按各自发生日 |
+| K05 跨日资金归属 | 未解决；`offsite.report.test.js` 标为问题 | 12:00 切换；订单营业额按开单 `businessDate`，每笔付款按真实 `occurredAt` 所属营业日，回款及将来退款按各自发生日 |
 | K06 免零后 `outstanding` 差额 | 已修；outstanding 扣明确生效直免或已批准免零，pending／rejected／不明历史不扣，可选 roundingHistory 保留后续结算前的事实；原 test.skip 转正，覆盖多笔付款／多渠道／后续 pay 与 settle | 免零非付款，不改原付款／报表／businessDate；未知历史事实不回填 |
 | K07 待验平台券覆盖房费 | 未解决；`rules.test.js` 的现状断言 | 核销成功后方可按券方案开房；失败券不得当作已支付或已覆盖房费 |
 | K08 挂账驳回 | 原申请及决定现保留在 `order.creditHistory`，审核历史可查；旧单仍可能在释放房后游离 | 给游离单可见异常队列及可执行收清、撤销流程 |

@@ -2,6 +2,12 @@
 
 本文件描述已集成的 Track A＋B 单机演示运行边界，以及尚未接入客户端的 P0-1 账本、Stage 2A 命令策略、Stage 2B 认证基础和 Stage 2C.1 同连接重验、2C.2 clean 与 2C.3 房间异常／目录维护／取消预约／存取酒、预约、销售、配品／其他消费及换酒小批的可信执行能力。具体入口见 [MODULE_MAP](./MODULE_MAP.md)，验证结果见 [CURRENT_STAGE](./CURRENT_STAGE.md)。
 
+## 营业日 12:00 规则边界
+
+shared/business-day.js:businessDateFor(occurredAt, {timeZone}) 是独立纯计算规则，BUSINESS_DAY_POLICY 标明 noon-v1／12:00。时间必须是带显式 offset 的有效 ISO 时间戳，门店时区必须显式提供；缺失／无效值直接失败，不使用设备默认时区、state.clock 或 order.time 猜测未知历史。当地 12:00 前归前一日，12:00:00 起归当天；只返回日期，不改写源时间戳。
+
+当前订单创建尚未保存 businessDate，reporting 仍选 order.time，K05 未修。后续接入须在开单时冻结日期／门店时区／规则版本，历史已确定日期不得按 noon-v1 重算；订单营业额按该快照归属，付款资金另按真实 occurredAt 查询。当前门店时区配置、生效前历史处置仍见 OPEN_BUSINESS_DECISIONS，不能从历史 SQL 默认值代替正式配置。本轮不接入 open／handover、不修改付款或报表；MySQL 验证仅覆盖纯规则结果的 JSON 快照往返。
+
 ## trusted settle／免零决定
 
 rules.js 的显式 trusted 分支调用 sales.js:settleOrder／decideRounding，只有本批三项增加到 TRUSTED_ENABLED_ACTIONS。settle 使用同一 paymentExecution／appendPaymentRecords；待审 review 保存 session submittedByPrincipalId 与 dbNow。decideRounding 从锁定 state 读取申请 principal 和实际免零差额，不接受 payload 自审、身份、岗位或属性；需 rounding.approve＋本人 review.self，仅超额本人批准再查 configured DB rounding.self.excess。缺可信 principal／分值不明确时 authorization-denied，不写 terminal；决定记录 decidedByPrincipalId 和 dbNow。新 key 的当前资格检查先于“已处理”状态的业务终态，避免撤销属性后由业务拒绝占键；旧 key 仍先返回已持久化原终态。

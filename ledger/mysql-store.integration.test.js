@@ -8,6 +8,7 @@ import { createLedgerApplication } from './application.js';
 import { encodeLedgerSnapshot } from './mysql-snapshot.js';
 import { createMySqlLedgerStore } from './mysql-store.js';
 import { testRoundingLimit } from './rounding-limit.integration.js';
+import { businessDateFor, BUSINESS_DAY_POLICY } from '../shared/business-day.js';
 
 const testUrl = process.env.LEDGER_MYSQL_TEST_URL;
 const database = 'jbhh_ktv_test';
@@ -266,6 +267,33 @@ test('MySQL 8.4 InnoDB ledger integration in jbhh_ktv_test',
         const zero = await inspect('zero');
         assert.equal(zero.head.state.inventory.bw.count, 0);
         assert.equal(zero.head.state.inventory.qd.count, null);
+      });
+
+      await t.test('noon business date snapshot roundtrip preserves dates, history and actual payment timestamps', async () => {
+        const examples = [
+          ['02:00:00', '2026-10-04'], ['11:59:59', '2026-10-04'],
+          ['12:00:00', '2026-10-05'], ['12:00:01', '2026-10-05'], ['20:00:00', '2026-10-05']
+        ];
+        // Fixtures exercise the pure policy and JSON port, not an order creation/import entry point.
+        const seeded = await seed('business-date-noon', state => {
+          state.orders = examples.map(([time], index) => {
+            const occurredAt = '2026-10-05T' + time + '+08:00';
+            return { id: index + 1, kind: 'retail', room: null, time: occurredAt,
+              businessDate: businessDateFor(occurredAt, { timeZone: 'Asia/Shanghai' }),
+              businessDatePolicyVersion: BUSINESS_DAY_POLICY.version,
+              payments: [{ paymentId: 'existing-payment-' + index, occurredAt, time: occurredAt,
+                recordedByPrincipalId: 'synthetic-actor', amount: 100, method: '现金' }] };
+          });
+          state.orders.push({ id: 6, kind: 'retail', room: null, time: '2026-10-05T11:00:00+08:00',
+            businessDate: '2026-10-05', businessDatePolicyVersion: 'historic-proof', payments: [] });
+        });
+        const actual = await inspect('business-date-noon');
+        assert.deepEqual(actual.head.state.orders, seeded.orders);
+        assert.deepEqual(actual.head.state.orders.slice(0, 5).map(order => order.businessDate),
+          examples.map(([, date]) => date));
+        assert.equal(actual.head.state.orders[5].businessDate, '2026-10-05');
+        assert.equal(actual.head.revision, 0);
+        assert.equal(actual.operations.length, 0); assert.equal(actual.audit.length, 0);
       });
 
       await testRoundingLimit(t, { seed, app, inspect, pool, qualified });
