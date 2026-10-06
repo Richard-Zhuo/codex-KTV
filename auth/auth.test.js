@@ -91,7 +91,7 @@ test('existing mixed-case grants are stored verbatim without accepting invented 
     assert.equal(await auth.revokePermission({ principalId, permissionId }), true);
   }
   const before = structuredClone(calls);
-  for (const permissionId of ['administrator', '*', 'order.*', 'Order.serveExtra', 'order.ServeExtra', 'order.serveExtra ', 'expense.ViewAll']) {
+  for (const permissionId of ['administrator', '*', 'order.*', 'Order.serveExtra', 'order.ServeExtra', 'order.serveExtra ', 'expense.ViewAll', 'unknown.permission', 'unknown.viewAll']) {
     await assert.rejects(auth.grantPermission({ principalId, permissionId }), /具体 permission/);
     await assert.rejects(auth.revokePermission({ principalId, permissionId }), /具体 permission/);
   }

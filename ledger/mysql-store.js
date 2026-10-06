@@ -87,14 +87,27 @@ export function createMySqlLedgerStore({ pool, ledgerId, database, bindSessionRe
     return checkedOperation(rows[0], ledgerId, operationKey);
   };
 
+  const readOnConnection = async connection => {
+    const [rows] = await connection.execute(headSql, [ledgerId]);
+    return checkedHead(rows[0], ledgerId);
+  };
+
   const read = async () => {
     const connection = await pool.getConnection();
     try {
-      const [rows] = await connection.execute(headSql, [ledgerId]);
-      return checkedHead(rows[0], ledgerId);
+      return await readOnConnection(connection);
     } finally {
       connection.release();
     }
+  };
+
+  const readInTransaction = async connection => {
+    if (typeof connection?.execute !== 'function') throw TypeError('Ledger read requires a connection');
+    const [status] = await connection.execute('DO 0');
+    if (!Number.isInteger(status.serverStatus) || !(status.serverStatus & 1)) {
+      throw Error('Ledger read requires an active transaction');
+    }
+    return readOnConnection(connection);
   };
 
   const runAtomic = async work => {
@@ -235,5 +248,5 @@ export function createMySqlLedgerStore({ pool, ledgerId, database, bindSessionRe
     }
   };
 
-  return { ledgerId, read, runAtomic };
+  return { ledgerId, read, readInTransaction, runAtomic };
 }

@@ -72,6 +72,6 @@
 |---|---|---|---|
 | Auth/session/cookie/CSRF | server.js、http/transport.js、http/api.js、http/bootstrap.js；复用 auth/service.js 与 auth/mysql-store.js | http/auth.test.js、auth/mysql-auth.integration.test.js | token 仅在 HttpOnly Cookie；生产 Secure；同源 Origin、CSRF；退出撤销正式 session |
 | 显式命令与错误契约 | http/registry.js、http/api.js、http/contract.js；调用 ledger/application.js:createTrustedLedgerApplication | http/contract.test.js、http/command.integration.js 经 ledger/trusted-clean.integration.test.js 真实 MySQL fixture 执行 | policy + trusted-enabled + HTTP 清单三重门；同事务 auth 重验、授权、revision、重放及审计不移入 HTTP |
-| 最小查询投影 | http/query.js；复用 auth/mysql-store.js:bindSessionRevalidation 和 ledger/mysql-store.js:read | 同一 HTTP MySQL 集成用例 | 服务端当前权限与策略属性裁剪；revision 来自正式 ledger head；不下发完整状态 |
+| 最小查询投影 | http/query.js；复用 auth/mysql-store.js:bindSessionRevalidation 和 ledger/mysql-store.js:readInTransaction | 同一 HTTP MySQL 集成用例 | 服务端当前权限与策略属性裁剪；revision 来自正式 ledger head；不下发完整状态 |
 
 员工浏览器仍使用 ui/shell.js 的 demo/localStorage 路径；Stage 3B 再迁移。

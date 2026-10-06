@@ -228,6 +228,6 @@ Meituan production redemption = NOT ENABLED。Fake Gateway 仅用于显式隔离
 
 写入请求只提交 operationKey、expectedRevision 和 payload；URL 中的 action 必须同时存在于命令策略、trusted-enabled 清单及 HTTP 显式清单。客户端身份、权限、策略属性和时间均不是可信输入。HTTP 只映射输入及结果，现有同事务 session 重验、权限、revision、幂等重放、领域事务、审计和 MySQL 提交仍是唯一写入事实。
 
-GET /api/v1/store/snapshot 使用当前 session 权限与策略属性在服务端生成有限字段投影，包含账本 revision，不下发完整数据库状态、演示身份、权限配置、操作历史或原始账本 JSON。backend.view 不授予业务审核，review.self 独立于具体审核权限。HTTP 错误按稳定机器码区分认证、授权、CSRF、输入、业务拒绝、revision、幂等冲突及内部错误。
+GET /api/v1/store/snapshot 在同一 MySQL 读事务内重验当前 session 权限与策略属性、读取账本 head 并生成有限字段投影，返回该状态对应的 revision，不下发完整数据库状态、演示身份、权限配置、操作历史或原始账本 JSON。backend.view 不授予业务审核，review.self 独立于具体审核权限。权限授予只接受既有正式 permission ID，未知 ID 不得写入 grants。HTTP 错误按稳定机器码区分认证、授权、CSRF、输入、业务拒绝、revision、幂等冲突及内部错误。
 
 本阶段不迁移员工 UI、不启用真实美团 production、不部署，也不宣称正式生产或 14 天离岗 MVP 已就绪。

@@ -33,6 +33,11 @@ function commandBody(body) {
 }
 
 export function createHttpApi(options) {
+  if (typeof options?.application?.execute !== 'function' ||
+      typeof options?.store?.readInTransaction !== 'function' ||
+      typeof options?.sessionReader?.withContext !== 'function') {
+    throw new TypeError('Invalid HTTP API composition');
+  }
   const auth = createHttpAuthBoundary(options);
   const application = options.application;
   const store = options.store;
@@ -51,8 +56,9 @@ export function createHttpApi(options) {
           const session = await auth.resolve(req);
           auth.requireCsrf(req, session);
           const match = /^\/api\/v1\/commands\/([A-Za-z][A-Za-z0-9]*)$/.exec(path);
-          if (req.method !== 'POST' || url.search || !match || !isHttpCommand(match[1]) ||
-              typeof application?.execute !== 'function') throw new HttpBoundaryError('invalid_input');
+          if (req.method !== 'POST' || url.search || !match || !isHttpCommand(match[1])) {
+            throw new HttpBoundaryError('invalid_input');
+          }
           const body = commandBody(await readJson(req));
           const result = await application.execute({ action: match[1], ...body }, session.credential);
           sendCommandResult(res, result, requestId);
@@ -60,10 +66,10 @@ export function createHttpApi(options) {
         }
         if (path === '/api/v1/store/snapshot' && req.method === 'GET') {
           const session = await auth.resolve(req);
-          if (url.search || typeof store?.read !== 'function' ||
-              typeof sessionReader?.withContext !== 'function') throw new HttpBoundaryError('invalid_input');
+          if (url.search) throw new HttpBoundaryError('invalid_input');
           const projected = await sessionReader.withContext(session.credential,
-            async context => projectStoreSnapshot(await store.read(), context));
+            async (context, connection) =>
+              projectStoreSnapshot(await store.readInTransaction(connection), context));
           sendJson(res, 200, projected, { 'X-Request-Id': requestId });
           return true;
         }

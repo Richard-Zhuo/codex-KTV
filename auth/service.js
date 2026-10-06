@@ -1,11 +1,11 @@
 import { randomUUID } from 'node:crypto';
 import { assertPasswordInput, derivePassword, verifyAbsentPassword, verifyPassword } from './password.js';
 import { digestSessionToken, issueSessionToken } from './session-token.js';
+import { PERMISSION_IDS } from '../shared/identity.js';
 
 const invalidCredentials = Object.freeze({ ok: false, code: 'invalid-credentials' });
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-const permissionPattern = /^[a-z][a-z0-9]*(?:[.-][a-z][a-z0-9]*)*$/;
-const existingMixedCasePermissions = new Set(['order.serveExtra', 'expense.viewAll', 'procurement.viewAll', 'incident.viewAll']);
+const formalPermissions = new Set(PERMISSION_IDS);
 
 function assertLoginIdentifier(value) {
   if (typeof value !== 'string' || !value || value !== value.trim() ||
@@ -17,9 +17,8 @@ function assertPrincipalId(value) {
   if (typeof value !== 'string' || !uuidPattern.test(value)) throw TypeError('principal ID 无效');
 }
 function assertPermissionId(value) {
-  // Preserve only the exact existing camel-case permission IDs; reject arbitrary mixed case.
-  if (typeof value !== 'string' || value.length > 100 ||
-      (!permissionPattern.test(value) && !existingMixedCasePermissions.has(value)) || value === 'administrator') {
+  // Reuse the existing formal permission catalog; unknown grants would poison trusted reads.
+  if (typeof value !== 'string' || !formalPermissions.has(value)) {
     throw TypeError('只能保存具体 permission');
   }
 }

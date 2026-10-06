@@ -30,10 +30,13 @@ export async function testHttpBoundary({ t, pool, auth, seed, inspect, database,
   const policyReviewer = await makeAccount(['expense.approve']);
   const none = await makeAccount();
   await seed(ledgerId, state => {
+    state.internalAuditOnly = 'stage3a-never-return-internal-secret';
+    state.rooms[0].futureSensitive = 'stage3a-never-return-room-secret';
     state.expenses.push(
       { id: 501, date: '2026-10-06', type: 'test', amount: 100,
         status: 'recorded', description: 'owner-only-secret',
-        submittedByPrincipalId: expenseOwner.principalId },
+        submittedByPrincipalId: expenseOwner.principalId,
+        futureSensitive: 'stage3a-never-return-expense-secret' },
       { id: 502, date: '2026-10-06', type: 'test', amount: 200,
         status: 'recorded', description: 'other-only-secret',
         submittedByPrincipalId: cleaner.principalId }
@@ -48,16 +51,19 @@ export async function testHttpBoundary({ t, pool, auth, seed, inspect, database,
     origin, environment: 'development', allowInsecureCookie: true,
     logger: { error: detail => diagnostics.push(detail) } };
   api = createHttpApi(options);
-  const request = async (path, { method = 'GET', cookie, csrf, body, requestOrigin = origin } = {}) => {
+  const request = async (path, { method = 'GET', cookie, csrf, body,
+    requestOrigin = origin, contentType = 'application/json' } = {}) => {
     const headers = {};
     if (cookie) headers.Cookie = cookie;
     if (csrf) headers['X-CSRF-Token'] = csrf;
     if (method !== 'GET') headers.Origin = requestOrigin;
-    if (body !== undefined) headers['Content-Type'] = 'application/json';
+    if (body !== undefined) headers['Content-Type'] = contentType;
     const response = await fetch(origin + path, { method, headers,
       body: body === undefined ? undefined : typeof body === 'string' ? body : JSON.stringify(body) });
     return { status: response.status, body: await response.json(),
-      cookie: response.headers.get('set-cookie'), requestId: response.headers.get('x-request-id') };
+      cookie: response.headers.get('set-cookie'),
+      cacheControl: response.headers.get('cache-control'),
+      requestId: response.headers.get('x-request-id') };
   };
   const login = async account => {
     const result = await request('/api/v1/auth/login',
@@ -93,7 +99,8 @@ export async function testHttpBoundary({ t, pool, auth, seed, inspect, database,
           payload: { room: 'V01' } } })).body.error.code, 'csrf_denied');
       const spoof = { principal: 'boss', principalId: 'boss', userId: 'boss',
         role: 'boss', permissions: ['room.clean', 'review.self', 'rounding.approve'],
-        policyAttributes: ['expense.approval.boss'], trustedContext: { dbNow: '2099' } };
+        policyAttributes: ['expense.approval.boss'], trustedContext: { dbNow: '2099' },
+        actualActorPrincipalId: 'boss', clock: '2099', dbNow: '2099' };
       for (const body of [
         { operationKey: 'spoof-top', expectedRevision: 0, payload: { room: 'V01' }, ...spoof },
         { operationKey: 'spoof-payload', expectedRevision: 0,
@@ -109,6 +116,14 @@ export async function testHttpBoundary({ t, pool, auth, seed, inspect, database,
         assert.equal((await command(signed, action, 'forbidden-' + action, 0, {})).body.error.code,
           'invalid_input');
       }
+      assert.equal((await request('/api/v1/unknown')).body.error.code, 'invalid_input');
+      const badType = await request('/api/v1/commands/clean', { method: 'POST',
+        cookie: signed.cookie, csrf: signed.csrf, contentType: 'text/plain',
+        body: '{"operationKey":"bad-type","expectedRevision":0,"payload":{"room":"V01"}}' });
+      assert.equal(badType.body.error.code, 'invalid_input');
+      const oversized = await command(signed, 'clean', 'oversized', 0,
+        { room: 'V01', note: 'x'.repeat(17 * 1024) });
+      assert.equal(oversized.body.error.code, 'invalid_input');
       assert.equal((await inspect(ledgerId)).head.revision, 0);
     });
 
@@ -145,6 +160,7 @@ export async function testHttpBoundary({ t, pool, auth, seed, inspect, database,
     await t.test('HTTP current permission and policy-attribute filtering', async () => {
       const empty = await snapshot(await login(none));
       assert.equal(empty.status, 200);
+      assert.equal(empty.cacheControl, 'no-store');
       assert.equal(empty.body.revision, 1);
       assert.deepEqual(empty.body.view, { reviewSections: [] });
       const backendView = await snapshot(await login(backend));
@@ -153,11 +169,17 @@ export async function testHttpBoundary({ t, pool, auth, seed, inspect, database,
       assert.equal(cleanerView.body.view.rooms[0].id, 'V01');
       assert.equal('expenses' in cleanerView.body.view, false);
       assert.equal(JSON.stringify(cleanerView.body).includes('owner-only-secret'), false);
+      for (const secret of ['stage3a-never-return-internal-secret',
+        'stage3a-never-return-room-secret', 'stage3a-never-return-expense-secret']) {
+        assert.equal(JSON.stringify(cleanerView.body).includes(secret), false);
+      }
       const ownerView = await snapshot(await login(expenseOwner));
       assert.deepEqual(ownerView.body.view.expenses.map(item => item.description), ['owner-only-secret']);
       const allView = await snapshot(await login(expenseAll));
       assert.deepEqual(allView.body.view.expenses.map(item => item.description),
         ['owner-only-secret', 'other-only-secret']);
+      assert.equal(JSON.stringify(allView.body).includes('stage3a-never-return-expense-secret'),
+        false);
       const reviewer = await login(policyReviewer);
       assert.deepEqual((await snapshot(reviewer)).body.view.reviewSections, []);
       const policy = createPolicyAttributeService({ store: authStore });
@@ -186,6 +208,22 @@ export async function testHttpBoundary({ t, pool, auth, seed, inspect, database,
       const denied = await command(signed, 'clean', 'after-disable', 1, { room: 'V02' });
       assert.equal(denied.status, 401);
       assert.equal(denied.body.error.code, 'unauthenticated');
+      assert.equal((await inspect(ledgerId)).head.revision, 1);
+      api = createHttpApi(options);
+
+      const removed = await makeAccount(['room.clean']);
+      const removalSession = await login(removed);
+      api = createHttpApi({ ...options, application: {
+        async execute(body, credential) {
+          await auth.revokePermission({ principalId: removed.principalId,
+            permissionId: 'room.clean' });
+          return trusted.execute(body, credential);
+        }
+      } });
+      const deniedAfterRemoval = await command(removalSession, 'clean',
+        'after-permission-removal', 1, { room: 'V02' });
+      assert.equal(deniedAfterRemoval.status, 403);
+      assert.equal(deniedAfterRemoval.body.error.code, 'authorization_denied');
       assert.equal((await inspect(ledgerId)).head.revision, 1);
       api = createHttpApi(options);
     });
@@ -228,7 +266,98 @@ export async function testHttpBoundary({ t, pool, auth, seed, inspect, database,
       assert.equal(JSON.stringify(failed.body).includes('secret'), false);
       assert.equal(diagnostics.at(-1).requestId, failed.requestId);
       assert.equal((await inspect(ledgerId)).head.revision, 1);
+
+      api = createHttpApi({ ...options, application: {
+        async execute() {
+          await pool.execute('SELECT * FROM stage3a_missing_table_for_error_test');
+        }
+      } });
+      const sqlFailure = await command(signed, 'clean', 'http-sql-error', 1,
+        { room: 'V02' });
+      assert.equal(sqlFailure.status, 500);
+      assert.equal(sqlFailure.body.error.code, 'internal_error');
+      assert.equal(sqlFailure.body.error.requestId, sqlFailure.requestId);
+      assert.equal(JSON.stringify(sqlFailure.body).includes('stage3a_missing_table'), false);
+      assert.equal(diagnostics.at(-1).requestId, sqlFailure.requestId);
       api = createHttpApi(options);
+    });
+
+    await t.test('HTTP login replaces an existing cookie without principal fixation', async () => {
+      const first = await login(cleaner);
+      const replacement = await request('/api/v1/auth/login', { method: 'POST',
+        cookie: first.cookie, body: { loginIdentifier: backend.loginIdentifier, password } });
+      assert.equal(replacement.status, 200);
+      assert.notEqual(replacement.cookie.split(';')[0], first.cookie);
+      assert.equal(replacement.body.session.principalId, backend.principalId);
+      assert.equal(replacement.cacheControl, 'no-store');
+      const oldStatus = await request('/api/v1/auth/session', { cookie: first.cookie });
+      assert.equal(oldStatus.body.session.principalId, cleaner.principalId);
+      const newCookie = replacement.cookie.split(';')[0];
+      assert.equal((await request('/api/v1/commands/clean', { method: 'POST',
+        cookie: newCookie, csrf: first.csrf,
+        body: { operationKey: 'old-csrf-new-session', expectedRevision: 1,
+          payload: { room: 'V02' } } })).body.error.code, 'csrf_denied');
+    });
+
+    await t.test('HTTP snapshot keeps revision and projected state coherent across two connections', async () => {
+      const outside = await pool.getConnection();
+      try {
+        await assert.rejects(store.readInTransaction(outside), /active transaction/);
+      } finally {
+        outside.release();
+      }
+      const reader = await makeAccount(['room.clean']);
+      const readerSession = await login(reader);
+      const writerSession = await login(cleaner);
+      const before = (await inspect(ledgerId)).head;
+      let authConnection;
+      let enteredRead;
+      const entered = new Promise(resolve => { enteredRead = resolve; });
+      let releaseRead;
+      const paused = new Promise(resolve => { releaseRead = resolve; });
+      const readerAuthStore = { bindSessionRevalidation(connection) {
+        authConnection = connection;
+        return authStore.bindSessionRevalidation(connection);
+      } };
+      const raceReader = createCurrentSessionReader({ pool, authStore: readerAuthStore });
+      const raceStore = { ...store, async readInTransaction(connection) {
+        assert.strictEqual(connection, authConnection);
+        const [[row]] = await connection.query('SELECT CONNECTION_ID() AS id');
+        assert.match(String(row.id), /^\d+$/);
+        enteredRead();
+        await paused;
+        return store.readInTransaction(connection);
+      } };
+      api = createHttpApi({ ...options, store: raceStore, sessionReader: raceReader });
+      const pending = snapshot(readerSession);
+      try {
+        await Promise.race([entered, pending.then(result => {
+          throw Error('Snapshot returned before read gate: ' + result.body?.error?.code);
+        })]);
+        const second = await pool.getConnection();
+        try {
+          const [[row]] = await second.query('SELECT CONNECTION_ID() AS id');
+          assert.notEqual(String(row.id), String(authConnection.threadId));
+        } finally {
+          second.release();
+        }
+        const write = await command(writerSession, 'clean', 'snapshot-race-write', 1,
+          { room: 'V02' });
+        assert.equal(write.status, 200);
+        assert.equal(write.body.result.revision, 2);
+      } finally {
+        releaseRead();
+      }
+      const result = await pending;
+      api = createHttpApi(options);
+      const after = (await inspect(ledgerId)).head;
+      assert.equal(result.status, 200);
+      assert.equal(result.cacheControl, 'no-store');
+      assert.ok([before.revision, after.revision].includes(result.body.revision));
+      const expected = result.body.revision === before.revision ? before : after;
+      assert.deepEqual(result.body.view.rooms, expected.state.rooms.map(room =>
+        ({ id: room.id, type: room.type, status: room.status })));
+      assert.notDeepEqual(before.state.rooms, after.state.rooms);
     });
   } finally {
     await new Promise(resolve => server.close(resolve));

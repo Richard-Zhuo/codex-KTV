@@ -1,14 +1,22 @@
-## 2026-10-06：Stage 3A HTTP trusted boundary
+## 2026-10-06：Stage 3A HTTP trusted boundary（原始交付记录）
 
 K10 的 d8f3b29 已通过 ff-only 合入 main，并在完整 1771/1771、0 fail、0 skip 后 fetch 核对无漂移、普通 push；main 与 origin/main 均为 d8f3b29（0/0）。本阶段从该提交建立 codex/p0-1-stage3a-http，两个线性提交分别处理 HTTP auth/session/cookie/CSRF 与 trusted command/query boundary；Stage 3A 提交保留本地供人工验收，未推送、未合入 main、未部署。
 
 Commit 1 复用既有 auth_accounts、credentials、grants、sessions、events、policy attributes 及 scrypt 服务；原始 session token 只发入 HttpOnly Cookie。生产默认 Secure、SameSite=Strict、Path=/；只有显式 development 且本机 Origin 可关闭 Secure。登录要求精确同源 Origin 与 JSON；退出和命令额外要求会话派生 CSRF 证据。HTTP 先认证不能替代可信账本写入中的同事务 session、权限及属性重验。
 
-Commit 2 的 HTTP 命令清单显式列出 45 个同时具备正式 policy 与 trusted-enabled 资格的 action，永不包含演示身份、时间、权限或 reset 辅助动作。HTTP 只验证传输形状并转交 operationKey、expectedRevision、payload 和服务端 session digest；原有 ledger head、幂等重放、权限、revision、领域事务、audit 与 MySQL 原子提交不变。查询只返回当前认证 principal 有权看到的有限投影及服务端 ledger revision；backend.view 和 review.self 不构成审核捷径。统一错误码和 requestId 保护内部异常细节。为使正式查询权限可配置，仅放行 auth 服务原已定义的三个 viewAll 混合大小写权限 ID，并加精确回归；任意新混合大小写权限仍被拒绝。
+Commit 2 的 HTTP 命令清单显式列出 45 个同时具备正式 policy 与 trusted-enabled 资格的 action，永不包含演示身份、时间、权限或 reset 辅助动作。HTTP 只验证传输形状并转交 operationKey、expectedRevision、payload 和服务端 session digest；原有 ledger head、幂等重放、权限、revision、领域事务、audit 与 MySQL 原子提交不变。查询只返回当前认证 principal 有权看到的有限投影及服务端 ledger revision；backend.view 和 review.self 不构成审核捷径。统一错误码和 requestId 保护内部异常细节。正式 permission ID 的当前授予校验以本页下方 2026-10-06 高风险复核修复记录为准。
 
-本次完整执行 node --test --test-isolation=none --test-reporter=tap：1786 total、1786 pass、0 fail、0 skip，退出码 0；MySQL 8.4.11、jbhh_ktv_test、InnoDB 的既有受保护 fixture 及新增 HTTP 集成均真实执行。Commit 1 完整测试为 1776/1776；Commit 2 定向 auth/contract 15/15、真实 MySQL trusted fixture 656/656，最终完整回归包含后续补充断言。修改 JavaScript 后两次尝试 npm test，本机均提示 npm 未识别，未取得 npm 运行证据。
+原始交付时完整执行 node --test --test-isolation=none --test-reporter=tap：1786 total、1786 pass、0 fail、0 skip，退出码 0；MySQL 8.4.11、jbhh_ktv_test、InnoDB 的既有受保护 fixture 及新增 HTTP 集成均真实执行。Commit 1 完整测试为 1776/1776；Commit 2 定向 auth/contract 15/15、真实 MySQL trusted fixture 656/656，最终完整回归包含后续补充断言。修改 JavaScript 后两次尝试 npm test，本机均提示 npm 未识别，未取得 npm 运行证据。
 
-员工 UI 仍走 ui/shell.js 的 demo/localStorage 路径。真人账号及权限初始化、Stage 3B UI、backup/restore、deployment、monitoring 与真实美团 production 均未完成。结论仅为 Stage 3A HTTP trusted boundary ready，不能宣称 production ready 或 14 天离岗 MVP 完全就绪。
+员工 UI 仍走 ui/shell.js 的 demo/localStorage 路径。真人账号及权限初始化、Stage 3B UI、backup/restore、deployment、monitoring 与真实美团 production 均未完成。原始交付结论仅为 Stage 3A HTTP trusted boundary ready，当前验收状态以下方高风险复核记录为准；不能宣称 production ready 或 14 天离岗 MVP 完全就绪。
+
+## 2026-10-06：Stage 3A 高风险复核修复，待人工重新验收
+
+本次复核发现并修复两项 P1：原 HTTP snapshot 在 auth 事务外借用另一连接 autocommit 读取 ledger head；现由 auth 读事务持有的同一 MySQL connection 调用 ledger/mysql-store.js:readInTransaction，一次读取同一 ledger_heads 行的 revision 与 state_json，再按当前锁内权限和策略属性投影。原 auth/service.js 可写入未知但格式合法的 permission ID；现严格复用 shared/identity.js:PERMISSION_IDS，未知 ID 在授予入口拒绝。两处未更改领域业务规则。
+
+另将 HTTP application、事务读取和 query handler 的组合校验前移到启动；补登录已有 Cookie 时的新 session、重复 Cookie、旧 CSRF、转发头、no-store、Content-Type、流式超限、嵌套伪造、未知权限、撤权竞态、SQL 错误泄漏及双连接 snapshot 一致性自动测试。真实并发测试验证 auth 与 ledger 使用同一连接；另一连接在其等待时提交，响应 revision 与房态来自相同账本行版本。定向 auth/contract 20/20、真实 MySQL trusted fixture 658/658；完整 node --test --test-isolation=none --test-reporter=tap 为 1793/1793、0 fail、0 skip、退出码 0。已尝试 npm test，本机无 npm，未取得 npm 证据。
+
+审计结论：FIXED, NEEDS HUMAN RE-ACCEPTANCE。修复只在 Stage 3A 分支另作一个 audit-fix commit；本轮不合入 main、不推送、不部署。员工 UI、真人账号初始化、备份恢复、部署、监控及真实美团仍未完成。
 
 ## K10：唯一 MySQL schema authority／legacy 隔离（2026-10-06）
 

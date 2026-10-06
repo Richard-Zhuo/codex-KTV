@@ -16,7 +16,7 @@ export function createCurrentSessionReader({ pool, authStore }) {
         const context = await authStore.bindSessionRevalidation(connection)
           .revalidateSessionInTransaction(credential);
         if (!context) throw new SessionAuthenticationRequired();
-        const result = await work(assertTrustedExecutionContext(context));
+        const result = await work(assertTrustedExecutionContext(context), connection);
         await connection.commit();
         begun = false;
         return result;

@@ -259,6 +259,6 @@ server.js 只组合静态资源与 /api/v1/ 路由。http/bootstrap.js 从显式
 
 http/registry.js 的显式清单必须同时属于 ledger/command-policy.js 的正式 action 与 ledger/trusted-execution.js 的 trusted-enabled 集合。http/api.js 仅校验传输形状、拒绝客户端权威字段并传递 operationKey、expectedRevision、payload 和服务端 session digest。真正写入仍由账本 head 锁、同事务认证及当前授权、幂等与 revision、领域事务、审计及 MySQL commit 决定。退出调用现有 auth 服务撤销正式 session。
 
-http/query.js 在当前 auth 事务内读取 account/session/grants/policy attributes，并在该事务结束前生成按权限裁剪的有限快照投影。响应 revision 来自已校验的 MySQL ledger head；不返回原始 state_json、演示身份、原始 token、凭据、完整订单与全部敏感状态。backend.view 和 review.self 不替代具体业务查看或审核权限。http/contract.js 集中映射机器错误码；未知异常对客户端只有 internal_error 与 requestId，服务端诊断使用相同 ID 且不记录请求体、Cookie 或 SQL 参数。
+http/query.js 在当前 auth 事务内读取 account/session/grants/policy attributes，并在该事务结束前生成按权限裁剪的有限快照投影。同一连接、同一读事务内由 ledger/mysql-store.js:readInTransaction 一次读取 ledger_heads 行中的 revision 与 state_json，再投影；响应 revision 来自该行；不返回原始 state_json、演示身份、原始 token、凭据、完整订单与全部敏感状态。backend.view 和 review.self 不替代具体业务查看或审核权限。http/contract.js 集中映射机器错误码；未知异常对客户端只有 internal_error 与 requestId，服务端诊断使用相同 ID 且不记录请求体、Cookie 或 SQL 参数。
 
 Stage 3B 员工 UI 切换、正式账号初始化、部署、备份恢复及监控尚未完成。真实美团 production redemption 未启用。

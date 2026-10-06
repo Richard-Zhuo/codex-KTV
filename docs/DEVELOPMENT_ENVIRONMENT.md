@@ -132,4 +132,4 @@ ledger/trusted-clean.integration.test.js 复用现有 fixture lock，新增明�
 
 接口：POST /api/v1/auth/login；POST /api/v1/auth/logout；GET /api/v1/auth/session；POST /api/v1/commands/:action；GET /api/v1/store/snapshot。写入需同源 Origin，退出及命令还需 X-CSRF-Token。浏览器员工 UI 尚未调用这些接口。
 
-定向测试：node --test --test-isolation=none http/auth.test.js http/contract.test.js；真实 MySQL HTTP 集成用例沿用 LEDGER_MYSQL_TEST_URL 和 ledger/trusted-clean.integration.test.js 的受保护 fixture。完整回归：node --test --test-isolation=none --test-reporter=tap。修改 JavaScript 后仍尝试 npm test；当前环境没有 npm 时记录该证据未取得，不替代直接 Node 测试结果。
+定向测试：node --test --test-isolation=none http/auth.test.js http/contract.test.js auth/auth.test.js；真实 MySQL HTTP 集成用例沿用 LEDGER_MYSQL_TEST_URL 和 ledger/trusted-clean.integration.test.js 的受保护 fixture。完整回归：node --test --test-isolation=none --test-reporter=tap。修改 JavaScript 后仍尝试 npm test；当前环境没有 npm 时记录该证据未取得，不替代直接 Node 测试结果。

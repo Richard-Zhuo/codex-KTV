@@ -5,6 +5,7 @@ import { TRUSTED_ENABLED_ACTIONS } from '../ledger/trusted-execution.js';
 import { HTTP_COMMAND_ACTIONS, isHttpCommand } from './registry.js';
 import { HTTP_STATUS } from './transport.js';
 import { sendCommandResult } from './contract.js';
+import { createHttpApi } from './api.js';
 
 test('HTTP registry exposes only explicit policy-defined trusted-enabled actions', () => {
   assert.equal(new Set(HTTP_COMMAND_ACTIONS).size, HTTP_COMMAND_ACTIONS.length);
@@ -15,6 +16,23 @@ test('HTTP registry exposes only explicit policy-defined trusted-enabled actions
   }
   for (const action of [...DEMO_ONLY_ACTIONS, 'unregistered', 'toString',
     '__proto__', 'constructor']) assert.equal(isHttpCommand(action), false);
+});
+
+test('HTTP API composition fails at startup when any trusted handler is missing', () => {
+  const base = {
+    authService: { login() {}, authenticateSession() {}, logout() {} },
+    origin: 'https://ktv.example',
+    application: { execute() {} },
+    store: { readInTransaction() {} },
+    sessionReader: { withContext() {} }
+  };
+  assert.doesNotThrow(() => createHttpApi(base));
+  for (const [key, value] of [
+    ['application', {}], ['store', {}], ['sessionReader', {}]
+  ]) {
+    assert.throws(() => createHttpApi({ ...base, [key]: value }),
+      /Invalid HTTP API composition/);
+  }
 });
 
 test('stable machine-readable HTTP status map distinguishes boundary failures', () => {
