@@ -1,6 +1,7 @@
 import { createEmployeeApiClient, HttpApiError, HttpTransportError } from './api-client.js';
 import { createEmployeeServerState } from './server-state.js';
 import { createEmployeeCommandFlow } from './command-flow.js';
+import { createPendingCommandJournal } from './pending-command-journal.js';
 import { stateFromServerSnapshot } from './formal-workspace.js';
 import { ctx, esc } from './context.js';
 import { render as renderWorkspace } from './shell.js';
@@ -9,7 +10,8 @@ ctx.formalEnabled = true;
 const app = document.querySelector('#app');
 const client = createEmployeeApiClient();
 const state = createEmployeeServerState(client);
-const flow = createEmployeeCommandFlow({ api: client, state });
+const flow = createEmployeeCommandFlow({ api: client, state,
+  journal: createPendingCommandJournal() });
 let mounted = false;
 let mounting = null;
 let principalId = null;
@@ -45,6 +47,12 @@ async function display(model) {
   if (model.session && model.snapshot &&
       (model.phase === 'ready' || model.phase === 'loading' ||
        model.phase === 'unavailable')) {
+    if (model.phase === 'ready' && principalId !== model.session.principalId) {
+      if (principalId && ctx.modal?.open) ctx.modal.close();
+      flow.suspend();
+      flow.restore();
+      principalId = model.session.principalId;
+    }
     let projected;
     try { projected = stateFromServerSnapshot(model.snapshot, model.session); }
     catch (error) {
@@ -56,18 +64,12 @@ async function display(model) {
     }
     if (!projected) {
       if (ctx.modal?.open) ctx.modal.close();
-      flow.reset();
       ctx.formal = null;
       ctx.state = null;
       app.innerHTML = statusPage(model, '当前账号没有营业视图权限',
         '请联系门店管理员配置正式权限。');
       return;
     }
-    if (principalId && principalId !== model.session.principalId) {
-      if (ctx.modal?.open) ctx.modal.close();
-      flow.reset();
-    }
-    principalId = model.session.principalId;
     ctx.state = projected;
     ctx.formal ??= { mode: 'http', flow, state, lastError: null };
     ctx.formal.session = model.session;
@@ -96,7 +98,7 @@ async function display(model) {
   }
   if (model.phase === 'login') {
     if (ctx.modal?.open) ctx.modal.close();
-    flow.reset();
+    flow.suspend();
     principalId = null;
     ctx.formal = null;
     ctx.state = null;
@@ -131,6 +133,12 @@ app.addEventListener('click', async event => {
   target.disabled = true;
   try {
     if (action === 'formalLogout') {
+      if (['sending', 'unknown', 'foreign', 'storage-unavailable']
+        .includes(flow.getStatus().phase) &&
+          !window.confirm('上一笔操作结果仍待确认。退出后本标签页会保留原操作记录；请由原操作人员重新登录并确认。确定退出吗？')) {
+        target.disabled = false;
+        return;
+      }
       await state.logout();
     } else if (action === 'formalRefresh') {
       ctx.formal && (ctx.formal.lastError = null);

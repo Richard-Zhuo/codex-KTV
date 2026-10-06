@@ -1,8 +1,14 @@
+## 2026-10-06：Stage 3B 最终高风险验收修复候选
+
+发现一项 P1：未确认命令仅存页面内存，刷新会丢失原 operationKey。现用当前标签页 sessionStorage 保存单笔传输恢复记录；保存成功后才发送 POST。刷新重新取得正式 session 与 snapshot 后，同一服务端 principal 可显式使用原请求重放，其他账号禁止；确定终态清理，网络和不能证明未提交的内部错误保留，退出前提示。会话存储不可用或记录损坏时停止新写入。房间卡片补充键盘可聚焦、Enter／空格操作及可见焦点。业务授权、revision、幂等和 MySQL 事务仍由既有可信服务端执行。
+
+本轮定向自动化 698／698 通过，完整 Node 测试 1829／1829 通过，0 失败、0 跳过；npm 命令在当前环境不可用。真实浏览器 DOM 验收未取得，不能以自动化或源码审查代替。本轮按「FIXED, NEEDS HUMAN RE-ACCEPTANCE」交付审计修复候选；Stage 3B 不合入 main、不推送、不部署。Hallmark 已确认的暗色发光阴影、颜色令牌零散、报表数字未启用等宽数字记为后续 P2 视觉修整，不在本次改版。
+
 ## 2026-10-06：Stage 3B 员工 HTTP UI 候选
 
 正式员工入口 / 已从演示浏览器状态切换为同源登录、服务端 session、权限过滤 snapshot 与 trusted command。ui/staff-app.js 负责登录与连接状态，ui/server-state.js 维护最近一次服务端确认视图，ui/command-flow.js 负责操作键、版本、未确认结果及重读；原页面与对话框保留，业务写入统一经 ui/shell.js 转发 HTTP。http/staff-query.js 在服务端按当前权限及属性构造员工页面投影，员工名单来自正式 MySQL employee store。/admin 仍为演示，不是正式后台。
 
-Stage 3A 已人工接受并以 fast-forward 合入、普通 push 至 main=origin/main=17c1c18。Stage 3B 两个提交只保留在 codex/p0-1-stage3b-ui-http 供人工验收，不推送、不合入、不部署。当前候选的自动化结果以本轮最终验收报告为准；视觉浏览器验收如未取得，不以源码检查替代。正式账号初始化、真实美团、部署、备份恢复、监控均未完成，不能宣称生产就绪。
+Stage 3A 已人工接受并以 fast-forward 合入、普通 push 至 main=origin/main=17c1c18。Stage 3B 原两个提交及本轮审计修复候选只保留在 codex/p0-1-stage3b-ui-http 供人工验收，不推送、不合入、不部署。当前候选的自动化结果以本轮最终验收报告为准；视觉浏览器验收如未取得，不以源码检查替代。正式账号初始化、真实美团、部署、备份恢复、监控均未完成，不能宣称生产就绪。
 
 ## 2026-10-06：Stage 3A HTTP trusted boundary（原始交付记录）
 

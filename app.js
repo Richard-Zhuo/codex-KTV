@@ -14,6 +14,7 @@ import { ctx, product, esc, btn, date, localDate, options, contactText, allowedP
 import { render, persist, toast, openDialog, commit } from './ui/shell.js';
 import { roomIssueEvidenceFields, roomIssueEvidenceMarkup, initialMixRow, saleItemRow, catalogSaleOptionRow, paymentRow, depositItemRow, stepper } from './ui/forms.js';
 import { showRoom, openRoom, openBookingDialog } from './ui/dialogs/rooms.js';
+import { activateRoomCardOnKey } from './ui/pages/rooms.js';
 import { showOrder, giftDialog, saleDialog, otherChargeDialog, exchangeDialog, collectDialog, checkout, creditDialog } from './ui/dialogs/orders.js';
 import { retailDialog, staffBookingDialog } from './ui/dialogs/retail.js';
 import { openDepositDialog } from './ui/dialogs/deposits.js';
@@ -79,6 +80,7 @@ document.addEventListener('change',e=>{
     reader.readAsDataURL(file);
   }
 });
+document.addEventListener('keydown', activateRoomCardOnKey);
 document.addEventListener('click',async e=>{
   const target=e.target.closest('[data-action]'); if(!target)return;
   if (FORMAL && (!ctx.formal || !ctx.state)) return;

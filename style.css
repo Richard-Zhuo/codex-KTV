@@ -207,3 +207,5 @@
 .header-actions{display:flex;align-items:center;justify-content:flex-end;gap:10px}.entry-link{display:inline-flex;align-items:center;justify-content:center;min-height:48px;padding:8px 14px;border:1px solid var(--line);border-radius:12px;background:#fff;color:var(--green);font-size:15px;font-weight:700}.entry-link.primary{background:var(--green);color:#fff;border-color:var(--green);margin-top:14px}.portal-denied{max-width:620px;margin:70px auto}.portal-denied .entry-link{width:100%}[data-theme="dark"] .entry-link{background:#201c15;border-color:var(--control-border);color:var(--text)}[data-theme="dark"] .entry-link.primary{background:linear-gradient(180deg,#f3d66b,#c89b16 62%,#9c7204);color:#141210;border-color:#e4c351}
 @media(max-width:600px){.header-actions{gap:6px}.entry-link{min-height:43px;padding:7px 9px;font-size:13px}.topbar .brand small{letter-spacing:1px}}
 .staff-auth{max-width:480px;margin:8vh auto;padding:28px}.staff-auth .muted{margin-bottom:20px}.staff-auth .notice{margin:18px 0}.staff-auth label{margin:16px 0}.staff-auth .full{margin-top:20px}
+
+.room-card:focus-visible{outline:3px solid var(--gold);outline-offset:3px}

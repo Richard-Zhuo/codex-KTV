@@ -9,6 +9,7 @@ import { createCurrentSessionReader } from './query.js';
 import { createEmployeeApiClient, HttpApiError, HttpTransportError } from '../ui/api-client.js';
 import { createEmployeeServerState } from '../ui/server-state.js';
 import { createEmployeeCommandFlow } from '../ui/command-flow.js';
+import { createPendingCommandJournal } from '../ui/pending-command-journal.js';
 import { stateFromServerSnapshot } from '../ui/formal-workspace.js';
 
 export async function testHttpBoundary({ t, pool, auth, seed, inspect, database, employeeStore }) {
@@ -385,8 +386,16 @@ export async function testHttpBoundary({ t, pool, auth, seed, inspect, database,
         };
         const client = createEmployeeApiClient({ fetchImpl });
         const state = createEmployeeServerState(client);
-        const flow = createEmployeeCommandFlow({ api: client, state });
-        return { client, state, flow, loseResponse() { loseNextCommandResponse = true; } };
+        const values = new Map();
+        const storage = {
+          getItem(key) { return values.has(key) ? values.get(key) : null; },
+          setItem(key, value) { values.set(key, value); },
+          removeItem(key) { values.delete(key); }
+        };
+        const journal = createPendingCommandJournal({ storageProvider: () => storage });
+        const flow = createEmployeeCommandFlow({ api: client, state, journal });
+        return { client, state, flow, journal,
+          loseResponse() { loseNextCommandResponse = true; } };
       }
       const a = browserClient();
       const b = browserClient();
@@ -413,10 +422,15 @@ export async function testHttpBoundary({ t, pool, auth, seed, inspect, database,
       const pending = a.flow.getStatus();
       assert.equal(pending.phase, 'unknown');
       assert.equal((await inspect(ledgerId)).head.revision, 4);
-      const replay = await a.flow.retryUnknown();
+      const reloadedFlow = createEmployeeCommandFlow({
+        api: a.client, state: a.state, journal: a.journal
+      });
+      assert.equal(reloadedFlow.restore().phase, 'unknown');
+      const replay = await reloadedFlow.retryUnknown();
       assert.equal(replay.refreshed, true);
       assert.equal(a.state.getState().snapshot.revision, 4);
-      assert.equal(a.flow.getStatus().phase, 'idle');
+      assert.equal(reloadedFlow.getStatus().phase, 'idle');
+      assert.equal(a.journal.load(), null);
       assert.equal((await inspect(ledgerId)).head.revision, 4);
     });
 

@@ -101,8 +101,12 @@ function renderFormal() {
   })[error?.code] ?? '暂时无法确认操作结果。';
   const error = ctx.formal.lastError ?? model.error;
   const notice = flow.phase === 'unknown'
-    ? '<p class="notice" role="alert">提交结果尚未确认。若重试，将使用同一操作编号和完全相同的请求。</p>' +
-      btn('用同一操作编号重试', 'formalRetryUnknown')
+    ? '<p class="notice" role="alert">上一笔操作结果待确认。请勿重做；由原操作人员使用同一操作编号和完全相同的请求确认。</p>' +
+      btn('确认上一笔结果', 'formalRetryUnknown')
+    : flow.phase === 'foreign'
+      ? '<p class="notice" role="alert">上一笔操作由另一账号发起，结果待确认。当前账号不能重试；请由原操作人员登录并确认。</p>'
+    : flow.phase === 'storage-unavailable'
+      ? '<p class="notice" role="alert">无法安全读取或保存待确认操作记录。已停止新的业务写入，请先恢复本标签页的会话存储。</p>'
     : flow.phase === 'refresh-needed'
       ? '<p class="notice" role="alert">服务器已接收操作，但最新状态尚未读取。请先重新读取。</p>' +
         btn('重新读取服务器状态', 'formalRefreshKnown')
