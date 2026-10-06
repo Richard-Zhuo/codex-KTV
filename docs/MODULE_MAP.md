@@ -81,6 +81,7 @@
 
 | 边界 | 实现 | 验证 | 约束 |
 |---|---|---|---|
+| 员工静态模块交付 | server.js 的精确静态路径清单、ui/staff-app.js 入口及其浏览器导入图 | server-static.test.js | / 与员工模块依赖必须经真实 HTTP 返回 200；API 未启用时页面可达不代表正式登录可用 |
 | 员工登录与连接状态 | index.html、ui/staff-app.js、ui/api-client.js、ui/server-state.js | ui/api-client.test.js、ui/server-state.test.js、ui/formal-entry.test.js | 只用服务端 session；401 清空可写视图；断网保留只读旧快照；演示身份不进入正式入口 |
 | 员工页面快照 | http/staff-query.js、http/api.js、employees/mysql-store.js:listActiveInTransaction、ui/formal-workspace.js | http/staff-query.test.js、employees/mysql-roster-read.test.js、ui/formal-workspace.test.js、ledger/trusted-clean.integration.test.js | 同事务当前 session/权限与 ledger head；服务端裁剪；revision 来自正式 head；客户端只映射只读视图 |
 | 员工写命令 | ui/command-flow.js、ui/pending-command-journal.js、ui/shell.js、app.js，复用 http/registry.js 与 trusted application | ui/command-flow.test.js、ui/formal-entry.test.js、http/command.integration.js | 单笔 sessionStorage 待确认记录先于 POST；刷新后同账号同请求显式重试，异账号禁止；明确终态清理，存储异常停写；不调用演示 transact |

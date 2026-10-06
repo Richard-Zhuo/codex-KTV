@@ -1,3 +1,11 @@
+## 2026-10-06：Stage 3B 员工网页连接与静态资源修复候选
+
+本机 4173 端口原无服务。启动后确认员工入口导入的 ui/pending-command-journal.js 返回 404，且 sales.js 的浏览器依赖 ledger/command-policy.js 未列入 server.js 静态白名单。已补齐两个精确路径，并加入经真实 HTTP 递归读取员工模块导入图的回归测试：原 404 可复现，修复后 / 与所需模块均返回 200。server.js 提供可导入的服务器工厂供隔离端口测试；直接执行的原启动方式保留。
+
+修改后 npm test 已尝试，但本机没有 npm；完整 node --test --test-isolation=none --test-reporter=tap 为 1830 total、1830 pass、0 fail、0 skip。在此回归完成后，检查 jbhh_ktv_test 为 MySQL 8.4.11/InnoDB 且原有表数为 0，再按当前 MySQL migrations 001…007 建立 15 张表、一个合成测试账号和 stage3b-local-browser 测试账本。服务以显式 development 非 Secure Cookie 配置仅监听 127.0.0.1；终端 HTTP 实测未认证 session=401、合成账号 login=200、session=200、snapshot=200、revision=0、9 个房间投影，原始 token 不在 JSON 中。该 fixture 仅用于本机人工网页复验，不是正式账号初始化；fixture 存续期间不要重跑会要求空 auth 表的真实 MySQL 自动化测试，复验结束后须按测试数据所有权安全清理。
+
+本次尚未取得真实浏览器 DOM、Console 和点击路径验收；HTTP 实测不能替代浏览器验收。Stage 3B 仍待人工确认，未合入 main、未推送、未部署。
+
 ## 2026-10-06：Stage 3B 最终高风险验收修复候选
 
 发现一项 P1：未确认命令仅存页面内存，刷新会丢失原 operationKey。现用当前标签页 sessionStorage 保存单笔传输恢复记录；保存成功后才发送 POST。刷新重新取得正式 session 与 snapshot 后，同一服务端 principal 可显式使用原请求重放，其他账号禁止；确定终态清理，网络和不能证明未提交的内部错误保留，退出前提示。会话存储不可用或记录损坏时停止新写入。房间卡片补充键盘可聚焦、Enter／空格操作及可见焦点。业务授权、revision、幂等和 MySQL 事务仍由既有可信服务端执行。
