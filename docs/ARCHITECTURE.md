@@ -252,3 +252,13 @@ approveIncidentResolution／rejectIncidentResolution 在 demo operator／clock �
 | MySQL auth 账号、凭据、grants、session、事件 | 独立 `auth/` 服务与存储适配器 | 专用测试库已真实验收；已迁移三十八动作的 Node trusted 命令取 session 身份，浏览器尚未接入 |
 
 K10 已按唯一 schema authority 关闭：旧 PostgreSQL `database/schema.sql` 的 `room_orders.room_id` 仍保持当时非空 DDL，仅为 legacy artifact；它不约束当前 MySQL JSON snapshot，当前 room/retail 共存已实测，不继续维护第二套准生产 SQL。正式系统需要受信任的 API、真实身份、服务端事务、审计、并发版本、支付与退款证据、可验证备份及数据库迁移。
+
+## Stage 3A HTTP transport（2026-10-06）
+
+server.js 只组合静态资源与 /api/v1/ 路由。http/bootstrap.js 从显式环境配置组合现有 auth/service、auth/mysql-store、ledger/mysql-store、ledger/application、employee resolver 与 voucher binding；不创建第二套账号、session、权限或业务规则。生产默认 HTTPS Origin 和 Secure Cookie；只在显式 development + KTV_INSECURE_COOKIE=true 时允许非 Secure Cookie。同源 Origin、JSON Content-Type 与会话派生的 CSRF 证据保护 Cookie 写请求，不增加 CORS。
+
+http/registry.js 的显式清单必须同时属于 ledger/command-policy.js 的正式 action 与 ledger/trusted-execution.js 的 trusted-enabled 集合。http/api.js 仅校验传输形状、拒绝客户端权威字段并传递 operationKey、expectedRevision、payload 和服务端 session digest。真正写入仍由账本 head 锁、同事务认证及当前授权、幂等与 revision、领域事务、审计及 MySQL commit 决定。退出调用现有 auth 服务撤销正式 session。
+
+http/query.js 在当前 auth 事务内读取 account/session/grants/policy attributes，并在该事务结束前生成按权限裁剪的有限快照投影。响应 revision 来自已校验的 MySQL ledger head；不返回原始 state_json、演示身份、原始 token、凭据、完整订单与全部敏感状态。backend.view 和 review.self 不替代具体业务查看或审核权限。http/contract.js 集中映射机器错误码；未知异常对客户端只有 internal_error 与 requestId，服务端诊断使用相同 ID 且不记录请求体、Cookie 或 SQL 参数。
+
+Stage 3B 员工 UI 切换、正式账号初始化、部署、备份恢复及监控尚未完成。真实美团 production redemption 未启用。

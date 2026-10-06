@@ -221,3 +221,13 @@ Meituan production redemption = NOT ENABLED。Fake Gateway 仅用于显式隔离
 - 正式部署环境、账号来源、通知渠道、支付／验券接入方和备份要求。
 - 员工订房及酒水提成比例、价格维护流程，以及尚未定价商品的主数据。
 - 历史金山营业报表的实际导入时间、源文件版本和验收口径。
+
+## Stage 3A HTTP 可信边界（2026-10-06）
+
+正式浏览器请求通过同源 /api/v1/ HTTP API 进入现有认证和可信账本。登录使用既有账号、scrypt 凭据与 auth_sessions；原始 session token 仅放入 HttpOnly; SameSite=Strict; Path=/ Cookie，生产环境必须设置 Secure。开发环境的非 Secure Cookie 需显式配置。基于 Cookie 的退出和业务写入必须携带从已认证会话获得的 CSRF 证据，并通过同源 Origin 校验。
+
+写入请求只提交 operationKey、expectedRevision 和 payload；URL 中的 action 必须同时存在于命令策略、trusted-enabled 清单及 HTTP 显式清单。客户端身份、权限、策略属性和时间均不是可信输入。HTTP 只映射输入及结果，现有同事务 session 重验、权限、revision、幂等重放、领域事务、审计和 MySQL 提交仍是唯一写入事实。
+
+GET /api/v1/store/snapshot 使用当前 session 权限与策略属性在服务端生成有限字段投影，包含账本 revision，不下发完整数据库状态、演示身份、权限配置、操作历史或原始账本 JSON。backend.view 不授予业务审核，review.self 独立于具体审核权限。HTTP 错误按稳定机器码区分认证、授权、CSRF、输入、业务拒绝、revision、幂等冲突及内部错误。
+
+本阶段不迁移员工 UI、不启用真实美团 production、不部署，也不宣称正式生产或 14 天离岗 MVP 已就绪。

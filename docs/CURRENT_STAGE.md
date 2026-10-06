@@ -1,3 +1,15 @@
+## 2026-10-06：Stage 3A HTTP trusted boundary
+
+K10 的 d8f3b29 已通过 ff-only 合入 main，并在完整 1771/1771、0 fail、0 skip 后 fetch 核对无漂移、普通 push；main 与 origin/main 均为 d8f3b29（0/0）。本阶段从该提交建立 codex/p0-1-stage3a-http，两个线性提交分别处理 HTTP auth/session/cookie/CSRF 与 trusted command/query boundary；Stage 3A 提交保留本地供人工验收，未推送、未合入 main、未部署。
+
+Commit 1 复用既有 auth_accounts、credentials、grants、sessions、events、policy attributes 及 scrypt 服务；原始 session token 只发入 HttpOnly Cookie。生产默认 Secure、SameSite=Strict、Path=/；只有显式 development 且本机 Origin 可关闭 Secure。登录要求精确同源 Origin 与 JSON；退出和命令额外要求会话派生 CSRF 证据。HTTP 先认证不能替代可信账本写入中的同事务 session、权限及属性重验。
+
+Commit 2 的 HTTP 命令清单显式列出 45 个同时具备正式 policy 与 trusted-enabled 资格的 action，永不包含演示身份、时间、权限或 reset 辅助动作。HTTP 只验证传输形状并转交 operationKey、expectedRevision、payload 和服务端 session digest；原有 ledger head、幂等重放、权限、revision、领域事务、audit 与 MySQL 原子提交不变。查询只返回当前认证 principal 有权看到的有限投影及服务端 ledger revision；backend.view 和 review.self 不构成审核捷径。统一错误码和 requestId 保护内部异常细节。为使正式查询权限可配置，仅放行 auth 服务原已定义的三个 viewAll 混合大小写权限 ID，并加精确回归；任意新混合大小写权限仍被拒绝。
+
+本次完整执行 node --test --test-isolation=none --test-reporter=tap：1786 total、1786 pass、0 fail、0 skip，退出码 0；MySQL 8.4.11、jbhh_ktv_test、InnoDB 的既有受保护 fixture 及新增 HTTP 集成均真实执行。Commit 1 完整测试为 1776/1776；Commit 2 定向 auth/contract 15/15、真实 MySQL trusted fixture 656/656，最终完整回归包含后续补充断言。修改 JavaScript 后两次尝试 npm test，本机均提示 npm 未识别，未取得 npm 运行证据。
+
+员工 UI 仍走 ui/shell.js 的 demo/localStorage 路径。真人账号及权限初始化、Stage 3B UI、backup/restore、deployment、monitoring 与真实美团 production 均未完成。结论仅为 Stage 3A HTTP trusted boundary ready，不能宣称 production ready 或 14 天离岗 MVP 完全就绪。
+
 ## K10：唯一 MySQL schema authority／legacy 隔离（2026-10-06）
 
 先核实 a6952ad parent=4b7257e、354b363 parent=a6952ad，依次 ff-only 合入 main，不建 merge commit。合入后真实完整回归 1770／1769／0／1；fetch 确认远端无新增，普通 push 后 main=origin/main=354b363、0/0、clean。

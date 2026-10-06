@@ -65,3 +65,13 @@
 2. 按表进入对应领域模块及测试；跨域动作再读 `rules.js` 的分支和保存边界。
 3. 仅在输入、展示或权限可见性变化时进入 `ui/`；报表计算先读 `reporting.js`。
 4. 修改 JavaScript 后按 [开发与验证环境](./DEVELOPMENT_ENVIRONMENT.md) 执行正式测试命令，无法运行时记录等价命令的实际证据。
+
+## Stage 3A HTTP 模块与验证入口（2026-10-06）
+
+| 边界 | 实现 | 验证 | 保持的约束 |
+|---|---|---|---|
+| Auth/session/cookie/CSRF | server.js、http/transport.js、http/api.js、http/bootstrap.js；复用 auth/service.js 与 auth/mysql-store.js | http/auth.test.js、auth/mysql-auth.integration.test.js | token 仅在 HttpOnly Cookie；生产 Secure；同源 Origin、CSRF；退出撤销正式 session |
+| 显式命令与错误契约 | http/registry.js、http/api.js、http/contract.js；调用 ledger/application.js:createTrustedLedgerApplication | http/contract.test.js、http/command.integration.js 经 ledger/trusted-clean.integration.test.js 真实 MySQL fixture 执行 | policy + trusted-enabled + HTTP 清单三重门；同事务 auth 重验、授权、revision、重放及审计不移入 HTTP |
+| 最小查询投影 | http/query.js；复用 auth/mysql-store.js:bindSessionRevalidation 和 ledger/mysql-store.js:read | 同一 HTTP MySQL 集成用例 | 服务端当前权限与策略属性裁剪；revision 来自正式 ledger head；不下发完整状态 |
+
+员工浏览器仍使用 ui/shell.js 的 demo/localStorage 路径；Stage 3B 再迁移。

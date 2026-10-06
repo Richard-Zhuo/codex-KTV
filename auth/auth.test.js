@@ -73,7 +73,7 @@ test('auth service requires a rate-limit port and rejects wildcard administrator
   }), /具体 permission/);
 });
 
-test('existing order.serveExtra grant is stored and revoked verbatim without accepting new mixed-case IDs', async () => {
+test('existing mixed-case grants are stored verbatim without accepting invented IDs', async () => {
   const principalId = '00000000-0000-4000-8000-000000000001', calls = [];
   const store = { runTransaction: async work => work({
     lockAccount: async id => { calls.push(['account', id]); return { enabled: true }; },
@@ -86,8 +86,12 @@ test('existing order.serveExtra grant is stored and revoked verbatim without acc
   assert.equal(await auth.revokePermission({ principalId, permissionId: 'order.serveExtra' }), true);
   assert.deepEqual(calls, [['account', principalId], ['grant', principalId, 'order.serveExtra'], ['event', 'grant-added'],
     ['account', principalId], ['revoke', principalId, 'order.serveExtra'], ['event', 'grant-removed']]);
+  for (const permissionId of ['expense.viewAll', 'procurement.viewAll', 'incident.viewAll']) {
+    assert.equal(await auth.grantPermission({ principalId, permissionId }), true);
+    assert.equal(await auth.revokePermission({ principalId, permissionId }), true);
+  }
   const before = structuredClone(calls);
-  for (const permissionId of ['administrator', '*', 'order.*', 'Order.serveExtra', 'order.ServeExtra', 'order.serveExtra ', 'expense.viewAll']) {
+  for (const permissionId of ['administrator', '*', 'order.*', 'Order.serveExtra', 'order.ServeExtra', 'order.serveExtra ', 'expense.ViewAll']) {
     await assert.rejects(auth.grantPermission({ principalId, permissionId }), /具体 permission/);
     await assert.rejects(auth.revokePermission({ principalId, permissionId }), /具体 permission/);
   }

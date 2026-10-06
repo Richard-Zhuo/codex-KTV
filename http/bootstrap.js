@@ -2,6 +2,11 @@ import mysql from 'mysql2/promise';
 import { createMySqlAuthStore } from '../auth/mysql-store.js';
 import { createAuthService } from '../auth/service.js';
 import { createMemoryLoginRateLimiter } from '../auth/rate-limit.js';
+import { createMySqlEmployeeStore } from '../employees/mysql-store.js';
+import { createMySqlLedgerStore } from '../ledger/mysql-store.js';
+import { createTrustedLedgerApplication } from '../ledger/application.js';
+import { createMySqlVoucherStore } from '../vouchers/mysql-store.js';
+import { createCurrentSessionReader } from './query.js';
 import { createHttpApi } from './api.js';
 
 export function createHttpApiFromEnv(env = process.env, logger = console) {
@@ -20,12 +25,30 @@ export function createHttpApiFromEnv(env = process.env, logger = console) {
       ![undefined, 'true', 'false'].includes(env.KTV_INSECURE_COOKIE)) {
     throw new TypeError('Invalid HTTP environment');
   }
+  const ledgerId = env.KTV_LEDGER_ID;
+  const storeId = env.KTV_STORE_ID;
+  const businessTimeZone = env.KTV_BUSINESS_TIME_ZONE;
+  if (typeof ledgerId !== 'string' || !ledgerId || ledgerId.length > 64 ||
+      typeof storeId !== 'string' || !storeId || storeId.length > 191 ||
+      typeof businessTimeZone !== 'string' || !businessTimeZone) {
+    throw new TypeError('KTV_LEDGER_ID, KTV_STORE_ID and KTV_BUSINESS_TIME_ZONE are required');
+  }
   const pool = mysql.createPool({ uri: raw, database, connectionLimit: 10,
     waitForConnections: true, supportBigNumbers: true, bigNumberStrings: true });
+  const authStore = createMySqlAuthStore({ pool, database });
   const authService = createAuthService({
-    store: createMySqlAuthStore({ pool, database }),
-    rateLimiter: createMemoryLoginRateLimiter()
+    store: authStore, rateLimiter: createMemoryLoginRateLimiter()
   });
-  return createHttpApi({ authService, origin: env.KTV_PUBLIC_ORIGIN,
-    environment, allowInsecureCookie: env.KTV_INSECURE_COOKIE === 'true', logger });
+  const employeeStore = createMySqlEmployeeStore({ pool, database });
+  const voucherStore = createMySqlVoucherStore({ pool, database, ledgerId,
+    provider: 'meituan', storeId, bindSessionRevalidation: authStore.bindSessionRevalidation });
+  const store = createMySqlLedgerStore({ pool, ledgerId, database,
+    bindSessionRevalidation: authStore.bindSessionRevalidation,
+    bindEmployeeResolver: employeeStore.bindEmployeeResolver,
+    bindVoucherRedemptions: voucherStore.bindVoucherRedemptions });
+  const application = createTrustedLedgerApplication({ store, businessTimeZone });
+  const sessionReader = createCurrentSessionReader({ pool, authStore });
+  return createHttpApi({ authService, application, store, sessionReader,
+    origin: env.KTV_PUBLIC_ORIGIN, environment,
+    allowInsecureCookie: env.KTV_INSECURE_COOKIE === 'true', logger });
 }

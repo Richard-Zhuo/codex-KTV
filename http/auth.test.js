@@ -93,6 +93,8 @@ test('raw token only leaves in HttpOnly cookie; production and explicit developm
     origin: 'http://ktv.example' }), /Unsafe/);
   assert.throws(() => createHttpAuthBoundary({ authService: fakeAuth(),
     origin: 'http://ktv.example', allowInsecureCookie: true }), /Unsafe/);
+  assert.throws(() => createHttpAuthBoundary({ authService: fakeAuth(),
+    origin: 'http://ktv.example', environment: 'development', allowInsecureCookie: true }), /Unsafe/);
 });
 
 test('revoked, expired, disabled and credential-version-invalid sessions deny HTTP status', async t => {
@@ -145,4 +147,20 @@ test('same-origin JSON login and server principal reject identity spoofing', asy
   assert.equal(status.body.session.principalId, 'server-principal');
   assert.deepEqual(status.body.session.permissionIds, ['room.clean']);
   assert.ok(status.requestId);
+});
+
+test('malformed, missing and oversized JSON inputs have stable invalid_input codes', async t => {
+  const f = await start(); t.after(f.close);
+  for (const body of ['{', '[]', JSON.stringify({ loginIdentifier: 'staff' }),
+    JSON.stringify({ loginIdentifier: 'staff', password: 'x'.repeat(17 * 1024) })]) {
+    const result = await request(f, '/api/v1/auth/login', { method: 'POST', body });
+    assert.equal(result.status, 400);
+    assert.equal(result.body.error.code, 'invalid_input');
+  }
+  const wrongType = await request(f, '/api/v1/auth/login', { method: 'POST',
+    body: { loginIdentifier: 1, password: 'correct' } });
+  assert.equal(wrongType.body.error.code, 'invalid_input');
+  const wrongContentType = await request(f, '/api/v1/auth/login', { method: 'POST',
+    body: '{"loginIdentifier":"staff","password":"correct"}', contentType: 'text/plain' });
+  assert.equal(wrongContentType.body.error.code, 'invalid_input');
 });

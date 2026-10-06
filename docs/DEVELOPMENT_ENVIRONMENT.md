@@ -125,3 +125,11 @@ ledger/trusted-clean.integration.test.js 复用现有 fixture lock，新增明�
 ## 当前验证状态
 
 当前结论与最后证据见 [CURRENT_STAGE](./CURRENT_STAGE.md)。具体任务是否已运行自动测试和浏览器验收，只在该文件按日期记录。
+
+## Stage 3A HTTP 配置与验收（2026-10-06）
+
+静态演示路径默认继续可用；正式 API 仅在 KTV_API_MODE=enabled 时启用。启用时必须提供 KTV_MYSQL_URL（指向已执行 MySQL migrations 001…007 的库）、KTV_LEDGER_ID、KTV_STORE_ID、KTV_BUSINESS_TIME_ZONE 和 KTV_PUBLIC_ORIGIN。KTV_PUBLIC_ORIGIN 必须是浏览器实际访问的精确 Origin；生产默认 KTV_HTTP_ENV=production，要求 HTTPS 且 Cookie 带 Secure。仅本地开发可显式设置 KTV_HTTP_ENV=development 与 KTV_INSECURE_COOKIE=true，仅允许本机 Origin 使用 HTTP 和非 Secure Cookie。不要把数据库 URL、密码或 session token 写入仓库或日志。启动命令仍为 node server.js；本阶段没有自动建表、正式账号初始化或部署步骤。
+
+接口：POST /api/v1/auth/login；POST /api/v1/auth/logout；GET /api/v1/auth/session；POST /api/v1/commands/:action；GET /api/v1/store/snapshot。写入需同源 Origin，退出及命令还需 X-CSRF-Token。浏览器员工 UI 尚未调用这些接口。
+
+定向测试：node --test --test-isolation=none http/auth.test.js http/contract.test.js；真实 MySQL HTTP 集成用例沿用 LEDGER_MYSQL_TEST_URL 和 ledger/trusted-clean.integration.test.js 的受保护 fixture。完整回归：node --test --test-isolation=none --test-reporter=tap。修改 JavaScript 后仍尝试 npm test；当前环境没有 npm 时记录该证据未取得，不替代直接 Node 测试结果。

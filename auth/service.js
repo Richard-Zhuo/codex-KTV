@@ -5,6 +5,7 @@ import { digestSessionToken, issueSessionToken } from './session-token.js';
 const invalidCredentials = Object.freeze({ ok: false, code: 'invalid-credentials' });
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const permissionPattern = /^[a-z][a-z0-9]*(?:[.-][a-z][a-z0-9]*)*$/;
+const existingMixedCasePermissions = new Set(['order.serveExtra', 'expense.viewAll', 'procurement.viewAll', 'incident.viewAll']);
 
 function assertLoginIdentifier(value) {
   if (typeof value !== 'string' || !value || value !== value.trim() ||
@@ -16,9 +17,9 @@ function assertPrincipalId(value) {
   if (typeof value !== 'string' || !uuidPattern.test(value)) throw TypeError('principal ID 无效');
 }
 function assertPermissionId(value) {
-  // Preserve the existing camel-case ID; all other permission validation stays unchanged.
+  // Preserve only the exact existing camel-case permission IDs; reject arbitrary mixed case.
   if (typeof value !== 'string' || value.length > 100 ||
-      (!permissionPattern.test(value) && value !== 'order.serveExtra') || value === 'administrator') {
+      (!permissionPattern.test(value) && !existingMixedCasePermissions.has(value)) || value === 'administrator') {
     throw TypeError('只能保存具体 permission');
   }
 }

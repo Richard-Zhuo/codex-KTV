@@ -10,7 +10,9 @@ export class HttpBoundaryError extends Error {
 }
 
 export const HTTP_STATUS = Object.freeze({
-  unauthenticated: 401, csrf_denied: 403, invalid_input: 400, internal_error: 500
+  unauthenticated: 401, authorization_denied: 403, csrf_denied: 403,
+  business_rejection: 422, revision_conflict: 409, idempotency_conflict: 409,
+  invalid_input: 400, internal_error: 500
 });
 
 export function sendJson(res, status, value, headers = {}) {
@@ -26,9 +28,9 @@ export function sendError(res, code, requestId, headers = {}) {
 
 export function logInternal(logger, requestId, error) {
   // No headers, request body, SQL text/values, tokens, passwords or raw Error properties.
-  logger.error({ requestId, name: error?.name ?? 'Error', code: error?.code ?? null,
+  logger.error({ requestId, name: error?.name ?? 'Error', code: typeof error?.code === 'string' && /^[A-Z0-9_]{1,64}$/.test(error.code) ? error.code : null,
     frames: typeof error?.stack === 'string'
-      ? error.stack.split('\n').slice(1, 7).map(line => line.trim()) : [] });
+      ? error.stack.split('\n').filter(line => /^\s*at /.test(line)).slice(0, 6).map(line => line.trim()) : [] });
 }
 
 export async function readJson(req) {
@@ -91,7 +93,8 @@ export function createHttpAuthBoundary({
   const insecure = environment === 'development' && allowInsecureCookie === true;
   if (parsedOrigin.origin !== origin || parsedOrigin.username || parsedOrigin.password ||
       (insecure ? !['http:', 'https:'].includes(parsedOrigin.protocol) : parsedOrigin.protocol !== 'https:') ||
-      (allowInsecureCookie && environment !== 'development')) {
+      (allowInsecureCookie && environment !== 'development') ||
+      (insecure && !['localhost', '127.0.0.1', '[::1]'].includes(parsedOrigin.hostname))) {
     throw new TypeError('Unsafe HTTP origin or cookie configuration');
   }
   const cookieAttributes = 'Path=/; HttpOnly; SameSite=Strict' + (insecure ? '' : '; Secure');
@@ -129,15 +132,14 @@ export function createHttpAuthBoundary({
       requireSameOrigin(req);
       const body = await readJson(req);
       if (!exactKeys(body, ['loginIdentifier', 'password']) ||
-          typeof body.loginIdentifier !== 'string' || typeof body.password !== 'string') {
+          typeof body.loginIdentifier !== 'string' || !body.loginIdentifier ||
+          body.loginIdentifier !== body.loginIdentifier.trim() || body.loginIdentifier.length > 191 ||
+          /[\u0000-\u001f\u007f]/.test(body.loginIdentifier) ||
+          typeof body.password !== 'string' || !body.password ||
+          Buffer.byteLength(body.password, 'utf8') > 1024) {
         throw new HttpBoundaryError('invalid_input');
       }
-      let result;
-      try { result = await authService.login(body); }
-      catch (error) {
-        if (error instanceof TypeError) throw new HttpBoundaryError('invalid_input');
-        throw error;
-      }
+      const result = await authService.login(body);
       if (!result.ok) throw new HttpBoundaryError('unauthenticated');
       const session = await authService.authenticateSession(result.token);
       if (!session) throw new HttpBoundaryError('unauthenticated');

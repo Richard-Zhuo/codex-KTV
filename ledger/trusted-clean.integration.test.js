@@ -43,6 +43,7 @@ import { testTrustedPayments } from './trusted-payments.integration.js';
 import { testTrustedRounding } from './trusted-rounding.integration.js';
 import { createMySqlEmployeeStore } from '../employees/mysql-store.js';
 import { createEmployeeService } from '../employees/service.js';
+import { testHttpBoundary } from '../http/command.integration.js';
 
 const testUrl = process.env.LEDGER_MYSQL_TEST_URL;
 const database = 'jbhh_ktv_test';
@@ -167,6 +168,8 @@ test('MySQL trusted clean vertical slice in jbhh_ktv_test',
         return { app, calls, executions: () => executions, context: () => context };
       };
       const assertUnchanged = async (id, before) => assert.deepEqual(await inspect(id), before);
+
+      await testHttpBoundary({ t, pool, auth, seed, inspect, database, employeeStore });
 
       await t.test('clean commits session actor, revision and audit; DB locks precede lookup and domain', async () => {
         const login = await provision(); const original = await seed('clean-first');
