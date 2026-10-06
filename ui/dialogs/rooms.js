@@ -13,6 +13,13 @@ import { slot } from '../../shared/time.js';
 
 function showRoom(id) {
   const r=ctx.state.rooms.find(r=>r.id===id);
+  if (!r) throw Error('房间不在当前授权视图中');
+  if (ctx.formal && (r.status === '营业中' && !r.order ||
+      r.status === '空闲' && !allowedPermission('room.open'))) {
+    openDialog(`${esc(id)} · ${esc(r.status)}`,
+      '<p class="muted">当前账号没有这间房的可操作账单，请以服务器房态为准。</p>');
+    return;
+  }
   const review=pendingRoomIssueReview(id);
   if (review) {
     openDialog(`${id} · 恢复申请待审核`, `<p><b>恢复为空房</b>：${esc(review.fromStatus)} → 空闲</p><p class="muted">提交：${esc(review.submittedBy)} · ${date(review.submittedAt)}</p>${roomIssueEvidenceMarkup(review)}${allowedPermission('room.issue.approve')?btn('到待办中心审核','goReviewTasks','','secondary full'):'<p class="muted">请等待有房间恢复审核权限的人员处理。</p>'}`);

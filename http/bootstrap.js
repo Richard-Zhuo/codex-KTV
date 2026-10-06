@@ -48,7 +48,7 @@ export function createHttpApiFromEnv(env = process.env, logger = console) {
     bindVoucherRedemptions: voucherStore.bindVoucherRedemptions });
   const application = createTrustedLedgerApplication({ store, businessTimeZone });
   const sessionReader = createCurrentSessionReader({ pool, authStore });
-  return createHttpApi({ authService, application, store, sessionReader,
+  return createHttpApi({ authService, application, store, sessionReader, employeeStore,
     origin: env.KTV_PUBLIC_ORIGIN, environment,
     allowInsecureCookie: env.KTV_INSECURE_COOKIE === 'true', logger });
 }

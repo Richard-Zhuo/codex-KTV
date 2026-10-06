@@ -74,4 +74,14 @@
 | 显式命令与错误契约 | http/registry.js、http/api.js、http/contract.js；调用 ledger/application.js:createTrustedLedgerApplication | http/contract.test.js、http/command.integration.js 经 ledger/trusted-clean.integration.test.js 真实 MySQL fixture 执行 | policy + trusted-enabled + HTTP 清单三重门；同事务 auth 重验、授权、revision、重放及审计不移入 HTTP |
 | 最小查询投影 | http/query.js；复用 auth/mysql-store.js:bindSessionRevalidation 和 ledger/mysql-store.js:readInTransaction | 同一 HTTP MySQL 集成用例 | 服务端当前权限与策略属性裁剪；revision 来自正式 ledger head；不下发完整状态 |
 
-员工浏览器仍使用 ui/shell.js 的 demo/localStorage 路径；Stage 3B 再迁移。
+员工入口 / 已迁入 Stage 3B 正式 HTTP 路径；/admin 保留演示路径。
+
+
+## Stage 3B 员工 HTTP UI 与验证入口（2026-10-06）
+
+| 边界 | 实现 | 验证 | 约束 |
+|---|---|---|---|
+| 员工登录与连接状态 | index.html、ui/staff-app.js、ui/api-client.js、ui/server-state.js | ui/api-client.test.js、ui/server-state.test.js、ui/formal-entry.test.js | 只用服务端 session；401 清空可写视图；断网保留只读旧快照；演示身份不进入正式入口 |
+| 员工页面快照 | http/staff-query.js、http/api.js、employees/mysql-store.js:listActiveInTransaction、ui/formal-workspace.js | http/staff-query.test.js、employees/mysql-roster-read.test.js、ui/formal-workspace.test.js、ledger/trusted-clean.integration.test.js | 同事务当前 session/权限与 ledger head；服务端裁剪；revision 来自正式 head；客户端只映射只读视图 |
+| 员工写命令 | ui/command-flow.js、ui/shell.js、app.js，复用 http/registry.js 与 trusted application | ui/command-flow.test.js、ui/formal-entry.test.js、http/command.integration.js | 每个新意图独立 UUID；同请求未确认重试保留原 key/payload/revision；成功及冲突后重读，不调用演示 transact |
+| 保留演示路径 | admin.html、app.js 的 admin 分支、ui/shell.js 的 demo 分支 | entry.test.js、原有规则与 UI 源码回归 | /admin 仍是演示；不将本机身份或 localStorage 升格为正式事实 |

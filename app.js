@@ -21,10 +21,14 @@ import { expenseDialog, procurementDialog, incidentDialog, resolveIncidentDialog
 import { catalogCreateDialog, catalogProductDialog, catalogPackageDialog, inventoryDialog, permissionsDialog } from './ui/dialogs/admin.js';
 
 const APP_ENTRY = document.body.dataset.appEntry === 'admin' ? 'admin' : 'staff';
+const FORMAL = APP_ENTRY === 'staff' && ctx.formalEnabled;
 const REQUESTED_STAFF_PAGE = new URLSearchParams(window.location.search).get('page');
-const DEFAULT_PAGE = APP_ENTRY === 'admin' ? 'manage' : REQUESTED_STAFF_PAGE === 'tasks' ? 'tasks' : 'rooms';
-const persistence = createDemoPersistence({ storage: localStorage });
-const loaded = persistence.load();
+const DEFAULT_PAGE = APP_ENTRY === 'admin' ? 'manage' :
+  FORMAL && !ctx.formal.workspace.sections.rooms ?
+    (ctx.formal.session.permissionIds.includes('retail.sale') ? 'retail' : 'mine') :
+    REQUESTED_STAFF_PAGE === 'tasks' ? 'tasks' : 'rooms';
+const persistence = FORMAL ? null : createDemoPersistence({ storage: localStorage });
+const loaded = FORMAL ? { state: ctx.state, problem: '' } : persistence.load();
 ctx.state = loaded.state;
 ctx.storageProblem = loaded.problem;
 const app = document.querySelector('#app'), modal = document.querySelector('#modal');
@@ -67,7 +71,7 @@ document.addEventListener('change',e=>{
   }
   if(e.target.id==='room-issue-photo'){
     const input=e.target, file=input.files?.[0], dataInput=document.querySelector('#room-issue-photo-data'), nameInput=document.querySelector('#room-issue-photo-name'), status=document.querySelector('#room-issue-photo-status');
-    if(!file){ if(dataInput)dataInput.value=''; if(nameInput)nameInput.value=''; if(status)status.textContent='支持单张图片，不超过 500KB；照片仅保存在本机演示数据中。'; return; }
+    if(!file){ if(dataInput)dataInput.value=''; if(nameInput)nameInput.value=''; if(status)status.textContent=`支持单张图片，不超过 500KB；${FORMAL?'照片将随业务记录提交服务器。':'照片仅保存在本机演示数据中。'}`; return; }
     if(!file.type.startsWith('image/') || file.size>500*1024){ input.value=''; if(dataInput)dataInput.value=''; if(nameInput)nameInput.value=''; if(status)status.textContent=''; toast('图片需为有效图片且不超过 500KB'); return; }
     const reader=new FileReader();
     reader.onload=()=>{ if(dataInput)dataInput.value=String(reader.result || ''); if(nameInput)nameInput.value=file.name; if(status)status.textContent=`已选择现场照片：${file.name}`; };
@@ -75,9 +79,20 @@ document.addEventListener('change',e=>{
     reader.readAsDataURL(file);
   }
 });
-document.addEventListener('click',e=>{
+document.addEventListener('click',async e=>{
   const target=e.target.closest('[data-action]'); if(!target)return;
+  if (FORMAL && (!ctx.formal || !ctx.state)) return;
   e.preventDefault(); const a=target.dataset.action, id=target.dataset.id;
+  if (FORMAL && ['identity', 'clock', 'reset', 'setPermissions', 'editPermissions',
+    'retryRecovery', 'guide'].includes(a)) return;
+  if (FORMAL && (!ctx.formal?.state.isWritable() ||
+      ctx.formal.flow.getStatus().phase !== 'idle' || ctx.formal.renderFailed) &&
+      !['nav','home','goReviewTasks','expenses','procurement','incidents',
+        'backMine','filter','room','order','close','toggleTheme','autoTheme']
+        .includes(a)) {
+    toast('当前没有可确认的服务器状态，已暂停业务操作。');
+    return;
+  }
   try {
     if(a==='close'){ctx.modal.close();return;}
     if(a==='retryRecovery'){const loaded=ctx.persistence.load();ctx.state=loaded.state;ctx.storageProblem=loaded.problem;render();return;}
@@ -108,7 +123,7 @@ document.addEventListener('click',e=>{
       if(!request||request.status!=='待审核')throw Error('该房间恢复申请已经处理');
       if(request.requestedStatus!=='空闲')throw Error('故障标记无需审核，只有恢复为空房需要审核');
       if(!allowedPermission('room.issue.approve'))throw Error('当前身份没有房间恢复审核权限');
-      if(!canReviewSubmission(request.submittedById))throw Error('审核本人申请需要“允许审核本人申请”权限');
+      if(!canReviewSubmission(request))throw Error('审核本人申请需要“允许审核本人申请”权限');
       openDialog(`审核恢复申请 · ${esc(request.room)}`,`<div class="quote"><span>恢复为空房</span><strong>空闲</strong></div><p>${esc(request.fromStatus)} → 空闲${request.issueType?` · ${esc(request.issueType)}`:''}</p><p class="muted">提交：${esc(request.submittedBy)} · ${date(request.submittedAt)}</p>${roomIssueEvidenceMarkup(request)}<label>审核备注（选填）<textarea name="decisionNote" maxlength="300" rows="2" placeholder="记录现场核对情况"></textarea></label>${btn('驳回申请','rejectRoomIssueDialog',`data-id="${request.id}"`,'danger full')}`,'批准恢复为空房','approveRoomIssue',{request:request.id});
       return;
     }
@@ -149,7 +164,7 @@ document.addEventListener('click',e=>{
     else if(a==='otherCharge')otherChargeDialog(id);
     else if(a==='gift')giftDialog(id);
     else if(a==='exchange')exchangeDialog(id);
-    else if(a==='serveExtra')commit('serveExtra',{order:id,product:target.dataset.product},globalThis.crypto?.randomUUID?.() || `serve-${id}-${target.dataset.product}-${Date.now()}`);
+    else if(a==='serveExtra')await commit('serveExtra',{order:id,product:target.dataset.product},globalThis.crypto?.randomUUID?.() || `serve-${id}-${target.dataset.product}-${Date.now()}`);
     else if(a==='collect')collectDialog(id);
     else if(a==='checkout')checkout(id);
     else if(a==='credit')creditDialog(id);
@@ -210,39 +225,46 @@ document.addEventListener('click',e=>{
     else if(a==='reviewIncidentResolution'){
       const incident=ctx.state.incidents.find(item=>item.id===Number(id)), request=(incident?.resolutionReviews||[]).find(item=>item.id===Number(target.dataset.request));
       if(!request||request.status!=='待审核')throw Error('这项客诉／异常恢复申请已经处理');
-      if(!canReviewSubmission(request.submittedById))throw Error('审核本人申请需要“允许审核本人申请”权限');
+      if(!canReviewSubmission(request))throw Error('审核本人申请需要“允许审核本人申请”权限');
       openDialog(`审核客诉 / 异常恢复 · ${esc(incident.room)}`,`<p>${esc(incident.type)} · 负责人 ${esc(incident.assignee)}</p><div class="notice"><b>处理结果</b><p>${esc(request.result)}</p><b>备注</b><p>${esc(request.note)}</p></div><p class="muted">提交 ${esc(request.submittedBy)} · ${date(request.submittedAt)}</p><label>审核备注（选填）<textarea name="decisionNote" maxlength="300" rows="2"></textarea></label>${btn('驳回恢复','rejectIncidentResolutionDialog',`data-id="${incident.id}" data-request="${request.id}"`,'danger full')}`,'批准并完成','approveIncidentResolution',{id:incident.id,request:request.id});
     }
     else if(a==='rejectIncidentResolutionDialog'){const incident=ctx.state.incidents.find(item=>item.id===Number(id)), request=(incident?.resolutionReviews||[]).find(item=>item.id===Number(target.dataset.request));if(!request||request.status!=='待审核')throw Error('这项客诉／异常恢复申请已经处理');openDialog(`驳回客诉 / 异常恢复 · ${esc(incident.room)}`,`<label>驳回原因<textarea name="decisionNote" maxlength="300" rows="3" required placeholder="请说明需要继续处理的内容"></textarea></label>`,'确认驳回','rejectIncidentResolution',{id:incident.id,request:request.id});}
-    else if(a==='approveGift'||a==='rejectGift'){const request=Number(target.dataset.request), gift=(ctx.state.orders.find(o=>o.id===id)?.giftRequests||[]).find(item=>item.id===request);if(!gift||gift.status!=='待确认')throw Error('赠酒水申请已处理');if(!canReviewSubmission(gift.requestedById))throw Error('审核本人申请需要“允许审核本人申请”权限');openDialog(a==='approveGift'?'批准超额赠酒水':'驳回超额赠酒水',`<p>${product(gift.product).name} ${gift.halves}个半打，共${gift.bottles}支。</p><p>申请人：${esc(gift.requestedBy)}</p>${a==='rejectGift'?'<label>驳回原因<textarea name="decisionNote" maxlength="300" rows="3" required></textarea></label>':'<label>审核备注（选填）<textarea name="decisionNote" maxlength="300" rows="2"></textarea></label>'}`,a==='approveGift'?'确认批准':'确认驳回',a,{order:id,request});}
-    else if(a==='reviewRounding'){const o=ctx.state.orders.find(o=>o.id===id), review=o?.roundingReview;if(!review||review.status!=='待审核')throw Error('这笔特殊差额已经处理');if(!canReviewSubmission(review.submittedById))throw Error('审核本人申请需要“允许审核本人申请”权限');openDialog('审核特殊差额',`<div class="quote"><span>${esc(o.room)} · 结账差额</span><strong>${money(review.amount)}</strong></div><p>提交人：${esc(review.submittedBy)} · ${date(review.submittedAt)}</p><p class="notice">特殊情况说明：${esc(review.note)}</p><p class="muted">本次审核只确认差额原因已核实，不会追加扣款或改变已完成的结账。</p><label>审核备注（选填）<textarea name="decisionNote" maxlength="300" rows="2"></textarea></label>${btn('驳回差额说明','rejectRoundingDialog',`data-id="${o.id}"`,'danger full')}`,'批准特殊差额','approveRounding',{order:id});}
+    else if(a==='approveGift'||a==='rejectGift'){const request=Number(target.dataset.request), gift=(ctx.state.orders.find(o=>o.id===id)?.giftRequests||[]).find(item=>item.id===request);if(!gift||gift.status!=='待确认')throw Error('赠酒水申请已处理');if(!canReviewSubmission(gift))throw Error('审核本人申请需要“允许审核本人申请”权限');openDialog(a==='approveGift'?'批准超额赠酒水':'驳回超额赠酒水',`<p>${product(gift.product).name} ${gift.halves}个半打，共${gift.bottles}支。</p><p>申请人：${esc(gift.requestedBy)}</p>${a==='rejectGift'?'<label>驳回原因<textarea name="decisionNote" maxlength="300" rows="3" required></textarea></label>':'<label>审核备注（选填）<textarea name="decisionNote" maxlength="300" rows="2"></textarea></label>'}`,a==='approveGift'?'确认批准':'确认驳回',a,{order:id,request});}
+    else if(a==='reviewRounding'){const o=ctx.state.orders.find(o=>o.id===id), review=o?.roundingReview;if(!review||review.status!=='待审核')throw Error('这笔特殊差额已经处理');if(!canReviewSubmission(review))throw Error('审核本人申请需要“允许审核本人申请”权限');openDialog('审核特殊差额',`<div class="quote"><span>${esc(o.room)} · 结账差额</span><strong>${money(review.amount)}</strong></div><p>提交人：${esc(review.submittedBy)} · ${date(review.submittedAt)}</p><p class="notice">特殊情况说明：${esc(review.note)}</p><p class="muted">本次审核只确认差额原因已核实，不会追加扣款或改变已完成的结账。</p><label>审核备注（选填）<textarea name="decisionNote" maxlength="300" rows="2"></textarea></label>${btn('驳回差额说明','rejectRoundingDialog',`data-id="${o.id}"`,'danger full')}`,'批准特殊差额','approveRounding',{order:id});}
     else if(a==='rejectRoundingDialog'){const o=ctx.state.orders.find(o=>o.id===id);if(!o?.roundingReview||o.roundingReview.status!=='待审核')throw Error('这笔特殊差额已经处理');openDialog('驳回特殊差额',`<p>${esc(o.room)} · ${money(o.roundingReview.amount)}</p><label>驳回原因<textarea name="decisionNote" maxlength="300" rows="3" required></textarea></label><p class="muted">驳回会保留异常审核记录，不会自动改写已完成账单。</p>`,'确认驳回','rejectRounding',{order:id});}
     else if(a==='review'){const o=ctx.state.orders.find(o=>o.id===id);openDialog('核对挂账申请',`<p>${o.room} · ${money(o.credit.amount)}</p><p>顾客：${esc(contactText(o.credit))}</p><p>挂账经办 ${esc(o.credit.person)} · ${o.credit.approver}审批</p><p>开单：${esc(o.credit.openedBy || o.openedBy || o.person || '未记录')} · 开房渠道：${esc(o.credit.openSource || o.openSource || '线下')} · 预订：${o.credit.reservedBy?`${esc(o.credit.reservedBy)}（${esc(o.credit.reservationSource || '方式未记录')}）`:'无预订'}</p><p class="notice">备注：${esc(o.credit.note || '未填写')}</p><img class="signature-image" alt="经办员工签字" src="${esc(o.credit.signature)}">${btn('驳回，退回收款','reject',`data-id="${id}"`,'danger')}`,'批准挂账','approve',{order:id});}
     else if(a==='reject')openDialog('驳回挂账',`<p>账单将退回待收款；不会重新占用已释放的房间。</p>`,'确认驳回','reject',{order:id});
-    else if(a==='repay'){const o=ctx.state.orders.find(o=>o.id===id), pending=(o.credit.repaymentRequests||[]).filter(request=>request.status==='待审核').reduce((sum,request)=>sum+request.amount,0), available=o.credit.remaining-pending;if(available<=0)throw Error('全部欠款已有回款申请待审核');openDialog('登记实际回款',`<p>还欠 ${money(o.credit.remaining)} · 待审核 ${money(pending)} · 本次最多 ${money(available)}</p><p>${esc(contactText(o.credit))}</p><label>本次已收到（元）<input name="amount" inputmode="decimal" required></label><label>收款方式<select name="method">${options(PAYMENT_METHODS.map(m=>[m,m]))}</select></label><label class="check"><input type="checkbox" required>已核实本次回款（演示）</label><p class="muted">登记后需具备回款审核权限的员工批准；本人审核还需额外拥有自审权限。批准前不计入实收。</p>`,'提交回款审核','repay',{order:id});}
+    else if(a==='repay'){const o=ctx.state.orders.find(o=>o.id===id), pending=(o.credit.repaymentRequests||[]).filter(request=>request.status==='待审核').reduce((sum,request)=>sum+request.amount,0), available=o.credit.remaining-pending;if(available<=0)throw Error('全部欠款已有回款申请待审核');openDialog('登记实际回款',`<p>还欠 ${money(o.credit.remaining)} · 待审核 ${money(pending)} · 本次最多 ${money(available)}</p><p>${esc(contactText(o.credit))}</p><label>本次已收到（元）<input name="amount" inputmode="decimal" required></label><label>收款方式<select name="method">${options(PAYMENT_METHODS.map(m=>[m,m]))}</select></label><label class="check"><input type="checkbox" required>${FORMAL?'已核实本次回款':'已核实本次回款（演示）'}</label><p class="muted">登记后需具备回款审核权限的员工批准；本人审核还需额外拥有自审权限。批准前不计入实收。</p>`,'提交回款审核','repay',{order:id});}
     else if(a==='reviewRepayment'){
-      const o=ctx.state.orders.find(o=>o.id===id), request=(o?.credit?.repaymentRequests||[]).find(item=>item.id===Number(target.dataset.request));if(!request||request.status!=='待审核')throw Error('这笔回款申请已经处理');if(!canReviewSubmission(request.submittedById))throw Error('审核本人申请需要“允许审核本人申请”权限');openDialog('审核挂账回款',`<div class="quote"><span>${esc(o.room)} · ${esc(request.method)}</span><strong>${money(request.amount)}</strong></div><p>登记人：${esc(request.submittedBy)} · ${date(request.submittedAt)}</p><label>审核备注（选填）<textarea name="decisionNote" maxlength="300" rows="2"></textarea></label>${btn('驳回回款','rejectRepaymentDialog',`data-id="${o.id}" data-request="${request.id}"`,'danger full')}`,'批准并计入实收','approveRepayment',{order:o.id,request:request.id});
+      const o=ctx.state.orders.find(o=>o.id===id), request=(o?.credit?.repaymentRequests||[]).find(item=>item.id===Number(target.dataset.request));if(!request||request.status!=='待审核')throw Error('这笔回款申请已经处理');if(!canReviewSubmission(request))throw Error('审核本人申请需要“允许审核本人申请”权限');openDialog('审核挂账回款',`<div class="quote"><span>${esc(o.room)} · ${esc(request.method)}</span><strong>${money(request.amount)}</strong></div><p>登记人：${esc(request.submittedBy)} · ${date(request.submittedAt)}</p><label>审核备注（选填）<textarea name="decisionNote" maxlength="300" rows="2"></textarea></label>${btn('驳回回款','rejectRepaymentDialog',`data-id="${o.id}" data-request="${request.id}"`,'danger full')}`,'批准并计入实收','approveRepayment',{order:o.id,request:request.id});
     }
     else if(a==='rejectRepaymentDialog'){const o=ctx.state.orders.find(o=>o.id===id), request=(o?.credit?.repaymentRequests||[]).find(item=>item.id===Number(target.dataset.request));if(!request||request.status!=='待审核')throw Error('这笔回款申请已经处理');openDialog('驳回挂账回款',`<p>${money(request.amount)} · ${esc(request.method)}</p><label>驳回原因<textarea name="decisionNote" maxlength="300" rows="3" required></textarea></label>`,'确认驳回','rejectRepayment',{order:o.id,request:request.id});}
     else if(a==='inventory')inventoryDialog();
     else if(a==='stock'){const v=ctx.state.inventory[id],item=product(id),unit=v?.unit||item.baseUnit;if(!v)throw Error('该商品不存在');openDialog(`${item.name} · ${v.count===null?'期初建账':'库存盘点'}`,`<p>当前：${v.count===null?'未建账':`${v.count} ${unit}`}</p><label>盘点后的实际库存（${unit}）<input name="count" type="number" min="0" inputmode="numeric" required></label><label>原因<input name="reason" maxlength="100" required placeholder="例如：首次盘点／破损一件"></label><p class="muted">提交后需库存审核权限；本人审核还需额外拥有自审权限。批准前不改变账面库存。</p>`,'提交库存审核','stock',{product:id});}
     else if(a==='consumableStock'){const v=ctx.state.consumables?.[id], item=ctx.state.catalog.products.find(entry=>entry.id===id);if(!v||!item)throw Error('该消耗品不存在');openDialog(`${item.name} · ${v.count===null?'期初建账':'库存盘点'}`,`<p>当前：${v.count===null?'未建账':`${v.count} ${v.unit || item.baseUnit} · 已开封 ${v.opened || 0}`}</p><label>盘点后的未开封数量（${item.baseUnit}）<input name="count" type="number" min="0" inputmode="numeric" required></label><label>其中已开封数量（${item.baseUnit}）<input name="opened" type="number" min="0" inputmode="numeric" value="${v.opened || 0}" required></label><label>原因<input name="reason" maxlength="100" required placeholder="例如：首次盘点／补充采购"></label><p class="muted">已开封数量单独记录。提交后需库存审核权限；本人审核还需额外拥有自审权限。</p>`,'提交库存审核','consumableStock',{product:id});}
     else if(a==='reviewInventory'){
-      const request=(ctx.state.inventoryReviews||[]).find(item=>item.id===Number(id));if(!request||request.status!=='待审核')throw Error('这笔库存盘点已经处理');if(!canReviewSubmission(request.submittedById))throw Error('审核本人申请需要“允许审核本人申请”权限');const catalogItem=ctx.state.catalog.products.find(item=>item.id===request.product), label=catalogItem?.name||request.product, unit=request.kind==='consumable'?(ctx.state.consumables?.[request.product]?.unit||catalogItem?.baseUnit||'份'):(catalogItem?.baseUnit||'支');openDialog(`审核库存盘点 · ${esc(label)}`,`<div class="quote"><span>${request.before??'未建账'} → ${request.after}</span><strong>${esc(unit)}</strong></div>${request.kind==='consumable'?`<p>已开封：${request.openedBefore||0} → ${request.openedAfter||0}</p>`:''}<p>${esc(request.reason)}</p><p class="muted">提交 ${esc(request.submittedBy)} · ${date(request.submittedAt)}</p><label>审核备注（选填）<textarea name="decisionNote" maxlength="300" rows="2"></textarea></label>${btn('驳回盘点','rejectInventoryDialog',`data-id="${request.id}"`,'danger full')}`,'批准并更新库存','approveInventory',{request:request.id});
+      const request=(ctx.state.inventoryReviews||[]).find(item=>item.id===Number(id));if(!request||request.status!=='待审核')throw Error('这笔库存盘点已经处理');if(!canReviewSubmission(request))throw Error('审核本人申请需要“允许审核本人申请”权限');const catalogItem=ctx.state.catalog.products.find(item=>item.id===request.product), label=catalogItem?.name||request.product, unit=request.kind==='consumable'?(ctx.state.consumables?.[request.product]?.unit||catalogItem?.baseUnit||'份'):(catalogItem?.baseUnit||'支');openDialog(`审核库存盘点 · ${esc(label)}`,`<div class="quote"><span>${request.before??'未建账'} → ${request.after}</span><strong>${esc(unit)}</strong></div>${request.kind==='consumable'?`<p>已开封：${request.openedBefore||0} → ${request.openedAfter||0}</p>`:''}<p>${esc(request.reason)}</p><p class="muted">提交 ${esc(request.submittedBy)} · ${date(request.submittedAt)}</p><label>审核备注（选填）<textarea name="decisionNote" maxlength="300" rows="2"></textarea></label>${btn('驳回盘点','rejectInventoryDialog',`data-id="${request.id}"`,'danger full')}`,'批准并更新库存','approveInventory',{request:request.id});
     }
     else if(a==='rejectInventoryDialog'){const request=(ctx.state.inventoryReviews||[]).find(item=>item.id===Number(id));if(!request||request.status!=='待审核')throw Error('这笔库存盘点已经处理');openDialog('驳回库存盘点',`<label>驳回原因<textarea name="decisionNote" maxlength="300" rows="3" required></textarea></label>`,'确认驳回','rejectInventory',{request:request.id});}
-    else if(a==='handover')openDialog('交班 · 核对收款',`<div class="quote"><span>本轮练习累计实收</span><strong>${money(collected(ctx.state))}</strong></div><p>请将微信、支付宝、现金、美团与抖音的实收合计填入。挂账不算已收款。</p><label>实点收款合计（元）<input name="actual" inputmode="decimal" required></label><label>前台现金（元）<input name="drawerCash" inputmode="decimal" required></label><p class="muted">前台现金单独留档，不重复计入实点收款合计。演示按本轮练习累计核对，不自动切换真实班次。</p>`,'记录交班差异','handover');
+    else if(a==='handover')openDialog('交班 · 核对收款',`<div class="quote"><span>当前可见记录实收（仅供参考）</span><strong>${money(collected(ctx.state))}</strong></div><p>请将微信、支付宝、现金、美团与抖音的实收合计填入。挂账不算已收款。</p><label>实点收款合计（元）<input name="actual" inputmode="decimal" required></label><label>前台现金（元）<input name="drawerCash" inputmode="decimal" required></label><p class="muted">前台现金单独留档，不重复计入实点收款合计。服务器按正式业务记录核对，提交后以服务器结果为准。</p>`,'记录交班差异','handover');
     else if(a==='guide')openDialog('跟着练一遍',`<ol class="guide"><li>用邵老板身份点空房，选饮料并直接配好种类和支数，确认开房。</li><li>营业中房间卡片底部可点“小吃”和“果盘”标记已上，两个配品都完成后按钮自动隐藏。</li><li>点“收钱”只登记开房费用，房间会继续营业。</li><li>点“加酒水”增购2打百威，再点“赠酒水”赠半打；套餐和增购酒水都能点“换酒水”调整。</li><li>增购后点“收钱”只收最近一笔未收增购；最后点“结账”汇总余款，房间才转待清洁。</li><li>到“存取酒”存6支酒，用手机号任意部分或姓名查找；取酒时用手机尾号或姓名核对。</li><li>另开一房，从“结账”申请挂账，填写手机号或姓名、备注并手写签名；切换到有对应具体审核权限的人员，在“待办”处理。</li><li>卓老板为百威建账，再切换有库存审核权限的人员，到“待办”处理盘点申请。</li></ol><p class="notice">第一次练习可使用虚构手机号13800000000，不填写真实客人信息。</p>`);
     else if(a==='reset')openDialog('恢复演示数据',`<p>将清空当前浏览器中的练习账单、签名、存酒、支出／报销、采购、客诉／异常、库存和交班记录，9个房间恢复空闲。</p>`,'确认清空，重新练习','reset');
   } catch(error){toast(error.message);}
 });
-document.addEventListener('submit',e=>{
+document.addEventListener('submit',async e=>{
   e.preventDefault();const f=e.target;
   if(f.id==='search'){ctx.searchTerm=String(new FormData(f).get('query')||'').trim();render();return;}
   if(!f.dataset.form||ctx.busy)return;
+  if(FORMAL && (!ctx.formal?.state.isWritable() ||
+      ctx.formal.flow.getStatus().phase !== 'idle' || ctx.formal.renderFailed)) {
+    const message=f.querySelector('.form-error');
+    if(message) message.textContent='服务器状态尚未确认，已暂停业务写入。';
+    return;
+  }
   ctx.busy=true;const submit=f.querySelector('[type=submit]');if(submit)submit.disabled=true;
   try{
     const a=f.dataset.form,d=Object.fromEntries(new FormData(f));
+    if(FORMAL && ['identity','clock','reset','setPermissions'].includes(a)) throw Error('正式员工端不支持演示身份或状态操作');
     if(a==='identity'){persist({...ctx.state,user:d.user});ctx.page=ctx.DEFAULT_PAGE;ctx.modal.close();render();}
     else if(a==='clock'){if(!Number.isFinite(Date.parse(d.clock)))throw Error('请选择有效时间');persist({...ctx.state,clock:new Date(d.clock).toISOString()});ctx.modal.close();render();}
     else if(a==='reset'){persist({...initialState(),user:'shaoBoss'});ctx.page=ctx.DEFAULT_PAGE;ctx.filter='全部';ctx.searchTerm='';ctx.storageProblem='';ctx.modal.close();render();toast('已恢复，开始新一轮练习');}
@@ -288,12 +310,12 @@ document.addEventListener('submit',e=>{
         // 对话框中为只读展示（rules.js 仍校验一致性，双保险）。
         d.active=Boolean(f.elements.active?.checked); d.basePriceCents=cents(d.basePriceCents); d.includedValueCents=cents(d.includedValueCents); d.priceCents=d.basePriceCents+d.includedValueCents; d.sortOrder=Number(d.sortOrder);
       }
-      f.dataset.key ||= globalThis.crypto?.randomUUID?.() || `op-${Date.now()}-${Math.random()}`;
-      commit(a,d,f.dataset.key);
+      if (!FORMAL) f.dataset.key ||= globalThis.crypto?.randomUUID?.() || `op-${Date.now()}-${Math.random()}`;
+      await commit(a,d,f.dataset.key);
     }
-  }catch(error){f.querySelector('.form-error').textContent=error.message;}
+  }catch(error){const message=f.querySelector('.form-error');if(message && f.isConnected)message.textContent=error.message;}
   finally{ctx.busy=false;if(submit)submit.disabled=false;}
 });
-window.addEventListener('online',render);window.addEventListener('offline',render);
-window.addEventListener('storage',e=>{if(e.key===DEMO_STATE_KEY){try{ctx.state=ctx.persistence.loadExternal(e.newValue);ctx.storageProblem=ctx.persistence.recoveryRecord()?.problem||'';ctx.modal.close();render();if(!ctx.persistence.isWriteBlocked())toast('另一标签页更新了演示，请重新操作');}catch{toast('当前记录已停写，请先核对原文');}}});
+window.addEventListener('online',()=>{if(!FORMAL || ctx.formal)render();});window.addEventListener('offline',()=>{if(!FORMAL || ctx.formal)render();});
+window.addEventListener('storage',e=>{if(!FORMAL && e.key===DEMO_STATE_KEY){try{ctx.state=ctx.persistence.loadExternal(e.newValue);ctx.storageProblem=ctx.persistence.recoveryRecord()?.problem||'';ctx.modal.close();render();if(!ctx.persistence.isWriteBlocked())toast('另一标签页更新了演示，请重新操作');}catch{toast('当前记录已停写，请先核对原文');}}});
 render();

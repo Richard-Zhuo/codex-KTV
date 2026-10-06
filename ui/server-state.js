@@ -94,13 +94,18 @@ export function createEmployeeServerState(api) {
       if (!previous.session) return loadCurrent();
       update({ phase: 'loading', error: null });
       try {
+        const session = await api.getSession();
         const snapshot = await api.getSnapshot();
         if (turn !== generation) return value;
-        return update({ phase: 'ready', snapshot, stale: false, error: null });
+        return update({ phase: 'ready', session, snapshot, stale: false, error: null });
       } catch (error) {
         if (turn !== generation) return value;
         return failed(error, previous);
       }
+    },
+    markUnavailable(error) {
+      generation += 1;
+      return failed(error, value);
     },
     clearForUnauthenticated: unauthenticated,
     isWritable() { return value.phase === 'ready' && !!value.session &&

@@ -231,3 +231,12 @@ Meituan production redemption = NOT ENABLED。Fake Gateway 仅用于显式隔离
 GET /api/v1/store/snapshot 在同一 MySQL 读事务内重验当前 session 权限与策略属性、读取账本 head 并生成有限字段投影，返回该状态对应的 revision，不下发完整数据库状态、演示身份、权限配置、操作历史或原始账本 JSON。backend.view 不授予业务审核，review.self 独立于具体审核权限。权限授予只接受既有正式 permission ID，未知 ID 不得写入 grants。HTTP 错误按稳定机器码区分认证、授权、CSRF、输入、业务拒绝、revision、幂等冲突及内部错误。
 
 本阶段不迁移员工 UI、不启用真实美团 production、不部署，也不宣称正式生产或 14 天离岗 MVP 已就绪。
+
+
+## Stage 3B 员工入口正式 HTTP 运行要求（2026-10-06）
+
+员工入口 / 使用同源正式登录、HttpOnly 会话、服务端权限过滤的营业快照和受信命令。房态、订单、库存、收款、审核、员工归属、业务时钟及版本均以服务端为准；浏览器只保留当前已确认快照，不再从演示 localStorage 恢复或写入营业事实。既有 /admin 演示入口与历史演示数据不视为正式账本。
+
+每次新操作产生一个 crypto.randomUUID() 操作键，携带当前服务端快照的 revision。响应丢失后，只有同一操作键、同一版本、同一请求体的显式重试才可复用；冲突、业务拒绝和授权拒绝不得自动换键重试。成功后重新读取 session 与 snapshot。401 清除当前可操作视图；断网与状态未确认时停止新写入。前端展示权限只改善使用体验，最终授权仍由服务端执行。顾客、员工归属字段不改变实际 session actor。
+
+本阶段不包括正式账号初始化、真实美团、部署、备份恢复或监控；不得据此称为 production ready。

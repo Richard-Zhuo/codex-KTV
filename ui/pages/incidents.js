@@ -5,14 +5,17 @@ import { allowedPermission, btn, canReviewSubmission, ctx, currentUser, date, es
 import { pendingIncidentReminders, visibleIncidents } from '../../incidents.js';
 
 function incidentPage() {
-  const rows=[...visibleIncidents(ctx.state,currentUser())].sort((a,b)=>String(b.date||'').localeCompare(String(a.date||'')) || Number(b.id||0)-Number(a.id||0));
+  const rows=[...(ctx.formal ? ctx.state.incidents : visibleIncidents(ctx.state,currentUser()))].sort((a,b)=>String(b.date||'').localeCompare(String(a.date||'')) || Number(b.id||0)-Number(a.id||0));
   const reminders=pendingIncidentReminders(ctx.state,ctx.state.clock).filter(row=>rows.some(item=>item.id===row.id));
   const body=rows.map(row=>{
     const pending=(row.resolutionReviews||[]).find(request=>request.status==='待审核');
-    const canResolve=!pending&&row.status!=='已完成'&&allowedPermission('incident.resolve')&&(row.assignee===currentUser().name||allowedPermission('incident.viewAll'));
-    const canReview=pending&&allowedPermission('incident.resolve.approve')&&canReviewSubmission(pending.submittedById);
+    const assigned = ctx.formal ? Boolean(ctx.state.actorEmployee?.employeeId) &&
+      row.assigneeEmployeeId === ctx.state.actorEmployee.employeeId :
+      row.assignee === currentUser().name || allowedPermission('incident.viewAll');
+    const canResolve=!pending&&row.status!=='已完成'&&allowedPermission('incident.resolve')&&assigned;
+    const canReview=pending&&allowedPermission('incident.resolve.approve')&&canReviewSubmission(pending);
     const result=row.status==='已完成'?`<div class="incident-result"><b>处理结果</b><p>${esc(row.result)}</p><b>备注</b><p>${esc(row.note)}</p><p class="muted">处理 ${esc(row.resolvedBy||'')} · 审核 ${esc(row.reviewedBy||'未记录')} · ${date(row.resolvedAt)}</p></div>`:'';
-    const review=pending?`<div class="notice"><b>处理结果待审核</b><p>${esc(pending.result)}</p><p>${esc(pending.note)}</p><p class="muted">提交 ${esc(pending.submittedBy)} · ${date(pending.submittedAt)}</p>${canReview?btn('审核处理结果','reviewIncidentResolution',`data-id="${row.id}" data-request="${pending.id}"`,'primary full'):reviewPermissionHint(pending.submittedById)||'<span class="badge">需要客诉／异常恢复审核权限</span>'}</div>`:'';
+    const review=pending?`<div class="notice"><b>处理结果待审核</b><p>${esc(pending.result)}</p><p>${esc(pending.note)}</p><p class="muted">提交 ${esc(pending.submittedBy)} · ${date(pending.submittedAt)}</p>${canReview?btn('审核处理结果','reviewIncidentResolution',`data-id="${row.id}" data-request="${pending.id}"`,'primary full'):reviewPermissionHint(pending)||'<span class="badge">需要客诉／异常恢复审核权限</span>'}</div>`:'';
     const action=result||review||(canResolve?btn('填写处理结果','resolveIncident',`data-id="${row.id}"`,'secondary full'):'<span class="badge">等待负责人处理</span>');
     return `<article class="panel incident-card ${row.status==='已完成'?'incident-complete':''}"><div class="split"><div><h3>${esc(row.type)} · ${esc(row.room)}</h3><p>${esc(row.date)} · 登记人 ${esc(row.person||'未记录')}</p></div><span class="badge">${esc(row.status)}</span></div><p>${esc(row.description)}</p><p class="muted">负责人：${esc(row.assignee||'未指定')}</p>${action}</article>`;
   }).join('');

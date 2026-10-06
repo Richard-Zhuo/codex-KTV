@@ -1,3 +1,7 @@
+## Stage 3B 员工入口运行数据流（2026-10-06）
+
+/ 由 ui/staff-app.js 装配：同源 HTTP auth/session → HttpOnly Cookie → 服务端当前 session 与权限 → GET /api/v1/store/snapshot → 按当前 principal 过滤的页面投影和正式 ledger revision。页面模块只消费投影；本地旧演示状态不参与正式入口。写入由 ui/command-flow.js 发 POST /api/v1/commands/:action，带 CSRF、原始操作键及已确认 revision；HTTP registry、事务内认证复查、授权、幂等、领域变更与 MySQL 提交仍是 Stage 3A/可信核心路径。服务端写入结果后再次读取 session/snapshot；不以浏览器计算替代已确认状态。/admin 的演示路径与正式员工入口分离。
+
 ### 平台券领域与外部副作用边界（R.1）
 
 ## trusted open 与平台绑定

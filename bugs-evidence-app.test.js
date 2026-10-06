@@ -36,8 +36,8 @@ test('回归保护（原 BUG#8，Phase 1 已修）：损坏数据不再静默覆
   // app.js 不再内联 JSON.parse + catch initialState 的旧模式
   assert.doesNotMatch(app, /catch \{ state = initialState\(\); storageProblem = '本机练习记录无法读取，已进入新练习。'; \}/, '旧的静默回落模式已移除');
   // 唯一载入入口是 persistence.load()
-  assert.match(app, /const persistence = createDemoPersistence\(\{ storage: localStorage \}\)/);
-  assert.match(app, /const loaded = persistence\.load\(\)/);
+  assert.match(app, /const persistence = FORMAL \? null : createDemoPersistence\(\{ storage: localStorage \}\)/);
+  assert.match(app, /const loaded = FORMAL \? \{ state: ctx\.state, problem: '' \} : persistence\.load\(\)/);
   // 保存唯一经 persistence.save（Phase 7 起在 ui/shell.js）
   assert.match(shell, /ctx\.persistence\.save\(next\)/);
   assert.doesNotMatch(app + shell, /localStorage\.setItem\(KEY/, '不得再直接写账本 key');

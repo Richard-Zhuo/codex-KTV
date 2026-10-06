@@ -2,6 +2,7 @@ import { createHttpAuthBoundary, exactKeys, HttpBoundaryError, readJson, sendJso
 import { sendCommandResult, sendMappedError } from './contract.js';
 import { isHttpCommand } from './registry.js';
 import { projectStoreSnapshot } from './query.js';
+import { projectEmployeeWorkspace } from './staff-query.js';
 
 const forbiddenFields = new Set([
   '__proto__', 'constructor', 'prototype',
@@ -35,7 +36,8 @@ function commandBody(body) {
 export function createHttpApi(options) {
   if (typeof options?.application?.execute !== 'function' ||
       typeof options?.store?.readInTransaction !== 'function' ||
-      typeof options?.sessionReader?.withContext !== 'function') {
+      typeof options?.sessionReader?.withContext !== 'function' ||
+      options.employeeStore && typeof options.employeeStore.listActiveInTransaction !== 'function') {
     throw new TypeError('Invalid HTTP API composition');
   }
   const auth = createHttpAuthBoundary(options);
@@ -59,7 +61,7 @@ export function createHttpApi(options) {
           if (req.method !== 'POST' || url.search || !match || !isHttpCommand(match[1])) {
             throw new HttpBoundaryError('invalid_input');
           }
-          const body = commandBody(await readJson(req));
+          const body = commandBody(await readJson(req, 1024 * 1024));
           const result = await application.execute({ action: match[1], ...body }, session.credential);
           sendCommandResult(res, result, requestId);
           return true;
@@ -68,8 +70,16 @@ export function createHttpApi(options) {
           const session = await auth.resolve(req);
           if (url.search) throw new HttpBoundaryError('invalid_input');
           const projected = await sessionReader.withContext(session.credential,
-            async (context, connection) =>
-              projectStoreSnapshot(await store.readInTransaction(connection), context));
+            async (context, connection) => {
+              const head = await store.readInTransaction(connection);
+              const result = projectStoreSnapshot(head, context);
+              const employees = options.employeeStore ?
+                await options.employeeStore.listActiveInTransaction(connection) : [];
+              const workspace = projectEmployeeWorkspace(head.state, context,
+                { employees, serverNow: context.dbNow });
+              if (workspace) result.view.workspace = workspace;
+              return result;
+            });
           sendJson(res, 200, projected, { 'X-Request-Id': requestId });
           return true;
         }

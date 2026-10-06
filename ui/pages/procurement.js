@@ -6,7 +6,7 @@ import { visibleProcurements } from '../../procurement.js';
 import { money } from '../../shared/money.js';
 
 function procurementPage() {
-  const rows=[...visibleProcurements(ctx.state,currentUser())].sort((a,b)=>String(b.date||'').localeCompare(String(a.date||'')) || Number(b.id||0)-Number(a.id||0));
+  const rows=[...(ctx.formal ? ctx.state.procurements : visibleProcurements(ctx.state,currentUser()))].sort((a,b)=>String(b.date||'').localeCompare(String(a.date||'')) || Number(b.id||0)-Number(a.id||0));
   const totalAmount=rows.reduce((sum,row)=>sum+Number(row.amount||0),0);
   const scope=allowedPermission('procurement.viewAll')?'当前显示所有人的采购记录。':'当前只显示你登记的采购记录。';
   const body=rows.map(row=>`<article class="panel procurement-card"><div class="split"><div><h3>${esc(row.item)}</h3><p>${esc(row.date)} · ${row.quantity} ${esc(row.unit)} · ${money(row.amount)}</p></div><span class="badge">${esc(row.status||'已关联支出')}</span></div><p class="muted">${esc(row.type||'支出')} · ${esc(row.nature||'')} · ${esc(row.method||'')} · ${esc(row.person||'')}</p><p>${esc(row.description||'')}</p></article>`).join('');

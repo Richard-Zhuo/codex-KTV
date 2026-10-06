@@ -93,3 +93,29 @@ test('revoked session clears snapshot and failed login stays on login screen', a
   assert.equal(state.getState().phase, 'login');
   assert.equal(state.getState().error.code, 'unauthenticated');
 });
+
+test('post-command refresh reloads current grants and principal before the snapshot', async () => {
+  let grants = ['room.clean'];
+  let revision = 1;
+  const calls = [];
+  const api = {
+    async getSession() {
+      calls.push('session');
+      return { principalId: 'staff-id', permissionIds: [...grants] };
+    },
+    async getSnapshot() {
+      calls.push('snapshot');
+      return snapshot(revision);
+    },
+    async login() {}, async logout() {}, clearSession() {}
+  };
+  const state = createEmployeeServerState(api);
+  await state.bootstrap();
+  grants = ['room.open'];
+  revision = 2;
+  calls.length = 0;
+  await state.refreshSnapshot();
+  assert.deepEqual(calls, ['session', 'snapshot']);
+  assert.deepEqual(state.getState().session.permissionIds, ['room.open']);
+  assert.equal(state.getState().snapshot.revision, 2);
+});

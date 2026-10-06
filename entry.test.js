@@ -101,7 +101,7 @@ test('Phase 7 前测：提交事件数据整形与防重入冻结', () => {
   assert.match(submitBody, /if\(!f\.dataset\.form\|\|(?:ctx\.)?busy\)return;/);
   assert.match(submitBody, /(?:ctx\.)?busy=true;const submit=f\.querySelector\('\[type=submit\]'\);if\(submit\)submit\.disabled=true;/);
   assert.match(submitBody, /finally\{(?:ctx\.)?busy=false;if\(submit\)submit\.disabled=false;\}/);
-  assert.match(submitBody, /f\.querySelector\('\.form-error'\)\.textContent=error\.message/);
+  assert.match(submitBody, /if\(message && f\.isConnected\)message\.textContent=error\.message/);
   // 搜索表单分支
   assert.match(submitBody, /if\(f\.id==='search'\)\{(?:ctx\.)?searchTerm=String\(new FormData\(f\)\.get\('query'\)\|\|''\)\.trim\(\);render\(\);return;\}/);
   // DEMO 三分支：identity / clock / reset
@@ -153,8 +153,9 @@ test('Phase 7 前测：change/window 监听与外观联动冻结', () => {
   assert.match(changeBody, /toast\('图片需为有效图片且不超过 500KB'\)/);
   assert.match(changeBody, /toast\('图片读取失败，请重新选择'\)/);
   // window 监听：在线状态重渲染 + 跨标签页同步
-  assert.match(sources, /window\.addEventListener\('online',render\);window\.addEventListener\('offline',render\)/);
-  assert.match(sources, /window\.addEventListener\('storage',e=>\{if\(e\.key===DEMO_STATE_KEY\)/);
+  assert.match(sources, /window\.addEventListener\('online',\(\)=>\{if\(!FORMAL \|\| ctx\.formal\)render\(\);\}\);/);
+  assert.match(sources, /window\.addEventListener\('offline',\(\)=>\{if\(!FORMAL \|\| ctx\.formal\)render\(\);\}\);/);
+  assert.match(sources, /window\.addEventListener\('storage',e=>\{if\(!FORMAL && e\.key===DEMO_STATE_KEY\)/);
   assert.match(sources, /ctx\.state=ctx\.persistence\.loadExternal\(e\.newValue\)/);
   assert.match(sources, /ctx\.storageProblem=ctx\.persistence\.recoveryRecord\(\)\?\.problem\|\|''/);
   assert.match(sources, /ctx\.modal\.close\(\);render\(\)/);
@@ -209,12 +210,8 @@ test('Phase 7 前测：DEMO 练习工具与对话框骨架冻结', () => {
   // 员工补录入口
   assert.match(sources, /'登记员工订房　→','staffBooking','','secondary'\)/);
   assert.match(sources, /'登记员工增购酒水　→','staffSale','','secondary'\)/);
-  // 我的页 DEMO 菜单与提示
-  assert.match(sources, /'切换演示身份　→','identity'\)/);
-  assert.match(sources, /'调整练习时间　→','clock'\)/);
-  assert.match(sources, /'练习说明　→','guide'\)/);
-  assert.match(sources, /'恢复演示数据　→','reset','','danger'\)/);
-  assert.match(sources, /这些是练习工具/);
+  // The formal staff mine page has no demo identity, clock, guide, or reset tools.
+  assert.doesNotMatch(moduleOf('mine.js'), /'identity'|'clock'|'guide'|'reset'/);
   // 交班与取酒对话框
   assert.match(sources, /openDialog\('交班 · 核对收款'/);
   assert.match(sources, /'记录交班差异','handover'\)/);
@@ -228,11 +225,13 @@ test('Phase 7 前测：DEMO 练习工具与对话框骨架冻结', () => {
   assert.match(sources, /if \((?:ctx\.)?modal\.open\) (?:ctx\.)?modal\.close\(\);/);
   assert.match(sources, /const el = document\.querySelector\('#toast'\); el\.textContent = text; el\.classList\.add\('show'\); clearTimeout\(toast\.timer\); toast\.timer=setTimeout\(\(\)=>el\.classList\.remove\('show'\),4500\)/);
   // persist / commit 边界
-  assert.match(sources, /function persist\(next\) \{ (?:ctx\.)?persistence\.save\(next\); (?:ctx\.)?state = next; \}/);
-  assert.match(sources, /function commit\(action, data, key\) \{ const next=transact\((?:ctx\.)?state,action,data,key\); persist\(next\); (?:ctx\.)?modal\.close\(\); render\(\); toast\('已保存 · 仅为演示记录'\); \}/);
+  assert.match(sources, /if \(ctx\.formalEnabled\) throw new TypeError\('Server snapshot is read-only'\)/);
+  assert.match(sources, /ctx\.persistence\.save\(next\)/);
+  assert.match(sources, /await ctx\.formal\.flow\.submit\(action, data\)/);
+  assert.match(sources, /const next = transact\(ctx\.state, action, data, key\)/);
   // 启动装配：持久化唯一入口
-  assert.match(sources, /const persistence = createDemoPersistence\(\{ storage: localStorage \}\)/);
-  assert.match(sources, /const loaded = persistence\.load\(\)/);
+  assert.match(sources, /const persistence = FORMAL \? null : createDemoPersistence\(\{ storage: localStorage \}\)/);
+  assert.match(sources, /const loaded = FORMAL \? \{ state: ctx\.state, problem: '' \} : persistence\.load\(\)/);
   assert.match(sources, /const app = document\.querySelector\('#app'\), modal = document\.querySelector\('#modal'\)/);
   // 主题偏好切换文案
   assert.match(sources, /已设为自动：日出至19:00日间，其余时间夜间/);

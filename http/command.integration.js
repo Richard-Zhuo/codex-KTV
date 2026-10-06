@@ -6,6 +6,10 @@ import { createMySqlLedgerStore } from '../ledger/mysql-store.js';
 import { createTrustedLedgerApplication } from '../ledger/application.js';
 import { createHttpApi } from './api.js';
 import { createCurrentSessionReader } from './query.js';
+import { createEmployeeApiClient, HttpApiError, HttpTransportError } from '../ui/api-client.js';
+import { createEmployeeServerState } from '../ui/server-state.js';
+import { createEmployeeCommandFlow } from '../ui/command-flow.js';
+import { stateFromServerSnapshot } from '../ui/formal-workspace.js';
 
 export async function testHttpBoundary({ t, pool, auth, seed, inspect, database, employeeStore }) {
   const authStore = createMySqlAuthStore({ pool, database });
@@ -32,6 +36,7 @@ export async function testHttpBoundary({ t, pool, auth, seed, inspect, database,
   await seed(ledgerId, state => {
     state.internalAuditOnly = 'stage3a-never-return-internal-secret';
     state.rooms[0].futureSensitive = 'stage3a-never-return-room-secret';
+    state.rooms[2].status = state.rooms[3].status = '待清洁';
     state.expenses.push(
       { id: 501, date: '2026-10-06', type: 'test', amount: 100,
         status: 'recorded', description: 'owner-only-secret',
@@ -48,6 +53,7 @@ export async function testHttpBoundary({ t, pool, auth, seed, inspect, database,
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
   const origin = 'http://127.0.0.1:' + server.address().port;
   const options = { authService: auth, application: trusted, store, sessionReader,
+    employeeStore,
     origin, environment: 'development', allowInsecureCookie: true,
     logger: { error: detail => diagnostics.push(detail) } };
   api = createHttpApi(options);
@@ -122,7 +128,7 @@ export async function testHttpBoundary({ t, pool, auth, seed, inspect, database,
         body: '{"operationKey":"bad-type","expectedRevision":0,"payload":{"room":"V01"}}' });
       assert.equal(badType.body.error.code, 'invalid_input');
       const oversized = await command(signed, 'clean', 'oversized', 0,
-        { room: 'V01', note: 'x'.repeat(17 * 1024) });
+        { room: 'V01', note: 'x'.repeat(1024 * 1024) });
       assert.equal(oversized.body.error.code, 'invalid_input');
       assert.equal((await inspect(ledgerId)).head.revision, 0);
     });
@@ -359,6 +365,61 @@ export async function testHttpBoundary({ t, pool, auth, seed, inspect, database,
         ({ id: room.id, type: room.type, status: room.status })));
       assert.notDeepEqual(before.state.rooms, after.state.rooms);
     });
+    await t.test('Stage 3B employee clients reload server truth, conflict, and replay a lost response', async () => {
+      function browserClient() {
+        let cookie = '';
+        let loseNextCommandResponse = false;
+        const fetchImpl = async (path, options) => {
+          const headers = new Headers(options.headers);
+          if (cookie) headers.set('Cookie', cookie);
+          if (options.method === 'POST') headers.set('Origin', origin);
+          const response = await fetch(origin + path, { ...options, headers });
+          if (response.headers.get('set-cookie')) {
+            cookie = response.headers.get('set-cookie').split(';')[0];
+          }
+          if (loseNextCommandResponse && path.startsWith('/api/v1/commands/')) {
+            loseNextCommandResponse = false;
+            throw new Error('response lost after server commit');
+          }
+          return response;
+        };
+        const client = createEmployeeApiClient({ fetchImpl });
+        const state = createEmployeeServerState(client);
+        const flow = createEmployeeCommandFlow({ api: client, state });
+        return { client, state, flow, loseResponse() { loseNextCommandResponse = true; } };
+      }
+      const a = browserClient();
+      const b = browserClient();
+      for (const browser of [a, b]) {
+        await browser.client.login(cleaner.loginIdentifier, password);
+        await browser.state.bootstrap();
+        assert.equal(browser.state.getState().phase, 'ready');
+        assert.equal(browser.state.getState().snapshot.revision, 2);
+        const projected = stateFromServerSnapshot(browser.state.getState().snapshot,
+          browser.state.getState().session);
+        assert.equal(projected.user, cleaner.principalId);
+        assert.equal(projected.rooms.length, 9);
+      }
+      const committed = await b.flow.submit('clean', { room: 'V03' });
+      assert.equal(committed.refreshed, true);
+      assert.equal(b.state.getState().snapshot.revision, 3);
+      await assert.rejects(a.flow.submit('clean', { room: 'V05' }),
+        error => error instanceof HttpApiError && error.code === 'revision_conflict');
+      assert.equal(a.state.getState().snapshot.revision, 3);
+      assert.equal((await inspect(ledgerId)).head.revision, 3);
+      a.loseResponse();
+      await assert.rejects(a.flow.submit('clean', { room: 'V05' }),
+        error => error instanceof HttpTransportError && error.ambiguous);
+      const pending = a.flow.getStatus();
+      assert.equal(pending.phase, 'unknown');
+      assert.equal((await inspect(ledgerId)).head.revision, 4);
+      const replay = await a.flow.retryUnknown();
+      assert.equal(replay.refreshed, true);
+      assert.equal(a.state.getState().snapshot.revision, 4);
+      assert.equal(a.flow.getStatus().phase, 'idle');
+      assert.equal((await inspect(ledgerId)).head.revision, 4);
+    });
+
   } finally {
     await new Promise(resolve => server.close(resolve));
   }

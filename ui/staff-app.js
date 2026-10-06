@@ -1,76 +1,116 @@
 import { createEmployeeApiClient, HttpApiError, HttpTransportError } from './api-client.js';
 import { createEmployeeServerState } from './server-state.js';
+import { createEmployeeCommandFlow } from './command-flow.js';
+import { stateFromServerSnapshot } from './formal-workspace.js';
+import { ctx, esc } from './context.js';
+import { render as renderWorkspace } from './shell.js';
 
+ctx.formalEnabled = true;
 const app = document.querySelector('#app');
 const client = createEmployeeApiClient();
 const state = createEmployeeServerState(client);
-let page = 'rooms';
+const flow = createEmployeeCommandFlow({ api: client, state });
+let mounted = false;
+let mounting = null;
+let principalId = null;
 
-function esc(value) {
-  return String(value ?? '').replace(/[&<>"']/g, character =>
-    ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[character]);
-}
 function errorText(error) {
-  if (error instanceof HttpTransportError) {
-    return error.reason === 'timeout' ? '连接超时，请检查网络后重试。' : '无法连接门店服务器，请检查网络。';
-  }
-  if (error instanceof HttpApiError) {
-    const labels = {
-      unauthenticated: '账号或密码不正确，或登录已失效。',
-      authorization_denied: '当前账号没有执行此操作的权限。',
-      csrf_denied: '会话校验已失效，请重新获取登录状态。',
-      invalid_input: '提交内容不符合要求，请检查后重试。'
-    };
-    return labels[error.code] ?? '服务器暂时无法处理请求。';
-  }
+  if (error instanceof HttpTransportError) return error.reason === 'timeout'
+    ? '连接超时，请检查网络后重新读取。' : '无法连接门店服务器，请检查网络。';
+  if (error instanceof HttpApiError) return ({
+    unauthenticated: '账号或密码不正确，或者登录已失效。',
+    authorization_denied: '当前账号没有访问此页面的权限。',
+    csrf_denied: '会话校验失效，请重新读取登录状态。',
+    invalid_input: '提交内容不符合要求，请核对后重试。'
+  })[error.code] ?? '服务器暂时无法处理请求。';
   return '服务器暂时无法处理请求。';
 }
 function errorNotice(error) {
-  if (!error) return '';
-  return `<p class="notice" role="alert">${esc(errorText(error))}${error.requestId
-    ? `<br><small>查询编号：${esc(error.requestId)}</small>` : ''}</p>`;
+  return error ? `<p class="notice" role="alert">${esc(errorText(error))}${error.requestId
+    ? `<br><small>查询编号：${esc(error.requestId)}</small>` : ''}</p>` : '';
 }
 function header(session) {
-  return `<header class="topbar"><a class="brand" href="/" data-action="home"><span class="brand-mark">金</span><span>金碧辉煌<small>KTV · 门店助手</small></span></a>${session
-    ? `<div class="header-actions"><span class="identity">已登录 · ${esc(session.principalId.slice(0, 8))}</span><button class="secondary" data-action="logout">退出登录</button></div>`
+  return `<header class="topbar"><a class="brand" href="/" data-action="home"><span class="brand-mark">金</span><span>金碧辉煌<small>KTV · 门店运营</small></span></a>${session
+    ? '<div class="header-actions"><button class="secondary" data-action="formalLogout">退出登录</button></div>'
     : ''}</header>`;
 }
 function loginPage(error) {
-  return `${header(null)}<main><section class="panel staff-auth"><h1>员工登录</h1><p class="muted">使用门店正式账号继续。</p>${errorNotice(error)}<form id="staff-login"><label>账号<input name="loginIdentifier" autocomplete="username" required maxlength="191"></label><label>密码<input name="password" type="password" autocomplete="current-password" required></label><button class="primary full" type="submit">登录并读取门店状态</button></form></section></main>`;
+  return `${header(null)}<main><section class="panel staff-auth"><h1>员工登录</h1><p class="muted">使用门店正式账号及密码</p>${errorNotice(error)}<form id="staff-login"><label>账号<input name="loginIdentifier" autocomplete="username" required maxlength="191"></label><label>密码<input name="password" type="password" autocomplete="current-password" required></label><button class="primary full" type="submit">登录并读取门店状态</button></form></section></main>`;
 }
-function roomsMarkup(view) {
-  if (!Array.isArray(view.rooms)) {
-    return '<div class="empty">当前账号没有房间查看权限，或服务器未提供房态。</div>';
+function statusPage(model, title, detail) {
+  return `${header(model.session)}<main><section class="panel staff-auth"><h1>${title}</h1><p class="muted">${detail}</p>${errorNotice(model.error)}<button class="secondary full" data-action="formalRefresh">重新连接</button></section></main>`;
+}
+
+async function display(model) {
+  if (model.session && model.snapshot &&
+      (model.phase === 'ready' || model.phase === 'loading' ||
+       model.phase === 'unavailable')) {
+    let projected;
+    try { projected = stateFromServerSnapshot(model.snapshot, model.session); }
+    catch (error) {
+      if (ctx.formal) ctx.formal.renderFailed = true;
+      ctx.state = null;
+      app.innerHTML = statusPage(model, '无法安全读取营业状态',
+        '服务器返回的数据不符合正式员工页面的要求，已停止业务写入。');
+      return;
+    }
+    if (!projected) {
+      if (ctx.modal?.open) ctx.modal.close();
+      flow.reset();
+      ctx.formal = null;
+      ctx.state = null;
+      app.innerHTML = statusPage(model, '当前账号没有营业视图权限',
+        '请联系门店管理员配置正式权限。');
+      return;
+    }
+    if (principalId && principalId !== model.session.principalId) {
+      if (ctx.modal?.open) ctx.modal.close();
+      flow.reset();
+    }
+    principalId = model.session.principalId;
+    ctx.state = projected;
+    ctx.formal ??= { mode: 'http', flow, state, lastError: null };
+    ctx.formal.session = model.session;
+    ctx.formal.workspace = model.snapshot.view.workspace;
+    ctx.formal.reviewSections = model.snapshot.view.reviewSections ?? [];
+    if (!mounted) {
+      if (!mounting) mounting = import('../app.js').then(() => {
+        mounted = true;
+        mounting = null;
+        display(state.getState());
+      }).catch(error => {
+        mounting = null;
+        app.innerHTML = statusPage(state.getState(), '无法加载员工页面',
+          '请重新连接。');
+        ctx.formal.lastError = error;
+      });
+      return;
+    }
+    try { renderWorkspace(); }
+    catch {
+      ctx.formal.renderFailed = true;
+      app.innerHTML = statusPage(model, '无法安全显示营业状态',
+        '请重新读取服务器状态。当前停止业务写入。');
+    }
+    return;
   }
-  return `<div class="rooms-grid">${view.rooms.map(room => `<article class="room-card"><span class="room-top"><span>${esc(room.type)}</span><span class="status">${esc(room.status)}</span></span><strong class="room-number">${esc(room.id)}</strong><span class="room-bottom">以服务器房态为准</span></article>`).join('') || '<div class="empty">暂无可查看的房间。</div>'}</div>`;
-}
-function readyPage(model) {
-  const { snapshot, session, stale, error } = model;
-  const view = snapshot.view;
-  const pages = {
-    rooms: `<section class="welcome"><div><p class="eyebrow">门店房态</p><h1>房间一眼看清</h1><p>以下为服务器确认的状态。</p></div></section><div class="section-title"><h2>全部包间</h2><span>版本 ${snapshot.revision}</span></div>${roomsMarkup(view)}`,
-    retail: '<section class="panel"><h1>独立零售</h1><p class="muted">业务操作将在本阶段下一提交接入正式命令。</p></section>',
-    tasks: '<section class="panel"><h1>待办</h1><p class="muted">当前只显示服务器已确认的查看结果。</p></section>',
-    mine: `<section class="panel"><h1>我的账户</h1><p class="muted">当前正式账号：${esc(session.principalId)}</p></section>`
-  };
-  const nav = [['rooms', '包间'], ['retail', '零售'], ['tasks', '待办'], ['mine', '我的']]
-    .map(([id, label]) => `<button data-action="nav" data-page="${id}" class="${page === id ? 'selected' : ''}" ${page === id ? 'aria-current="page"' : ''}>${label}</button>`).join('');
-  return `${header(session)}<main><div class="connection"><span class="online-dot"></span>${stale ? '网络中断 · 旧快照只读' : '已连接门店服务器'}<span>账本版本 ${snapshot.revision}</span></div>${errorNotice(error)}<button class="quiet" data-action="refresh">重新读取服务器状态</button>${pages[page] ?? pages.rooms}</main><nav class="bottom-nav" aria-label="主导航">${nav}</nav>`;
-}
-function render(model) {
   if (model.phase === 'login') {
+    if (ctx.modal?.open) ctx.modal.close();
+    flow.reset();
+    principalId = null;
+    ctx.formal = null;
+    ctx.state = null;
     app.innerHTML = loginPage(model.error);
-  } else if (model.snapshot && model.session &&
-             (model.phase === 'ready' || model.phase === 'unavailable')) {
-    app.innerHTML = readyPage(model);
   } else if (model.phase === 'loading') {
-    app.innerHTML = `${header(null)}<main><section class="panel staff-auth"><h1>正在读取门店状态</h1><p class="muted">请稍候。</p></section></main>`;
+    app.innerHTML = statusPage(model, '正在读取门店状态', '请稍候。');
   } else {
-    app.innerHTML = `${header(null)}<main><section class="panel staff-auth"><h1>暂时无法连接</h1>${errorNotice(model.error)}<button class="secondary full" data-action="refresh">重新连接</button></section></main>`;
+    app.innerHTML = statusPage(model, '暂时无法连接', '无法读取正式营业状态。');
   }
 }
-state.subscribe(render);
-render(state.getState());
+
+state.subscribe(model => { void display(model); });
+void display(state.getState());
+
 app.addEventListener('submit', async event => {
   if (event.target.id !== 'staff-login') return;
   event.preventDefault();
@@ -84,18 +124,37 @@ app.addEventListener('submit', async event => {
 app.addEventListener('click', async event => {
   const target = event.target.closest('[data-action]');
   if (!target) return;
-  event.preventDefault();
   const action = target.dataset.action;
-  if (action === 'nav') {
-    page = target.dataset.page;
-    render(state.getState());
-  } else if (action === 'home') {
-    page = 'rooms';
-    render(state.getState());
-  } else if (action === 'logout') {
-    await state.logout();
-  } else if (action === 'refresh') {
-    await state.reconnect();
+  if (!['formalLogout', 'formalRefresh', 'formalRetryUnknown',
+    'formalRefreshKnown'].includes(action)) return;
+  event.preventDefault();
+  target.disabled = true;
+  try {
+    if (action === 'formalLogout') {
+      await state.logout();
+    } else if (action === 'formalRefresh') {
+      ctx.formal && (ctx.formal.lastError = null);
+      await state.reconnect();
+    } else if (action === 'formalRetryUnknown') {
+      const outcome = await flow.retryUnknown();
+      ctx.formal.lastError = outcome.error ?? null;
+      if (!outcome.refreshed) renderWorkspace();
+    } else {
+      await flow.refreshKnownResult();
+      ctx.formal.lastError = null;
+      renderWorkspace();
+    }
+  } catch (error) {
+    if (ctx.formal) {
+      ctx.formal.lastError = error;
+      renderWorkspace();
+    } else {
+      app.innerHTML = statusPage(state.getState(), '暂时无法完成操作',
+        '请检查连接后重试。');
+    }
   }
 });
+window.addEventListener('offline', () =>
+  state.markUnavailable(new HttpTransportError('network')));
+window.addEventListener('online', () => { void state.reconnect(); });
 void state.bootstrap();

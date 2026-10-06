@@ -1,3 +1,9 @@
+## 2026-10-06：Stage 3B 员工 HTTP UI 候选
+
+正式员工入口 / 已从演示浏览器状态切换为同源登录、服务端 session、权限过滤 snapshot 与 trusted command。ui/staff-app.js 负责登录与连接状态，ui/server-state.js 维护最近一次服务端确认视图，ui/command-flow.js 负责操作键、版本、未确认结果及重读；原页面与对话框保留，业务写入统一经 ui/shell.js 转发 HTTP。http/staff-query.js 在服务端按当前权限及属性构造员工页面投影，员工名单来自正式 MySQL employee store。/admin 仍为演示，不是正式后台。
+
+Stage 3A 已人工接受并以 fast-forward 合入、普通 push 至 main=origin/main=17c1c18。Stage 3B 两个提交只保留在 codex/p0-1-stage3b-ui-http 供人工验收，不推送、不合入、不部署。当前候选的自动化结果以本轮最终验收报告为准；视觉浏览器验收如未取得，不以源码检查替代。正式账号初始化、真实美团、部署、备份恢复、监控均未完成，不能宣称生产就绪。
+
 ## 2026-10-06：Stage 3A HTTP trusted boundary（原始交付记录）
 
 K10 的 d8f3b29 已通过 ff-only 合入 main，并在完整 1771/1771、0 fail、0 skip 后 fetch 核对无漂移、普通 push；main 与 origin/main 均为 d8f3b29（0/0）。本阶段从该提交建立 codex/p0-1-stage3a-http，两个线性提交分别处理 HTTP auth/session/cookie/CSRF 与 trusted command/query boundary；Stage 3A 提交保留本地供人工验收，未推送、未合入 main、未部署。

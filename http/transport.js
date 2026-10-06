@@ -33,13 +33,16 @@ export function logInternal(logger, requestId, error) {
       ? error.stack.split('\n').filter(line => /^\s*at /.test(line)).slice(0, 6).map(line => line.trim()) : [] });
 }
 
-export async function readJson(req) {
+export async function readJson(req, maxBody = MAX_BODY) {
+  if (!Number.isSafeInteger(maxBody) || maxBody < 1 || maxBody > 1024 * 1024) {
+    throw new TypeError('Invalid HTTP JSON body limit');
+  }
   if (!/^application\/json(?:\s*;\s*charset=utf-8)?$/i.test(req.headers['content-type'] ?? '')) {
     throw new HttpBoundaryError('invalid_input');
   }
   const declared = Number(req.headers['content-length']);
   if (req.headers['content-length'] !== undefined &&
-      (!Number.isSafeInteger(declared) || declared < 0 || declared > MAX_BODY)) {
+      (!Number.isSafeInteger(declared) || declared < 0 || declared > maxBody)) {
     throw new HttpBoundaryError('invalid_input');
   }
   const chunks = [];
@@ -47,7 +50,7 @@ export async function readJson(req) {
   try {
     for await (const chunk of req) {
       size += chunk.length;
-      if (size > MAX_BODY) throw new HttpBoundaryError('invalid_input');
+      if (size > maxBody) throw new HttpBoundaryError('invalid_input');
       chunks.push(chunk);
     }
     if (!size) throw new HttpBoundaryError('invalid_input');

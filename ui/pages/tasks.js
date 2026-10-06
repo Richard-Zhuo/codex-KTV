@@ -3,14 +3,14 @@
 
 import { allowedPermission, btn, canReviewSubmission, contactText, ctx, currentUser, date, esc, product, reviewPermissionHint } from '../context.js';
 import { roomIssueEvidenceMarkup } from '../forms.js';
-import { businessReviewSections } from '../../shared/identity.js';
+import { BUSINESS_REVIEW_SECTIONS, businessReviewSections } from '../../shared/identity.js';
 import { visibleIncidents } from '../../incidents.js';
 import { money } from '../../shared/money.js';
 import { pendingBusinessReviewCount as inboxPendingCount, reviewHistoryRows as inboxHistoryRows } from '../../reviewInbox.js';
 
 function repaymentReviewMarkup(o) {
   const rows=(o.credit?.repaymentRequests||[]).filter(request=>request.status==='待审核');
-  return rows.map(request=>{const canReview=allowedPermission('credit.repay.approve')&&canReviewSubmission(request.submittedById);return `<div class="notice"><div class="split"><b>回款 ${money(request.amount)} · ${esc(request.method)}</b><span class="badge">待审核</span></div><p>登记人 ${esc(request.submittedBy)} · ${date(request.submittedAt)}</p>${canReview?btn('审核回款','reviewRepayment',`data-id="${o.id}" data-request="${request.id}"`,'primary full'):reviewPermissionHint(request.submittedById)||'<span class="badge">需要回款审核权限</span>'}</div>`;}).join('');
+  return rows.map(request=>{const canReview=allowedPermission('credit.repay.approve')&&canReviewSubmission(request);return `<div class="notice"><div class="split"><b>回款 ${money(request.amount)} · ${esc(request.method)}</b><span class="badge">待审核</span></div><p>登记人 ${esc(request.submittedBy)} · ${date(request.submittedAt)}</p>${canReview?btn('审核回款','reviewRepayment',`data-id="${o.id}" data-request="${request.id}"`,'primary full'):reviewPermissionHint(request)||'<span class="badge">需要回款审核权限</span>'}</div>`;}).join('');
 }
 
 function creditDetailMarkup(o, includeActions=true) {
@@ -44,30 +44,30 @@ function expenseReviewCards() {
 
 function giftRequestCards() {
   const rows=ctx.state.orders.flatMap(o=>(o.giftRequests||[]).filter(request=>request.status==='待确认').map(request=>({o,request})));
-  return rows.map(({o,request})=>`<article class="panel"><div class="split"><h3>${o.room} · ${esc(request.productNameSnapshot || product(request.productId || request.product).name)}</h3><span class="badge">待确认</span></div><p>${request.halves} 个半打，共 ${request.bottles} 支 · 申请人 ${esc(request.requestedBy)}</p>${allowedPermission('gift.approve')&&canReviewSubmission(request.requestedById)?btn('进入账单处理','order',`data-id="${o.id}"`):reviewPermissionHint(request.requestedById)||'<span class="badge">需要赠酒水审核权限</span>'}</article>`).join('') || '<p class="muted">暂无超额赠酒水申请。</p>';
+  return rows.map(({o,request})=>`<article class="panel"><div class="split"><h3>${o.room} · ${esc(request.productNameSnapshot || product(request.productId || request.product).name)}</h3><span class="badge">待确认</span></div><p>${request.halves} 个半打，共 ${request.bottles} 支 · 申请人 ${esc(request.requestedBy)}</p>${allowedPermission('gift.approve')&&canReviewSubmission(request)?btn('进入账单处理','order',`data-id="${o.id}"`):reviewPermissionHint(request)||'<span class="badge">需要赠酒水审核权限</span>'}</article>`).join('') || '<p class="muted">暂无超额赠酒水申请。</p>';
 }
 
 function roundingReviewCards() {
   const rows=ctx.state.orders.filter(order=>order.roundingReview?.status==='待审核');
-  return rows.map(order=>{const canReview=allowedPermission('rounding.approve')&&canReviewSubmission(order.roundingReview.submittedById);return `<article class="panel"><div class="split"><h3>${esc(order.room)} · 特殊情况 ${money(order.roundingReview.amount)}</h3><span class="badge">待审核</span></div><p>${esc(order.roundingReview.note)} · 提交人 ${esc(order.roundingReview.submittedBy)}</p><p class="muted">${date(order.roundingReview.submittedAt)}</p>${canReview?btn('查看并审核','reviewRounding',`data-id="${order.id}"`):reviewPermissionHint(order.roundingReview.submittedById)||'<span class="badge">需要特殊差额审核权限</span>'}</article>`;}).join('') || '<p class="muted">暂无特殊差额待审核。</p>';
+  return rows.map(order=>{const canReview=allowedPermission('rounding.approve')&&canReviewSubmission(order.roundingReview);return `<article class="panel"><div class="split"><h3>${esc(order.room)} · 特殊情况 ${money(order.roundingReview.amount)}</h3><span class="badge">待审核</span></div><p>${esc(order.roundingReview.note)} · 提交人 ${esc(order.roundingReview.submittedBy)}</p><p class="muted">${date(order.roundingReview.submittedAt)}</p>${canReview?btn('查看并审核','reviewRounding',`data-id="${order.id}"`):reviewPermissionHint(order.roundingReview)||'<span class="badge">需要特殊差额审核权限</span>'}</article>`;}).join('') || '<p class="muted">暂无特殊差额待审核。</p>';
 }
 
 function inventoryReviewCards() {
   const rows=(ctx.state.inventoryReviews||[]).filter(request=>request.status==='待审核');
-  return rows.map(request=>{const catalogItem=ctx.state.catalog.products.find(item=>item.id===request.product), label=request.kind==='consumable'?(catalogItem?.name||request.product):catalogItem?.name||request.product;const unit=request.kind==='consumable'?(ctx.state.consumables?.[request.product]?.unit||catalogItem?.baseUnit||'份'):(catalogItem?.baseUnit||'支');const opened=request.kind==='consumable'?` · 已开封 ${request.openedBefore||0} → ${request.openedAfter||0}`:'';const canReview=allowedPermission('inventory.approve')&&canReviewSubmission(request.submittedById);return `<article class="panel"><div class="split"><h3>${esc(label)} · ${esc(request.source)}</h3><span class="badge">待审核</span></div><p>${request.before??'未建账'} → ${request.after} ${esc(unit)}${opened}</p><p>${esc(request.reason)} · 提交人 ${esc(request.submittedBy)}</p>${canReview?btn('审核库存盘点','reviewInventory',`data-id="${request.id}"`,'primary full'):reviewPermissionHint(request.submittedById)||'<span class="badge">需要库存审核权限</span>'}</article>`;}).join('')||'<p class="muted">暂无库存盘点待审核。</p>';
+  return rows.map(request=>{const catalogItem=ctx.state.catalog.products.find(item=>item.id===request.product), label=request.kind==='consumable'?(catalogItem?.name||request.product):catalogItem?.name||request.product;const unit=request.kind==='consumable'?(ctx.state.consumables?.[request.product]?.unit||catalogItem?.baseUnit||'份'):(catalogItem?.baseUnit||'支');const opened=request.kind==='consumable'?` · 已开封 ${request.openedBefore||0} → ${request.openedAfter||0}`:'';const canReview=allowedPermission('inventory.approve')&&canReviewSubmission(request);return `<article class="panel"><div class="split"><h3>${esc(label)} · ${esc(request.source)}</h3><span class="badge">待审核</span></div><p>${request.before??'未建账'} → ${request.after} ${esc(unit)}${opened}</p><p>${esc(request.reason)} · 提交人 ${esc(request.submittedBy)}</p>${canReview?btn('审核库存盘点','reviewInventory',`data-id="${request.id}"`,'primary full'):reviewPermissionHint(request)||'<span class="badge">需要库存审核权限</span>'}</article>`;}).join('')||'<p class="muted">暂无库存盘点待审核。</p>';
 }
 
 function incidentResolutionReviewCards() {
   const rows=(ctx.state.incidents||[]).flatMap(incident=>(incident.resolutionReviews||[]).filter(request=>request.status==='待审核').map(request=>({incident,request})));
-  return rows.map(({incident,request})=>{const canReview=allowedPermission('incident.resolve.approve')&&canReviewSubmission(request.submittedById);return `<article class="panel"><div class="split"><h3>${esc(incident.room)} · ${esc(incident.type)}</h3><span class="badge">恢复待审核</span></div><p>${esc(request.result)}</p><p class="muted">提交 ${esc(request.submittedBy)} · ${date(request.submittedAt)}</p>${canReview?btn('审核处理结果','reviewIncidentResolution',`data-id="${incident.id}" data-request="${request.id}"`,'primary full'):reviewPermissionHint(request.submittedById)||'<span class="badge">需要客诉／异常恢复审核权限</span>'}</article>`;}).join('')||'<p class="muted">暂无客诉／异常恢复待审核。</p>';
+  return rows.map(({incident,request})=>{const canReview=allowedPermission('incident.resolve.approve')&&canReviewSubmission(request);return `<article class="panel"><div class="split"><h3>${esc(incident.room)} · ${esc(incident.type)}</h3><span class="badge">恢复待审核</span></div><p>${esc(request.result)}</p><p class="muted">提交 ${esc(request.submittedBy)} · ${date(request.submittedAt)}</p>${canReview?btn('审核处理结果','reviewIncidentResolution',`data-id="${incident.id}" data-request="${request.id}"`,'primary full'):reviewPermissionHint(request)||'<span class="badge">需要客诉／异常恢复审核权限</span>'}</article>`;}).join('')||'<p class="muted">暂无客诉／异常恢复待审核。</p>';
 }
 
 function roomIssueReviewCards() {
   const all=[...(ctx.state.roomIssueReviews || [])].sort((a,b)=>Date.parse(b.submittedAt)-Date.parse(a.submittedAt)||Number(b.id||0)-Number(a.id||0));
   const rows=all.filter(request=>request.status==='待审核');
   const pending=rows.map(request=>{
-    const canReview=allowedPermission('room.issue.approve') && canReviewSubmission(request.submittedById);
-    return `<article class="panel room-issue-review"><div class="split"><h3>${esc(request.room)} · 恢复为空房</h3><span class="badge">待审核</span></div><p>${esc(request.fromStatus)} → 空闲${request.issueType?` · ${esc(request.issueType)}`:''}</p><p class="muted">提交：${esc(request.submittedBy)} · ${date(request.submittedAt)}</p>${roomIssueEvidenceMarkup(request)}${canReview?btn('查看并审核','reviewRoomIssue',`data-id="${request.id}"`,'primary full'):reviewPermissionHint(request.submittedById)||'<span class="badge">需要房间恢复审核权限</span>'}</article>`;
+    const canReview=allowedPermission('room.issue.approve') && canReviewSubmission(request);
+    return `<article class="panel room-issue-review"><div class="split"><h3>${esc(request.room)} · 恢复为空房</h3><span class="badge">待审核</span></div><p>${esc(request.fromStatus)} → 空闲${request.issueType?` · ${esc(request.issueType)}`:''}</p><p class="muted">提交：${esc(request.submittedBy)} · ${date(request.submittedAt)}</p>${roomIssueEvidenceMarkup(request)}${canReview?btn('查看并审核','reviewRoomIssue',`data-id="${request.id}"`,'primary full'):reviewPermissionHint(request)||'<span class="badge">需要房间恢复审核权限</span>'}</article>`;
   }).join('');
   const history=all.filter(request=>request.status!=='待审核').slice(0,6);
   const historyMarkup=history.length?`<details class="panel room-issue-history"><summary>最近房态记录（${history.length}）</summary>${history.map(request=>`<div class="room-issue-history-row"><div class="split"><b>${esc(request.room)} · ${esc(request.change)}</b><span class="badge">${esc(request.status)}</span></div><p>${esc(request.fromStatus)} → ${esc(request.requestedStatus)} · 提交 ${esc(request.submittedBy)}${request.decidedBy?` · 审核 ${esc(request.decidedBy)}`:' · 无需审核'}</p>${roomIssueEvidenceMarkup(request)}${request.decisionNote?`<p class="muted">记录备注：${esc(request.decisionNote)}</p>`:''}</div>`).join('')}</details>`:'';
@@ -76,7 +76,8 @@ function roomIssueReviewCards() {
 
 function myPendingIncidentTasks() {
   const name=currentUser().name;
-  return visibleIncidents(ctx.state,currentUser()).filter(incident=>incident.assignee===name&&incident.status==='待处理'&&!(incident.resolutionReviews||[]).some(request=>request.status==='待审核'));
+  return (ctx.formal ? ctx.state.incidents : visibleIncidents(ctx.state,currentUser())).filter(incident=>
+    (ctx.formal ? incident.assigneeEmployeeId===ctx.state.actorEmployee?.employeeId : incident.assignee===name)&&incident.status==='待处理'&&!(incident.resolutionReviews||[]).some(request=>request.status==='待审核'));
 }
 
 function myTaskCards(rows=myPendingIncidentTasks()) {
@@ -90,7 +91,10 @@ function pendingBusinessReviewCount(section) {
 
 function reviewHistoryRows() {
   // 命令体已迁至 reviewInbox.js（Phase 5），逐字节保留；此处仅绑定当前状态与当前身份。
-  return inboxHistoryRows(ctx.state, currentUser());
+  return inboxHistoryRows(ctx.state, currentUser(), ctx.formal ?
+    BUSINESS_REVIEW_SECTIONS.filter(section =>
+      ctx.formal.reviewSections?.includes(section.permission)).map(section => section.id) : undefined,
+    ctx.formal?.session.principalId ?? null);
 }
 
 function reviewHistoryCards(rows=reviewHistoryRows()) {
@@ -98,7 +102,9 @@ function reviewHistoryCards(rows=reviewHistoryRows()) {
 }
 
 function taskCenterPage() {
-  const sections=businessReviewSections(currentUser()), myTasks=myPendingIncidentTasks(), history=reviewHistoryRows();
+  const sections=ctx.formal ? BUSINESS_REVIEW_SECTIONS.filter(section =>
+    ctx.formal.reviewSections?.includes(section.permission)).map(section => section.id) :
+    businessReviewSections(currentUser()), myTasks=myPendingIncidentTasks(), history=reviewHistoryRows();
   const reviewViews={
     creditApproval:['挂账审批','按金额对应的店长或老板权限处理。',creditApprovalCards],
     creditRepayment:['挂账回款审核','批准后才扣减欠款并计入实收。',repaymentReviewCards],

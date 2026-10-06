@@ -121,5 +121,19 @@ export function createMySqlEmployeeStore({ pool, database }) {
       return employeeRow(row);
     } finally { connection.release(); }
   }
-  return Object.freeze({ runTransaction, readEmployee, bindEmployeeResolver });
+  async function listActiveInTransaction(connection) {
+    if (typeof connection?.execute !== 'function' || typeof connection?.query !== 'function' ||
+        typeof connection.getConnection === 'function') throw TypeError('Current MySQL transaction connection required');
+    const [status] = await connection.execute('DO 0');
+    if (!Number.isInteger(status.serverStatus) || !(status.serverStatus & 1)) {
+      throw Error('Employee roster read requires an active transaction');
+    }
+    await assertDatabase(connection);
+    const [rows] = await connection.execute('SELECT employee_id, display_name, principal_id FROM ' +
+      employees + ' WHERE enabled = 1 ORDER BY display_name, employee_id FOR SHARE');
+    return rows.map(row => Object.freeze({ employeeId: row.employee_id,
+      displayName: row.display_name, principalId: row.principal_id, enabled: true }));
+  }
+  return Object.freeze({ runTransaction, readEmployee, bindEmployeeResolver,
+    listActiveInTransaction });
 }

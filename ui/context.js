@@ -3,13 +3,14 @@
 // busy/controlSequence/storageProblem/APP_ENTRY/DEFAULT_PAGE/persistence/modal/app）改为 ctx.* 属性，
 // 函数体逐字保留；ctx 由 app.js 启动时装配注入。
 
-import { PERMISSION_DEFINITIONS, USERS, effectiveUser, hasPermission, hasRole } from '../shared/identity.js';
+import { BUSINESS_REVIEW_SECTIONS, PERMISSION_DEFINITIONS, USERS, effectiveUser, hasPermission, hasRole } from '../shared/identity.js';
 import { canExchange } from '../rooms.js';
 import { findProduct, saleOptions } from '../catalog.js';
 
 export const ctx = { state: null, storageProblem: '', page: 'rooms', filter: '全部',
   searchTerm: '', category: 'beer', reportPeriod: 'day', busy: false, controlSequence: 0,
-  APP_ENTRY: 'staff', DEFAULT_PAGE: 'rooms', persistence: null, modal: null, app: null };
+  APP_ENTRY: 'staff', DEFAULT_PAGE: 'rooms', persistence: null, modal: null, app: null,
+  formalEnabled: false, formal: null };
 
 const product = id => findProduct(ctx.state.catalog, id);
 
@@ -23,15 +24,34 @@ const localDate = t => { const d = new Date(t); return `${d.getFullYear()}-${Str
 
 const dayValue = t => { const d = new Date(t); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; };
 
-const currentUser = () => effectiveUser(ctx.state);
+const currentUser = () => ctx.formal ? {
+  name: ctx.state.actorEmployee?.displayName || ctx.formal.session.principalId.slice(0, 8),
+  title: '正式账号', principalId: ctx.formal.session.principalId,
+  roles: [], permissions: ctx.formal.session.permissionIds
+} : effectiveUser(ctx.state);
 
 const allowed = roles => hasRole(currentUser(), roles);
 
-const allowedPermission = permission => hasPermission(currentUser(), permission);
+const allowedPermission = permission => {
+  if (ctx.formal && BUSINESS_REVIEW_SECTIONS.some(section =>
+      section.permission === permission) &&
+      !ctx.formal.reviewSections?.includes(permission)) return false;
+  return hasPermission(currentUser(), permission);
+};
 
-const canReviewSubmission = submittedById => submittedById !== ctx.state.user || allowedPermission('review.self');
+const submissionId = record => ctx.formal ?
+  (record && typeof record === 'object' ? record.submittedByPrincipalId : null) :
+  (record && typeof record === 'object' ?
+    record.submittedById ?? record.requestedById : record);
+const canReviewSubmission = record => {
+  const id = submissionId(record);
+  return Boolean(id) && (id !== ctx.state.user || allowedPermission('review.self'));
+};
 
-const selfReviewBlocked = submittedById => submittedById === ctx.state.user && !allowedPermission('review.self');
+const selfReviewBlocked = record => {
+  const id = submissionId(record);
+  return !id || id === ctx.state.user && !allowedPermission('review.self');
+};
 
 const reviewPermissionHint = submittedById => selfReviewBlocked(submittedById) ? '<span class="badge">审核本人申请需要“允许审核本人申请”权限</span>' : '';
 
@@ -50,7 +70,9 @@ const initialMixChoices = () => ctx.state.catalog.products.filter(p => p.active 
 
 const roomOptions = () => options(ctx.state.rooms.map(r=>[r.id,`${r.id} · ${r.type}`]));
 
-const employeeOptions = (selected = '') => options(Object.entries(USERS).filter(([id, user]) => !user.legacy && id !== 'administrator').map(([id, user]) => [id, `${user.name} · ${user.title || '岗位说明未设置'}`]), selected);
+const employeeOptions = (selected = '') => ctx.formal ?
+  options(ctx.state.employees.map(employee => [employee.employeeId, employee.displayName]), selected) :
+  options(Object.entries(USERS).filter(([id, user]) => !user.legacy && id !== 'administrator').map(([id, user]) => [id, `${user.name} · ${user.title || '岗位说明未设置'}`]), selected);
 
 const contactText = record => [record?.name, record?.phone].filter(Boolean).join(' · ') || '未留联系人';
 
