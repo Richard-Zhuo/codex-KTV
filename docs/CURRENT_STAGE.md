@@ -4,7 +4,7 @@
 
 修改后 npm test 已尝试，但本机没有 npm；完整 node --test --test-isolation=none --test-reporter=tap 为 1830 total、1830 pass、0 fail、0 skip。在此回归完成后，检查 jbhh_ktv_test 为 MySQL 8.4.11/InnoDB 且原有表数为 0，再按当前 MySQL migrations 001…007 建立 15 张表、一个合成测试账号和 stage3b-local-browser 测试账本。服务以显式 development 非 Secure Cookie 配置仅监听 127.0.0.1；终端 HTTP 实测未认证 session=401、合成账号 login=200、session=200、snapshot=200、revision=0、9 个房间投影，原始 token 不在 JSON 中。该 fixture 仅用于本机人工网页复验，不是正式账号初始化；fixture 存续期间不要重跑会要求空 auth 表的真实 MySQL 自动化测试，复验结束后须按测试数据所有权安全清理。
 
-本次尚未取得真实浏览器 DOM、Console 和点击路径验收；HTTP 实测不能替代浏览器验收。Stage 3B 仍待人工确认，未合入 main、未推送、未部署。
+用户在真实浏览器手工确认 / 显示员工登录页，合成账号登录后进入房间工作区；V01（待清洁）经界面确认操作变为空闲，刷新后仍保持登录及 V01 空闲，退出返回登录页。独立 MySQL 读取确认 revision=1、唯一 clean operation、1 条成功审计、actor 与合成账号一致；auth_sessions 共 2 条，其中 1 条已由退出撤销。以上是用户手工页面回报和数据库核对，尚未取得可由本任务独立复查的浏览器 DOM、Console、Network 捕获，因此不能宣称完整自动化浏览器验收通过。Stage 3B 未合入 main、未推送、未部署。
 
 ## 2026-10-06：Stage 3B 最终高风险验收修复候选
 
