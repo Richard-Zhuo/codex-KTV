@@ -145,8 +145,10 @@ app.addEventListener('click', async event => {
       await state.reconnect();
     } else if (action === 'formalRetryUnknown') {
       const outcome = await flow.retryUnknown();
-      ctx.formal.lastError = outcome.error ?? null;
-      if (!outcome.refreshed) renderWorkspace();
+      if (ctx.formal) {
+        ctx.formal.lastError = outcome.error ?? null;
+        renderWorkspace();
+      }
     } else {
       await flow.refreshKnownResult();
       ctx.formal.lastError = null;

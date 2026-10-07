@@ -8,7 +8,7 @@ import { cents, money } from '../shared/money.js';
 import { categoryLabel, saleOptions, sellableProducts } from '../catalog.js';
 
 function roomIssueEvidenceFields() {
-  return `<label>文字说明（与照片至少提交一项）<textarea name="evidenceText" maxlength="500" rows="3" placeholder="例如：空调无法制冷；维修完成并试机正常"></textarea></label><label>现场照片（与文字至少提交一项）<input id="room-issue-photo" type="file" accept="image/*"><input id="room-issue-photo-data" type="hidden" name="evidencePhoto"><input id="room-issue-photo-name" type="hidden" name="evidencePhotoName"></label><p id="room-issue-photo-status" class="muted">支持单张图片，不超过 500KB；照片仅保存在本机演示数据中。</p>`;
+  return `<label>文字说明（与照片至少提交一项）<textarea name="evidenceText" maxlength="500" rows="3" placeholder="例如：空调无法制冷；维修完成并试机正常"></textarea></label><label>现场照片（与文字至少提交一项）<input id="room-issue-photo" type="file" accept="image/*"><input id="room-issue-photo-data" type="hidden" name="evidencePhoto"><input id="room-issue-photo-name" type="hidden" name="evidencePhotoName"></label><p id="room-issue-photo-status" class="muted">支持单张图片，不超过 500KB；${ctx.formalEnabled ? '照片将随业务记录提交服务器。' : '照片仅保存在本机演示数据中。'}</p>`;
 }
 
 function roomIssueEvidenceMarkup(request) {

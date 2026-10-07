@@ -1,3 +1,9 @@
+## 2026-10-07：Stage 3B 待确认提示与故障表单修复候选
+
+正式员工页面的 pending 重试在明确成功后，journal 和快照已更新，但页面可能仍显示“服务器已接收操作，但最新状态尚未读取”。定向回归先复现了 revision 更新后旧提示残留：快照刷新在命令 flow 从 refresh-needed 回到 idle、清除上次传输错误之前触发页面渲染。现在重试处理在 flow 返回后按最终状态再渲染一次；网络再次不明确时仍保留 journal 和待确认警告，明确成功或业务拒绝等终态按既有 command contract 清理。正式故障／恢复表单的初始照片说明改为“照片将随业务记录提交服务器”，演示入口保留原文案；现有图片证据仍随正式命令进入服务端账本，没有新增上传系统。
+
+定向 ui/formal-entry 与 ui/command-flow 回归 12/12 通过；完整 node --test --test-isolation=none --test-reporter=tap 在独立临时 MySQL 8.4.11 测试实例上为 1830/1830 通过、0 失败、0 跳过。现有 jbhh_ktv_test 浏览器合成 fixture 未导出、删除或覆盖。npm test 已尝试，当前环境没有 npm。修复提交后的 browser-skill 定向验收结果以本轮最终报告为准；未合入 main、未推送、未部署。
+
 ## 2026-10-06：Stage 3B 员工网页连接与静态资源修复候选
 
 本机 4173 端口原无服务。启动后确认员工入口导入的 ui/pending-command-journal.js 返回 404，且 sales.js 的浏览器依赖 ledger/command-policy.js 未列入 server.js 静态白名单。已补齐两个精确路径，并加入经真实 HTTP 递归读取员工模块导入图的回归测试：原 404 可复现，修复后 / 与所需模块均返回 200。server.js 提供可导入的服务器工厂供隔离端口测试；直接执行的原启动方式保留。
