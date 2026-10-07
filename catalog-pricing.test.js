@@ -8,8 +8,9 @@ for(const [id,cents] of [['bw',10000],['xl',10000],['lm',12000],['lm_can',12000]
  test('DAY stable category dozen price '+id,()=>{
   const p=findProduct(cloneCatalog(),id);p.name='Renamed arbitrary product';
   const options=pricedSaleOptions(p,DAY_PRICE_PLAN);
+  assert.deepEqual(options.find(o=>o.id==='half'),{id:'half',name:'半打',baseQuantity:6,priceCents:cents/2});
   assert.deepEqual(options.find(o=>o.id==='dozen'),{id:'dozen',name:'整打',baseQuantity:12,priceCents:cents});
-  for(const o of p.saleOptions.filter(o=>o.id!=='dozen'))assert.deepEqual(options.find(x=>x.id===o.id),o);
+  for(const o of p.saleOptions.filter(o=>!['dozen','half'].includes(o.id)))assert.deepEqual(options.find(x=>x.id===o.id),o);
  });
 test('catalog v1 migration classifies by IDs, preserves current prices and custom explicit category',()=>{
  const c=cloneCatalog();c.schemaVersion=1;for(const p of c.products)delete p.priceCategory;

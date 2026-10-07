@@ -1,6 +1,6 @@
 ## Stage 4A accepted scope (2026-10-08)
 
-Formal DAY/NIGHT, DAY dozen pricing and frozen transaction snapshots follow [Stage 4A contract](STAGE4A_SESSION_DEVICE.md). Device gateway/workflow is independent of employee open; real provider mutation is deferred to Stage 4B.
+User clarification: DAY single prices unchanged, half-dozens exactly half of whole dozens (50/50/60 yuan). Formal DAY/NIGHT, DAY dozen pricing and frozen transaction snapshots follow [Stage 4A contract](STAGE4A_SESSION_DEVICE.md). Device gateway/workflow is independent of employee open; real provider mutation is deferred to Stage 4B.
 
 ### 已确认：Stage 3C 正式管理后台
 

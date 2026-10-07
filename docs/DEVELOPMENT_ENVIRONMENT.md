@@ -1,3 +1,7 @@
+### Stage 4A device verification
+
+Focused: node --test --test-isolation=none --test-reporter=tap devices/application.test.js database.test.js. Real integration: ledger/trusted-clean.integration.test.js under the existing guarded MySQL fixture. The fixture now explicitly owns migration 008 room_control_workflows (sixteen InnoDB tables); it refuses a pre-existing device table, and removes only tables it created. Provider calls are fake, must use explicit allowTestGateway and testOnly mode, and never use real devices or credentials. Full command remains node --test --test-isolation=none --test-reporter=tap.
+
 ### K10 验证路线
 
 node --test --test-isolation=none --test-reporter=tap database.test.js offsite.contract.test.js ledger/mysql-store.integration.test.js 验唯一 MySQL authority、legacy 禁用入口、真实 room/retail JSON 往返与重复 migration 策略。沿用专用 jbhh_ktv_test 的原三表 fixture、目标校验及 fixture 锁，不增加数据库权限或 cleanup 范围。完整结果见 CURRENT_STAGE。
@@ -6,7 +10,7 @@ node --test --test-isolation=none --test-reporter=tap database.test.js offsite.c
 
 数据库无关契约：node --test --test-isolation=none vouchers/domain.test.js vouchers/gateways.test.js vouchers/application.test.js。open/binding：node --test --test-isolation=none ledger/trusted-open.test.js vouchers/binding.test.js。真实数据库仍用 LEDGER_MYSQL_TEST_URL，严格校验 URL 与实际 database=jbhh_ktv_test、版本及 InnoDB；绝不输出 URL／密码。
 
-ledger/trusted-clean.integration.test.js 复用现有 fixture lock，新增明确的 voucher 四表和 migration 007。ledger/platform-voucher.integration.js 验 migration、provider 调用锁外取锁、重连、UNKNOWN、独立连接竞争、claim/evidence/event SQL 失败及消息去重。ledger/trusted-open.integration.js 在同一 guarded fixture 验同连接锁序、原子开房、双设备竞争、replay 与数据库故障。fixture 为固定十五表；ledger 三表依原授权预清理，其他表必须本轮明确创建才能清理，遇到已有未知数据拒绝。没有动态表名或全局数据库权限。
+ledger/trusted-clean.integration.test.js 复用现有 fixture lock，新增明确的 voucher 四表和 migration 007。ledger/platform-voucher.integration.js 验 migration、provider 调用锁外取锁、重连、UNKNOWN、独立连接竞争、claim/evidence/event SQL 失败及消息去重。ledger/trusted-open.integration.js 在同一 guarded fixture 验同连接锁序、原子开房、双设备竞争、replay 与数据库故障。Stage 4A fixture 为固定十六表（含 migration 008）；ledger 三表依原授权预清理，其他表必须本轮明确创建才能清理，遇到已有未知数据拒绝。没有动态表名或全局数据库权限。
 
 完整验证：node --test --test-isolation=none --test-reporter=tap。JavaScript 修改后仍先尝试 npm test；无 npm 时报告具体失败并执行本项目对应的 Node 测试。Fake 只接受显式 test mode，不使用真实券、门店或凭据；Meituan production redemption = NOT ENABLED。
 

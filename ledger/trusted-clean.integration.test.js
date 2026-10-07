@@ -1,3 +1,4 @@
+import { testRoomControl } from '../devices/mysql.integration.js';
 import test from 'node:test';
 import { testTrustedOpen } from './trusted-open.integration.js';
 import { testPlatformVouchers } from './platform-voucher.integration.js';
@@ -48,6 +49,7 @@ import { testHttpBoundary } from '../http/command.integration.js';
 const testUrl = process.env.LEDGER_MYSQL_TEST_URL;
 const database = 'jbhh_ktv_test';
 const ledgerTables = ['ledger_heads', 'ledger_operations', 'ledger_success_audit'];
+const deviceTables = ['room_control_workflows'];
 const voucherTables = ['voucher_redemptions','voucher_operations','provider_events','voucher_exceptions'];
 const authTables = ['auth_accounts', 'auth_credentials', 'auth_grants', 'auth_sessions', 'auth_events'];
 const employeeTables = ['employees', 'employee_events'];
@@ -83,11 +85,11 @@ test('MySQL trusted clean vertical slice in jbhh_ktv_test',
       t.diagnostic('MySQL ' + target.version + '; database ' + database + '; engine ' + target.engine);
       await acquireMySqlFixtureLock(setup);
       const [existingAuth] = await setup.execute('SELECT table_name FROM information_schema.tables ' +
-        'WHERE table_schema = ? AND table_name IN (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)', [database, ...authTables, ...employeeTables, ...policyAttributeTables, ...voucherTables]);
+        'WHERE table_schema = ? AND table_name IN ('+[...authTables,...employeeTables,...policyAttributeTables,...voucherTables,...deviceTables].map(()=>'?').join(',')+')', [database, ...authTables, ...employeeTables, ...policyAttributeTables, ...voucherTables, ...deviceTables]);
       assert.equal(existingAuth.length, 0, '拒绝删除预存 auth／employee 表');
       // The user explicitly designated these three ledger tables as disposable test tables.
       for (const name of [...ledgerTables].reverse()) await setup.query('DROP TABLE IF EXISTS ' + table(name));
-      for (const [file, names] of [['001_mysql_ledger_core.sql', ledgerTables], ['002_mysql_auth_core.sql', authTables], ['003_mysql_employee_core.sql', employeeTables], ['007_mysql_platform_vouchers.sql', voucherTables]]) {
+      for (const [file, names] of [['001_mysql_ledger_core.sql', ledgerTables], ['002_mysql_auth_core.sql', authTables], ['003_mysql_employee_core.sql', employeeTables], ['007_mysql_platform_vouchers.sql', voucherTables], ['008_mysql_room_control.sql', deviceTables]]) {
         const sql = await readFile(new URL('../database/migrations/' + file, import.meta.url), 'utf8');
         const statements = sql.split(/\r?\n/).filter(line => !line.trim().startsWith('--'))
           .join('\n').split(';').map(part => part.trim()).filter(Boolean);
@@ -98,8 +100,8 @@ test('MySQL trusted clean vertical slice in jbhh_ktv_test',
         if (names === authTables) await applyPolicyAttributeMigration(setup, created);
       }
       const [engines] = await setup.execute('SELECT engine FROM information_schema.tables WHERE table_schema = ? ' +
-        'AND table_name IN (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)', [database, ...ledgerTables, ...authTables, ...employeeTables, ...policyAttributeTables, ...voucherTables]);
-      assert.equal(engines.length, 15); assert.ok(engines.every(row => row.ENGINE === 'InnoDB' || row.engine === 'InnoDB'));
+        'AND table_name IN ('+[...ledgerTables,...authTables,...employeeTables,...policyAttributeTables,...voucherTables,...deviceTables].map(()=>'?').join(',')+')', [database, ...ledgerTables, ...authTables, ...employeeTables, ...policyAttributeTables, ...voucherTables, ...deviceTables]);
+      assert.equal(engines.length, 16); assert.ok(engines.every(row => row.ENGINE === 'InnoDB' || row.engine === 'InnoDB'));
       const poolOptions = { uri: testUrl, database, connectionLimit: 5, waitForConnections: true,
         supportBigNumbers: true, bigNumberStrings: true };
       pool = mysql.createPool(poolOptions);
@@ -561,6 +563,7 @@ test('MySQL trusted clean vertical slice in jbhh_ktv_test',
       await testTrustedProcurement({ t, pool, setup, auth, table, provision, seed, inspect, application,
         assertUnchanged, wrapConnection, poolOptions, database });
       await testPlatformVouchers({ t, pool, setup, auth, provision, seed, inspect, table, database, poolOptions, wrapConnection });
+      await testRoomControl({ t, pool, setup, auth, provision, seed, inspect, database, table, poolOptions, roster });
       await testTrustedOpen({ t, pool, setup, auth, provision, seed, inspect, roster, table, database, poolOptions, wrapConnection });
     } finally {
       try { if (pool) await pool.end(); }

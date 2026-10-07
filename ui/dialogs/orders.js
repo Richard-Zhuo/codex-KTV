@@ -3,7 +3,7 @@
 
 import { allowedPermission, btn, canReviewSubmission, ctx, currentUser, date, employeeOptions, esc, options, pendingReservations, product, reviewPermissionHint } from '../context.js';
 import { openDialog, toast } from '../shell.js';
-import { bindPaymentSummary, bindSaleForm, paymentFields, saleItemRow, stepper } from '../forms.js';
+import { bindPaymentSummary, bindSaleForm, paymentFields, saleItemRow, salePriceExplanation, stepper } from '../forms.js';
 import { extraLabels, reservationListMarkup } from '../pages/rooms.js';
 import { OTHER_CHARGE_CATEGORIES, bonusAllowance } from '../../rules.js';
 import { canExchange, quote } from '../../rooms.js';
@@ -28,7 +28,7 @@ function showOrder(id) {
     const drinks=(line.drinks||[]).filter(drink=>drink.count);
     const unchanged=drinks.length===1&&drinks[0].product===line.product&&drinks[0].count===line.bottles;
     const saleName=line.productNameSnapshot || `历史商品（${productIdOf(line)}）`, optionName=line.saleOptionNameSnapshot || (line.spec==='dozen'?'整打':line.spec==='half'?'半打':'单支');
-    return `<div class="bill-line"><span>${saleName} × ${line.saleQuantity ?? line.count}${optionName}<small> · 归属 ${esc(line.person || o.openedBy || o.person || '未记录')}${line.recordedBy && line.recordedBy!==line.person?` · 代录 ${esc(line.recordedBy)}`:''}</small></span><b>${money(line.amountCents ?? line.amount)}</b></div>${unchanged?'':`<div class="drink-list"><p><b>这笔增购实际领取</b></p>${drinks.map(drink=>`<p>${drink.productNameSnapshot || `历史商品（${productIdOf(drink)}）`} <b>${drink.count} 支</b></p>`).join('')}</div>`}`;
+    return `<div class="bill-line"><span>${saleName} × ${line.saleQuantity ?? line.count}${optionName}<small> · ${salePriceExplanation(line)}</small><small> · 归属 ${esc(line.person || o.openedBy || o.person || '未记录')}${line.recordedBy && line.recordedBy!==line.person?` · 代录 ${esc(line.recordedBy)}`:''}</small></span><b>${money(line.amountCents ?? line.amount)}</b></div>${unchanged?'':`<div class="drink-list"><p><b>这笔增购实际领取</b></p>${drinks.map(drink=>`<p>${drink.productNameSnapshot || `历史商品（${productIdOf(drink)}）`} <b>${drink.count} 支</b></p>`).join('')}</div>`}`;
   }).join('');
   const otherLines=(o.otherCharges||[]).map(line=>`<div class="bill-line"><span>其他消费 · ${esc(line.category==='其他'?line.item:line.category)}</span><b>${money(line.amountCents ?? line.amount)}</b></div>`).join('');
   const received=(o.payments||[]).reduce((sum,payment)=>sum+payment.amount,0), due=outstanding(o);

@@ -52,6 +52,12 @@ const saleFormOptions = p => ctx.formalEnabled ? pricedSaleOptions(p, ctx.salePr
 
 const saleCategories=()=>[...new Map(sellableProducts(ctx.state.catalog).sort((a,b)=>(a.sortOrder||0)-(b.sortOrder||0)).map(item=>[item.category,[item.category,categoryLabel(item)]])).values()];
 
+export function salePriceExplanation(line) {
+  const label = line.businessSession?.sessionType === 'DAY' ? '白天场' :
+    line.businessSession?.sessionType === 'NIGHT' ? '夜间场' : '原价格方案';
+  return Number.isSafeInteger(line.pricePerSaleUnitCents) ? label + ' · 单价 ' + money(line.pricePerSaleUnitCents) : '历史成交价';
+}
+
 function saleProductLabel(item) {
   const balance=ctx.state.inventory[item.id];
   const stock=item.inventoryManaged ? balance?.count===null || balance?.count===undefined ? ' · 未建账' : ` · 库存 ${balance.count} ${item.baseUnit}` : '';

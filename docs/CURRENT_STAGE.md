@@ -1,3 +1,7 @@
+## 2026-10-08: Stage 4A independent device candidate
+
+Commit 1 c57160f passed full 1883/1883 (0 fail, 0 skip). After Commit 1, the user clarified DAY half-dozen prices (50/50/60 yuan), singles unchanged; Commit 2 includes this small follow-up while preserving linear history. Commit 2 adds stable mapping, gateway/fake and a persisted workflow with OFFLINE wait and UNKNOWN query recovery. Final Commit 2 focused tests passed 68/68, guarded real MySQL integration 676/676, and full Node regression 1907/1907 (0 fail, 0 skip). npm test was attempted but npm is unavailable. It remains unmerged/unpushed and does not invoke real KTVSky from employee open. KTVSky browser-skill read discovery is PARTIAL: list/status verified, static mutation contracts inspected, actual mutations blocked by absence of an authorized safe test target. See [contract](STAGE4A_SESSION_DEVICE.md) and [evidence](KTVSKY_CAPABILITY_DISCOVERY.md).
+
 ## 2026-10-08: Stage 3C accepted; Stage 4A session candidate
 
 Human accepted 3ebfad2; ff-only closeout passed 1859/1859 and ordinary push synchronized main/origin. Stage 4A is local and unmerged. Commit 1 introduces the formal session and DAY price contract; see [Stage 4A](STAGE4A_SESSION_DEVICE.md). It does not dispatch real device operations. Commit 1 focused tests passed 92/92; full Node regression passed 1883/1883, 0 fail, 0 skip on isolated MySQL 8.4.11/InnoDB. npm test was attempted but npm is unavailable.

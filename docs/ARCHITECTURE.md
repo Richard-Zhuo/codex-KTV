@@ -1,3 +1,7 @@
+## Stage 4A independent device boundary
+
+Server session/price facts remain in the existing ledger snapshot. devices/application.js holds a separate durable room-control workflow using devices/mysql-store.js and migration 008, with claim/effect/evidence phases and no external call inside a DB transaction. No HTTP registry entry or employee open wiring exists yet. See [contract](STAGE4A_SESSION_DEVICE.md) and [provider discovery](KTVSKY_CAPABILITY_DISCOVERY.md).
+
 ## Stage 3C 管理后台正式读取路径（2026-10-08）
 
 `/admin` 由 `admin.html` 和 `ui/admin-app.js` 启动，不加载演示 `app.js`。页面沿用 `ui/api-client.js` 与 `ui/server-state.js`：先读取正式 `GET /api/v1/auth/session`，再读取 `GET /api/v1/admin/snapshot`。后者在 `http/api.js` 复用 `sessionReader.withContext` 的同连接事务内重验和账本读取，`http/admin-query.js:projectAdminSnapshot` 要求当前 `backend.view`，按具体权限及 policy attributes 将房态、订单基本状态、费用、采购、异常和审核队列逐字段裁剪。浏览器只收到已裁剪视图及 ledger revision；撤权后新查询立即拒绝。断网保留最后确认的只读视图，未认证与无后台资格分别显示登录或拒绝页。

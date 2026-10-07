@@ -26,7 +26,11 @@ export function pricedSaleOptions(product, pricePlanId = EXISTING_PRICE_PLAN) {
   if (!priceCents) return options;
   const dozen = options.find(option => option.id === 'dozen');
   if (dozen && dozen.baseQuantity !== 12) throw new BusinessRejection('白天场整打规格必须为12个基础单位');
-  // Only a dozen has a new business price. Singles/halves remain unchanged.
+  // DAY singles retain catalog prices; halves are exactly half a dozen.
+  const half = options.find(option => option.id === 'half');
+  if (half && half.baseQuantity !== 6) throw new BusinessRejection('白天场半打规格必须为6个基础单位');
+  if (half) half.priceCents = priceCents / 2;
+  else options.push({ id: 'half', name: '半打', baseQuantity: 6, priceCents: priceCents / 2 });
   if (dozen) dozen.priceCents = priceCents;
   else options.push({ id: 'dozen', name: '整打', baseQuantity: 12, priceCents });
   return options;

@@ -7,14 +7,15 @@ const read = path => readFileSync(new URL(path, import.meta.url), 'utf8').replac
 const migrationNames = [
   '001_mysql_ledger_core.sql', '002_mysql_auth_core.sql', '003_mysql_employee_core.sql',
   '004_mysql_auth_policy_attributes.sql', '005_mysql_expense_approval_attribute.sql',
-  '006_mysql_credit_approval_attributes.sql', '007_mysql_platform_vouchers.sql'
+  '006_mysql_credit_approval_attributes.sql', '007_mysql_platform_vouchers.sql',
+  '008_mysql_room_control.sql'
 ];
 const migrations = migrationNames.map(name => read('./database/migrations/' + name));
 const seed = read('./database/seed.sql'); // Legacy artifact integrity only; never account provisioning.
 const dailyTemplate = read('./database/templates/kdocs-daily-report.csv').trim();
 const expenseTemplate = read('./database/templates/kdocs-expense-report.csv').trim();
 
-test('current schema authority is versioned MySQL migrations, with fifteen InnoDB tables and no business seed', () => {
+test('current schema authority is versioned MySQL migrations, with sixteen InnoDB tables and no business seed', () => {
   const files = readdirSync(new URL('./database/migrations/', import.meta.url)).filter(name => name.endsWith('.sql')).sort();
   assert.deepEqual(files, migrationNames);
   assert.match(read('./database/README.md'), /Schema authority: versioned MySQL migrations/);
@@ -24,7 +25,8 @@ test('current schema authority is versioned MySQL migrations, with fifteen InnoD
     'ledger_heads','ledger_operations','ledger_success_audit',
     'auth_accounts','auth_credentials','auth_grants','auth_sessions','auth_events',
     'employees','employee_events','auth_policy_attributes',
-    'voucher_redemptions','voucher_operations','provider_events','voucher_exceptions'
+    'voucher_redemptions','voucher_operations','provider_events','voucher_exceptions',
+    'room_control_workflows'
   ]);
   assert.equal((sql.match(/ENGINE=InnoDB/g) || []).length, tables.length);
   assert.doesNotMatch(sql, /CREATE TABLE room_orders|GENERATED ALWAYS AS IDENTITY|INSERT INTO/i);

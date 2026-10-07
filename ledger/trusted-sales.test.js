@@ -237,3 +237,18 @@ test('Stage 4A: catalog changes affect future sales only; existing transaction s
  const lines=soldOrder((await f.memory.read()).state,'sale').sales;
  assert.deepEqual(lines.at(-2),before);assert.equal(lines.at(-1).pricePerSaleUnitCents,12000);assert.equal(lines.at(-1).productNameSnapshot,'Future name');
 });
+
+test('Stage 4A clarification: DAY half-dozens are half price; singles and NIGHT stay unchanged',async()=>{
+ const f=fixture('retailSale',{clock:'2026-10-08T07:00:00.000000Z',setup:s=>{s.inventory.drink0.count=100;s.inventory.lm.count=100;}});
+ const request=salesCommand('retailSale',employeeId,'day-half',0,{items:[
+  {product:'bw',spec:'half',count:1},{product:'drink0',spec:'half',count:1},{product:'lm',spec:'half',count:1},
+  {product:'bw',spec:'single',count:1},{product:'drink0',spec:'single',count:1},{product:'lm',spec:'single',count:1}],
+  payments:[{method:'现金',amount:19150}]});
+ assert.equal((await f.app.execute(request,f.credential)).status,'committed');
+ const lines=soldOrder((await f.memory.read()).state,'retailSale').sales;
+ assert.deepEqual(lines.map(l=>l.pricePerSaleUnitCents),[5000,5000,6000,1000,1000,1150]);
+ const before=structuredClone(lines);await f.app.execute(request,f.credential);assert.deepEqual(soldOrder((await f.memory.read()).state,'retailSale').sales,before);
+ f.setClock('2026-10-08T12:00:00.000000Z');
+ assert.equal((await f.app.execute(salesCommand('retailSale',employeeId,'night-half',1,{items:[{product:'bw',spec:'half',count:1}],payments:[{method:'现金',amount:5900}]}),f.credential)).status,'committed');
+ assert.equal(soldOrder((await f.memory.read()).state,'retailSale').sales[0].pricePerSaleUnitCents,5900);
+});

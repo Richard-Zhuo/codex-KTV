@@ -1,3 +1,11 @@
+## Stage 4A device route
+
+- devices/application.js / domain.js: authenticated workflow claims, readiness, offline/unknown recovery.
+- devices/mapping.js: stable server-owned room mapping; gateway.js: disabled real-provider seam; fake-gateway.js: explicit test simulator.
+- devices/mysql-store.js / database/migrations/008_mysql_room_control.sql: short transactions and durable workflow identity.
+- devices/application.test.js and devices/mysql.integration.js through ledger/trusted-clean.integration.test.js: isolated unit/real MySQL evidence.
+- [KTVSky discovery](KTVSKY_CAPABILITY_DISCOVERY.md); no formal open integration before Stage 4B.
+
 ## Stage 4A route
 
 - shared/business-session.js: explicit-zone DAY/NIGHT snapshots and trusted countdown calculation.

@@ -1,14 +1,18 @@
+## Stage 4A schema addition
+
+Schema authority: versioned MySQL migrations 001…008. Migration 008 adds only room_control_workflows, an independent InnoDB device workflow table with unique ledger/order and ledger/operation identity, version and checksummed JSON. No business seed or production credentials. Apply once after 001…007; duplicate install fails explicitly. Existing ledger facts and legacy PostgreSQL exclusion remain unchanged. The real MySQL fixture explicitly adds this sixteenth table to its pre-existing-table refusal and owned cleanup.
+
 # 当前数据库权威（K10）
 
 **Schema authority: versioned MySQL migrations — `database/migrations/`。**
 
-正式方向为 MySQL 8.4 LTS / InnoDB。当前唯一有效结构由 001 → 007 的编号 migration 定义；ledger 使用 `ledger_heads.state_json` 版本化 JSON snapshot，auth、employee、voucher 使用其元数据表。没有第二套当前关系型业务 schema，也没有真人 seed 或已部署的生产数据库。
+正式方向为 MySQL 8.4 LTS / InnoDB。当前唯一有效结构由 001 → 008 的编号 migration 定义；ledger 使用 `ledger_heads.state_json` 版本化 JSON snapshot，auth、employee、voucher 使用其元数据表。没有第二套当前关系型业务 schema，也没有真人 seed 或已部署的生产数据库。
 
 `schema.sql`、`seed.sql` 和 `kdocs-import.md` 是 **LEGACY / NOT USED FOR CURRENT MYSQL**：旧 PostgreSQL 设计及当时演示数据，只供历史参考。原 DDL 保留，不继续维护成准生产 PostgreSQL schema；其中 room_orders.room_id NOT NULL、旧 06:00、姓名/岗位种子不适用于当前 MySQL 或真人配置。
 
 当前命令链、migration fixture、启动和部署入口不执行旧 SQL。`database.test.js` 已改查 MySQL migrations；对旧文件只做明确的 legacy 标识/历史完整性检查。`offsite.contract.test.js` 的 K10 正式测试验证 room 必须引用有效房间、retail.room=null；真实 `ledger/mysql-store.integration.test.js` 验两种订单共存、重连、零库存/未建账区别，不造虚拟房间。
 
-Migration 必须核对目标库、依赖和实际已执行状态：001/002/003/004/007 只执行一次，重复建表/字段明确拒绝；005/006 是可重复替换 CHECK 的增量脚本。MySQL DDL 逐句提交，部分失败不可声称整体 rollback；检查后处理，不能自动删生产表或重跑旧 migration。测试仅在专用 jbhh_ktv_test 持有 fixture 锁，清理本轮明确创建的表。不提供或暗示生产自动 migration/deploy。
+Migration 必须核对目标库、依赖和实际已执行状态：001/002/003/004/007/008 只执行一次，重复建表/字段明确拒绝；005/006 是可重复替换 CHECK 的增量脚本。MySQL DDL 逐句提交，部分失败不可声称整体 rollback；检查后处理，不能自动删生产表或重跑旧 migration。测试仅在专用 jbhh_ktv_test 持有 fixture 锁，清理本轮明确创建的表。不提供或暗示生产自动 migration/deploy。
 
 ### Migration 007：平台券元数据
 
