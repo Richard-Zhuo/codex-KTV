@@ -128,3 +128,9 @@ test('missing connection-bound binding/context/time-zone and copied contexts nev
  const good=fixture();await good.app.execute(cmd(),good.credential);
  for(const context of [structuredClone(good.context()),{...good.context()}])assert.throws(()=>transact(f.state,'open',cmd().payload,'direct',{mode:'trusted',context}),TypeError);
 });
+
+test('Stage 4A: trusted open freezes NIGHT session and ignores browser countdown/plan',async()=>{
+ const f=fixture();await f.app.execute(cmd('session',0,{sessionType:'DAY',targetEndAt:'2099-01-01',durationMinutes:999,pricePlanId:'day-v1'}),f.credential);
+ const o=(await f.memory.read()).state.orders.at(-1);
+ assert.deepEqual(o.businessSession,{sessionType:'NIGHT',sessionDate:'2026-10-05',timeZone:'Asia/Shanghai',ruleVersion:'opening-hours-v1',pricePlanId:'night-existing-v1',targetEndAt:'2026-10-05T18:00:00.000Z'});
+});

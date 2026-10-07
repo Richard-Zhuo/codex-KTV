@@ -1,3 +1,4 @@
+import { businessSessionFor } from './shared/business-session.js';
 // 房间领域：房态流转、开房/释放/清洁、预约与房间异常审核。
 // Phase 5 自 rules.js 迁出：quote／canExchange／platformVoucher／reservationTarget／
 // reservationReminder／reservationActiveAt 查询，open／reserve／cancelReservation／
@@ -102,6 +103,7 @@ export function openRoom(s, room, data, person, operator, time, execution = { mo
     delegated = { id: context.creditedEmployeeId };
     attribution = { actualActorPrincipalId: context.principalId, creditedEmployeeId: context.creditedEmployeeId,
       creditedEmployeeNameSnapshot: context.creditedEmployeeNameSnapshot, ...context.orderBusinessDay,
+      businessSession: businessSessionFor(context.dbNow, { timeZone: context.orderBusinessDay.businessTimeZone }),
       ...(context.voucherRedemption ? { voucherRedemptionId: context.voucherRedemption.redemptionId } : {}) };
   } else if (execution?.mode === 'demo') {
     delegated = delegatedEmployee(s, data);

@@ -196,3 +196,44 @@ test('K05: new trusted retail order without configured store time zone fails wit
  await assert.rejects(f.app.execute(salesCommand('retailSale',employeeId,'no-zone'),f.credential),/explicit store timeZone/);
  await noEffects(f);assert.equal(f.executions(),0);
 });
+
+for(const action of ['sale','retailSale']) test('Stage 4A '+action+': DAY price is server resolved, snapshotted and replayed unchanged',async()=>{
+ const { businessSessionFor }=await import('../shared/business-session.js');
+ const clock='2026-10-08T07:00:00.000000Z';
+ const f=fixture(action,{clock,setup:s=>{
+   s.inventory.drink0.count=100;s.inventory.lm.count=100;
+   if(action==='sale')s.orders.at(-1).businessSession=businessSessionFor(clock,{timeZone:'Asia/Shanghai'});
+ }});
+ const request=salesCommand(action,employeeId,'day-price',0,{
+   sessionType:'NIGHT',pricePlanId:'forged',durationMinutes:9999,targetEndAt:'2099-01-01',
+   items:[{product:'bw',spec:'dozen',count:1},{product:'lm',spec:'dozen',count:1},{product:'drink0',spec:'dozen',count:1}],
+   ...(action==='retailSale'?{payments:[{method:'现金',amount:32000}]}:{})});
+ assert.equal((await f.app.execute(request,f.credential)).status,'committed');
+ const h=await f.memory.read(),o=soldOrder(h.state,action),lines=o.sales.slice(-3);
+ assert.deepEqual(lines.map(l=>l.pricePerSaleUnitCents),[10000,12000,10000]);
+ for(const l of lines){assert.equal(l.pricePlanId,'day-v1');assert.equal(l.businessSession.sessionType,'DAY');assert.equal(l.businessSession.targetEndAt,'2026-10-08T10:00:00.000Z');}
+ assert.deepEqual(h.state.orders[0],f.state.orders[0]);
+ const saved=structuredClone(lines);f.setClock('2026-10-08T12:00:00.000000Z');
+ assert.equal((await f.app.execute(request,f.credential)).status,'committed');
+ assert.deepEqual(soldOrder((await f.memory.read()).state,action).sales.slice(-3),saved);
+});
+test('Stage 4A: historical room without session snapshot uses existing plan, ignores payload DAY',async()=>{
+ const f=fixture('sale',{clock:'2026-10-08T07:00:00.000000Z'});
+ await f.app.execute(salesCommand('sale',employeeId,'legacy',0,{sessionType:'DAY',items:[{product:'bw',spec:'dozen',count:1}]}),f.credential);
+ const l=soldOrder((await f.memory.read()).state,'sale').sales.at(-1);
+ assert.equal(l.pricePerSaleUnitCents,11800);assert.equal(l.pricePlanId,'night-existing-v1');assert.equal(l.businessSession,null);
+});
+
+test('Stage 4A: catalog changes affect future sales only; existing transaction snapshots stay frozen',async()=>{
+ const { businessSessionFor }=await import('../shared/business-session.js');
+ const clock='2026-10-08T07:00:00.000000Z';
+ const f=fixture('sale',{permissions:['staff.record','catalog.manage'],clock,setup:s=>{
+   s.orders.at(-1).businessSession=businessSessionFor(clock,{timeZone:'Asia/Shanghai'});
+ }});
+ const request=salesCommand('sale',employeeId,'day',0,{items:[{product:'bw',spec:'dozen',count:1}]});
+ await f.app.execute(request,f.credential);const before=structuredClone(soldOrder((await f.memory.read()).state,'sale').sales.at(-1));
+ await f.app.execute({action:'updateCatalogProduct',operationKey:'change',expectedRevision:1,payload:{id:'bw',name:'Future name',priceCategory:'PREMIUM_BEER'}},f.credential);
+ await f.app.execute({...request,operationKey:'next',expectedRevision:2},f.credential);
+ const lines=soldOrder((await f.memory.read()).state,'sale').sales;
+ assert.deepEqual(lines.at(-2),before);assert.equal(lines.at(-1).pricePerSaleUnitCents,12000);assert.equal(lines.at(-1).productNameSnapshot,'Future name');
+});

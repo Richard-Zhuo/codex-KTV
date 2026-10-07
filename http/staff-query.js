@@ -1,3 +1,5 @@
+import { mergeCatalog } from '../catalog.js';
+import { businessSessionFor } from '../shared/business-session.js';
 import { assertTrustedExecutionContext } from '../shared/identity.js';
 
 const readRooms = ['room.open', 'room.reserve', 'room.clean', 'room.issue',
@@ -29,7 +31,7 @@ const sale = value => ({
   ...pick(value, ['id', 'product', 'productId', 'productNameSnapshot',
     'categorySnapshot', 'categoryLabelSnapshot', 'saleOptionId',
     'saleOptionNameSnapshot', 'spec', 'count', 'saleQuantity', 'bottles',
-    'amount', 'amountCents', 'person', 'recordedBy', 'employeeId', 'time']),
+    'pricePerSaleUnitCents', 'baseQuantityPerSaleUnit', 'pricePlanId', 'priceCategorySnapshot', 'businessSession', 'amount', 'amountCents', 'person', 'recordedBy', 'employeeId', 'time']),
   drinks: rows(value.drinks, drink)
 });
 const giftRequest = value => pick(value, ['id', 'product', 'productId',
@@ -69,7 +71,7 @@ const credit = (value, context, grants) => {
 };
 const order = (value, context, grants) => ({
   ...pick(value, ['id', 'kind', 'room', 'time', 'createdAt', 'businessDate',
-    'businessDayRuleVersion', 'person', 'recordedBy', 'employeeId', 'openedBy',
+    'businessDayRuleVersion', 'businessSession', 'person', 'recordedBy', 'employeeId', 'openedBy',
     'openSource', 'reservedBy', 'reservationSource', 'status', 'packageId',
     'packageNameSnapshot', 'packagePriceCents', 'packageBaseCents',
     'packageGiftValueCents', 'base', 'gift', 'period', 'rounding',
@@ -102,7 +104,7 @@ function catalog(value) {
   return {
     schemaVersion: value?.schemaVersion,
     products: rows(value?.products, item => ({
-      ...pick(item, ['id', 'name', 'category', 'categoryLabel', 'baseUnit',
+      ...pick(item, ['id', 'name', 'category', 'categoryLabel', 'priceCategory', 'baseUnit',
         'inventoryManaged', 'inventoryThreshold', 'sellable',
         'manualPriceAllowed', 'exchangeLevel', 'openingGiftEligible',
         'selectionOnly', 'active', 'sortOrder']),
@@ -139,7 +141,7 @@ function stock(value) {
 }
 
 export function projectEmployeeWorkspace(state, context, {
-  employees = [], serverNow = new Date().toISOString()
+  employees = [], serverNow = new Date().toISOString(), businessTimeZone
 } = {}) {
   assertTrustedExecutionContext(context);
   const grants = new Set(context.permissionIds);
@@ -191,7 +193,10 @@ export function projectEmployeeWorkspace(state, context, {
     grants.has('room.open') &&
       item.actualActorPrincipalId === context.principalId),
     item => order(item, context, grants));
-  if (sections.catalog) workspace.catalog = catalog(state.catalog);
+  if (sections.catalog) {
+    workspace.catalog = catalog(mergeCatalog(state.catalog));
+    if (businessTimeZone) workspace.retailBusinessSession = businessSessionFor(serverNow, { timeZone: businessTimeZone });
+  }
   if (sections.stock) {
     workspace.inventory = stock(state.inventory);
     workspace.consumables = stock(state.consumables);

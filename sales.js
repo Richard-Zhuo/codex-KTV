@@ -1,3 +1,5 @@
+import { pricedSaleOptions } from './catalog-pricing.js';
+import { businessSessionFor, EXISTING_PRICE_PLAN } from './shared/business-session.js';
 // 销售领域：房间增购与独立零售共用成交管道、收款、结账（抹零）、挂账与回款。
 // Phase 4 自 rules.js 迁出：prepareSaleRows／appendSaleRows／validatePayments／
 // validateSettlementPayments 基础函数，sale／retailSale／collect／settle+pay／
@@ -107,7 +109,8 @@ function saleIdentity(state, data, person, operator, time, execution, retail) {
   else if (!retail) need(state, ['开单员','服务员','老板'], 'order.sale');
   return { person, operator, employeeId: delegated?.id || state.user, time, attribution: {} };
 }
-function prepareSaleRows(state, data) {
+function prepareSaleRows(state, data, businessSession = null) {
+  const pricePlanId = businessSession?.pricePlanId ?? EXISTING_PRICE_PLAN;
   const items = Array.isArray(data.items) ? data.items : [{ product: data.product, spec: data.spec, count: data.count }];
   if (!items.length) throw new BusinessRejection('请至少添加一种商品');
   const required = new Map();
@@ -116,13 +119,14 @@ function prepareSaleRows(state, data) {
     quantity(saleQuantity);
     const p = product(item.productId || item.product, state.catalog);
     if (!p.sellable || p.active === false) throw new BusinessRejection('该商品当前不可销售');
-    const option = saleOption(p, item.saleOptionId || item.spec || 'single');
+    const option = pricedSaleOptions(p, pricePlanId).find(option => option.id === (item.saleOptionId || item.spec || 'single'));
+    if (!option) throw new BusinessRejection('该商品不支持所选销售规格');
     const pricePerSaleUnitCents = item.manualPriceCents !== undefined && p.manualPriceAllowed ? item.manualPriceCents : option.priceCents;
     const totalBaseQuantity = saleQuantity * option.baseQuantity, amountCents = saleQuantity * pricePerSaleUnitCents;
     if (!Number.isSafeInteger(pricePerSaleUnitCents) || pricePerSaleUnitCents <= 0 || !Number.isSafeInteger(amountCents) || amountCents <= 0) throw new BusinessRejection('销售价格无效');
     if (!Number.isSafeInteger(totalBaseQuantity) || totalBaseQuantity <= 0) throw new BusinessRejection('销售基础数量无效');
     if (p.inventoryManaged) required.set(p.id, (required.get(p.id) || 0) + totalBaseQuantity);
-    return { p, option, saleQuantity, totalBaseQuantity, pricePerSaleUnitCents, amountCents };
+    return { p, option, saleQuantity, totalBaseQuantity, pricePerSaleUnitCents, amountCents, pricePlanId, businessSession };
   });
   for (const [id, count] of required) {
     if (!Number.isSafeInteger(count)) throw new BusinessRejection('销售基础数量无效');
@@ -137,7 +141,7 @@ function appendSaleRows(state, order, rows, person, operator, employeeId, time, 
   for (const row of rows) {
     const saleId = ++state.serial;
     recordInventoryChange(state, row.p.id, -row.totalBaseQuantity, source, time, { orderId: order.id, saleLineId: saleId }, execution);
-    const snapshot = productSnapshot(state.catalog, row.p.id, row.totalBaseQuantity, { saleOptionId: row.option.id, saleOptionNameSnapshot: row.option.name, saleQuantity: row.saleQuantity, baseQuantityPerSaleUnit: row.option.baseQuantity, totalBaseQuantity: row.totalBaseQuantity, pricePerSaleUnitCents: row.pricePerSaleUnitCents, amountCents: row.amountCents, snapshotStatus: 'current' });
+    const snapshot = productSnapshot(state.catalog, row.p.id, row.totalBaseQuantity, { saleOptionId: row.option.id, saleOptionNameSnapshot: row.option.name, saleQuantity: row.saleQuantity, baseQuantityPerSaleUnit: row.option.baseQuantity, totalBaseQuantity: row.totalBaseQuantity, pricePerSaleUnitCents: row.pricePerSaleUnitCents, amountCents: row.amountCents, snapshotStatus: 'current', pricePlanId: row.pricePlanId, priceCategorySnapshot: row.p.priceCategory ?? 'OTHER', businessSession: row.businessSession ? structuredClone(row.businessSession) : null });
     order.sales.push({ id: saleId, batch, product: row.p.id, productId: row.p.id, count: row.saleQuantity, spec: row.option.id, bottles: row.totalBaseQuantity, amount: row.amountCents, ...snapshot, drinks: [{ id: ++state.serial, product: row.p.id, productId: row.p.id, productNameSnapshot: row.p.name, baseUnitSnapshot: row.p.baseUnit, count: row.totalBaseQuantity, totalBaseQuantity: row.totalBaseQuantity }], person, recordedBy: operator, employeeId, time, ...attribution });
   }
 }
@@ -168,7 +172,7 @@ function validateSettlementPayments(payments, amount, differenceType = '免零',
 
 export function submitSale(s, order, data, person, operator, time, execution = { mode: 'demo' }) {
   const identity = saleIdentity(s, data, person, operator, time, execution, false);
-  appendSaleRows(s, order, prepareSaleRows(s, data), identity.person, identity.operator, identity.employeeId,
+  appendSaleRows(s, order, prepareSaleRows(s, data, execution.mode === 'trusted' ? order.businessSession : null), identity.person, identity.operator, identity.employeeId,
     identity.time, '加购销售', identity.attribution, execution);
 }
 export function submitRetailSale(s, data, person, operator, time, execution = { mode: 'demo' }) {
@@ -176,12 +180,13 @@ export function submitRetailSale(s, data, person, operator, time, execution = { 
   ({ person, operator, time } = identity);
   const businessDay = execution.mode === 'trusted' ? execution.context.orderBusinessDay : null;
   if (execution.mode === 'trusted' && (!businessDay || typeof businessDay !== 'object' || !Object.isFrozen(businessDay))) throw TypeError('缺少可信开单营业日快照');
-  const rows = prepareSaleRows(s, data);
+  const businessSession = execution.mode === 'trusted' ? businessSessionFor(time, { timeZone: businessDay.businessTimeZone }) : null;
+  const rows = prepareSaleRows(s, data, businessSession);
   const amount = rows.reduce((sum, row) => sum + row.amountCents, 0);
   if (!Number.isSafeInteger(amount) || amount <= 0) throw new BusinessRejection('成交金额无效');
   const payments = validatePayments(data.payments, amount);
   const id = `D${++s.serial}`;
-  const retailOrder = { id, kind: 'retail', room: null, time, createdAt: time, ...businessDay, paidAt: time, closedAt: time, person, recordedBy: operator, employeeId: identity.employeeId, ...identity.attribution, status: '已结账', packageId: null, packageNameSnapshot: null, packagePriceCents: 0, packageBaseCents: 0, packageGiftValueCents: 0, base: 0, gift: 0, drinks: [], resolvedComponents: [], extras: [], sales: [], otherCharges: [], bonusGifts: [], giftRequests: [], payments: [], rounding: 0, roundingType: '', roundingNote: '', roundingReview: null, credit: null, exchanges: [] };
+  const retailOrder = { id, kind: 'retail', room: null, time, createdAt: time, ...businessDay, businessSession, paidAt: time, closedAt: time, person, recordedBy: operator, employeeId: identity.employeeId, ...identity.attribution, status: '已结账', packageId: null, packageNameSnapshot: null, packagePriceCents: 0, packageBaseCents: 0, packageGiftValueCents: 0, base: 0, gift: 0, drinks: [], resolvedComponents: [], extras: [], sales: [], otherCharges: [], bonusGifts: [], giftRequests: [], payments: [], rounding: 0, roundingType: '', roundingNote: '', roundingReview: null, credit: null, exchanges: [] };
   s.orders.push(retailOrder);
   appendSaleRows(s, retailOrder, rows, person, operator, identity.employeeId, time, '零售销售', identity.attribution, execution);
   if (execution.mode === 'trusted') {

@@ -134,3 +134,15 @@ test('room-only operator does not receive another actor\'s order link', () => {
   assert.equal(view.rooms[0].order, null);
   assert.deepEqual(view.orders, []);
 });
+
+test('Stage 4A server view projects DAY retail plan and migrates v1 categories without touching persisted history',()=>{
+ const source=state();source.catalog.schemaVersion=1;for(const p of source.catalog.products)delete p.priceCategory;
+ const old=structuredClone(source);
+ source.orders[0].businessSession={sessionType:'DAY',pricePlanId:'day-v1'};
+ source.orders[0].sales=[{pricePerSaleUnitCents:10000,pricePlanId:'day-v1',businessSession:{sessionType:'DAY'},priceCategorySnapshot:'ORDINARY_BEER'}];
+ const view=projectEmployeeWorkspace(source,context(['order.sale']),{businessTimeZone:'Asia/Shanghai',serverNow:'2026-10-08T07:00:00.000Z'});
+ assert.equal(view.retailBusinessSession.pricePlanId,'day-v1');assert.equal(view.catalog.products[0].priceCategory,'ORDINARY_BEER');
+ assert.equal(view.orders[0].sales[0].pricePerSaleUnitCents,10000);assert.equal(view.orders[0].businessSession.sessionType,'DAY');
+ assert.deepEqual(source.catalog,old.catalog);
+ assert.equal(projectEmployeeWorkspace(source,context(['room.clean']),{businessTimeZone:'Asia/Shanghai'}).retailBusinessSession,undefined);
+});

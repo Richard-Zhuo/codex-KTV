@@ -1,3 +1,4 @@
+import { priceCategory } from './catalog-pricing.js';
 // 整数分计价、事务式状态变更，不依赖 DOM；演示与可信执行显式隔离。
 // 商品与套餐的运行时唯一来源是 state.catalog。DEFAULT_CATALOG 只由目录模块负责初始化、迁移和恢复演示数据。
 // 领域模块已分阶段迁出：catalog／inventory（Phase 3）、sales（Phase 4）、
@@ -123,7 +124,7 @@ function executeCatalogCommand(s, action, data, execution = { mode: 'demo' }) {
     if (!Number.isSafeInteger(data.sortOrder)) throw new BusinessRejection('排序必须是整数');
     const sellable = Boolean(data.sellable), inventoryManaged = Boolean(data.inventoryManaged);
     const options = normalizeSaleOptions(data.saleOptions || [], sellable);
-    s.catalog.products.push({ id, name, category, categoryLabel: category, baseUnit, saleOptions: options, inventoryManaged, inventoryThreshold: 10, sellable, manualPriceAllowed: false, exchangeLevel: null, openingGiftEligible: false, active: data.active !== false, sortOrder: data.sortOrder });
+    s.catalog.products.push({ id, name, category, categoryLabel: category, priceCategory: priceCategory(data.priceCategory ?? 'OTHER'), baseUnit, saleOptions: options, inventoryManaged, inventoryThreshold: 10, sellable, manualPriceAllowed: false, exchangeLevel: null, openingGiftEligible: false, active: data.active !== false, sortOrder: data.sortOrder });
     if (inventoryManaged) s.inventory[id] = { count: null, threshold: 10, unit: baseUnit };
   } else if (action === 'updateCatalogProduct') {
     const id = String(data.id || '').trim();
@@ -131,6 +132,7 @@ function executeCatalogCommand(s, action, data, execution = { mode: 'demo' }) {
     const name = String(data.name ?? current.name).trim().slice(0, 80);
     if (!name) throw new BusinessRejection('商品名称不能为空');
     const next = { ...current, name };
+    if (data.priceCategory !== undefined) next.priceCategory = priceCategory(data.priceCategory);
     for (const field of ['active', 'sellable', 'manualPriceAllowed']) if (data[field] !== undefined) next[field] = Boolean(data[field]);
     if (data.sortOrder !== undefined) {
       if (!Number.isSafeInteger(data.sortOrder)) throw new BusinessRejection('排序必须是整数');
@@ -235,6 +237,7 @@ export function transact(original, action, data = {}, key, execution = { mode: '
   if (original.processed.includes(key)) return original;
   const s = structuredClone(original);
   s.catalog = mergeCatalog(s.catalog);
+  s.catalogSchemaVersion = s.catalog.schemaVersion;
   assertCatalogPackagePrices(s.catalog);
   if (context) {
     // Only migrated commands; never evaluate demo identity or clock.

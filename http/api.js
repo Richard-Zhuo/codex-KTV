@@ -10,7 +10,8 @@ const forbiddenFields = new Set([
   'principal', 'principalId', 'user', 'userId', 'role', 'roles',
   'permissions', 'permissionIds', 'capabilities', 'policyAttributes',
   'policyAttributeIds', 'trustedContext', 'actualActorPrincipalId',
-  'actor', 'actorId', 'clock', 'dbNow', 'submittedByPrincipalId'
+  'actor', 'actorId', 'clock', 'dbNow', 'submittedByPrincipalId',
+  'sessionType', 'pricePlanId', 'businessSession', 'targetEndAt', 'targetTime', 'durationMinutes'
 ]);
 
 function rejectAuthorityFields(value, depth = 0) {
@@ -86,7 +87,7 @@ export function createHttpApi(options) {
               const employees = options.employeeStore ?
                 await options.employeeStore.listActiveInTransaction(connection) : [];
               const workspace = projectEmployeeWorkspace(head.state, context,
-                { employees, serverNow: context.dbNow });
+                { employees, serverNow: context.dbNow, businessTimeZone: options.businessTimeZone });
               if (workspace) result.view.workspace = workspace;
               return result;
             });

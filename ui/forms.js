@@ -1,3 +1,4 @@
+import { pricedSaleOptions } from '../catalog-pricing.js';
 // 通用表单件：步进器、付款行、预订字段、销售行、存酒行、目录规格行、房间异常凭证（Phase 7 自 app.js 迁入）。
 // 唯一机械转换：模块级可变状态（state/category/controlSequence/modal）→ ctx.*；函数体逐字保留。
 
@@ -47,6 +48,8 @@ function setupBookingFields() {
 
 function initialMixRow(max, value=1, selected='drink0') { return `<div class="initial-mix-item"><div class="deposit-item-head"><b>酒水种类</b>${btn('移除','removeInitialMix','','quiet')}</div><label>选择酒水<select name="mixProduct">${options(initialMixChoices(),selected)}</select></label>${stepper(max,'数量（支）','mixCount',value)}</div>`; }
 
+const saleFormOptions = p => ctx.formalEnabled ? pricedSaleOptions(p, ctx.salePricePlanId) : saleOptions(p);
+
 const saleCategories=()=>[...new Map(sellableProducts(ctx.state.catalog).sort((a,b)=>(a.sortOrder||0)-(b.sortOrder||0)).map(item=>[item.category,[item.category,categoryLabel(item)]])).values()];
 
 function saleProductLabel(item) {
@@ -60,7 +63,7 @@ function saleItemRow(selectedCategory=ctx.category, selectedProduct='', selected
   const products=sellableProducts(ctx.state.catalog).filter(p=>p.category===uiCategory);
   const productId=products.some(p=>p.id===selectedProduct)?selectedProduct:products[0]?.id;
   const p=productId?product(productId):products[0];
-  const specs=saleOptions(p).map(option=>[option.id,`${option.name} · ${money(option.priceCents)}`]);
+  const specs=saleFormOptions(p).map(option=>[option.id,`${option.name} · ${money(option.priceCents)}`]);
   const spec=specs.some(([id])=>id===selectedSpec)?selectedSpec:specs[0]?.[0];
   return `<div class="sale-item"><div class="deposit-item-head"><b>商品品项</b>${btn('移除','removeSaleItem','','quiet')}</div><label>类别<select name="saleCategory">${options(categories,uiCategory)}</select></label><label>商品<select name="saleProduct">${options(products.map(item=>[item.id,saleProductLabel(item)]),productId)}</select></label><label>销售规格<select name="saleSpec">${options(specs,spec)}</select></label>${stepper(999,'数量（按所选规格）','saleCount',value)}<p class="sale-line-total muted"></p></div>`;
 }
@@ -70,13 +73,16 @@ function bindSaleForm() {
   let amount=0;
   const updateAll=()=> {
     amount=0;
+    if (ctx.formalEnabled && f.dataset.form === 'sale') {
+      ctx.salePricePlanId = ctx.state.orders.find(order => order.id === f.elements.order?.value)?.businessSession?.pricePlanId;
+    }
     f.querySelectorAll('.sale-item').forEach(row=>{
       const categorySelect=row.querySelector('[name="saleCategory"]'), productSelect=row.querySelector('[name="saleProduct"]'), specSelect=row.querySelector('[name="saleSpec"]');
       const currentProduct=productSelect.value, products=sellableProducts(ctx.state.catalog).filter(p=>p.category===categorySelect.value);
       productSelect.innerHTML=options(products.map(item=>[item.id,saleProductLabel(item)]),currentProduct);
-      const p=product(productSelect.value), currentSpec=specSelect.value, specs=saleOptions(p).map(option=>[option.id,`${option.name} · ${money(option.priceCents)}`]);
+      const p=product(productSelect.value), currentSpec=specSelect.value, specs=saleFormOptions(p).map(option=>[option.id,`${option.name} · ${money(option.priceCents)}`]);
       specSelect.innerHTML=options(specs,currentSpec);
-      const spec=specSelect.value, count=Math.max(1,Number(row.querySelector('[name="saleCount"]').value)||1), option=saleOptions(p).find(option=>option.id===spec), price=option?.priceCents || 0;
+      const spec=specSelect.value, count=Math.max(1,Number(row.querySelector('[name="saleCount"]').value)||1), option=saleFormOptions(p).find(option=>option.id===spec), price=option?.priceCents || 0;
       amount+=price*count;
       row.querySelector('.sale-line-total').textContent=`本行 ${money(price*count)} · ${p.name} ${option?.name || ''}`;
     });

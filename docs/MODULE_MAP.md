@@ -1,3 +1,11 @@
+## Stage 4A route
+
+- shared/business-session.js: explicit-zone DAY/NIGHT snapshots and trusted countdown calculation.
+- catalog-pricing.js: schema-v2 category migration and versioned DAY/existing sale options.
+- rooms.js / sales.js: trusted new-order/line snapshots; http/staff-query.js projects them; ui/forms.js uses server-selected plans.
+- Focused: shared/business-session.test.js, catalog-pricing.test.js, ledger/trusted-sales.test.js, ledger/trusted-open.test.js, http/staff-query.test.js, ui/session-pricing.test.js, server-static.test.js.
+- Contract: [Stage 4A](STAGE4A_SESSION_DEVICE.md).
+
 # 最小代码阅读地图
 
 本文件列当前集成候选的稳定入口、测试和改动边界。业务目标见 [REQUIREMENTS](./REQUIREMENTS.md) 与 [OFFSITE_CONTRACTS](./OFFSITE_CONTRACTS.md)；系统依赖见 [ARCHITECTURE](./ARCHITECTURE.md)。

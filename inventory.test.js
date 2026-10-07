@@ -14,7 +14,7 @@ function stocked(s) { for (const balance of Object.values(s.inventory)) if (bala
 function opened(beer = 'bw', room = '333') { let s = initialState(); s.clock = at('20:00'); return stocked(apply(s, 'open', { room, beer })); }
 
 test('目录基线：默认目录结构、套餐数量与 schemaVersion 冻结', () => {
-  assert.equal(DEFAULT_CATALOG.schemaVersion, 1);
+  assert.equal(DEFAULT_CATALOG.schemaVersion, 2);
   assert.equal(DEFAULT_CATALOG.products.length, 23);
   assert.equal(DEFAULT_CATALOG.packages.length, 8);
   assert.deepEqual(DEFAULT_CATALOG.packages.map(p => p.id), [

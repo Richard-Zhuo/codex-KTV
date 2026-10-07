@@ -2,6 +2,7 @@
 // 运行时业务必须使用 state.catalog；DEFAULT_CATALOG 只用于初始化、迁移和恢复演示数据。
 // 套餐默认值构造在 packages.js；旧订单价格迁移在 migrations.js（目录不迁移订单）。
 import { BusinessRejection } from './shared/business-error.js';
+import { migratePriceCategory } from './catalog-pricing.js';
 import { DEFAULT_PACKAGES } from './packages.js';
 
 const createSaleOptions = (single, half, dozen) => [
@@ -46,7 +47,7 @@ const singleProduct = (id, name, category, categoryLabel, sortOrder, priceCents,
 });
 
 export const DEFAULT_CATALOG = {
-  schemaVersion: 1,
+  schemaVersion: 2,
   products: [
     beer('bw', '百威', 10, 1000, 5900, 11800, 2),
     beer('xl', '喜力', 20, 1000, 5900, 11800, 2),
@@ -181,7 +182,7 @@ export const DEFAULT_CATALOG = {
       sortOrder: 1030,
       kind: 'consumable'
     }
-  ],
+  ].map(item => migratePriceCategory(item, 1)),
   packages: DEFAULT_PACKAGES
 };
 
@@ -215,8 +216,8 @@ function mergeItems(defaultItems, rawItems) {
 export function mergeCatalog(raw) {
   if (!raw || typeof raw !== 'object') return cloneCatalog(DEFAULT_CATALOG);
   return {
-    schemaVersion: Number(raw.schemaVersion || DEFAULT_CATALOG.schemaVersion),
-    products: mergeItems(DEFAULT_CATALOG.products, raw.products),
+    schemaVersion: 2,
+    products: mergeItems(DEFAULT_CATALOG.products, raw.products).map(item => migratePriceCategory(item, Number(raw.schemaVersion || 1))),
     packages: mergeItems(DEFAULT_CATALOG.packages, raw.packages)
   };
 }

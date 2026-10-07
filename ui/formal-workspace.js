@@ -42,6 +42,7 @@ export function stateFromServerSnapshot(snapshot, session) {
     rooms: array('rooms', 'rooms'),
     orders: array('orders', 'orders'),
     catalog,
+    retailBusinessSession: workspace.retailBusinessSession ?? null,
     reservations: array('reservations', 'reservations'),
     deposits: array('deposits', 'deposits'),
     withdrawals: array('deposits', 'withdrawals'),

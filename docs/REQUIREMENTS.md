@@ -1,3 +1,7 @@
+## Stage 4A accepted scope (2026-10-08)
+
+Formal DAY/NIGHT, DAY dozen pricing and frozen transaction snapshots follow [Stage 4A contract](STAGE4A_SESSION_DEVICE.md). Device gateway/workflow is independent of employee open; real provider mutation is deferred to Stage 4B.
+
 ### 已确认：Stage 3C 正式管理后台
 
 `/admin` 必须以正式 HTTP session 启动，服务端按当前 principal、permissions 和 policy attributes 返回最小后台视图及可信 ledger revision。只有 `backend.view` 能进入后台；该权限只授予查看资格，不授予任何审批。费用、采购、异常与待审批事项由服务端以明确权限过滤；未知权限一律不扩权。正式后台不从演示身份、浏览器角色或 `jbhh-demo-v1` 取得业务事实。

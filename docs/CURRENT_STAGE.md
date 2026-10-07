@@ -1,3 +1,7 @@
+## 2026-10-08: Stage 3C accepted; Stage 4A session candidate
+
+Human accepted 3ebfad2; ff-only closeout passed 1859/1859 and ordinary push synchronized main/origin. Stage 4A is local and unmerged. Commit 1 introduces the formal session and DAY price contract; see [Stage 4A](STAGE4A_SESSION_DEVICE.md). It does not dispatch real device operations. Commit 1 focused tests passed 92/92; full Node regression passed 1883/1883, 0 fail, 0 skip on isolated MySQL 8.4.11/InnoDB. npm test was attempted but npm is unavailable.
+
 ## 2026-10-08: Stage 3C permission audit fix awaiting human re-acceptance
 
 The short final audit found one P1 in formal admin review eligibility. For a self-submitted exceptional rounding request, the admin query used approval eligibility for both actions, so rejection appeared unavailable without `rounding.self.excess`. The trusted write rule permits rejection with `rounding.approve` and `review.self`; the excess attribute applies to approval only. The audit fix computes `canApprove` and `canReject` separately from the existing review policy, gates each UI action by its own server-projected flag, and aligns the policy helper with that trusted rule. The trusted transaction, domain state changes, and permission model are unchanged.
