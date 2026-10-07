@@ -209,3 +209,5 @@
 .staff-auth{max-width:480px;margin:8vh auto;padding:28px}.staff-auth .muted{margin-bottom:20px}.staff-auth .notice{margin:18px 0}.staff-auth label{margin:16px 0}.staff-auth .full{margin-top:20px}
 
 .room-card:focus-visible{outline:3px solid var(--gold);outline-offset:3px}
+
+#admin-modal .evidence-preview { max-width: 100%; max-height: 280px; object-fit: contain; }

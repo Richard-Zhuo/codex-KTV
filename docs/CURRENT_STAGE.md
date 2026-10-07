@@ -1,3 +1,15 @@
+## 2026-10-08: Stage 3C formal admin approval candidate
+
+Stage 3B accepted HEAD `972de464` was fast-forwarded into `main`, tested (1831/1831), fetched, and pushed normally. `main` and `origin/main` both remain at `972de464` with ahead/behind 0/0. Stage 3C is developed only on `codex/p0-1-stage3c-admin-http`; its two commits are not merged, pushed, or deployed.
+
+Commit 1 (`8bb9ba7`) replaced the demo `/admin` authority with the formal session bootstrap and `GET /api/v1/admin/snapshot`. The query reads a coherent server revision and filters the dashboard, reviews, and management data on the server using current grants and policy attributes. A missing `backend.view` grant denies the formal admin view. Commit 1 passed focused 18/18, real MySQL integration 661/661, and full Node 1840/1840 (0 fail, 0 skip).
+
+Commit 2 candidate adds eight explicit approval/rejection review types through the existing trusted command registry. It projects `canDecide` using the existing review policy, keeps `review.self` independent, and reuses the Stage 3B pending command journal and command flow for actor binding, original operation key recovery, expected server revision, and terminal cleanup. Conflicts reload state without automatic approval. The final full command `node --test --test-isolation=none --test-reporter=tap` passed 1856/1856 with 0 fail and 0 skip against isolated MySQL 8.4.11/InnoDB. `npm test` was attempted as required by AGENTS.md but npm is unavailable in this environment.
+
+Browser-skill Edge 154 smoke record `d5e7a7d0ae5b4` used an isolated synthetic MySQL ledger on `127.0.0.1:4183/admin`. The formal login loaded a server-filtered pending room review at revision 0; its approval dialog submitted `POST /api/v1/commands/approveRoomIssue` (HTTP 200). The confirmed admin snapshot showed revision 1, zero pending reviews, and V01 empty; browser reload retained the session and reread revision 1; logout returned to formal login. The synthetic ledger head readback confirmed revision 1 and exactly one approveRoomIssue operation. Console recorded only the expected unauthenticated session 401 at the initial login page and an unrelated browser-extension invalid resource; no application exception was observed.
+
+Stage 3C remains a human-review candidate. Formal real-user account initialization, backup/restore drills, deployment, monitoring, and real Meituan production are not complete. This evidence establishes the admin UI to trusted HTTP path, not production readiness.
+
 ## 2026-10-08：Stage 3B 已验收收尾，Stage 3C 正式后台读取候选
 
 人工接受的 Stage 3B HEAD `972de464` 已以 fast-forward 合入 main；合并后完整测试 1831/1831、0 失败、0 跳过，随后 fetch 确认远端无漂移，并以普通 push 使 main=origin/main=`972de464`、ahead/behind=0/0。Stage 3C 从该点建立 `codex/p0-1-stage3c-admin-http`，新提交尚未推送或合入 main。

@@ -12,6 +12,12 @@ import { createEmployeeServerState } from '../ui/server-state.js';
 import { createEmployeeCommandFlow } from '../ui/command-flow.js';
 import { createPendingCommandJournal } from '../ui/pending-command-journal.js';
 import { stateFromServerSnapshot } from '../ui/formal-workspace.js';
+import { prepareAdminDecision } from '../ui/admin-approval.js';
+import { mountAdminApp } from '../ui/admin-app.js';
+import { seedRoomIssueReview } from '../test-support/trusted-room-issue-review-fixture.js';
+import { seedInventoryReview } from '../test-support/trusted-inventory-review-fixture.js';
+import { seedExpenseReview, expenseReview } from '../test-support/trusted-expense-review-fixture.js';
+import { seedTrustedPayments, seedPendingRounding, paymentOrder } from '../test-support/trusted-rounding-fixture.js';
 
 export async function testHttpBoundary({ t, pool, auth, seed, inspect, database, employeeStore }) {
   const authStore = createMySqlAuthStore({ pool, database });
@@ -527,6 +533,186 @@ export async function testHttpBoundary({ t, pool, auth, seed, inspect, database,
       } finally {
         api = createHttpApi(options);
       }
+    });
+    await t.test('formal admin approval flows reach MySQL through the existing HTTP registry', async reviewT => {
+      const policy = createPolicyAttributeService({ store: authStore });
+      const useLedger = async (id, prepare, run) => {
+        await seed(id, prepare);
+        const reviewStore = createMySqlLedgerStore({ pool, ledgerId: id, database,
+          bindSessionRevalidation: authStore.bindSessionRevalidation,
+          bindEmployeeResolver: employeeStore.bindEmployeeResolver });
+        api = createHttpApi({ ...options, store: reviewStore,
+          application: createTrustedLedgerApplication({
+            store: reviewStore, businessTimeZone: 'Asia/Shanghai'
+          }) });
+        try { return await run(); }
+        finally { api = createHttpApi(options); }
+      };
+      const cases = [
+        ['room-approve', 'roomRecovery', 'room.issue.approve', 'approve',
+          seedRoomIssueReview, state => state.roomIssueReviews.at(-1).status, '已批准'],
+        ['room-reject', 'roomRecovery', 'room.issue.approve', 'reject',
+          seedRoomIssueReview, state => state.roomIssueReviews.at(-1).status, '已驳回'],
+        ['inventory-approve', 'inventory', 'inventory.approve', 'approve',
+          (state, actor) => seedInventoryReview(state, { submittedByPrincipalId: actor }),
+          state => [state.inventoryReviews.at(-1).status, state.inventory.bw.count],
+          ['已批准', 17]],
+        ['rounding-approve', 'rounding', 'rounding.approve', 'approve',
+          (state, actor) => { seedTrustedPayments(state); seedPendingRounding(state, actor); },
+          state => paymentOrder(state).roundingReview.status, '已批准'],
+        ['expense-approve', 'expense', 'expense.approve', 'approve',
+          (state, actor) => seedExpenseReview(state, actor, 60000),
+          state => expenseReview(state).status, '已审批']
+      ];
+      for (const [name, type, grant, direction, prepare, observed, expected] of cases) {
+        await reviewT.test(name, async () => {
+          const id = 'stage3c-http-' + name;
+          const applicant = await makeAccount([]);
+          const reviewer = await makeAccount(['backend.view', grant]);
+          if (type === 'expense') {
+            await policy.configurePolicyAttributes({ principalId: reviewer.principalId },
+              { actorPrincipalId: reviewer.principalId });
+            await policy.grantPolicyAttribute({ principalId: reviewer.principalId,
+              attributeId: 'expense.approval.boss' },
+            { actorPrincipalId: reviewer.principalId });
+          }
+          await useLedger(id, state => prepare(state, applicant.principalId), async () => {
+            let action, payload, result;
+            if (name === 'room-approve') {
+              let cookie = null;
+              const liveClient = createEmployeeApiClient({ fetchImpl: async (path, init) => {
+                const headers = new Headers(init.headers);
+                if (cookie) headers.set('Cookie', cookie);
+                if (init.method === 'POST') headers.set('Origin', origin);
+                const response = await fetch(origin + path, { ...init, headers });
+                if (response.headers.get('set-cookie')) {
+                  cookie = response.headers.get('set-cookie').split(';')[0];
+                }
+                return response;
+              } });
+              const events = {}, dialogEvents = {}, storage = new Map();
+              const app = { innerHTML: '',
+                addEventListener(kind, handler) { events[kind] = handler; } };
+              const modal = { innerHTML: '', open: false,
+                addEventListener(kind, handler) { dialogEvents[kind] = handler; },
+                showModal() { this.open = true; }, close() { this.open = false; } };
+              const journal = createPendingCommandJournal({ storageProvider: () => ({
+                getItem: key => storage.has(key) ? storage.get(key) : null,
+                setItem: (key, value) => storage.set(key, value),
+                removeItem: key => storage.delete(key)
+              }) });
+              const mounted = mountAdminApp({ app, modal, client: liveClient, journal,
+                randomUUID: () => id + '-key',
+                eventTarget: { addEventListener() {} },
+                readLoginForm: () => new Map([
+                  ['loginIdentifier', reviewer.loginIdentifier], ['password', password]
+                ]),
+                readDecisionForm: () => new Map([['decisionNote', 'checked']])
+              });
+              await mounted.state.bootstrap();
+              assert.equal(mounted.state.getState().phase, 'login');
+              await events.submit({ target: { id: 'admin-login',
+                querySelector: () => ({ disabled: false }) }, preventDefault() {} });
+              const view = mounted.state.getState().snapshot;
+              const index = view.view.reviewQueue.findIndex(entry => entry.type === type);
+              assert.ok(index >= 0);
+              assert.equal(view.view.reviewQueue[index].canDecide, true);
+              ({ action, payload } = prepareAdminDecision(view.view.reviewQueue[index],
+                direction, 'checked'));
+              await events.click({ target: { dataset: { action: 'adminDecide',
+                index: String(index), decision: direction },
+                closest() { return this; } }, preventDefault() {} });
+              assert.equal(modal.open, true);
+              await dialogEvents.submit({ target: { id: 'admin-decision',
+                querySelector: () => ({ disabled: false }) }, preventDefault() {} });
+              assert.equal(mounted.state.getState().snapshot.revision, 1);
+              assert.equal(journal.load(), null);
+              assert.equal(modal.open, false);
+              assert.doesNotMatch(app.innerHTML, /data-action="adminDecide"/);
+              result = (await inspect(id)).operations.at(-1).terminal_result;
+            } else {
+              const signed = await login(reviewer);
+              const view = await request('/api/v1/admin/snapshot',
+                { cookie: signed.cookie });
+              assert.equal(view.status, 200);
+              assert.equal(view.body.revision, 0);
+              const review = view.body.view.reviewQueue.find(entry =>
+                entry.type === type && entry.canDecide === true);
+              assert.equal(review?.canDecide, true);
+              ({ action, payload } = prepareAdminDecision(review, direction, 'checked'));
+              const sent = await command(signed, action, id + '-key', 0, payload);
+              assert.equal(sent.status, 200);
+              result = sent.body.result;
+              assert.equal(result.actorId, reviewer.principalId);
+              assert.equal((await request('/api/v1/admin/snapshot',
+                { cookie: signed.cookie })).body.revision, 1);
+            }
+            const after = await inspect(id);
+            assert.equal(after.head.revision, 1);
+            assert.equal(after.audit.length, 1);
+            assert.equal(after.audit[0].actor_principal_id, reviewer.principalId);
+            assert.deepEqual(observed(after.head.state), expected);
+            const again = await login(reviewer);
+            assert.deepEqual((await command(again, action, id + '-key', 0,
+              payload)).body.result, result);
+            const changed = await command(again, action, id + '-key', 0,
+              { ...payload, id: 9999 });
+            assert.equal(changed.status, 409);
+            assert.equal(changed.body.error.code, 'idempotency_conflict');
+            assert.equal((await inspect(id)).head.revision, 1);
+          });
+        });
+      }
+
+      await reviewT.test('backend-only, spoofed identity, stale concurrent review, self review and disabled session', async () => {
+        const applicant = await makeAccount([]);
+        const a = await makeAccount(['backend.view', 'room.issue.approve']);
+        const b = await makeAccount(['backend.view', 'room.issue.approve']);
+        const viewer = await makeAccount(['backend.view']);
+        const id = 'stage3c-http-negative';
+        await useLedger(id, state => seedRoomIssueReview(state, applicant.principalId),
+          async () => {
+            const basic = await login(viewer);
+            assert.deepEqual((await request('/api/v1/admin/snapshot',
+              { cookie: basic.cookie })).body.view.reviewQueue, []);
+            assert.equal((await command(basic, 'approveRoomIssue', 'view-only',
+              0, { request: 701 })).body.error.code, 'authorization_denied');
+            assert.equal((await command(basic, 'approveRoomIssue', 'spoof',
+              0, { request: 701 }, { principal: b.principalId, role: 'boss',
+                permissions: ['room.issue.approve'] })).body.error.code,
+            'invalid_input');
+            const first = await login(a), second = await login(b);
+            assert.equal((await request('/api/v1/admin/snapshot',
+              { cookie: first.cookie })).body.revision, 0);
+            assert.equal((await request('/api/v1/admin/snapshot',
+              { cookie: second.cookie })).body.revision, 0);
+            assert.equal((await command(second, 'approveRoomIssue', 'b-wins',
+              0, { request: 701 })).status, 200);
+            const stale = await command(first, 'rejectRoomIssue', 'a-stale',
+              0, { request: 701, decisionNote: 'stale' });
+            assert.equal(stale.body.error.code, 'revision_conflict');
+            assert.equal((await inspect(id)).head.state.roomIssueReviews.at(-1).status,
+              '已批准');
+          });
+        const self = await makeAccount(['backend.view', 'inventory.approve']);
+        const selfId = 'stage3c-http-self';
+        await useLedger(selfId, state => seedInventoryReview(state,
+          { submittedByPrincipalId: self.principalId }), async () => {
+          const signed = await login(self);
+          assert.equal((await request('/api/v1/admin/snapshot',
+            { cookie: signed.cookie })).body.view.reviewQueue[0].canDecide, false);
+          assert.equal((await command(signed, 'approveInventory', 'self-denied',
+            0, { request: 701 })).body.error.code, 'authorization_denied');
+          await auth.grantPermission({ principalId: self.principalId,
+            permissionId: 'review.self' });
+          assert.equal((await request('/api/v1/admin/snapshot',
+            { cookie: signed.cookie })).body.view.reviewQueue[0].canDecide, true);
+          await auth.disableAccount({ principalId: self.principalId });
+          assert.equal((await command(signed, 'approveInventory', 'disabled',
+            0, { request: 701 })).body.error.code, 'unauthenticated');
+          assert.equal((await inspect(selfId)).head.revision, 0);
+        });
+      });
     });
   } finally {
     await new Promise(resolve => server.close(resolve));

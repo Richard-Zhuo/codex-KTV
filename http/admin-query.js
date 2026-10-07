@@ -1,4 +1,5 @@
-import { AuthorizationDenied, assertTrustedExecutionContext } from '../shared/identity.js';
+import { AuthorizationDenied, PERMISSION_IDS, assertTrustedExecutionContext } from '../shared/identity.js';
+import { POLICY_ATTRIBUTE_IDS, authorizeReviewCommand, createTrustedPrincipal, createTrustedReviewFacts } from '../ledger/command-policy.js';
 
 const rows = value => Array.isArray(value) ? value : [];
 const pick = (value, fields) => Object.fromEntries(fields
@@ -16,6 +17,14 @@ export function projectAdminSnapshot(head, context) {
   }
 
   const attributes = new Set(context.policyAttributeIds ?? []);
+  const principal = createTrustedPrincipal({ id: context.principalId,
+    permissionIds: context.permissionIds.filter(id => PERMISSION_IDS.includes(id)),
+    policyAttributeIds: (context.policyAttributeIds ?? []).filter(id =>
+      POLICY_ATTRIBUTE_IDS.includes(id)) });
+  const actionByType = { roomRecovery: 'approveRoomIssue', inventory: 'approveInventory',
+    gift: 'approveGift', rounding: 'approveRounding', credit: 'approve',
+    repayment: 'approveRepayment', incidentResolution: 'approveIncidentResolution',
+    expense: 'approveExpense' };
   const state = head.state;
   const principalId = context.principalId;
   const view = {
@@ -67,7 +76,16 @@ export function projectAdminSnapshot(head, context) {
 
   const add = (grant, type, source, project) => {
     if (!grants.has(grant)) return;
-    for (const item of source) view.reviewQueue.push({ type, ...project(item) });
+    for (const item of source) {
+      const summary = { type, ...project(item) };
+      const submitter = summary.submittedByPrincipalId;
+      summary.canDecide = typeof submitter === 'string' && !!submitter &&
+        authorizeReviewCommand({ principal, action: actionByType[type],
+          reviewFacts: createTrustedReviewFacts({ submittedByPrincipalId: submitter,
+            exceptionalSelfApprovalRequired: type === 'rounding' &&
+              summary.exceptionalSelfApprovalRequired === true }) }).allowed;
+      view.reviewQueue.push(summary);
+    }
   };
   add('room.issue.approve', 'roomRecovery',
     rows(state.roomIssueReviews).filter(item => item.status === '待审核'),
@@ -123,12 +141,11 @@ export function projectAdminSnapshot(head, context) {
       incidentType: incident.type,
       ...pick(item, ['id', 'result', 'note',
         'submittedByPrincipalId', 'submittedAt']) }));
-  if (attributes.has('expense.approval.boss')) {
-    add('expense.approve', 'expense',
-      rows(state.expenses).filter(item => item.status === '待老板审批'),
-      item => pick(item, ['id', 'date', 'amount', 'description', 'method',
-        'proof', 'proofName', 'submittedByPrincipalId', 'time']));
-  }
+  add('expense.approve', 'expense',
+    rows(state.expenses).filter(item => item.status === '待老板审批' &&
+      (item.amount <= 50000 || attributes.has('expense.approval.boss'))),
+    item => pick(item, ['id', 'date', 'amount', 'description', 'method',
+      'proof', 'proofName', 'submittedByPrincipalId', 'time']));
 
   view.dashboard.pendingReviews = view.reviewQueue.length;
   return { revision: head.revision, view };

@@ -4,7 +4,7 @@
 
 | 改动目标 | 入口与稳定符号 | 主要测试 | 边界 |
 |---|---|---|---|
-| Stage 3C 正式后台读取 | `admin.html`、`ui/admin-app.js:mountAdminApp`、`ui/admin-view.js:renderAdminPage`、`http/admin-query.js:projectAdminSnapshot`、`GET /api/v1/admin/snapshot` | `ui/admin-entry.test.js`、`http/admin-query.test.js`、`http/command.integration.js`、`server-static.test.js` | `backend.view` 仅允许进入；具体审批、viewAll 与 policy attributes 在服务端裁剪；同事务 session 重验，正式入口不加载演示 `app.js` |
+| Stage 3C 正式后台读取与审批 | `admin.html`、`ui/admin-app.js:mountAdminApp`、`ui/admin-view.js:renderAdminPage`、`ui/admin-approval.js:prepareAdminDecision`、`ui/command-flow.js:createEmployeeCommandFlow`、`http/admin-query.js:projectAdminSnapshot`、`GET /api/v1/admin/snapshot` | `ui/admin-entry.test.js`、`ui/admin-approval.test.js`、`ui/admin-approval-flow.test.js`、`http/admin-query.test.js`、`http/command.integration.js`、`server-static.test.js` | `backend.view` 仅允许进入；具体审批、viewAll 与 policy attributes 在服务端裁剪；同事务 session 重验，正式入口不加载演示 `app.js` |
 | 平台券领域／外部副作用 | vouchers/domain.js、application.js:createPlatformVoucherApplication；gateway.js:PlatformVoucherGateway；mysql-store.js:createMySqlVoucherStore | vouchers/*.test.js、ledger/trusted-open.test.js、ledger/platform-voucher.integration.js 与 ledger/trusted-open.integration.js（guarded fixture） | 集中状态机；短事务 A→锁外 provider→短事务 B；UNKNOWN 新查询 key；Meituan production redemption = NOT ENABLED；trusted open 经 voucher-opening/binding 同连接锁定关联；K07 门禁已修，真实 Meituan 仍禁用 |
 | 员工及系统管理入口、静态资源 | `index.html`、`admin.html`；`server.js` 的 `files` | `entry.test.js` | 静态白名单须列出新增浏览器模块；正式 API 由 http/api.js 承担 |
 | 启动、事件分发与页面状态 | `app.js`；`ui/context.js` 的 `ctx`；`ui/shell.js` 的 `persist`／`commit`／`render` | `entry.test.js`、`bugs-evidence-app.test.js` | 保存成功后才切换页面状态；浏览器 UI 不决定最终权限 |

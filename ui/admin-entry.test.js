@@ -2,9 +2,14 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { HttpApiError, HttpTransportError } from './api-client.js';
 import { mountAdminApp } from './admin-app.js';
-import { renderAdminPage } from './admin-view.js';
+import { renderAdminDecisionDialog, renderAdminPage } from './admin-view.js';
 
 const session = { principalId: 'formal-owner', permissionIds: ['backend.view'] };
+const memoryJournal = () => {
+  let record = null;
+  return { load() { return record; }, save(value) { record = value; return value; },
+    clear() { record = null; } };
+};
 const snapshot = revision => ({ revision, view: {
   serverNow: '2026-10-08T00:00:00.000Z',
   dashboard: { roomCount: 1, occupiedRooms: 0, issueRooms: 0,
@@ -38,14 +43,15 @@ test('admin entry boots formal session, reloads server snapshot and ignores demo
     },
     async login() { calls.push('login'); authenticated = true; return session; },
     async logout() { calls.push('logout'); authenticated = false; },
-    clearSession() { calls.push('clear'); }
+    clearSession() { calls.push('clear'); },
+    async executeCommand() { throw Error('unexpected command'); }
   };
   try {
     const mounted = mountAdminApp({ app, client, eventTarget: {
       addEventListener() {}
     }, readLoginForm: () => new Map([
       ['loginIdentifier', 'owner'], ['password', 'synthetic-password']
-    ]), modal });
+    ]), modal, journal: memoryJournal() });
     await new Promise(resolve => setImmediate(resolve));
     assert.equal(mounted.state.getState().phase, 'login');
     assert.match(app.innerHTML, /后台登录/);
@@ -102,11 +108,12 @@ test('admin network interruption renders last confirmed state as stale and unaut
     async getAdminSnapshot() { return snapshot(8); },
     async login() { return session; },
     async logout() {},
-    clearSession() {}
+    clearSession() {},
+    async executeCommand() { throw Error('unexpected command'); }
   };
   const mounted = mountAdminApp({ app, client, eventTarget: {
     addEventListener() {}
-  }, modal: null });
+  }, modal: null, journal: memoryJournal() });
   await new Promise(resolve => setImmediate(resolve));
   assert.match(app.innerHTML, /服务器版本 8/);
   network = false;
@@ -132,4 +139,29 @@ test('admin renderer escapes records and never generates demo identity controls'
   assert.match(html, /&lt;img/);
   assert.doesNotMatch(html, /<img src=x/);
   assert.doesNotMatch(html, /setUser|setClock|setPermissions|data-action="identity"/);
+});
+test('stale admin snapshot never offers approval buttons', () => {
+  const model = { phase: 'unavailable', stale: true, session,
+    snapshot: { revision: 3, view: {
+      ...snapshot(3).view,
+      reviewQueue: [{ type: 'inventory', id: 9, canDecide: true }],
+      dashboard: { ...snapshot(3).view.dashboard, pendingReviews: 1 }
+    } }, error: new HttpTransportError('network') };
+  const html = renderAdminPage(model, { flowStatus: { phase: 'idle' } });
+  assert.match(html, /只读状态/);
+  assert.doesNotMatch(html, /data-action="adminDecide"/);
+});
+test('admin decision dialog shows escaped evidence and only safe inline image data', () => {
+  const base = { type: 'roomRecovery', id: 42, room: 'V01',
+    fromStatus: '故障/维护中', requestedStatus: '空闲',
+    evidenceText: '<script>alert(1)</script>',
+    submittedByPrincipalId: 'applicant', canDecide: true };
+  const unsafe = renderAdminDecisionDialog({ ...base,
+    evidencePhoto: 'javascript:alert(1)' }, 'approve');
+  assert.match(unsafe, /&lt;script&gt;/);
+  assert.doesNotMatch(unsafe, /<script>|<img/);
+  const safe = renderAdminDecisionDialog({ ...base,
+    evidencePhoto: 'data:image/png;base64,AA==' }, 'reject');
+  assert.match(safe, /class="evidence-preview"/);
+  assert.match(safe, /textarea name="decisionNote"[^>]*required/);
 });

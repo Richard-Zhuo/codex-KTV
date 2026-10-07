@@ -118,3 +118,30 @@ test('viewAll is exact; own expense, procurement and incident rows stay separate
   assert.deepEqual(all.view.incidents.map(item => item.id), [19, 21]);
   assert.equal(JSON.stringify(all).includes('private-proof'), false);
 });
+test('review availability follows self-review and expense threshold without browser roles', () => {
+  const ownInventory = projectAdminSnapshot(head(),
+    context(['backend.view', 'inventory.approve'], [], 'actor-b'));
+  assert.equal(ownInventory.view.reviewQueue[0].canDecide, false);
+  const selfAllowed = projectAdminSnapshot(head(),
+    context(['backend.view', 'inventory.approve', 'review.self'], [], 'actor-b'));
+  assert.equal(selfAllowed.view.reviewQueue[0].canDecide, true);
+  const low = head();
+  low.state.expenses[0].amount = 50000;
+  const expense = projectAdminSnapshot(low,
+    context(['backend.view', 'expense.approve']));
+  assert.deepEqual(expense.view.reviewQueue.map(item => item.type), ['expense']);
+  assert.equal(expense.view.reviewQueue[0].canDecide, true);
+});
+test('exceptional self rounding availability requires its independent policy attribute', () => {
+  const pending = head();
+  pending.state.orders[0].roundingReview.exceptionalSelfApprovalRequired = true;
+  const denied = projectAdminSnapshot(pending,
+    context(['backend.view', 'rounding.approve', 'review.self'], [], 'actor-b'));
+  assert.equal(denied.view.reviewQueue.find(item => item.type === 'rounding').canDecide,
+    false);
+  const allowed = projectAdminSnapshot(pending,
+    context(['backend.view', 'rounding.approve', 'review.self'],
+      ['rounding.self.excess'], 'actor-b'));
+  assert.equal(allowed.view.reviewQueue.find(item => item.type === 'rounding').canDecide,
+    true);
+});

@@ -2,7 +2,7 @@
 
 `/admin` 由 `admin.html` 和 `ui/admin-app.js` 启动，不加载演示 `app.js`。页面沿用 `ui/api-client.js` 与 `ui/server-state.js`：先读取正式 `GET /api/v1/auth/session`，再读取 `GET /api/v1/admin/snapshot`。后者在 `http/api.js` 复用 `sessionReader.withContext` 的同连接事务内重验和账本读取，`http/admin-query.js:projectAdminSnapshot` 要求当前 `backend.view`，按具体权限及 policy attributes 将房态、订单基本状态、费用、采购、异常和审核队列逐字段裁剪。浏览器只收到已裁剪视图及 ledger revision；撤权后新查询立即拒绝。断网保留最后确认的只读视图，未认证与无后台资格分别显示登录或拒绝页。
 
-当前分支的第一提交只建立正式后台 session/query shell；审批写入继续由下一提交接入已有显式 HTTP command registry 与可信应用，不会采用演示 `transact` 或本地业务存储。
+第二提交在 `ui/admin-app.js` 复用 `ui/command-flow.js` 与 `ui/pending-command-journal.js`，从服务端审核队列选择事项，经 `ui/admin-approval.js` 的显式映射送至既有 `POST /api/v1/commands/:action`。首次发送前保存原 operationKey、最后确认的 revision 与最小 payload；结果不明时原账号按原键重试，换账号禁止重试。服务端 command registry、事务内认证及审批策略继续决定结果；成功后重新读取 session/admin snapshot，revision 冲突只刷新而不自动审批。队列的 canDecide 由服务端复用 `authorizeReviewCommand` 计算，本人审批及特殊免零属性不由浏览器角色推断。
 
 ## Stage 3B 员工入口运行数据流（2026-10-06）
 
