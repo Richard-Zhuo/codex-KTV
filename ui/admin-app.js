@@ -83,7 +83,8 @@ export function mountAdminApp({
       const item = model.snapshot?.view?.reviewQueue?.[index];
       if (!Number.isSafeInteger(index) || index < 0 ||
           !state.isWritable() || flow.getStatus().phase !== 'idle' ||
-          item?.canDecide !== true || !['approve', 'reject'].includes(direction)) return;
+          !['approve', 'reject'].includes(direction) ||
+          item?.[direction === 'approve' ? 'canApprove' : 'canReject'] !== true) return;
       activeDecision = { item, index, direction,
         revision: model.snapshot.revision,
         actor: model.session.principalId };

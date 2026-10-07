@@ -144,7 +144,7 @@ test('stale admin snapshot never offers approval buttons', () => {
   const model = { phase: 'unavailable', stale: true, session,
     snapshot: { revision: 3, view: {
       ...snapshot(3).view,
-      reviewQueue: [{ type: 'inventory', id: 9, canDecide: true }],
+      reviewQueue: [{ type: 'inventory', id: 9, canDecide: true, canApprove: true, canReject: true }],
       dashboard: { ...snapshot(3).view.dashboard, pendingReviews: 1 }
     } }, error: new HttpTransportError('network') };
   const html = renderAdminPage(model, { flowStatus: { phase: 'idle' } });
@@ -155,7 +155,7 @@ test('admin decision dialog shows escaped evidence and only safe inline image da
   const base = { type: 'roomRecovery', id: 42, room: 'V01',
     fromStatus: '故障/维护中', requestedStatus: '空闲',
     evidenceText: '<script>alert(1)</script>',
-    submittedByPrincipalId: 'applicant', canDecide: true };
+    submittedByPrincipalId: 'applicant', canDecide: true, canApprove: true, canReject: true };
   const unsafe = renderAdminDecisionDialog({ ...base,
     evidencePhoto: 'javascript:alert(1)' }, 'approve');
   assert.match(unsafe, /&lt;script&gt;/);
@@ -164,4 +164,19 @@ test('admin decision dialog shows escaped evidence and only safe inline image da
     evidencePhoto: 'data:image/png;base64,AA==' }, 'reject');
   assert.match(safe, /class="evidence-preview"/);
   assert.match(safe, /textarea name="decisionNote"[^>]*required/);
+});
+
+test('self exceptional rounding enables rejection but blocks approval in the admin view', () => {
+  const review = { type: 'rounding', orderId: 'O-1', room: 'V01',
+    submittedByPrincipalId: session.principalId,
+    exceptionalSelfApprovalRequired: true,
+    canDecide: true, canApprove: false, canReject: true };
+  const html = renderAdminPage({ phase: 'ready', session, stale: false,
+    snapshot: { ...snapshot(4), view: { ...snapshot(4).view,
+      reviewQueue: [review], dashboard: { ...snapshot(4).view.dashboard,
+        pendingReviews: 1 } } } }, { flowStatus: { phase: 'idle' } });
+  assert.match(html, /data-decision="approve" disabled/);
+  assert.match(html, /data-decision="reject">/);
+  assert.throws(() => renderAdminDecisionDialog(review, 'approve'), TypeError);
+  assert.match(renderAdminDecisionDialog(review, 'reject'), /id="admin-decision"/);
 });

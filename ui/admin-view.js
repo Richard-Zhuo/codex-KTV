@@ -35,7 +35,7 @@ function reviewCard(item, index, writable) {
       `${item.room ?? ''} · ¥${numberText(item.amount)}`;
   const note = item.reason ?? item.note ?? item.evidenceText ?? item.result ?? '';
   const actions = writable && item.canDecide === true ?
-    `<div class="inline-actions"><button class="primary" type="button" data-action="adminDecide" data-index="${index}" data-decision="approve">批准</button><button class="danger" type="button" data-action="adminDecide" data-index="${index}" data-decision="reject">驳回</button></div>` :
+    `<div class="inline-actions"><button class="primary" type="button" data-action="adminDecide" data-index="${index}" data-decision="approve"${item.canApprove === true ? '' : ' disabled'}>批准</button><button class="danger" type="button" data-action="adminDecide" data-index="${index}" data-decision="reject"${item.canReject === true ? '' : ' disabled'}>驳回</button></div>` :
     writable && item.canDecide === false ?
       '<p class="muted">当前账号不能审核此申请；本人申请还需独立的自审资格。</p>' : '';
   return `<article class="panel admin-review" data-review-type="${escapeAdminText(item.type)}" data-review-id="${escapeAdminText(item.id ?? item.orderId)}"><div class="split"><h3>${escapeAdminText(title)}</h3><span class="badge">待处理</span></div><p>${escapeAdminText(detail)}</p>${line('说明', note)}${item.evidencePhoto || item.proof ? '<p class="muted">含图片证据</p>' : ''}${line('提交人标识', item.submittedByPrincipalId)}${actions}</article>`;
@@ -149,7 +149,9 @@ function decisionEvidence(item) {
 
 export function renderAdminDecisionDialog(item, direction) {
   if (!labels[item?.type] || !['approve', 'reject'].includes(direction) ||
-      item.canDecide !== true) throw new TypeError('Invalid review dialog');
+      item[direction === 'approve' ? 'canApprove' : 'canReject'] !== true) {
+    throw new TypeError('Invalid review dialog');
+  }
   const verb = direction === 'approve' ? '批准' : '驳回';
   const note = ['credit', 'expense'].includes(item.type) ? '' :
     `<label>${direction === 'reject' ? '驳回原因' : '审核备注（选填）'}<textarea name="decisionNote" maxlength="300" rows="3" ${adminDecisionNeedsNote(item, direction) ? 'required' : ''}></textarea></label>`;

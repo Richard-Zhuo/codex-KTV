@@ -117,6 +117,7 @@ test('viewAll is exact; own expense, procurement and incident rows stay separate
   assert.deepEqual(all.view.procurements.map(item => item.id), [17, 18]);
   assert.deepEqual(all.view.incidents.map(item => item.id), [19, 21]);
   assert.equal(JSON.stringify(all).includes('private-proof'), false);
+  assert.deepEqual(all.view.reviewQueue, []);
 });
 test('review availability follows self-review and expense threshold without browser roles', () => {
   const ownInventory = projectAdminSnapshot(head(),
@@ -132,16 +133,19 @@ test('review availability follows self-review and expense threshold without brow
   assert.deepEqual(expense.view.reviewQueue.map(item => item.type), ['expense']);
   assert.equal(expense.view.reviewQueue[0].canDecide, true);
 });
-test('exceptional self rounding availability requires its independent policy attribute', () => {
+test('exceptional self rounding exposes rejection without the excess attribute, but not approval', () => {
   const pending = head();
   pending.state.orders[0].roundingReview.exceptionalSelfApprovalRequired = true;
-  const denied = projectAdminSnapshot(pending,
+  const limited = projectAdminSnapshot(pending,
     context(['backend.view', 'rounding.approve', 'review.self'], [], 'actor-b'));
-  assert.equal(denied.view.reviewQueue.find(item => item.type === 'rounding').canDecide,
-    false);
-  const allowed = projectAdminSnapshot(pending,
+  const limitedReview = limited.view.reviewQueue.find(item => item.type === 'rounding');
+  assert.equal(limitedReview.canApprove, false);
+  assert.equal(limitedReview.canReject, true);
+  assert.equal(limitedReview.canDecide, true);
+  const full = projectAdminSnapshot(pending,
     context(['backend.view', 'rounding.approve', 'review.self'],
       ['rounding.self.excess'], 'actor-b'));
-  assert.equal(allowed.view.reviewQueue.find(item => item.type === 'rounding').canDecide,
-    true);
+  const fullReview = full.view.reviewQueue.find(item => item.type === 'rounding');
+  assert.equal(fullReview.canApprove, true);
+  assert.equal(fullReview.canReject, true);
 });

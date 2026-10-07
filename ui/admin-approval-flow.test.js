@@ -28,7 +28,7 @@ function fixture({ onCommand } = {}) {
         rooms: [{ id: 'V01', type: 'VIP', status: '空闲' }],
         reviewQueue: pending ? [{ type: 'inventory', id: 701,
           product: 'bw', before: 3, after: 4,
-          submittedByPrincipalId: 'applicant-b', canDecide: true }] : []
+          submittedByPrincipalId: 'applicant-b', canDecide: true, canApprove: true, canReject: true }] : []
       } };
     },
     async login() {},

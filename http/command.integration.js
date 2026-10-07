@@ -675,8 +675,17 @@ export async function testHttpBoundary({ t, pool, auth, seed, inspect, database,
             const basic = await login(viewer);
             assert.deepEqual((await request('/api/v1/admin/snapshot',
               { cookie: basic.cookie })).body.view.reviewQueue, []);
-            assert.equal((await command(basic, 'approveRoomIssue', 'view-only',
-              0, { request: 701 })).body.error.code, 'authorization_denied');
+            for (const action of [
+              'approveRoomIssue', 'rejectRoomIssue', 'approveInventory', 'rejectInventory',
+              'approveGift', 'rejectGift', 'approveRounding', 'rejectRounding',
+              'approve', 'reject', 'approveRepayment', 'rejectRepayment',
+              'approveIncidentResolution', 'rejectIncidentResolution',
+              'approveExpense', 'rejectExpense'
+            ]) {
+              const denied = await command(basic, action, 'view-only-' + action, 0, {});
+              assert.equal(denied.status, 403, action);
+              assert.equal(denied.body.error.code, 'authorization_denied', action);
+            }
             assert.equal((await command(basic, 'approveRoomIssue', 'spoof',
               0, { request: 701 }, { principal: b.principalId, role: 'boss',
                 permissions: ['room.issue.approve'] })).body.error.code,

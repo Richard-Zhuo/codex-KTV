@@ -141,10 +141,11 @@ export function authorizeReviewCommand({ principal, action, reviewFacts }) {
   if (self && !principal.permissionIds.includes('review.self')) {
     return result(false, action, 'missing-review-self', allOf);
   }
-  if (self && reviewFacts.exceptionalSelfApprovalRequired &&
-      !principal.policyAttributeIds.includes(EXCESS_ROUNDING_SELF)) {
+  const exceptionalApproval = self && action === 'approveRounding' &&
+    reviewFacts.exceptionalSelfApprovalRequired;
+  if (exceptionalApproval && !principal.policyAttributeIds.includes(EXCESS_ROUNDING_SELF)) {
     return result(false, action, 'missing-policy-attribute', allOf, [], null, null, [EXCESS_ROUNDING_SELF]);
   }
   return result(true, action, null, allOf, [], principal, null,
-    self && reviewFacts.exceptionalSelfApprovalRequired ? [EXCESS_ROUNDING_SELF] : []);
+    exceptionalApproval ? [EXCESS_ROUNDING_SELF] : []);
 }

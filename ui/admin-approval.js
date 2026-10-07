@@ -25,7 +25,7 @@ const validId = value => typeof value === 'string' ?
 
 export function prepareAdminDecision(item, direction, note = '') {
   const definition = definitions[item?.type];
-  if (!definition || item.canDecide !== true ||
+  if (!definition || item?.[direction === 'approve' ? 'canApprove' : 'canReject'] !== true ||
       (direction !== 'approve' && direction !== 'reject') ||
       typeof note !== 'string' || note.length > 300) {
     throw new TypeError('Invalid admin decision');

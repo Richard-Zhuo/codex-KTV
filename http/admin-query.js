@@ -25,6 +25,10 @@ export function projectAdminSnapshot(head, context) {
     gift: 'approveGift', rounding: 'approveRounding', credit: 'approve',
     repayment: 'approveRepayment', incidentResolution: 'approveIncidentResolution',
     expense: 'approveExpense' };
+  const rejectActionByType = { roomRecovery: 'rejectRoomIssue', inventory: 'rejectInventory',
+    gift: 'rejectGift', rounding: 'rejectRounding', credit: 'reject',
+    repayment: 'rejectRepayment', incidentResolution: 'rejectIncidentResolution',
+    expense: 'rejectExpense' };
   const state = head.state;
   const principalId = context.principalId;
   const view = {
@@ -79,11 +83,18 @@ export function projectAdminSnapshot(head, context) {
     for (const item of source) {
       const summary = { type, ...project(item) };
       const submitter = summary.submittedByPrincipalId;
-      summary.canDecide = typeof submitter === 'string' && !!submitter &&
-        authorizeReviewCommand({ principal, action: actionByType[type],
-          reviewFacts: createTrustedReviewFacts({ submittedByPrincipalId: submitter,
-            exceptionalSelfApprovalRequired: type === 'rounding' &&
-              summary.exceptionalSelfApprovalRequired === true }) }).allowed;
+      const validSubmitter = typeof submitter === 'string' && !!submitter &&
+        submitter.trim() === submitter;
+      const reviewFacts = validSubmitter ? createTrustedReviewFacts({
+        submittedByPrincipalId: submitter,
+        exceptionalSelfApprovalRequired: type === 'rounding' &&
+          summary.exceptionalSelfApprovalRequired === true
+      }) : null;
+      summary.canApprove = !!reviewFacts && authorizeReviewCommand({
+        principal, action: actionByType[type], reviewFacts }).allowed;
+      summary.canReject = !!reviewFacts && authorizeReviewCommand({
+        principal, action: rejectActionByType[type], reviewFacts }).allowed;
+      summary.canDecide = summary.canApprove || summary.canReject;
       view.reviewQueue.push(summary);
     }
   };

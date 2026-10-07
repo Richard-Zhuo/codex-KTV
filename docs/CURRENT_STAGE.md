@@ -1,3 +1,9 @@
+## 2026-10-08: Stage 3C permission audit fix awaiting human re-acceptance
+
+The short final audit found one P1 in formal admin review eligibility. For a self-submitted exceptional rounding request, the admin query used approval eligibility for both actions, so rejection appeared unavailable without `rounding.self.excess`. The trusted write rule permits rejection with `rounding.approve` and `review.self`; the excess attribute applies to approval only. The audit fix computes `canApprove` and `canReject` separately from the existing review policy, gates each UI action by its own server-projected flag, and aligns the policy helper with that trusted rule. The trusted transaction, domain state changes, and permission model are unchanged.
+
+Focused policy/query/UI tests passed 32/32; isolated real MySQL integration passed 668/668; the full `node --test --test-isolation=none --test-reporter=tap` run passed 1859/1859, with 0 failures and 0 skips. `npm test` was attempted under AGENTS.md but npm is unavailable on this host. This audit-fix commit remains on the Stage 3C branch, unmerged and unpushed. Earlier Edge smoke applies to the previous candidate, so the repaired candidate needs human browser re-acceptance. Status: FIXED, NEEDS HUMAN RE-ACCEPTANCE. This is not production readiness.
+
 ## 2026-10-08: Stage 3C formal admin approval candidate
 
 Stage 3B accepted HEAD `972de464` was fast-forwarded into `main`, tested (1831/1831), fetched, and pushed normally. `main` and `origin/main` both remain at `972de464` with ahead/behind 0/0. Stage 3C is developed only on `codex/p0-1-stage3c-admin-http`; its two commits are not merged, pushed, or deployed.

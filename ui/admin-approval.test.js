@@ -22,7 +22,7 @@ const cases = [
 
 test('admin review adapter exposes exactly the existing approval and rejection commands', () => {
   for (const [type, ids, approve, reject, payload] of cases) {
-    const item = { type, ...ids, canDecide: true };
+    const item = { type, ...ids, canDecide: true, canApprove: true, canReject: true };
     assert.deepEqual(prepareAdminDecision(item, 'approve', 'checked'),
       { action: approve, payload });
     assert.deepEqual(prepareAdminDecision(item, 'reject', 'checked'),
@@ -32,13 +32,21 @@ test('admin review adapter exposes exactly the existing approval and rejection c
 
 test('admin review adapter refuses unreviewable, unknown, and malformed intents', () => {
   assert.throws(() => prepareAdminDecision(
-    { type: 'inventory', id: 12, canDecide: false }, 'approve'));
+    { type: 'inventory', id: 12, canDecide: false, canApprove: false, canReject: false }, 'approve'));
   assert.throws(() => prepareAdminDecision(
-    { type: 'setPermissions', id: 12, canDecide: true }, 'approve'));
+    { type: 'setPermissions', id: 12, canDecide: true, canApprove: true, canReject: true }, 'approve'));
   assert.throws(() => prepareAdminDecision(
-    { type: 'inventory', id: 12, canDecide: true }, 'reject', ''));
+    { type: 'inventory', id: 12, canDecide: true, canApprove: true, canReject: true }, 'reject', ''));
   assert.throws(() => prepareAdminDecision(
-    { type: 'inventory', id: -1, canDecide: true }, 'approve'));
+    { type: 'inventory', id: -1, canDecide: true, canApprove: true, canReject: true }, 'approve'));
   assert.throws(() => prepareAdminDecision(
-    { type: 'inventory', id: 12, canDecide: true }, 'approve', 'x'.repeat(301)));
+    { type: 'inventory', id: 12, canDecide: true, canApprove: true, canReject: true }, 'approve', 'x'.repeat(301)));
+});
+
+test('admin adapter permits exceptional self rejection while refusing approval without the excess attribute', () => {
+  const item = { type: 'rounding', orderId: 'O-1', canDecide: true,
+    canApprove: false, canReject: true };
+  assert.throws(() => prepareAdminDecision(item, 'approve', 'checked'));
+  assert.deepEqual(prepareAdminDecision(item, 'reject', 'checked'),
+    { action: 'rejectRounding', payload: { order: 'O-1', decisionNote: 'checked' } });
 });

@@ -203,3 +203,21 @@ test('exceptional rounding requirement is named in the policy result', () => {
     }) });
   assert.deepEqual(decision.requiredPolicyAttributes, [EXCESS_ROUNDING_SELF]);
 });
+
+test('exceptional self rounding rejection needs the review grants but not the excess attribute', () => {
+  const facts = createTrustedReviewFacts({ submittedByPrincipalId: 'synthetic-actor',
+    exceptionalSelfApprovalRequired: true });
+  const noSelf = principal('synthetic-actor', ['rounding.approve']);
+  assert.equal(authorizeReviewCommand({ principal: noSelf, action: 'rejectRounding',
+    reviewFacts: facts }).reason, 'missing-review-self');
+  const noAction = principal('synthetic-actor', ['review.self']);
+  assert.equal(authorizeReviewCommand({ principal: noAction, action: 'rejectRounding',
+    reviewFacts: facts }).reason, 'missing-permission');
+  const reviewer = principal('synthetic-actor', ['rounding.approve', 'review.self']);
+  assert.equal(authorizeReviewCommand({ principal: reviewer, action: 'approveRounding',
+    reviewFacts: facts }).reason, 'missing-policy-attribute');
+  const rejection = authorizeReviewCommand({ principal: reviewer, action: 'rejectRounding',
+    reviewFacts: facts });
+  assert.equal(rejection.allowed, true);
+  assert.deepEqual(rejection.requiredPolicyAttributes, []);
+});
