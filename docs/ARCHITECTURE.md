@@ -1,3 +1,9 @@
+## Stage 3C 管理后台正式读取路径（2026-10-08）
+
+`/admin` 由 `admin.html` 和 `ui/admin-app.js` 启动，不加载演示 `app.js`。页面沿用 `ui/api-client.js` 与 `ui/server-state.js`：先读取正式 `GET /api/v1/auth/session`，再读取 `GET /api/v1/admin/snapshot`。后者在 `http/api.js` 复用 `sessionReader.withContext` 的同连接事务内重验和账本读取，`http/admin-query.js:projectAdminSnapshot` 要求当前 `backend.view`，按具体权限及 policy attributes 将房态、订单基本状态、费用、采购、异常和审核队列逐字段裁剪。浏览器只收到已裁剪视图及 ledger revision；撤权后新查询立即拒绝。断网保留最后确认的只读视图，未认证与无后台资格分别显示登录或拒绝页。
+
+当前分支的第一提交只建立正式后台 session/query shell；审批写入继续由下一提交接入已有显式 HTTP command registry 与可信应用，不会采用演示 `transact` 或本地业务存储。
+
 ## Stage 3B 员工入口运行数据流（2026-10-06）
 
 / 由 ui/staff-app.js 装配：同源 HTTP auth/session → HttpOnly Cookie → 服务端当前 session 与权限 → GET /api/v1/store/snapshot → 按当前 principal 过滤的页面投影和正式 ledger revision。页面模块只消费投影；本地旧演示状态不参与正式入口。写入由 ui/command-flow.js 发 POST /api/v1/commands/:action，带 CSRF、原始操作键及已确认 revision；HTTP registry、事务内认证复查、授权、幂等、领域变更与 MySQL 提交仍是 Stage 3A/可信核心路径。服务端写入结果后再次读取 session/snapshot；不以浏览器计算替代已确认状态。/admin 的演示路径与正式员工入口分离。

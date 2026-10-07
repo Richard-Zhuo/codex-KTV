@@ -83,9 +83,9 @@ ledger/trusted-clean.integration.test.js 复用现有 fixture lock，新增明�
 - 员工系统：`http://localhost:4173/`
 - 系统管理后台：`http://localhost:4173/admin`
 - 局域网访问：`http://<电脑局域网IPv4>:4173/`
-- `server.js` 仅允许入口、`app.js`、各领域与 `ui/` 模块、主题与样式等白名单静态路径，不提供业务 API。
+- `server.js` 只提供显式白名单静态资源，并把 `/api/v1/*` 交给 `http/api.js`。正式 `/admin` 加载 `ui/admin-app.js`，使用同源 session 与服务端过滤的后台 snapshot；`app.js` 仅保留演示入口所需的兼容路径。
 
-`localhost` 与局域网 IP 是不同浏览器来源，对应的 `localStorage` 数据不会自动共享。
+`localhost` 与局域网 IP 是不同浏览器来源；演示 `localStorage` 不会自动共享，也不作为正式 `/` 或 `/admin` 的业务事实。
 
 ## 数据、产物与缓存路径
 

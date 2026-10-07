@@ -23,15 +23,15 @@ const sliceOf = (src, startMark, endMark) => {
   return start >= 0 && end > start ? src.slice(start, end) : '';
 };
 
-test('店员系统与后台管理使用独立入口并共享同一业务应用', () => {
+test('formal employee and admin pages use separate HTTP module entries', () => {
   assert.match(index, /data-app-entry="staff"/);
+  assert.match(index, /type="module" src="\/ui\/staff-app\.js"/);
   assert.match(admin, /data-app-entry="admin"/);
-  assert.match(admin, /系统管理后台/);
+  assert.match(admin, /type="module" src="\/ui\/admin-app\.js"/);
+  assert.doesNotMatch(admin, /type="module" src="\/app\.js"|demo-banner/);
   assert.match(server, /'\/admin': \['admin\.html', 'text\/html'\]/);
   assert.match(server, /'\/admin\.html': \['admin\.html', 'text\/html'\]/);
-  assert.match(server, /'\/catalog\.js': \['catalog\.js', 'text\/javascript'\]/);
-  assert.match(sources, /const APP_ENTRY = document\.body\.dataset\.appEntry === 'admin'/);
-  assert.match(sources, /canManage \? '<a class="entry-link" href="\/admin">系统管理<\/a>'/);
+  assert.match(server, /'\/ui\/admin-app\.js': \['ui\/admin-app\.js', 'text\/javascript'\]/);
 });
 
 test('营业待办留在员工系统，系统后台不承载日常营业页面', () => {

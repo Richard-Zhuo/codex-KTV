@@ -120,6 +120,15 @@ export function createEmployeeApiClient({
       }
       return Object.freeze({ revision: data.revision, view: data.view });
     },
+    async getAdminSnapshot(options) {
+      const data = await request('GET', '/api/v1/admin/snapshot',
+        undefined, options);
+      if (!Number.isSafeInteger(data.revision) || data.revision < 0 ||
+          !data.view || typeof data.view !== 'object' || Array.isArray(data.view)) {
+        throw new HttpApiError('internal_error', 200);
+      }
+      return Object.freeze({ revision: data.revision, view: data.view });
+    },
     async executeCommand(action, { operationKey, expectedRevision, payload }, options) {
       if (typeof action !== 'string' || !/^[A-Za-z][A-Za-z0-9]*$/.test(action)) {
         throw new HttpApiError('invalid_input', 400);

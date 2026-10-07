@@ -1,3 +1,9 @@
+### 已确认：Stage 3C 正式管理后台
+
+`/admin` 必须以正式 HTTP session 启动，服务端按当前 principal、permissions 和 policy attributes 返回最小后台视图及可信 ledger revision。只有 `backend.view` 能进入后台；该权限只授予查看资格，不授予任何审批。费用、采购、异常与待审批事项由服务端以明确权限过滤；未知权限一律不扩权。正式后台不从演示身份、浏览器角色或 `jbhh-demo-v1` 取得业务事实。
+
+后台审批与驳回沿用 `POST /api/v1/commands/:action`、现有 trusted application、事务内认证复查与本人审批规则。新意图使用新 operationKey；结果不明时保留原键恢复；每次写入使用最后一次服务器确认的 revision，冲突后只重取状态，不自动重新审批。断网时旧快照只读，401 清除可写状态。Stage 3C 不包含真人账号初始化、部署、备份恢复、监控或真实美团生产启用。
+
 ### 已确认：平台券核销（R.1）
 
 平台券只有服务端可信 redemption 为 REDEEMED、属于当前门店且未绑定订单时，才能覆盖房费。浏览器只能引用内部 voucherRedemptionId；券码、verified/redeemed 标记或 Skill 原始 JSON 不能作为开房证据。同一 redemption 最多绑定一个订单；provider 撤销／退款不能自动删除订单、付款、库存或历史成交，而应保留事实并产生异常待办。

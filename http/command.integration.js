@@ -475,6 +475,59 @@ export async function testHttpBoundary({ t, pool, auth, seed, inspect, database,
       assert.equal(JSON.stringify((await snapshot(await login(none))).body)
         .includes(photo), false);
     });
+    await t.test('HTTP admin snapshot requires backend view and filters current grants', async () => {
+      const adminLedgerId = 'stage3c-admin-query';
+      const backendOnly = await makeAccount(['backend.view']);
+      const inventoryReviewer = await makeAccount(['backend.view', 'inventory.approve']);
+      const expenseViewer = await makeAccount(['backend.view', 'expense.viewAll']);
+      const noBackend = await makeAccount(['inventory.approve']);
+      await seed(adminLedgerId, state => {
+        state.inventoryReviews.push({ id: 701, status: '待审核', kind: 'drink',
+          product: 'bw', before: 3, after: 4,
+          submittedByPrincipalId: backendOnly.principalId });
+        state.expenses.push({ id: 702, date: '2026-10-08', amount: 100,
+          description: 'admin-visible-expense',
+          submittedByPrincipalId: backendOnly.principalId });
+      });
+      const adminStore = createMySqlLedgerStore({ pool, ledgerId: adminLedgerId,
+        database, bindSessionRevalidation: authStore.bindSessionRevalidation,
+        bindEmployeeResolver: employeeStore.bindEmployeeResolver });
+      api = createHttpApi({ ...options, store: adminStore });
+      try {
+        assert.equal((await request('/api/v1/admin/snapshot')).body.error.code,
+          'unauthenticated');
+        const forbidden = await request('/api/v1/admin/snapshot',
+          { cookie: (await login(noBackend)).cookie });
+        assert.equal(forbidden.status, 403);
+        assert.equal(forbidden.body.error.code, 'authorization_denied');
+        const viewerSession = await login(backendOnly);
+        const viewer = await request('/api/v1/admin/snapshot',
+          { cookie: viewerSession.cookie });
+        assert.equal(viewer.status, 200);
+        assert.equal(viewer.body.revision, 0);
+        assert.deepEqual(viewer.body.view.reviewQueue, []);
+        assert.equal(Object.hasOwn(viewer.body.view, 'expenses'), false);
+        assert.equal(JSON.stringify(viewer.body).includes('admin-visible-expense'),
+          false);
+        const reviewer = await request('/api/v1/admin/snapshot',
+          { cookie: (await login(inventoryReviewer)).cookie });
+        assert.deepEqual(reviewer.body.view.reviewQueue.map(item => item.type),
+          ['inventory']);
+        const allExpenses = await request('/api/v1/admin/snapshot',
+          { cookie: (await login(expenseViewer)).cookie });
+        assert.equal(allExpenses.body.view.expenses.some(item =>
+          item.description === 'admin-visible-expense'), true);
+        assert.deepEqual(allExpenses.body.view.reviewQueue, []);
+        await auth.revokePermission({ principalId: backendOnly.principalId,
+          permissionId: 'backend.view' });
+        const afterRevocation = await request('/api/v1/admin/snapshot',
+          { cookie: viewerSession.cookie });
+        assert.equal(afterRevocation.status, 403);
+        assert.equal(afterRevocation.body.error.code, 'authorization_denied');
+      } finally {
+        api = createHttpApi(options);
+      }
+    });
   } finally {
     await new Promise(resolve => server.close(resolve));
   }

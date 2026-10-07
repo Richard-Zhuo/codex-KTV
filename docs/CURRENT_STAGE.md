@@ -1,3 +1,11 @@
+## 2026-10-08：Stage 3B 已验收收尾，Stage 3C 正式后台读取候选
+
+人工接受的 Stage 3B HEAD `972de464` 已以 fast-forward 合入 main；合并后完整测试 1831/1831、0 失败、0 跳过，随后 fetch 确认远端无漂移，并以普通 push 使 main=origin/main=`972de464`、ahead/behind=0/0。Stage 3C 从该点建立 `codex/p0-1-stage3c-admin-http`，新提交尚未推送或合入 main。
+
+Stage 3C 第一提交候选将 `/admin` 从演示 `app.js` 切至正式 `ui/admin-app.js`：页面先取 session，再取 `GET /api/v1/admin/snapshot`。服务端同事务重验 session，要求当前 `backend.view`，`http/admin-query.js` 按具体权限、policy attributes 和 viewAll 精确裁剪后台概览、房态、订单基本状态、费用、采购、异常与待审批队列。断网保留最后确认状态只读；无后台资格显示拒绝；正式入口不读取 `jbhh-demo-v1` 或演示身份。后台审批写入留待第二提交经现有 trusted HTTP command 流接入。
+
+本轮定向入口与查询测试 18/18，真实 MySQL HTTP 集成文件 661/661；第一提交候选的完整 `node --test --test-isolation=none --test-reporter=tap` 在隔离 MySQL 8.4.11 / InnoDB 测试实例上为 1840/1840、0 失败、0 跳过。按 AGENTS.md 尝试 `npm test`，本机没有 npm，未取得 npm 命令执行证据。正式浏览器验收与 Stage 3C 第二提交尚未完成，不能宣称生产就绪。
+
 ## 2026-10-07：Stage 3B 待确认提示与故障表单修复候选
 
 正式员工页面的 pending 重试在明确成功后，journal 和快照已更新，但页面可能仍显示“服务器已接收操作，但最新状态尚未读取”。定向回归先复现了 revision 更新后旧提示残留：快照刷新在命令 flow 从 refresh-needed 回到 idle、清除上次传输错误之前触发页面渲染。现在重试处理在 flow 返回后按最终状态再渲染一次；网络再次不明确时仍保留 journal 和待确认警告，明确成功或业务拒绝等终态按既有 command contract 清理。正式故障／恢复表单的初始照片说明改为“照片将随业务记录提交服务器”，演示入口保留原文案；现有图片证据仍随正式命令进入服务端账本，没有新增上传系统。

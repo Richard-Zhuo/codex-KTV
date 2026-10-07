@@ -3,6 +3,7 @@ import { sendCommandResult, sendMappedError } from './contract.js';
 import { isHttpCommand } from './registry.js';
 import { projectStoreSnapshot } from './query.js';
 import { projectEmployeeWorkspace } from './staff-query.js';
+import { projectAdminSnapshot } from './admin-query.js';
 
 const forbiddenFields = new Set([
   '__proto__', 'constructor', 'prototype',
@@ -64,6 +65,15 @@ export function createHttpApi(options) {
           const body = commandBody(await readJson(req, 1024 * 1024));
           const result = await application.execute({ action: match[1], ...body }, session.credential);
           sendCommandResult(res, result, requestId);
+          return true;
+        }
+        if (path === '/api/v1/admin/snapshot' && req.method === 'GET') {
+          const session = await auth.resolve(req);
+          if (url.search) throw new HttpBoundaryError('invalid_input');
+          const projected = await sessionReader.withContext(session.credential,
+            async (context, connection) => projectAdminSnapshot(
+              await store.readInTransaction(connection), context));
+          sendJson(res, 200, projected, { 'X-Request-Id': requestId });
           return true;
         }
         if (path === '/api/v1/store/snapshot' && req.method === 'GET') {
