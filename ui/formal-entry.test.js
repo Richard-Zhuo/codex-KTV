@@ -117,6 +117,10 @@ test('formal employee entry renders server snapshot without reading demo busines
     assert.match(app.innerHTML, /服务器版本 8/);
     assert.match(app.innerHTML, /已连接正式营业状态/);
     const { roomIssueEvidenceFields } = await import('./forms.js');
+    const formalPhotoFields = roomIssueEvidenceFields();
+    assert.match(formalPhotoFields, /id="room-issue-photo" type="file" accept="image\/\*"/);
+    assert.match(formalPhotoFields, /name="evidencePhoto"/);
+    assert.match(formalPhotoFields, /name="evidencePhotoName"/);
     assert.match(roomIssueEvidenceFields(), /照片将随业务记录提交服务器/);
     assert.doesNotMatch(roomIssueEvidenceFields(), /本机演示数据/);
     ctx.formalEnabled = false;

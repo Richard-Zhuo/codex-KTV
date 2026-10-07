@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import http from 'node:http';
+import { ROOM_ISSUE_TYPES } from '../rooms.js';
 import { createMySqlAuthStore } from '../auth/mysql-store.js';
 import { createPolicyAttributeService } from '../auth/policy-attributes.js';
 import { createMySqlLedgerStore } from '../ledger/mysql-store.js';
@@ -434,6 +435,46 @@ export async function testHttpBoundary({ t, pool, auth, seed, inspect, database,
       assert.equal((await inspect(ledgerId)).head.revision, 4);
     });
 
+    await t.test('HTTP room issue photo reaches MySQL and authorized snapshot readback', async () => {
+      const reporter = await makeAccount(['room.issue']);
+      const signed = await login(reporter);
+      const png = Buffer.from(
+        'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScL/nwAAAABJRU5ErkJggg==',
+        'base64');
+      const photo = 'data:image/png;base64,' + png.toString('base64');
+      const before = (await inspect(ledgerId)).head.revision;
+      const submitted = await command(signed, 'markRoomIssue', 'http-room-photo',
+        before, { room: 'V06', issueType: ROOM_ISSUE_TYPES[0],
+          evidencePhoto: photo, evidencePhotoName: 'synthetic-room.png' });
+      assert.equal(submitted.status, 200);
+      assert.equal(submitted.body.result.revision, before + 1);
+
+      const saved = (await inspect(ledgerId)).head;
+      const roomIndex = saved.state.rooms.findIndex(room => room.id === 'V06');
+      assert.ok(roomIndex >= 0);
+      assert.equal(saved.state.rooms[roomIndex].issueEvidencePhoto, photo);
+      assert.equal(saved.state.rooms[roomIndex].issueEvidencePhotoName,
+        'synthetic-room.png');
+      const review = saved.state.roomIssueReviews.at(-1);
+      assert.equal(review.evidencePhoto, photo);
+      assert.equal(review.submittedByPrincipalId, reporter.principalId);
+      const [[stored]] = await pool.execute(
+        'SELECT JSON_UNQUOTE(JSON_EXTRACT(state_json, ?)) AS photo FROM ledger_heads WHERE ledger_id = ?',
+        ['$.rooms[' + roomIndex + '].issueEvidencePhoto', ledgerId]);
+      assert.equal(stored.photo, photo);
+      assert.deepEqual(Buffer.from(stored.photo.slice('data:image/png;base64,'.length),
+        'base64'), png);
+
+      const readback = await snapshot(signed);
+      assert.equal(readback.status, 200);
+      assert.equal(readback.body.revision, saved.revision);
+      assert.equal(readback.body.view.workspace.rooms.find(room => room.id === 'V06')
+        .issueEvidencePhoto, photo);
+      assert.equal(readback.body.view.workspace.roomIssueReviews.at(-1)
+        .evidencePhoto, photo);
+      assert.equal(JSON.stringify((await snapshot(await login(none))).body)
+        .includes(photo), false);
+    });
   } finally {
     await new Promise(resolve => server.close(resolve));
   }
