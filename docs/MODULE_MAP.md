@@ -149,3 +149,16 @@ shared/deployment-environment.js supplies strict environment selection shared by
 | 员工写命令 | ui/command-flow.js、ui/pending-command-journal.js、ui/shell.js、app.js，复用 http/registry.js 与 trusted application | ui/command-flow.test.js、ui/formal-entry.test.js、http/command.integration.js | 单笔 sessionStorage 待确认记录先于 POST；刷新后同账号同请求显式重试，异账号禁止；明确终态清理，存储异常停写；不调用演示 transact |
 | 房间卡片键盘操作 | ui/pages/rooms.js、app.js、style.css | ui/room-card-accessibility.test.js | 卡片可聚焦；Enter/空格与点击使用同一房间动作；焦点可见 |
 | 保留演示路径 | admin.html、app.js 的 admin 分支、ui/shell.js 的 demo 分支 | entry.test.js、原有规则与 UI 源码回归 | /admin 仍是演示；不将本机身份或 localStorage 升格为正式事实 |
+
+## Stage 5C runtime and deployment
+
+| Boundary | Entry | Verification |
+|---|---|---|
+| Production composition and shutdown | production/start.js, production/runtime.js | production/http-security.test.js, production/runtime.integration.test.js |
+| Protected config/secrets and ACL | production/runtime-config.js; existing production/secret-file.js | production/runtime.test.js; protected Windows synthetic files in integration |
+| HTTPS, Host, limits and source/account login gate | production/http-security.js, http/transport.js | production/http-security.test.js |
+| Readiness and preflight | production/preflight.js, production/readiness-pool.js, http/bootstrap.js managed composition | production/runtime.integration.test.js |
+| Windows service host and registration template | deployment/KtvServiceHost.cs, deployment/register-service.ps1 | compiled native-host isolated console smoke; SCM registration not executed |
+| Worker shutdown batch cancellation | devices/worker.js | devices/worker.test.js; existing recovery/drill.integration.test.js |
+
+Deployment boundary and packaging: [Stage5C](STAGE5C_DEPLOYMENT_RUNTIME.md). Exact static asset allowlist remains in server.js.

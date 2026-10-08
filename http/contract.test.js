@@ -43,7 +43,7 @@ test('stable machine-readable HTTP status map distinguishes boundary failures', 
     business_rejection: 422,
     revision_conflict: 409,
     idempotency_conflict: 409,
-    invalid_input: 400,
+    invalid_input: 400, payload_too_large: 413, rate_limited: 429,
     internal_error: 500
   });
 });

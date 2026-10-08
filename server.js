@@ -1,4 +1,5 @@
 import http from 'node:http';
+import { isProductionEnvironment } from './shared/deployment-environment.js';
 import { createHttpApiFromEnv } from './http/bootstrap.js';
 import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
@@ -16,7 +17,9 @@ export function createKtvRequestHandler({ api = createHttpApiFromEnv() } = {}) {
   } catch { res.writeHead(500); res.end('Unable to load demo'); }
   };
 }
-export function createKtvServer({api=createHttpApiFromEnv()}={}) {
+export function createKtvServer({api,env=process.env}={}) {
+  if(isProductionEnvironment(env)||(env.KTV_API_MODE==='enabled'&&env.KTV_HTTP_ENV!=='development'))throw Object.assign(Error('PRODUCTION_HTTPS_ENTRY_REQUIRED'),{code:'PRODUCTION_HTTPS_ENTRY_REQUIRED'});
+  if(api===undefined)api=createHttpApiFromEnv(env);
   const server=http.createServer(createKtvRequestHandler({api}));
   server.on('close',()=>{void api?.close?.();});
   return server;

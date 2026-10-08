@@ -278,3 +278,7 @@ GET /api/v1/store/snapshot 在同一 MySQL 读事务内重验当前 session 权�
 每次新操作产生一个 crypto.randomUUID() 操作键，携带当前服务端快照的 revision。发送 POST 前须先将当前单笔待确认请求的操作键、动作、版本、原 payload、创建时间和非敏感 session principal 绑定信息写入当前标签页的 sessionStorage；写入失败时禁止发送。该记录仅是传输恢复信息，不是业务账本或权限依据，不保存密码、Cookie 原始 session token、CSRF 或完整快照。响应丢失或内部错误无法证明未提交时保留记录；刷新后重新获取正式 session、CSRF 和 snapshot，显示结果待确认，仅允许原操作人员显式用同一操作键、同一版本、同一请求体重试。换账号不得重试旧操作；有待确认记录时退出须先提示。成功、业务拒绝、授权拒绝、版本或幂等冲突等明确终态清除记录；冲突后新操作须人工重新发起并换键。成功后重新读取 session 与 snapshot。401 清除当前可操作视图；断网与状态未确认时停止新写入。前端展示权限只改善使用体验，最终授权仍由服务端执行。顾客、员工归属字段不改变实际 session actor。
 
 本阶段不包括正式账号初始化、真实美团、部署、备份恢复或监控；不得据此称为 production ready。
+
+## Stage 5C deployment boundary
+
+Production requires an explicit Windows service runtime, direct HTTPS over private LAN/VPN, protected external secrets, file ACL inspection, safe structured diagnostics, readiness gates and bounded shutdown. Existing business/auth/recovery authorities remain unchanged. No real deployment, identity/inventory/mapping initialization, production restore, provider mutation or Stage5D is authorized. Contract: [Stage5C](STAGE5C_DEPLOYMENT_RUNTIME.md).

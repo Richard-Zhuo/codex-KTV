@@ -1012,3 +1012,7 @@ rules.js 在 demo operator／clock 求值前委托 incidents.js:decideIncidentRe
 - 按 [开发与验证环境](./DEVELOPMENT_ENVIRONMENT.md) 取得要求的证据，并区分未验证项。
 - 盘点并解释全部未提交改动，确认不含凭据、运行数据和临时产物。
 - 只有用户授权时才提交；推送、部署和发布分别取得相应授权。
+
+## Stage 5C candidate (2026-10-09)
+
+Stage5B accepted stable base is 25c95f162f4c7d75a52b6843e13590ffda573290. Stage5C is under implementation on codex/p0-1-stage5c-deployment-runtime, not merged or pushed. Windows native service host, production entry, protected secrets, direct TLS/private remote boundary, preflight and isolated production-like tests are implemented. No real deployment or cutover has occurred. Live KTVSky remains OFF; real staff, inventory, remaining mappings and production backup policy remain uninitialized/unconfirmed. This run: focused runtime/HTTP/MySQL/static/worker 41/41 pass; dispatch/adapter/contract focused 54/54 pass. Full node --test --test-isolation=none --test-reporter=tap: 2131 total,2131 pass,0 fail,0 skip,exit0. npm test was attempted but npm is unavailable. Independent Standards review has no hard violations/P0/P1 (one optional P2 duplicate-readiness projection); Spec review found and rechecked shutdown dispatch and fingerprint fixes with no remaining P0/P1. Actual final-HEAD Edge smoke is a separate required evidence step; its result is delivered in the final acceptance report, not inferred from these automated tests. Contract: [Stage5C](STAGE5C_DEPLOYMENT_RUNTIME.md).

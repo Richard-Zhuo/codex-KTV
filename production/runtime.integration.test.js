@@ -1,0 +1,44 @@
+import test from 'node:test';import assert from 'node:assert/strict';
+import { once } from 'node:events';import { readFile,readdir,writeFile } from 'node:fs/promises';import { join } from 'node:path';
+import { withProductionRuntimeFixture } from '../test-support/production-runtime-fixture.js';
+import { protectSyntheticFile } from '../test-support/runtime-tls.js';
+import { preflight } from './preflight.js';
+import { freezeDatabase } from '../recovery/operator.js';
+const production={NODE_ENV:'production',KTV_HTTP_ENV:'production',KTV_DEPLOYMENT_ENV:'production'};
+test('Stage5C real native service-host / HTTPS / MySQL production-like smoke',{skip:!process.env.LEDGER_MYSQL_TEST_URL,timeout:120000},()=>withProductionRuntimeFixture(async f=>{
+ assert.equal((await preflight(f.configPath,production)).ready,true);
+ f.start();await f.wait();
+ const origin=f.config.publicOrigin;
+ const login=await f.request('/api/v1/auth/login',{method:'POST',headers:{Origin:origin,'Content-Type':'application/json'},body:{loginIdentifier:f.people[0].loginIdentifier,password:f.secret}});
+ assert.equal(login.status,200);const cookie=login.headers['set-cookie'][0].split(';')[0],csrf=login.json().csrfToken;
+ assert.match(login.headers['set-cookie'][0],/HttpOnly/);assert.match(login.headers['set-cookie'][0],/Secure/);assert.match(login.headers['set-cookie'][0],/SameSite=Strict/);
+ const headers={Cookie:cookie};
+ assert.equal((await f.request('/')).status,200);assert.equal((await f.request('/admin')).status,200);
+ const snapshot=(await f.request('/api/v1/store/snapshot',{headers})).json();assert.equal(snapshot.revision,0);
+ const command={operationKey:'stage5c-synthetic-clean',expectedRevision:snapshot.revision,payload:{room:'V01'}};
+ const execute=()=>f.request('/api/v1/commands/clean',{method:'POST',headers:{...headers,Origin:origin,'Content-Type':'application/json','X-CSRF-Token':csrf},body:command});
+ const wrong=await f.request('/api/v1/commands/clean',{method:'POST',headers:{...headers,Origin:'https://foreign.invalid','Content-Type':'application/json','X-CSRF-Token':csrf},body:command});assert.equal(wrong.status,403);
+ assert.equal((await execute()).status,200);assert.equal((await f.request('/api/v1/store/snapshot',{headers})).json().revision,1);
+ assert.equal((await f.request('/api/v1/admin/snapshot',{headers})).status,200);
+ await f.stop();f.start();await f.wait();
+ assert.equal((await f.request('/api/v1/auth/session',{headers})).status,200);
+ assert.equal((await execute()).status,200);assert.equal((await f.request('/api/v1/store/snapshot',{headers})).json().revision,1);
+ await f.connection.query('LOCK TABLES ledger_heads WRITE');
+ try{const start=Date.now();assert.equal((await f.request('/health/live')).status,200);assert.equal((await f.request('/health/ready')).status,503);assert.ok(Date.now()-start<6000);}finally{await f.connection.query('UNLOCK TABLES');}
+ assert.equal((await f.request('/health/ready')).status,200);
+ const child=f.child,exited=once(child,'exit');child.kill('SIGKILL');await exited;
+ // Kernel Job kills owned Node descendants, so a fresh host can bind the same port.
+ f.start();await f.wait();assert.equal((await f.request('/api/v1/store/snapshot',{headers})).json().revision,1);
+ const logout=await f.request('/api/v1/auth/logout',{method:'POST',headers:{...headers,Origin:origin,'X-CSRF-Token':csrf}});assert.equal(logout.status,200);assert.equal((await f.request('/api/v1/auth/session',{headers})).status,401);
+ await freezeDatabase({databaseUrl:f.target.databaseUrl,environment:'production',serverUuid:f.identity.server_uuid,storeId:f.storeId,ledgerId:f.ledgerId,initiatedBy:'synthetic-runtime-smoke',confirmation:f.identity.server_uuid+'/'+f.database+'/'+f.storeId+'/'+f.ledgerId,env:production});
+ assert.equal((await f.request('/health/live')).status,200);assert.equal((await f.request('/health/ready')).status,503);assert.equal((await f.request('/api/v1/store/snapshot',{headers})).status,503);
+ await f.stop();f.start();await f.wait(false);assert.equal((await f.request('/health/ready')).status,503);assert.equal((await f.request('/api/v1/auth/login',{method:'POST'})).status,503);await f.stop();
+ const before=JSON.stringify((await f.connection.query('SELECT revision,state_checksum FROM ledger_heads'))[0]);
+ const checked=await preflight(f.configPath,production);assert.equal(checked.ready,false);assert.ok(checked.blockers.includes('RECOVERY_PAUSED'));
+ assert.equal(JSON.stringify((await f.connection.query('SELECT revision,state_checksum FROM ledger_heads'))[0]),before);
+ const secret={...f.runtimeSecrets,database:{...f.runtimeSecrets.database,port:1}};await writeFile(f.secretPath,JSON.stringify(secret));await protectSyntheticFile(f.secretPath,f.tls.sid);
+ f.start();await f.wait(false);assert.equal((await f.request('/health/live')).status,200);assert.equal((await f.request('/health/ready')).status,503);assert.equal((await f.request('/api/v1/auth/session')).status,503);await f.stop();
+ const logText=(await Promise.all((await readdir(f.logs)).map(name=>readFile(join(f.logs,name),'utf8')))).join('');
+ for(const value of [f.runtimeSecrets.database.password,f.runtimeSecrets.tls.privateKey,f.secretPath,cookie,csrf])assert.equal(logText.includes(value),false);
+ assert.ok(logText.includes('runtime_started'));assert.ok(logText.includes('runtime_draining'));assert.ok(logText.includes('runtime_stopped'));assert.ok(logText.includes('readiness_changed'));
+}));

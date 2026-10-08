@@ -15,9 +15,9 @@ function stillOwnsRoom(head,record) {
   return head.state.rooms.some(r=>r.id===record.internalRoomId && r.order===record.orderId) &&
     head.state.orders.some(o=>o.id===record.orderId && o.status==='营业中');
 }
-export function createRoomControlApplication({store,gateway,mappings,allowTestGateway=false,timeoutMs=15000,leaseMs=30000,serverWorker=false}) {
+export function createRoomControlApplication({store,gateway,mappings,allowTestGateway=false,timeoutMs=15000,leaseMs=30000,serverWorker=false,canDispatch=()=>true}) {
   if(typeof store?.runAtomic!=='function' || !store.ledgerId ||
-      ['ensureSession','getRoomStatus','closeRoom','openRoom','queryRoomState'].some(k=>typeof gateway?.[k]!=='function') ||
+      typeof canDispatch!=='function' || ['ensureSession','getRoomStatus','closeRoom','openRoom','queryRoomState'].some(k=>typeof gateway?.[k]!=='function') ||
       !Number.isSafeInteger(timeoutMs) || timeoutMs<1 || !Number.isSafeInteger(leaseMs) || leaseMs<=timeoutMs) throw TypeError('Invalid room-control composition');
   if(gateway.testOnly && (!allowTestGateway || store.testOnly!==true))throw TypeError('Fake gateway requires explicit isolated test mode');
   const mapping=mappings===undefined?null:createRoomDeviceMappings(mappings);
@@ -41,7 +41,8 @@ export function createRoomControlApplication({store,gateway,mappings,allowTestGa
       if(input.step==='CLOSE' && typeof status.room.open!=='boolean')return {kind:'UNKNOWN'};
       if(input.step==='CLOSE' && status.room.open===false)return {...status,kind:'PRECONDITION_SATISFIED'};
       const method={CLOSE:'closeRoom',OPEN:'openRoom',VERIFY:'queryRoomState'}[input.step];
-      return gateway[method]({...input,signal:abort.signal});
+      if(['CLOSE','OPEN'].includes(input.step)&&!canDispatch())return {kind:'UNKNOWN',notDispatched:true};
+      return gateway[method]({...input,signal:abort.signal,canDispatch});
     };
     try{return await Promise.race([work(),new Promise(resolve=>{timer=setTimeout(()=>{abort.abort();resolve({kind:'UNKNOWN'});},timeoutMs);})]);}
     catch{return {kind:'UNKNOWN'};}

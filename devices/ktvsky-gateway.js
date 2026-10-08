@@ -85,6 +85,7 @@ export class KtvSkyRoomControlGateway {
     const auth=await this.ensureSession(input);
     if(!auth.ready)return {error:auth.code};
     try {
+      if(input?.signal?.aborted||(endpoint==='control'&&input.canDispatch!==undefined&&input.canDispatch()!==true))return {error:'DISPATCH_STOPPED'};
       if(endpoint==='control'&&this.#mutationPolicy(input)!==true)return {error:'SAFE_VALIDATION_REQUIRED'};
       const sentAt=new Date(this.#now()).toISOString();
       const response=await this.#client.request({endpoint,telno:this.#telno,body:endpoint==='control'?{...body,telno:this.#telno}:body,

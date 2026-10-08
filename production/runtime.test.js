@@ -28,3 +28,8 @@ test('production logging omits arbitrary errors, headers, bodies, paths and know
  const text=output.join('');for(const secret of [...secrets,'other-password','C:/private','mysql://'])assert.equal(text.includes(secret),false);
  assert.equal(JSON.parse(output[0]).code,'SAFE_CODE');
 });
+
+test('development HTTP composition refuses production, implicit production and unknown environments',async()=>{
+ const {createKtvServer}=await import('../server.js');
+ for(const e of [env,{KTV_API_MODE:'enabled'},{KTV_DEPLOYMENT_ENV:'unknown'}])assert.throws(()=>createKtvServer({api:null,env:e}));
+});

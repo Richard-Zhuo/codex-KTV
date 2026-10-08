@@ -7,7 +7,7 @@ import { createRoomControlApplication } from './application.js';
 import { FakeKtvRoomControlGateway } from './fake-gateway.js';
 import { KtvSkyRoomControlGateway } from './gateway.js';
 import { createRoomDeviceMappings } from './mapping.js';
-function fixture({online=true,open=true,outcomes={}}={}) {
+function fixture({online=true,open=true,outcomes={},canDispatch=()=>true}={}) {
  let clock='2026-10-08T07:00:00.000000Z',active=false,failWrite=false;
  const head={revision:1,state:initialState()},records=new Map();
  head.state.rooms[0].order='order-1';head.state.rooms[0].status='营业中';
@@ -35,7 +35,7 @@ function fixture({online=true,open=true,outcomes={}}={}) {
  const gateway=new FakeKtvRoomControlGateway({online,open,outcomes});
  const invoke=gateway.invoke.bind(gateway);gateway.invoke=(...args)=>{assert.equal(active,false,'external call must not hold a transaction');return invoke(...args);};
  const mappings=[{internalRoomId:'V01',provider:'fake',externalDeviceId:'synthetic-device-1',enabled:true}];
- const app=createRoomControlApplication({store,gateway,mappings,allowTestGateway:true,timeoutMs:20,leaseMs:1000});
+ const app=createRoomControlApplication({store,gateway,mappings,allowTestGateway:true,timeoutMs:20,leaseMs:1000,canDispatch});
  const command={operationKey:'device-open',expectedRevision:1,payload:{orderId:'order-1'}},credential={tokenDigest:digest};
  return {app,store,gateway,mappings,head,records,auth,command,credential,setClock:value=>{clock=value;},failNextWrite:()=>{failWrite=true;}};
 }
@@ -245,4 +245,13 @@ test('unverified ACK at expiry cannot become historical successful OPEN',async()
  let r=await start(f);r=await advance(f,r);r=await advance(f,r);assert.equal(r.openConfirmedAt,null);
  f.setClock(r.businessSession.targetEndAt.replace('.000Z','.000000Z'));r=await advance(f,r);assert.notEqual(r.status,'ACTIVE');
  assert.equal(r.openConfirmedAt,null);assert.equal(mutations(f).length,1);
+});
+
+for(const step of ['CLOSE','OPEN'])test('shutdown fences unsent '+step+' after a pending status query',async()=>{
+ let accepting=true,release,entered;const held=new Promise(r=>release=r),began=new Promise(r=>entered=r);
+ const f=fixture({canDispatch:()=>accepting});let record=await start(f);record=await advance(f,record);
+ if(step==='OPEN')record=await advance(f,record);assert.equal(record.step,step);const count=mutations(f).length;
+ f.gateway.outcomes.getRoomStatus=async(input,g,normal)=>{entered();await held;return normal();};
+ const running=advance(f,record);await began;accepting=false;release();record=await running;
+ assert.equal(mutations(f).length,count);assert.equal(record.status,'DEVICE_UNKNOWN');assert.equal(record.inFlight,null);
 });

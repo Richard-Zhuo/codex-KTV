@@ -3,12 +3,12 @@ import assert from 'node:assert/strict';
 import { createRoomControlWorker } from './worker.js';
 
 test('worker concurrent ticks share one bounded batch and stop waits for in-flight evidence',async()=>{
- let release,lists=0,advances=0;const held=new Promise(r=>release=r);
+ let release,entered,lists=0,advances=0;const began=new Promise(r=>entered=r),held=new Promise(r=>release=r);
  const worker=createRoomControlWorker({store:{async listPending(limit){assert.equal(limit,2);lists++;return ['one','two'];}},
-  application:{async advance(){advances++;await held;}},batchSize:2,intervalMs:100});
- const first=worker.tick(),second=worker.tick();assert.equal(first,second);
+  application:{async advance(){advances++;entered();await held;}},batchSize:2,intervalMs:100});
+ const first=worker.tick(),second=worker.tick();assert.equal(first,second);await began;
  let stopped=false;const stopping=worker.stop().then(()=>stopped=true);await new Promise(r=>setTimeout(r,5));assert.equal(stopped,false);
- release();await stopping;assert.equal(lists,1);assert.equal(advances,2);
+ release();await stopping;assert.equal(lists,1);assert.equal(advances,1,'stop finishes current evidence but cancels the next queued workflow');
 });
 test('worker isolates one workflow error so other pending rooms can continue',async()=>{
  const ids=[],errors=[];const worker=createRoomControlWorker({store:{async listPending(){return ['bad','good'];}},

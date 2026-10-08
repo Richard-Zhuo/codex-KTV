@@ -67,3 +67,5 @@ Controlled initialization and production readiness: [Stage 5A](STAGE5A_PRODUCTIO
 - 命令只在开发环境文档维护，并标注“配置确认”“历史执行”或“本次执行”。
 - 历史文档必须明确标记“不是当前执行指令”。
 - 修改标题或移动文件后，检查所有本地链接；引用代码时使用稳定符号，不使用行号。
+
+Stage5C runtime and deployment contract: [STAGE5C_DEPLOYMENT_RUNTIME](STAGE5C_DEPLOYMENT_RUNTIME.md). Current evidence remains in CURRENT_STAGE.md.

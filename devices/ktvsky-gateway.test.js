@@ -167,3 +167,11 @@ test('gateway ACK interlock accepts elapsed remaining seconds, while same open i
  assert.equal((await f.gateway.closeRoom({...close,stepId:'synthetic-workflow:CLOSE-2'})).kind,'ACKNOWLEDGED');
  assert.equal(controls(f).length,2);
 });
+
+for(const action of ['closeRoom','openRoom'])test('shutdown during provider auth prevents unsent '+action+' control POST',async t=>{
+ let accepting=true,release,entered;const held=new Promise(r=>release=r),began=new Promise(r=>entered=r);
+ const f=await providerFixture(t,{gatewayOptions:{enabled:true,mutationPolicy:()=>true,credentialProvider:async()=>{entered();await held;return syntheticCredentials;}}});
+ const running=f.gateway[action]({...deviceInput,canDispatch:()=>accepting});await began;accepting=false;release();
+ const result=await running;assert.equal(result.kind,'UNKNOWN');assert.equal(controls(f).length,0);
+ assert.equal(f.requests.filter(r=>r.path==='/h5/login').length,1);
+});

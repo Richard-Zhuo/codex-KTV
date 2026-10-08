@@ -37,7 +37,9 @@ test('real HTTPS runtime rejects plaintext, spoofed headers, oversized requests 
   blocked=true;assert.equal((await get('/health/live')).status,200);assert.equal((await get('/health/ready')).status,503);assert.equal((await get('/api/test')).status,503);blocked=false;
   assert.equal(runtime.server.headersTimeout,5000);assert.equal(runtime.server.requestTimeout,15000);assert.equal(runtime.server.keepAliveTimeout,5000);
   const inflight=get('/api/inflight');await began;
-  const stopping=runtime.shutdown();assert.equal(closed,false);release();assert.equal((await inflight).status,200);await stopping;assert.equal(closed,true);
+  const stopping=runtime.shutdown();assert.equal(closed,false);
+  try{assert.equal((await get('/api/new-write',{},'POST')).status,503);}catch(error){assert.ok(['ECONNREFUSED','ECONNRESET','EPIPE'].includes(error.code));}
+  release();assert.equal((await inflight).status,200);await stopping;assert.equal(closed,true);
   assert.ok(logs.some(s=>s.includes('runtime_stopped')));
  }finally{release?.();await runtime.shutdown();}
 });

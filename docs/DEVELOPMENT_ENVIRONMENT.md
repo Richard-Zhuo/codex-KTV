@@ -191,3 +191,9 @@ See [safe tool configuration and stops](STAGE4B_KTVSKY_ADAPTER.md). The command 
 ## Stage 4B.1 countdown verification regression
 
 Focused: node --test --test-isolation=none --test-reporter=tap devices/ktvsky-countdown.test.js devices/application.test.js devices/ktvsky-gateway.test.js devices/ktvsky-validation.test.js ledger/trusted-sales.test.js. Provider requests use local synthetic fixtures only. Full regression uses the existing dedicated MySQL harness; counts and current evidence are maintained in CURRENT_STAGE.md. The original live archives and journal are not test fixtures and must not be changed by these tests.
+
+## Stage 5C production and isolated validation
+
+Production entry (future authorized deployment): set NODE_ENV=production, KTV_HTTP_ENV=production and KTV_DEPLOYMENT_ENV=production; run node production/start.js --config-file ABSOLUTE_PROTECTED_CONFIG. Read-only preflight: node production/preflight.js --config-file ABSOLUTE_PROTECTED_CONFIG. Both require Windows x64, Node24.19.x and Git-external config/secrets; no secret argv. Configuration, TLS, service installation templates and packaging rules: [Stage5C](STAGE5C_DEPLOYMENT_RUNTIME.md). server.js is development-only HTTP and rejects production mode.
+
+Focused: node --test --test-isolation=none --test-reporter=tap production/runtime.test.js production/http-security.test.js production/runtime.integration.test.js devices/worker.test.js server-static.test.js. Full: node --test --test-isolation=none --test-reporter=tap. Real MySQL tests require the existing owned LEDGER_MYSQL_TEST_URL harness on33313, never an arbitrary production URL. Production-like fixture restores a synthetic target, creates one synthetic least-privilege DB account, test TLS/config and compiled host outside Git, then cleans only resources it created. It does not initialize real production data or register a system service. Browser smoke runs serially while the same fixture lock is held.

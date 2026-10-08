@@ -1,0 +1,20 @@
+{
+  "configVersion": 1,
+  "applicationCommit": "REPLACE_WITH_ACCEPTED_40_HEX_COMMIT",
+  "publicOrigin": "https://ktv.private.example:8443",
+  "listenHost": "REPLACE_WITH_PRIVATE_BIND_IP",
+  "port": 8443,
+  "storeId": "REPLACE_WITH_APPROVED_STORE_ID",
+  "ledgerId": "REPLACE_WITH_APPROVED_LEDGER_ID",
+  "timeZone": "Asia/Shanghai",
+  "businessDateCutoff": "12:00",
+  "sessionRuleVersion": "REPLACE_WITH_CURRENT_SESSION_RULE_VERSION",
+  "deviceControlMode": "disabled",
+  "liveControlEnabled": false,
+  "secretsFile": "C:/ProgramData/JbhhKtv/private/secrets.json",
+  "logDirectory": "C:/ProgramData/JbhhKtv/logs",
+  "serviceAccountSid": "REPLACE_WITH_DEDICATED_SERVICE_SID",
+  "backupPolicyConfigured": false,
+  "directoryAclReviewed": false,
+  "networkModel": "private-vpn"
+}

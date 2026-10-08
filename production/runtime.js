@@ -22,7 +22,7 @@ export function createProductionRuntime(loaded,{logger=createSafeLogger({secrets
  })().finally(()=>{checking=null;}));
  const handler=createKtvRequestHandler({api:{async handle(req,res){
   if(!new URL(req.url,loaded.config.publicOrigin).pathname.startsWith('/api/'))return false;
-  const report=await readiness();if(!report.ready){unavailable(res,req.ktvRequestId);return true;}return services.handle(req,res);
+  const report=await readiness();if(!report.ready||phase!=='RUNNING'){unavailable(res,req.ktvRequestId);return true;}return services.handle(req,res);
  }}});
  const server=https.createServer(loaded.tls,(req,res)=>{
   const requestId=randomUUID(),start=performance.now();req.ktvRequestId=requestId;req.ktvProduction=true;
