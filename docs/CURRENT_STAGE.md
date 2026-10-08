@@ -1,3 +1,9 @@
+## Stage 5B implementation complete; human acceptance pending
+
+The candidate contains two linear commits above accepted main b188df811926bf4d6cf6c535d1a186ff270e699c. Backup/restore tooling, persisted write/worker freeze, readonly checker, session invalidation and explicit resume are implemented. The real isolated MySQL drill covers eight synthetic orders, five payment records, nine inventory effects, four recovery workflow states, historical replay and R -> R+1. Final focused18/18 and full2109/2109,0fail,0skip,exit0; timings/browser evidence are in [verification](verification/STAGE5B_RECOVERY_DRILL.md); the operational authority is [the contract](STAGE5B_BACKUP_RECOVERY.md).
+
+No real initialization, provider operation, production restore/cutover, deployment, merge or push. Production backup policy remains unconfigured and production readiness remains NO. Earlier candidate sections below are historical evidence, not the current verdict.
+
 ## Stage 5B backup / recovery candidate
 
 Stage 5A is accepted and closed out: main=origin/main=b188df811926bf4d6cf6c535d1a186ff270e699c. Stage 5B develops only on codex/p0-1-stage5b-backup-recovery. No production initialization, provider request, deployment, merge or push. [Contract](STAGE5B_BACKUP_RECOVERY.md).

@@ -70,8 +70,8 @@ export async function readProductionReadiness({pool,config,credentialFile}) {
   }finally{connection.release();}
 }
 export function productionApiGate(api,readiness,{logger=console,start=()=>{}}={}) {
-  const ready=Promise.resolve().then(readiness).then(report=>{
-    if(report.ready){start();return true;}
+  const ready=Promise.resolve().then(readiness).then(async report=>{
+    if(report.ready){await start();return true;}
     logger.error({code:'PRODUCTION_NOT_READY',blockers:report.blockers.map(b=>b.code)});return false;
   }).catch(()=>{logger.error({code:'PRODUCTION_READINESS_FAILED'});return false;});
   return Object.freeze({...api,async handle(req,res){

@@ -2,7 +2,7 @@ import { EmployeeRosterError, EmployeeCommitOutcomeUnknown } from './errors.js';
 import { createTransactionBoundEmployeeResolver, createTransactionBoundPrincipalEmployeeResolver } from './employee-resolver.js';
 
 const dateFormat = "'%Y-%m-%dT%H:%i:%s.%fZ'";
-export function createMySqlEmployeeStore({ pool, database }) {
+export function createMySqlEmployeeStore({ pool, database, bindRecoveryGuard }) {
   if (typeof pool?.getConnection !== 'function' || typeof database !== 'string' ||
       !/^[A-Za-z][A-Za-z0-9_]*$/.test(database)) throw TypeError('MySQL employee store 配置无效');
   const quote = String.fromCharCode(96);
@@ -100,6 +100,7 @@ export function createMySqlEmployeeStore({ pool, database }) {
     try {
       await assertDatabase(connection);
       await connection.beginTransaction(); begun = true;
+      if (bindRecoveryGuard) await bindRecoveryGuard(connection);
       result = await work(port(connection));
       commitAttempted = true; await connection.commit(); begun = false;
       return result;

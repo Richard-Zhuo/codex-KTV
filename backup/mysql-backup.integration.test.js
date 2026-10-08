@@ -36,11 +36,11 @@ test('Stage 5B verified same-version MySQL backup and separate restore',{skip:!p
   await assert.rejects(restoreDatabase(failed),{code:'RESTORE_TARGET_NOT_EMPTY'});
  });
  await t.test('tampering, truncation, wrong-store and future schema refuse before connecting',async()=>{
-  for(const variant of ['tampered','truncated','future','schema']){
+  for(const variant of ['tampered','truncated','future','schema','migration','embedded-store']){
    const dir=join(f.dir,variant);await cp(backup.directory,dir,{recursive:true});let checksum=backup.checksum;
-   if(['future','schema'].includes(variant)){const m=JSON.parse(await readFile(join(dir,'manifest.json'),'utf8'));if(variant==='future')m.backupFormatVersion=999;else m.schema.migrations['999_unknown.sql']='0'.repeat(64);const bytes=canonical(m);checksum=digest(bytes);await writeFile(join(dir,'manifest.json'),bytes);await writeFile(join(dir,'manifest.sha256'),checksum+'\n');}
+   if(['future','schema','migration','embedded-store'].includes(variant)){const m=JSON.parse(await readFile(join(dir,'manifest.json'),'utf8'));if(variant==='future')m.backupFormatVersion=999;else if(variant==='schema')m.schema.migrations['999_unknown.sql']='0'.repeat(64);else if(variant==='migration')m.migrationVersion='999_future.sql';else {const data=JSON.parse(await readFile(join(dir,'data.json'),'utf8'));const table=data.tables.production_bootstrap_events;table.rows[0][table.columns.indexOf('store_id')]='another-store';const bytes=canonical(data);m.dataChecksum=digest(bytes);m.dataBytes=Buffer.byteLength(bytes);await writeFile(join(dir,'data.json'),bytes);}const bytes=canonical(m);checksum=digest(bytes);await writeFile(join(dir,'manifest.json'),bytes);await writeFile(join(dir,'manifest.sha256'),checksum+'\n');}
    else {const bytes=await readFile(join(dir,'data.json'));await writeFile(join(dir,'data.json'),variant==='truncated'?bytes.subarray(0,bytes.length/2):Buffer.concat([bytes,Buffer.from(' ')]));}
-   await assert.rejects(restoreDatabase({...target,directory:dir,expectedChecksum:checksum,databaseUrl:'not-a-url'}),{code:['future','schema'].includes(variant)?'BACKUP_SCHEMA_UNSUPPORTED':'BACKUP_CHECKSUM_MISMATCH'});
+   await assert.rejects(restoreDatabase({...target,directory:dir,expectedChecksum:checksum,databaseUrl:'not-a-url'}),{code:variant==='embedded-store'?'BACKUP_STORE_MISMATCH':['future','schema','migration'].includes(variant)?'BACKUP_SCHEMA_UNSUPPORTED':'BACKUP_CHECKSUM_MISMATCH'});
   }
   await assert.rejects(restoreDatabase({...target,storeId:'wrong',databaseUrl:'not-a-url'}),{code:'BACKUP_STORE_MISMATCH'});
  });

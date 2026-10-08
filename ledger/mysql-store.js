@@ -66,7 +66,7 @@ export class LedgerCommitOutcomeUnknown extends Error {
   }
 }
 
-export function createMySqlLedgerStore({ pool, ledgerId, database, bindSessionRevalidation, bindEmployeeResolver, bindVoucherRedemptions, deviceControlMode = 'disabled' }) {
+export function createMySqlLedgerStore({ pool, ledgerId, database, bindSessionRevalidation, bindEmployeeResolver, bindVoucherRedemptions, deviceControlMode = 'disabled', bindRecoveryGuard }) {
   if (!['disabled','required'].includes(deviceControlMode)) throw TypeError('Invalid device control mode');
   if (typeof pool?.getConnection !== 'function' || typeof ledgerId !== 'string' ||
       !ledgerId || ledgerId.trim() !== ledgerId || ledgerId.length > 64 ||
@@ -124,6 +124,7 @@ export function createMySqlLedgerStore({ pool, ledgerId, database, bindSessionRe
     try {
       await connection.beginTransaction();
       begun = true;
+      if (bindRecoveryGuard) await bindRecoveryGuard(connection);
       const [rows] = await connection.execute(headSql + ' FOR UPDATE', [ledgerId]);
       const head = checkedHead(rows[0], ledgerId);
       const transaction = {

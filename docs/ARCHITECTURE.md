@@ -1,3 +1,7 @@
+## Stage 5B recovery boundary
+
+MySQL remains the sole business authority. Recovery control/event tables coordinate HTTP writes, guarded SQL transactions and provider dispatch; they are not a second ledger. Verified artifacts restore exact values into a separate TEST database and remain VERIFYING until invariant checks/session invalidation/workflow fencing, then require explicit resume and target application restart. Backup is an online consistent readonly snapshot. [Contract](STAGE5B_BACKUP_RECOVERY.md).
+
 ## Stage 5B
 
 Stage 5B preserves existing MySQL business/auth/workflow facts in one consistent logical snapshot; restore never replays business commands to rebuild history. Recovery operational state is separate from the ledger revision.

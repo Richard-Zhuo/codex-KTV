@@ -1,3 +1,7 @@
+## Stage 5B recovery delivery
+
+recovery/gate.js owns HTTP/transaction/dispatch freeze; recovery/invariants.js is the readonly business/reference checker; recovery/operator.js owns freeze/inspect/verify/resume; recovery/cli.js consumes private external config. http/bootstrap.js composes all formal transaction guards; devices/runtime.js composes guarded worker startup/dispatch. recovery/drill.integration.test.js exercises the complete real MySQL recovery sequence with FakeGateway; recovery/gate.test.js covers fail-closed and concurrent drain. Official schema is migrations001-011; production/schema-manifest.json is derived verification data. [Contract](STAGE5B_BACKUP_RECOVERY.md).
+
 ## Stage 5B
 
 backup/format.js defines canonical artifacts/path/checksum/schema validation; backup/mysql-backup.js owns one-snapshot export and official-schema parameterized restore; backup/cli.js is the private-file operator entry. test-support/backup-fixture.js owns isolated synthetic drill resources.

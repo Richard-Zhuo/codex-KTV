@@ -9,7 +9,7 @@ export class AuthCommitOutcomeUnknown extends Error {
   }
 }
 
-export function createMySqlAuthStore({ pool, database }) {
+export function createMySqlAuthStore({ pool, database, bindRecoveryGuard }) {
   if (!pool || typeof pool.getConnection !== 'function' ||
       typeof database !== 'string' || !/^[A-Za-z][A-Za-z0-9_]*$/.test(database)) {
     throw TypeError('MySQL auth store 配置无效');
@@ -256,6 +256,7 @@ export function createMySqlAuthStore({ pool, database }) {
       if (target.database_name !== database) throw Error('auth 数据库目标不一致');
       await connection.beginTransaction();
       begun = true;
+      if (bindRecoveryGuard) await bindRecoveryGuard(connection);
       const result = await work(transactionPort(connection));
       commitAttempted = true;
       await connection.commit();

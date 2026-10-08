@@ -1,3 +1,4 @@
+import { recoveryApiGate,bindRecoveryWriteGuard } from '../recovery/gate.js';
 import { isProductionEnvironment } from '../shared/deployment-environment.js';
 import { validateProductionConfig } from '../production/config.js';
 import { readProductionReadiness, productionApiGate } from '../production/readiness.js';
@@ -46,26 +47,26 @@ export function createHttpApiFromEnv(env = process.env, logger = console) {
   }
   const pool = mysql.createPool({ uri: raw, database, connectionLimit: 10,
     waitForConnections: true, supportBigNumbers: true, bigNumberStrings: true });
-  const authStore = createMySqlAuthStore({ pool, database });
+  const authStore = createMySqlAuthStore({ pool, database, bindRecoveryGuard:bindRecoveryWriteGuard });
   const authService = createAuthService({
     store: authStore, rateLimiter: createMemoryLoginRateLimiter()
   });
-  const employeeStore = createMySqlEmployeeStore({ pool, database });
+  const employeeStore = createMySqlEmployeeStore({ pool, database, bindRecoveryGuard:bindRecoveryWriteGuard });
   const voucherStore = createMySqlVoucherStore({ pool, database, ledgerId,
-    provider: 'meituan', storeId, bindSessionRevalidation: authStore.bindSessionRevalidation });
-  const store = createMySqlLedgerStore({ pool, ledgerId, database,
+    provider: 'meituan', storeId, bindRecoveryGuard:bindRecoveryWriteGuard, bindSessionRevalidation: authStore.bindSessionRevalidation });
+  const store = createMySqlLedgerStore({ pool, ledgerId, database, bindRecoveryGuard:bindRecoveryWriteGuard,
     bindSessionRevalidation: authStore.bindSessionRevalidation,
     bindEmployeeResolver: employeeStore.bindEmployeeResolver,
     bindVoucherRedemptions: voucherStore.bindVoucherRedemptions, deviceControlMode });
   const application = createTrustedLedgerApplication({ store, businessTimeZone });
   const sessionReader = createCurrentSessionReader({ pool, authStore });
-  const runtime=deviceControlMode==='required' ? createRoomControlRuntime({pool,database,ledgerId,authStore,gateway:new KtvSkyRoomControlGateway()}) : null;
+  const runtime=deviceControlMode==='required' ? createRoomControlRuntime({pool,database,ledgerId,authStore,gateway:new KtvSkyRoomControlGateway(),recoveryGuard:true}) : null;
   const api=createHttpApi({ authService, application, store, sessionReader, employeeStore,
     deviceSnapshot: (connection,head)=>readDeviceHead(connection,database,head),
     businessTimeZone, origin: env.KTV_PUBLIC_ORIGIN, environment,
     allowInsecureCookie: env.KTV_INSECURE_COOKIE === 'true', logger });
-  if(!production) runtime?.start();
-  const composed=Object.freeze({...api,async close(){await runtime?.stop();await pool.end();}});
+  if(!production) runtime?.start().catch(()=>logger.error({code:'RECOVERY_WORKER_START_FAILED'}));
+  const composed=recoveryApiGate({...api,async close(){await runtime?.stop();await pool.end();}},{pool});
   return production ? productionApiGate(composed,()=>readProductionReadiness({pool,config:productionConfig,
     credentialFile:env.KTVSKY_CREDENTIALS_FILE}),{logger,start:()=>runtime?.start()}) : composed;
 }

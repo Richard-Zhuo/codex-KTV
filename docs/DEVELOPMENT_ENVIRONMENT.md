@@ -1,3 +1,11 @@
+## Stage 5B verification commands
+
+Focused: node --test --test-isolation=none --test-reporter=tap backup/format.test.js backup/mysql-backup.integration.test.js recovery/gate.test.js recovery/drill.integration.test.js
+
+Full: node --test --test-isolation=none --test-reporter=tap
+
+Both use an explicitly owned isolated MySQL test instance via LEDGER_MYSQL_TEST_URL; restore fixtures create only jbhh_ktv_restore_* databases. They serialize through the existing MySQL fixture lock and clean only their own resources. STAGE5B_DRILL_EVIDENCE optionally writes sanitized synthetic timing/count evidence to a Git-external path. npm test was attempted; npm is unavailable. Operator CLI acknowledgments/restart procedure: [contract](STAGE5B_BACKUP_RECOVERY.md).
+
 ## Stage 5B
 
 Stage 5B operator commands and safety acknowledgments are in STAGE5B_BACKUP_RECOVERY.md. Focused backup tests use LEDGER_MYSQL_TEST_URL on the owned33313 instance and separate jbhh_ktv_restore_* targets; no production DB is exercised.

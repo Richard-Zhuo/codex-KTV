@@ -1,12 +1,13 @@
+import { isProductionEnvironment } from '../shared/deployment-environment.js';
 import { bindRoomControl } from './mysql-port.js';
 import { decodeLedgerSnapshot, encodeLedgerSnapshot } from '../ledger/mysql-snapshot.js';
 export class DeviceCommitOutcomeUnknown extends Error {
   constructor(cause){super('Device commit outcome unknown; query original workflow before dispatch',{cause});this.code='DEVICE_COMMIT_OUTCOME_UNKNOWN';}
 }
-export function createMySqlRoomControlStore({pool,database,ledgerId,bindSessionRevalidation,testOnly=false}) {
+export function createMySqlRoomControlStore({pool,database,ledgerId,bindSessionRevalidation,testOnly=false,bindRecoveryGuard}) {
   if(typeof pool?.getConnection!=='function' || !/^[A-Za-z][A-Za-z0-9_]*$/.test(database??'') ||
       typeof ledgerId!=='string' || !ledgerId || ledgerId.length>64 || typeof bindSessionRevalidation!=='function' ||
-      (testOnly && database!=='jbhh_ktv_test'))throw TypeError('Explicit room-control store scope required');
+      (testOnly && (isProductionEnvironment(process.env) || !(database==='jbhh_ktv_test'||/^jbhh_ktv_restore_[a-z0-9_]+$/.test(database)))))throw TypeError('Explicit room-control store scope required');
   const q=String.fromCharCode(96),table=name=>q+database+q+'.'+q+name+q,workflows=table('room_control_workflows');
   function decode(row){
     if(!row)return null;const record=decodeLedgerSnapshot(row.state_json,row.state_checksum);
@@ -25,6 +26,7 @@ export function createMySqlRoomControlStore({pool,database,ledgerId,bindSessionR
       const connection=await pool.getConnection();let begun=false,commitSent=false;
       try{
         await connection.beginTransaction();begun=true;
+        if(bindRecoveryGuard)await bindRecoveryGuard(connection);
         const [[head]]=await connection.execute('SELECT revision,state_json,state_checksum FROM '+table('ledger_heads')+' WHERE ledger_id=? FOR UPDATE',[ledgerId]);
         if(!head || !Number.isSafeInteger(Number(head.revision)))throw Error('Missing confirmed device ledger');
         const readDbNow=async()=>{const [[row]]=await connection.execute("SELECT DATE_FORMAT(UTC_TIMESTAMP(6), '%Y-%m-%dT%H:%i:%s.%fZ') AS db_now");return row.db_now;};

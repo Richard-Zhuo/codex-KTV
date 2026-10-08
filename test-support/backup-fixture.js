@@ -1,3 +1,4 @@
+import { execFileSync } from 'node:child_process';
 import mysql from 'mysql2/promise';
 import assert from 'node:assert/strict';
 import { mkdtemp,rm } from 'node:fs/promises';
@@ -32,12 +33,12 @@ export async function withBackupFixture(work) {
   const plan={configVersion:'synthetic-recovery-v1',environment:'test',database:'jbhh_ktv_test',storeId,ledgerId,approved:true,people};
   await bootstrapIdentities({pool,plan,databaseUrl:raw,confirmation:'jbhh_ktv_test/'+storeId+'/'+ledgerId,initiatedBy:'synthetic-drill',dryRun:false,passwords:Object.fromEntries(people.map(p=>[p.principalId,secret]))});
   const state=initialState();for(const r of state.rooms)r.status=String.fromCodePoint(0x5f85,0x6e05,0x6d01);
-  for(const stock of [...Object.values(state.inventory),...Object.values(state.consumables)])stock.count=100;state.inventory.qd.count=null;
+  for(const stock of [...Object.values(state.inventory),...Object.values(state.consumables)])stock.count=1000;state.inventory.qd.count=null;
   const encoded=encodeLedgerSnapshot(state);await pool.execute('INSERT INTO ledger_heads(ledger_id,revision,state_schema_version,state_json,state_checksum) VALUES(?,0,?,?,?)',[ledgerId,state.version,encoded.json,encoded.checksum]);
   const authStore=createMySqlAuthStore({pool,database:'jbhh_ktv_test'}),auth=createAuthService({store:authStore,rateLimiter:createMemoryLoginRateLimiter()}),login=await auth.login({loginIdentifier:people[0].loginIdentifier,password:secret});assert.equal(login.ok,true);
   const store=createMySqlLedgerStore({pool,database:'jbhh_ktv_test',ledgerId,bindSessionRevalidation:authStore.bindSessionRevalidation});
   const app=createTrustedLedgerApplication({store,businessTimeZone:'Asia/Shanghai'}),credential={tokenDigest:digestSessionToken(login.token)};
-  const backupArgs={databaseUrl:raw,environment:'test',storeId,ledgerId,serverUuid:identity.server_uuid,confirmation:identity.server_uuid+'/jbhh_ktv_test/'+storeId+'/'+ledgerId,applicationCommit:'b188df811926bf4d6cf6c535d1a186ff270e699c',env:process.env};
+  const backupArgs={databaseUrl:raw,environment:'test',storeId,ledgerId,serverUuid:identity.server_uuid,confirmation:identity.server_uuid+'/jbhh_ktv_test/'+storeId+'/'+ledgerId,applicationCommit:execFileSync('git',['rev-parse','HEAD'],{cwd:new URL('..',import.meta.url),encoding:'utf8'}).trim(),env:process.env};
   const targetArgs=(backup,suffix='main')=>{const database='jbhh_ktv_restore_'+suffix+'_'+Date.now().toString(36);targets.push(database);const url=new URL(raw);url.pathname='/'+database;return {directory:backup.directory,expectedChecksum:backup.checksum,databaseUrl:url.href,serverUuid:identity.server_uuid,environment:'test',storeId,ledgerId,restoreToNewDb:true,initiatedBy:'synthetic-drill',confirmation:identity.server_uuid+'/'+database+'/'+storeId+'/'+ledgerId+'/'+backup.checksum};};
   await work({raw,setup,pool,dir,identity,storeId,ledgerId,secret,people,authStore,auth,login,store,app,credential,backupArgs,targetArgs,created,targets});
  }finally{

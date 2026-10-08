@@ -26,7 +26,7 @@ export class VoucherCommitOutcomeUnknown extends Error {
   constructor(cause) { super('Voucher database commit outcome unknown; query the original key, never repeat consume', { cause });
     this.code = 'VOUCHER_COMMIT_OUTCOME_UNKNOWN'; }
 }
-export function createMySqlVoucherStore({ pool, database, ledgerId, provider, storeId, bindSessionRevalidation, packageMappings = [] }) {
+export function createMySqlVoucherStore({ pool, database, ledgerId, provider, storeId, bindSessionRevalidation, packageMappings = [], bindRecoveryGuard }) {
   if (typeof pool?.getConnection !== 'function' || !/^[A-Za-z][A-Za-z0-9_]*$/.test(database || '') ||
       typeof ledgerId !== 'string' || !ledgerId || ledgerId.length > 64 ||
       !['meituan','douyin'].includes(provider) || typeof storeId !== 'string' || !storeId || storeId.length > 191 ||
@@ -113,6 +113,7 @@ export function createMySqlVoucherStore({ pool, database, ledgerId, provider, st
         const [[target]] = await connection.query('SELECT DATABASE() AS db');
         if (target.db !== database) throw Error('Voucher database mismatch');
         await connection.beginTransaction(); begun = true;
+      if (bindRecoveryGuard) await bindRecoveryGuard(connection);
         const [[head]] = await connection.execute('SELECT revision FROM '+table('ledger_heads')+' WHERE ledger_id=? FOR UPDATE',[ledgerId]);
         if (!head) throw Error('Explicit existing ledger required');
         const tx = port(connection); tx.revision = safeRevision(head.revision);

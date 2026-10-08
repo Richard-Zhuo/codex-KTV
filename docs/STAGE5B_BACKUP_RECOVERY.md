@@ -30,3 +30,43 @@ Never use the production staff proposal for a drill. Only synthetic test identit
 ## Delivery
 
 Commit1 implements the verified backup/restore boundary and tests. Commit2 adds recovery verification, transaction write freeze, session invalidation, worker pause/resume and the complete synthetic drill. Neither commit may be pushed or merged before human acceptance.
+
+## Recovery protocol
+
+`recovery/gate.js` reads the persisted singleton control. No row means NORMAL on an already migrated database; a missing table/failed read fails closed. All `/api/*` requests receive 503 `recovery_in_progress` plus requestId while paused. Static HTML/modules remain available. The existing staff UI displays its unavailable state and exposes no business controls; there is no demo fallback or new local business state.
+
+Formal HTTP composition injects the same connection-bound guard into ledger, auth, employee and voucher transactions. The guard takes a shared recovery-control lock before business/head/auth locks and holds it through commit/rollback. A request that passed preliminary HTTP checks cannot write after freeze. Freeze takes the database-scoped dispatch advisory lock, drains an active provider step, takes the exclusive control lock, drains in-flight guarded SQL transactions, then commits FROZEN plus operator audit. Backup itself never takes this freeze.
+
+Formal room-control runtime enables recovery protection by default. The legacy explicit testOnly fixtures can omit it; the Stage5B drill explicitly enables it. Guarded dispatch holds the database advisory lock across claim, provider call and evidence commit, checking mode first. Guarded room-control SQL also checks mode. Startup in VERIFYING/READY_FOR_RESUME does not schedule the worker. A manually requested tick cannot dispatch while paused. KTVSky productionEnabled remains false.
+
+`inspect` is a READ ONLY, consistent-snapshot checker. It validates exact official schema, store identity, head checksum/schema/revision, contiguous committed operation/audit chain, result identities, orders/room exclusivity, payment amounts/IDs/actors/times, inventory count/null/effect records, employees/grants/credential formats and device/order references. It returns only blockers/counts/mode, not a full state or credentials. No new business rules or prices are calculated for restore; existing `total`/`outstanding` helpers validate settled balances.
+
+`verify` locks the VERIFYING control and requires the restored eighteen business/auth tables to match the artifact cell-for-cell before preparation. It runs the checker, revokes all unrevoked sessions using the existing revoked_at semantics and records auth/recovery events with database UTC time. Every nonterminal workflow has its old claim cleared and version incremented. Only an ACK for the **current** CLOSE/OPEN step remains an ACK observation. All other uncertain/nonterminal steps are forced to query first, including OPEN preceded by a historical CLOSE ACK. No provider is called by verification. These deliberate operational changes are separate from preserved order/payment/inventory/revision facts.
+
+Verification stores a digest of the prepared eighteen tables and sets READY_FOR_RESUME. This mode still denies login, writes and provider dispatch. `resume` requires a second explicit `/RESUME` acknowledgment and rechecks the prepared digest under the control lock; changed data or a nonverified mode refuses. Only then does it set NORMAL and audit the operator. It does not change application configuration, initialize real data or enable any provider gate.
+
+## Operator sequence and stopping points
+
+1. During normal operation take/verify an online backup, retain its expected manifest SHA-256 separately in trusted operator records, and copy it according to the future production storage policy.
+2. Before recovery cutover freeze the old source, stop/drain its application and workers, and establish sole-writer ownership. If the old source is unreachable, an operator must establish that it cannot continue serving writes before cutover. These tools do not claim cross-server fencing or an automatic failover service.
+3. Restore only to an explicitly acknowledged separate empty TEST target. A failed/partial target remains unusable; investigate and explicitly dispose/recreate it. Never retry by automatically wiping it.
+4. Boot the candidate application against the target in VERIFYING, with provider production control OFF. Run inspect, investigate blockers, then verify. All old browser sessions are revoked. Exact restored historical values must survive; do not repair a failed checker by rewriting business facts.
+5. Review READY_FOR_RESUME evidence and explicitly resume. Restart the **target** application (or explicitly start its guarded runtime) after NORMAL. A runtime that booted paused does not silently auto-start on a database mode change. Keep the old application stopped/source frozen.
+6. Require a new login. Query-only reconciliation must precede any restored pending device mutation. UNKNOWN without settled proof remains UNKNOWN; elapsed lease alone is not permission to resend. Confirm first new command is R+1 and historical operationKey replay has no new effect.
+
+These are operator steps for the isolated drill, not permission to run a production cutover. The control tables guard cooperating application paths; privileged direct SQL is an operational trust boundary. Stage5A bootstrap/mapping administrative CLIs are not permitted during recovery. No source unlock shortcut is provided; a mistakenly frozen source requires an explicit separately reviewed abort plan.
+
+Additional private-file CLI entries:
+
+- `node recovery/cli.js freeze --config-file ABSOLUTE_SOURCE_CONFIG --confirm SERVER_UUID/SOURCE_DATABASE/STORE/LEDGER`
+- `node recovery/cli.js inspect --config-file ABSOLUTE_TARGET_CONFIG --artifact-dir ABSOLUTE_ARTIFACT --checksum SHA256 --confirm SERVER_UUID/TARGET_DATABASE/STORE/LEDGER/SHA256`
+- `node recovery/cli.js verify --config-file ABSOLUTE_TARGET_CONFIG --artifact-dir ABSOLUTE_ARTIFACT --checksum SHA256 --confirm SERVER_UUID/TARGET_DATABASE/STORE/LEDGER/SHA256`
+- `node recovery/cli.js resume --config-file ABSOLUTE_TARGET_CONFIG --checksum SHA256 --confirm SERVER_UUID/TARGET_DATABASE/STORE/LEDGER/SHA256/RESUME`
+
+Same-version restore is intentionally restricted to TEST artifacts/targets. Importing a production backup or automatic production cutover is disabled; future production recovery requires a reviewed storage, key, access and cutover policy. Old schema artifacts are rejected instead of silently migrated.
+
+## Scope and remaining production gates
+
+No new dependency/framework, production account, real inventory count, production mapping, provider secret handling, live mutation, deployment or backup schedule is added. Encryption/key management, Windows backup ACL verification, off-machine/off-site copies, retention, scheduled backup failure handling and a production cutover drill remain open. Restored HTTP/worker gates require migration011 before formal startup. The source and restore databases in verification are isolated synthetic resources, removed after tests.
+
+Delivery evidence: [Stage5B recovery drill](verification/STAGE5B_RECOVERY_DRILL.md). Implementation/test success remains a human-review candidate; neither Stage5B commit is merged or pushed.

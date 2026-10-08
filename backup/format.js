@@ -45,10 +45,13 @@ export function unpack(value) {
 export async function verifyArtifact(directory,{expectedChecksum,storeId,ledgerId}) {
   try {
     const root=await externalDirectory(directory);
+    if((await stat(join(root,'manifest.json'))).size>1024*1024||(await stat(join(root,'data.json'))).size>128*1024*1024)throw fail('BACKUP_SIZE_LIMIT');
     const manifestBytes=await readFile(join(root,'manifest.json'));
     if(!/^[a-f0-9]{64}$/.test(expectedChecksum??'')||digest(manifestBytes)!==expectedChecksum||(await readFile(join(root,'manifest.sha256'),'utf8')).trim()!==expectedChecksum)throw fail('BACKUP_CHECKSUM_MISMATCH');
     const manifest=JSON.parse(manifestBytes),spec=await schemaSpec();
     if(manifest.backupFormatVersion!==FORMAT_VERSION||canonical(manifest.schema)!==canonical(spec.manifest))throw fail('BACKUP_SCHEMA_UNSUPPORTED');
+    if(manifest.migrationVersion!==Object.keys(spec.manifest.migrations).at(-1))throw fail('BACKUP_SCHEMA_UNSUPPORTED');
+    if(!Array.isArray(manifest.ledgerHeads)||!manifest.ledgerHeads.length||new Set(manifest.ledgerHeads.map(h=>h.ledgerId)).size!==manifest.ledgerHeads.length||manifest.ledgerHeads.some(h=>typeof h.ledgerId!=='string'||!h.ledgerId||h.ledgerId.length>64||!Number.isSafeInteger(h.revision)||h.revision<0||!/^[a-f0-9]{64}$/.test(h.checksum))||!Number.isFinite(Date.parse(manifest.createdAt))||!/^[a-f0-9]{40}$/.test(manifest.applicationCommit))throw fail('BACKUP_INVALID_MANIFEST');
     if(manifest.storeId!==storeId||manifest.ledgerId!==ledgerId)throw fail('BACKUP_STORE_MISMATCH');
     if(manifest.engine!=='InnoDB'||!/^8\.4\./.test(manifest.mysqlVersion)||!['production','test'].includes(manifest.source?.environment)||!manifest.source.serverUuid||!manifest.source.database)throw fail('BACKUP_INVALID_MANIFEST');
     const bytes=await readFile(join(root,'data.json'));
@@ -59,6 +62,9 @@ export async function verifyArtifact(directory,{expectedChecksum,storeId,ledgerI
       if(!Array.isArray(table.columns)||!table.columns.length||new Set(table.columns).size!==table.columns.length||table.columns.some(c=>!/^[a-z_]+$/.test(c))||!Array.isArray(table.rows))throw fail('BACKUP_INVALID_DATA');
       for(const row of table.rows){if(!Array.isArray(row)||row.length!==table.columns.length)throw fail('BACKUP_INVALID_DATA');row.forEach(unpack);}
     }
+    const rows=name=>data.tables[name].rows.map(row=>Object.fromEntries(data.tables[name].columns.map((c,i)=>[c,unpack(row[i])])));
+    const receipts=rows('production_bootstrap_events');if(!receipts.length||receipts.some(r=>r.store_id!==storeId||r.ledger_id!==ledgerId||r.environment!==manifest.source.environment))throw fail('BACKUP_STORE_MISMATCH');
+    const heads=rows('ledger_heads');if(heads.length!==manifest.ledgerHeads.length||!heads.some(h=>h.ledger_id===ledgerId)||heads.some(h=>!manifest.ledgerHeads.some(m=>m.ledgerId===h.ledger_id&&m.revision===Number(h.revision)&&m.checksum===h.state_checksum)))throw fail('BACKUP_INVALID_MANIFEST');
     return {manifest,data,spec,checksum:expectedChecksum};
   }catch(e){throw fail(/^BACKUP_[A-Z_]+$/.test(e.code??'')?e.code:'BACKUP_INVALID_ARTIFACT');}
 }
