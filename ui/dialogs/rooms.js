@@ -1,7 +1,9 @@
+import { isDevicePending } from '../device-progress.js';
+import { showOpeningProgress } from '../opening-progress.js';
 // Phase 7 自 app.js 迁入；唯一机械转换：模块级可变状态（state/page/filter/searchTerm/
 // reportPeriod/storageProblem/APP_ENTRY/DEFAULT_PAGE/modal 等）→ ctx.*，函数体逐字保留。
 
-import { allowedPermission, btn, ctx, date, esc, openingGiftChoices, options, pendingReservations, pendingRoomIssueReview, product } from '../context.js';
+import { allowedPermission, btn, ctx, date, employeeOptions, esc, openingGiftChoices, options, pendingReservations, pendingRoomIssueReview, product } from '../context.js';
 import { openDialog } from '../shell.js';
 import { bookingFields, initialMixRow, roomIssueEvidenceMarkup, setupBookingFields } from '../forms.js';
 import { reservationListMarkup } from '../pages/rooms.js';
@@ -14,6 +16,7 @@ import { slot } from '../../shared/time.js';
 function showRoom(id) {
   const r=ctx.state.rooms.find(r=>r.id===id);
   if (!r) throw Error('房间不在当前授权视图中');
+  if(ctx.formal && isDevicePending(r)){showOpeningProgress(r);return;}
   if (ctx.formal && (r.status === '营业中' && !r.order ||
       r.status === '空闲' && !allowedPermission('room.open'))) {
     openDialog(`${esc(id)} · ${esc(r.status)}`,
@@ -38,7 +41,8 @@ function showRoom(id) {
 
 function openRoom(id, dirty=false) {
   const r=ctx.state.rooms.find(r=>r.id===id), closed=slot(ctx.state.clock)==='closed';
-  openDialog(`${id} · ${r.type}${closed?'预订':'开房'}`, closed?`<p class="notice">现在是非营业时段，只接受预订。</p>${bookingFields()}${reservationListMarkup(id)}`:`<p class="muted">${date(ctx.state.clock)} · ${slot(ctx.state.clock)==='day'?'白天纯唱':'夜间套餐'}</p>${dirty?'<p class="notice">房间尚未标记清洁。提交即确认可以接待客人。</p>':''}${reservationListMarkup(id)}<label>开房渠道<select name="openSource">${options(OPENING_SOURCES.map(source=>[source,source||'线下（默认）']),'')}</select></label>${slot(ctx.state.clock)==='night'?`<label>客人选哪种酒水<select name="beer">${options(openingGiftChoices(),'bw')}</select></label><section id="initial-mix" class="initial-mix" hidden><div class="split"><b>首次配酒水</b><span id="mix-total" class="badge"></span></div><p class="muted">开房前直接选好种类和支数；开房后再调整请点“换酒水”。</p><div id="mix-items"></div>${btn('＋ 添加一种酒水','addInitialMix','','secondary full')}</section>`:'<p>白天不带赠饮，可开房后另行加购。</p>'}<div id="quote-box"></div>${!dirty&&r.status==='空闲'&&allowedPermission('room.reserve')?btn('预订其他未来场次','reserveFuture',`data-id="${id}"`,'quiet'):''}`,closed?'确认预订':'确认开房',closed?'reserve':'open',{room:id,acceptDirty:dirty?'yes':''});
+  if(ctx.formal && isDevicePending(r)){showOpeningProgress(r);return;}
+  openDialog(`${id} · ${r.type}${closed?'预订':'开房'}`, closed?`<p class="notice">现在是非营业时段，只接受预订。</p>${bookingFields()}${reservationListMarkup(id)}`:`<p class="muted">${date(ctx.state.clock)} · ${slot(ctx.state.clock)==='day'?'白天纯唱':'夜间套餐'}</p>${dirty?'<p class="notice">房间尚未标记清洁。提交即确认可以接待客人。</p>':''}${reservationListMarkup(id)}${ctx.formal?`<label>归属员工<select name="creditedEmployeeId" required><option value="">请选择归属员工</option>${employeeOptions()}</select></label>`:''}<label>开房渠道<select name="openSource">${options(OPENING_SOURCES.map(source=>[source,source||'线下（默认）']),'')}</select></label>${slot(ctx.state.clock)==='night'?`<label>客人选哪种酒水<select name="beer">${options(openingGiftChoices(),'bw')}</select></label><section id="initial-mix" class="initial-mix" hidden><div class="split"><b>首次配酒水</b><span id="mix-total" class="badge"></span></div><p class="muted">开房前直接选好种类和支数；开房后再调整请点“换酒水”。</p><div id="mix-items"></div>${btn('＋ 添加一种酒水','addInitialMix','','secondary full')}</section>`:'<p>白天不带赠饮，可开房后另行加购。</p>'}<div id="quote-box"></div>${!dirty&&r.status==='空闲'&&allowedPermission('room.reserve')?btn('预订其他未来场次','reserveFuture',`data-id="${id}"`,'quiet'):''}`,closed?'确认预订':'确认开房',closed?'reserve':'open',{room:id,acceptDirty:dirty?'yes':''});
   if (closed) setupBookingFields();
   else {
     const f=ctx.modal.querySelector('form');

@@ -1,3 +1,4 @@
+import { deviceProgressLabel } from './device-progress.js';
 import { adminDecisionNeedsNote } from './admin-approval.js';
 
 const labels = Object.freeze({
@@ -91,7 +92,7 @@ function dashboard(model, { flowStatus, lastError } = {}) {
   const reviews = simpleRows('待审批事项', view.reviewQueue,
     (item, index) => reviewCard(item, index, writable));
   const rooms = simpleRows('房间状态', view.rooms, room =>
-    `<article class="panel"><div class="split"><b>${escapeAdminText(room.id)} · ${escapeAdminText(room.type)}</b><span class="badge">${escapeAdminText(room.status)}</span></div></article>`);
+    `<article class="panel"><div class="split"><b>${escapeAdminText(room.id)} · ${escapeAdminText(room.type)}</b><span class="badge">${escapeAdminText(deviceProgressLabel(room))}</span></div></article>`);
   const orders = simpleRows('订单基本状态', view.orders, order =>
     `<article class="panel"><div class="split"><b>${escapeAdminText(order.id)} · ${escapeAdminText(order.room ?? '零售')}</b><span class="badge">${escapeAdminText(order.status)}</span></div></article>`);
   const expenses = simpleRows('费用记录', view.expenses, item =>

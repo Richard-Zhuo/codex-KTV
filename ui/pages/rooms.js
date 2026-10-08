@@ -1,3 +1,4 @@
+import { deviceProgressLabel, isDevicePending } from '../device-progress.js';
 // Phase 7 自 app.js 迁入；唯一机械转换：模块级可变状态（state/page/filter/searchTerm/
 // reportPeriod/storageProblem/APP_ENTRY/DEFAULT_PAGE/modal 等）→ ctx.*，函数体逐字保留。
 
@@ -21,11 +22,11 @@ function roomExtraActions(order) {
 
 function roomCard(r) {
   const o = ctx.state.orders.find(o=>o.id===r.order), bookings=pendingReservations(r.id), review=pendingRoomIssueReview(r.id);
-  const status=displayRoomStatus(r), cardStatus=review?'恢复审核中':status, css = review?'issue-review':{'空闲':'free','营业中':'active','待清洁':'dirty','已预订':'reserved'}[status];
+  const status=ctx.formal && r.deviceControl?.mode==='required'?deviceProgressLabel(r):displayRoomStatus(r), cardStatus=review?'恢复审核中':status, css = review?'issue-review':{'空闲':'free','营业中':'active','待清洁':'dirty','已预订':'reserved'}[status];
   const bookingText=bookings.length?`<small class="room-booking">未来预订：${reservationDate(bookings[0].at)} · ${esc(reservationSessionName(bookings[0]))}${bookings.length>1?`（还有${bookings.length-1}场）`:''}</small>`:'';
   const issueText=`${r.status==='故障/维护中'?`<small class="room-issue">${esc(r.issueType || '故障/维护中')}${r.issueNote?` · ${esc(r.issueNote)}`:''}</small>`:''}${review?`<small class="room-review-pending">${esc(review.change)}申请待审核</small>`:''}`;
-  const bottom=ctx.formal && r.status==='营业中' && !o ? '<span>营业中 · 无账单查看权限</span>' : review?'<span>恢复申请待审核</span><span>→</span>':r.status==='故障/维护中'?'<span>查看异常</span><span>→</span>':o?`<b>${money(total(o))}</b><span>查看账单 →</span>`:r.status==='空闲'?(allowedPermission('room.open')?'<span>点这里开房</span><span>＋</span>':'<span>查看房态</span>'):r.status==='待清洁'?(allowedPermission('room.clean')?'<span>打扫后恢复空房</span><span>→</span>':'<span>查看房态</span>'):'<span>查看预订</span><span>→</span>';
-  return `<article class="room-card ${css || 'issue'}" data-action="room" data-id="${esc(r.id)}" role="button" tabindex="0" aria-label="${esc(r.id)} ${esc(r.type)} ${esc(cardStatus)}"><span class="room-top"><span>${r.type}</span><span class="status"><i></i>${cardStatus}</span></span><strong class="room-number">${r.id}</strong><span class="room-bottom">${bottom}</span>${o && r.status==='营业中'?roomExtraActions(o):''}${issueText}${bookingText}</article>`;
+  const bottom=ctx.formal && isDevicePending(r) ? '<span>查看开房进度 →</span>' : ctx.formal && r.status==='营业中' && !o ? '<span>营业中 · 无账单查看权限</span>' : review?'<span>恢复申请待审核</span><span>→</span>':r.status==='故障/维护中'?'<span>查看异常</span><span>→</span>':o?`<b>${money(total(o))}</b><span>查看账单 →</span>`:r.status==='空闲'?(allowedPermission('room.open')?'<span>点这里开房</span><span>＋</span>':'<span>查看房态</span>'):r.status==='待清洁'?(allowedPermission('room.clean')?'<span>打扫后恢复空房</span><span>→</span>':'<span>查看房态</span>'):'<span>查看预订</span><span>→</span>';
+  return `<article class="room-card ${css || 'issue'}" data-action="room" data-id="${esc(r.id)}" role="button" tabindex="0" aria-label="${esc(r.id)} ${esc(r.type)} ${esc(cardStatus)}"><span class="room-top"><span>${r.type}</span><span class="status"><i></i>${cardStatus}</span></span><strong class="room-number">${r.id}</strong><span class="room-bottom">${bottom}</span>${o && r.status==='营业中' && !isDevicePending(r)?roomExtraActions(o):''}${issueText}${bookingText}</article>`;
 }
 
 function activateRoomCardOnKey(event) {

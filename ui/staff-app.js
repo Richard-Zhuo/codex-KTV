@@ -1,3 +1,5 @@
+import { shouldPollDevice, progressReadKey } from './device-progress.js';
+import { refreshOpeningProgress } from './opening-progress.js';
 import { createEmployeeApiClient, HttpApiError, HttpTransportError } from './api-client.js';
 import { createEmployeeServerState } from './server-state.js';
 import { createEmployeeCommandFlow } from './command-flow.js';
@@ -12,6 +14,7 @@ const client = createEmployeeApiClient();
 const state = createEmployeeServerState(client);
 const flow = createEmployeeCommandFlow({ api: client, state,
   journal: createPendingCommandJournal() });
+let progressPolling=false,lastRenderKey=null;
 let mounted = false;
 let mounting = null;
 let principalId = null;
@@ -44,6 +47,7 @@ function statusPage(model, title, detail) {
 }
 
 async function display(model) {
+  if(progressPolling && model.phase==='loading')return;
   if (model.session && model.snapshot &&
       (model.phase === 'ready' || model.phase === 'loading' ||
        model.phase === 'unavailable')) {
@@ -88,7 +92,11 @@ async function display(model) {
       });
       return;
     }
-    try { renderWorkspace(); }
+    try {
+      const key=progressReadKey(model);
+      if(!progressPolling || key!==lastRenderKey)renderWorkspace();
+      lastRenderKey=key;refreshOpeningProgress();
+    }
     catch {
       ctx.formal.renderFailed = true;
       app.innerHTML = statusPage(model, '无法安全显示营业状态',
@@ -168,3 +176,14 @@ window.addEventListener('offline', () =>
   state.markUnavailable(new HttpTransportError('network')));
 window.addEventListener('online', () => { void state.reconnect(); });
 void state.bootstrap();
+
+// Refresh only authoritative reads, and never interrupt a write or an edited form.
+async function pollOpeningProgress() {
+  try {
+    const editing=ctx.modal?.open && !!ctx.modal.querySelector('form')?.dataset.form;
+    if(shouldPollDevice(state.getState(),flow.getStatus().phase,{busy:ctx.busy,editing})){
+      progressPolling=true;try{await state.refreshSnapshot();}finally{progressPolling=false;}
+    }
+  } finally {if(typeof window.setTimeout==='function')window.setTimeout(pollOpeningProgress,2000);}
+}
+if(typeof window.setTimeout==='function')window.setTimeout(pollOpeningProgress,2000);

@@ -73,6 +73,14 @@ export async function testOpenDevice({t,pool,auth,seed,inspect,roster,employeeSt
    assert.equal((await progress(f)).businessState,'OPENING');const once=await facts(f);
    assert.equal(once.orders,1);assert.equal(once.workflows,1);assert.equal(once.payments,0);assert.equal(once.stock<100,true);
    assert.deepEqual((await f.open()).body,result.body,'Lost HTTP response replays original committed intent');
+   if(options.outcomes) {
+    await f.runtime.worker.tick();await f.runtime.worker.tick();
+    if(name.startsWith('ACK')) {
+      await f.runtime.worker.tick();const waiting=await progress(f);
+      assert.equal(waiting.deviceControl.verificationPending,true);assert.equal(waiting.deviceControl.mutationUnknown,false);
+    } else {const unknown=await progress(f);assert.equal(unknown.deviceControl.status,'DEVICE_UNKNOWN');assert.equal(unknown.deviceControl.mutationUnknown,true);}
+    assert.equal(f.mutations().filter(c=>c.method==='openRoom').length,1);
+   }
    await finish(f);assert.deepEqual(await facts(f),once);
    assert.deepEqual(f.mutations().map(c=>c.method),options.open?['closeRoom','openRoom']:['openRoom']);
    const stale=await f.open({...f.body,operationKey:'other-client'});assert.equal(stale.body.error.code,'revision_conflict');

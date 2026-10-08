@@ -1,3 +1,14 @@
+## Stage 4C candidate (2026-10-08)
+
+Stage 4B.1 accepted a05359f has been fast-forwarded and ordinarily pushed: main=origin/main=a05359f, clean, 2033/2033 full regression. Stage 4C develops locally on codex/p0-1-stage4c-open-device-integration. Commit 1 e13bb85 adds atomic open/workflow enrollment and server worker; Commit 2 adds staff/admin progress and acceptance evidence. No Stage 4C merge/push/deployment and no real provider request.
+
+Current contract and production gate: [Stage 4C](STAGE4C_OPEN_DEVICE.md). Backend focused 722/722 and HTTP/static 20/20 passed before Commit 1. Browser smoke: Edge 154, formal employee HTTP + isolated MySQL + Fake Gateway; login, OPENING, offline WAIT, refresh preserving the same intent, progress-only re-click, online resume ACTIVE and logout observed. Record d7cc4bbee5229, successful open request n157 (200, 49.04ms); one order, one workflow, one Fake open, zero payments. Runtime: no uncaught exception, unhandled rejection or module failure; expected unauthenticated 401, an initial employee-field rejection fixed before final smoke, missing favicon, and extension invalid-resource errors are separately recorded. External raw evidence is outside Git. Final full regression recorded in the delivery report.
+
+TRUSTED OPEN → DEVICE WORKFLOW INTEGRATION = implemented candidate
+STAFF OPENING DEVICE UX = implemented candidate
+KTVSKY LIVE CONTROL = IMPLEMENTED BUT PRODUCTION-DISABLED
+
+
 ## 2026-10-08: Stage 4B.1 final safe V06 live validation
 
 Human-accepted runtime candidate 3f3249c passed the controlled final V06 validation after formal offline recovery of the historical open ACK. Exactly one open(300) and one close were sent; actual pre-close remaining=289 seconds and CLOSED/0 was observed 5.186 seconds after close dispatch. Both steps formally confirmed, no ambiguity/query timeout/retry, gate OFF, old archives/ACK history preserved. Focused 169/169 and full direct Node regression 2033/2033 passed (0 fail, 0 skip, exit 0) on the isolated MySQL test instance. Only sanitized evidence documentation is added; main/origin/main remain 60c853f, no merge/push/employee-open integration/Stage 4C/deployment. [Detailed evidence and limits](verification/stage4b1-v06-close-2026-10-08.md).

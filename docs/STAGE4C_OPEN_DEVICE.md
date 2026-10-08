@@ -23,3 +23,7 @@ KtvSkyRoomControlGateway.productionEnabled is still false. The bootstrap never r
 ## Verification
 
 The guarded existing ledger/trusted-clean.integration.test.js fixture applies migrations 001..009 and invokes devices/open.integration.js. Formal HTTP session/CSRF, real MySQL and FakeGateway cover CLOSED, OPEN, WAIT/restart, lost open response, ACK/query failure, timing evidence, original-key replay, concurrent clients, missing mapping, rollback after intent insert and absence of held SQL head locks during effects. devices/worker.test.js covers bounded overlapping ticks and shutdown. No real provider request belongs to Stage 4C tests.
+
+## Staff and admin UI
+
+The formal opening form explicitly requires an employee UUID from the server roster; the authenticated actor remains separate. Pending/WAIT/FAILED cards and order routes show progress only. Current readiness labels come from safe server fields. Polls perform session/snapshot reads only, stop when unauthenticated, unavailable, writing, editing or failed, and avoid replacing DOM on time-only or claim-version-only changes. The original actor-bound write-before-send journal is unchanged. The committed HTTP envelope means the intent was saved, not that the device is ready. Minimal admin room/order progress follows existing backend.view and report.view filtering. No direct device mutation API or permission is added.

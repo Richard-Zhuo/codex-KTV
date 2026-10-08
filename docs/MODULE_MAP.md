@@ -1,3 +1,12 @@
+## Stage 4C routes
+
+- ledger/application.js: original trusted open plus connection-bound atomic workflow enrollment; current readiness guard for order commands.
+- devices/mysql-port.js: same-connection intent/mapping port and readDeviceHead before permission projection; migration 009 owns explicit mappings.
+- devices/runtime.js, worker.js: bounded persistent server scheduler over the existing claim/effect/evidence workflow; real adapter remains paused.
+- ui/device-progress.js, opening-progress.js: safe labels, stable read-only polling and progress dialog; staff-app/pages/dialogs use server snapshots only. Formal open explicitly selects creditedEmployeeId.
+- devices/open.integration.js: HTTP/session/CSRF + MySQL + Fake end-to-end scenarios via the guarded trusted-clean fixture; worker.test.js and ui/device-progress.test.js cover scheduling and UI behavior. New browser modules are in the existing static allowlist and dependency-graph regression.
+
+
 ## Stage 4B.1 countdown verification route
 
 - devices/ktvsky-countdown.js: one bounded elapsed/remaining-seconds predicate, shared by validation and the adapter interlock; paired observation checks.

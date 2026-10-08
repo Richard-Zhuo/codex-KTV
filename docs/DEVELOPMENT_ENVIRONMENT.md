@@ -1,3 +1,10 @@
+## Stage 4C configuration and verification
+
+DEVICE_CONTROL_MODE=disabled (default) preserves existing local business opening with explicit DISABLED device evidence. required needs migration 009 and manually verified enabled room_device_mappings. KTVSky productionEnabled remains false: neither mode nor KTVSKY_LIVE_CONTROL_ENABLED enables the employee runtime in this release. The real worker stays paused. Test composition may explicitly use devices/runtime.js with FakeGateway, testOnly=true and dedicated jbhh_ktv_test; never inject Fake through production environment fallback.
+
+Backend focused: node --test --test-isolation=none --test-reporter=tap ledger/trusted-clean.integration.test.js devices/application.test.js devices/worker.test.js database.test.js. UI focused: node --test --test-isolation=none --test-reporter=tap ui/device-progress.test.js ui/command-flow.test.js ui/server-state.test.js ui/formal-workspace.test.js ui/formal-entry.test.js ui/room-card-accessibility.test.js server-static.test.js. Full: node --test --test-isolation=none --test-reporter=tap. npm test is attempted after JS changes; this machine still has no npm. Browser fixtures must stop and remove only their owned tables before full regression.
+
+
 ### Stage 4B.1 semantics regression
 
 Focused command remains node --test --test-isolation=none --test-reporter=tap devices/application.test.js devices/ktvsky-gateway.test.js devices/ktvsky-validation.test.js. It covers synthetic legacy recovery, ACK waiting, simulated timeout/reset, concurrent claims and pre-ACK read fencing. Include ledger/trusted-sales.test.js in the focused run for the fixed-price SQL fixture regression (DAY/NIGHT/CLOSED); production price rules are unchanged. MySQL persistence cases remain in devices/mysql.integration.js under the guarded ledger/trusted-clean.integration.test.js harness. Full: node --test --test-isolation=none --test-reporter=tap.

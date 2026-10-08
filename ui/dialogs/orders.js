@@ -1,3 +1,5 @@
+import { isDevicePending } from '../device-progress.js';
+import { showOpeningProgress } from '../opening-progress.js';
 // Phase 7 自 app.js 迁入；唯一机械转换：模块级可变状态（state/page/filter/searchTerm/
 // reportPeriod/storageProblem/APP_ENTRY/DEFAULT_PAGE/modal 等）→ ctx.*，函数体逐字保留。
 
@@ -13,6 +15,7 @@ import { productIdOf, saleOptions, sellableProducts } from '../../catalog.js';
 
 function showOrder(id) {
   const o=ctx.state.orders.find(o=>o.id===id);
+  if(ctx.formal && isDevicePending(o)){const room=ctx.state.rooms.find(r=>r.id===o.room);if(room)showOpeningProgress(room);return;}
   const bonus=(o.bonusGifts||[]).map(line=>{
     const drinks=(line.drinks||[]).filter(drink=>drink.count), unchanged=drinks.length===1&&drinks[0].product===line.product&&drinks[0].count===line.bottles;
     const giftName=line.productNameSnapshot || `历史商品（${productIdOf(line)}）`;
@@ -50,7 +53,7 @@ function giftDialog(id) {
 
 function saleDialog(id, staffMode=false) {
   if (!sellableProducts(ctx.state.catalog).length) throw Error('当前没有可销售商品');
-  const activeOrders=ctx.state.orders.filter(order=>order.kind!=='retail'&&order.status==='营业中');
+  const activeOrders=ctx.state.orders.filter(order=>order.kind!=='retail'&&order.status==='营业中'&&(!ctx.formal||!isDevicePending(order)));
   ctx.salePricePlanId = ctx.state.orders.find(order => order.id === (id || activeOrders[0]?.id))?.businessSession?.pricePlanId;
   const orderField=staffMode?`<label>归属账单<select name="order" required>${options(activeOrders.map(order=>[order.id,`${order.room} · ${money(total(order))} · ${order.openedBy || order.person || '未记录'}`]),id)}</select></label><label>归属员工<select name="employee" required>${employeeOptions()}</select></label>`:'';
   openDialog(staffMode?'为员工登记增购商品':'加商品',`${orderField}<p class="notice">一单可以添加多种商品，按“添加一种商品”继续录入。</p><div id="sale-items">${saleItemRow()}</div>${btn('＋ 添加一种商品','addSaleItem','','secondary full')}<div id="sale-total" class="quote compact"></div>`, '确认加单','sale',staffMode?{}:{order:id});

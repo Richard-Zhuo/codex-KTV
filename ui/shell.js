@@ -33,7 +33,7 @@ async function commit(action, data, key) {
       if (ctx.modal.open) ctx.modal.close();
       ctx.formal.lastError = outcome.error ?? null;
       render();
-      toast(outcome.refreshed ? '已由服务器确认并重新读取门店状态' :
+      toast(action==='open' && outcome.result?.result?.businessState==='OPENING' ? '开房申请已保存，正在确认设备；请勿重复开房' : outcome.refreshed ? '已由服务器确认并重新读取门店状态' :
         '写入结果已确认，正在重新读取门店状态');
       return outcome;
     } catch (error) {
