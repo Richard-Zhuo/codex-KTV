@@ -2,7 +2,7 @@
 
 ## Basis and boundaries
 
-Stage 4B accepted HEAD 60c853f is main/origin/main. The accepted Stage 4B.1 semantics fix 707f8a8 has a new local countdown-verification correction awaiting human acceptance. No Stage 4C, employee-open integration or deployment is included.
+Stage 4B accepted HEAD 60c853f is main/origin/main. Stage 4B.1 countdown-verification correction 3f3249c was human-accepted and passed the final controlled V06 close validation; see the final live evidence section below. No Stage 4C, employee-open integration or deployment is included.
 
 Observed public frontend endpoints: POST /h5/login {telno,password}, GET /h5/search?telno=..., POST /h5/mac_control. Login uses a top-level token; requests carry X-TOKEN. HTTP 401/403 and observed body codes 30010/30011 invalidate the session. These are observed contracts, not an official provider guarantee.
 
@@ -77,4 +77,13 @@ KTVSKY OPENTIME UNIT = VERIFIED AS SECONDS (safe V06 live observation on 2026-10
 KTVSKY CLOSE CONTRACT = NOT VERIFIED.
 KTVSKY REAL ADAPTER = IMPLEMENTED, DISABLED.
 
-Next, only after human acceptance and separately renewed safe-target/window approval: explicitly recover the pending historical ACK using reviewed archived evidence, then query CLOSED -> open with a sufficiently safe countdown -> query valid OPEN -> immediately close before countdown expiry -> query CLOSED. This must establish a real OPEN -> CLOSED transition attributable to the explicit close, without automatic retry. No such live test runs in this correction. Employee open stays disconnected, productionEnabled=false, Stage 4C NOT STARTED.
+## Final safe V06 close validation (2026-10-08)
+
+The subsequent newly authorized V06 test formally recovered the historical ACK without provider requests, observed ONLINE+CLOSED, sent one open(300), confirmed OPEN with 297 remaining seconds, then re-read 294 and finally 289 seconds before sending one close. HTTP/code 200 ACK was followed by ONLINE+CLOSED/0 within 5.186 seconds of dispatch, well before countdown expiry. Both isolated validation steps reached DESIRED_STATE_CONFIRMED; no ambiguity, query timeout or automatic retry. Gate OFF after run. [Detailed sanitized evidence](verification/stage4b1-v06-close-2026-10-08.md).
+
+KTVSKY OPEN CONTRACT = VERIFIED.
+KTVSKY CLOSE CONTRACT = VERIFIED (controlled safe V06 observation).
+KTVSKY OPENTIME UNIT = VERIFIED AS SECONDS.
+KTVSKY PRODUCTION CONTROL = NOT YET ENABLED.
+
+No production code changes, employee-open connection, Stage 4C, deployment, merge or push. Auth lifecycle, broader provider limits/idempotency and production operation are not proved by this bounded test. Any further live test needs explicit authorization and a current safe-target/window check.

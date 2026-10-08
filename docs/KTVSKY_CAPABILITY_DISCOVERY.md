@@ -1,6 +1,6 @@
 ## Subsequent safe V06 observation, 2026-10-08
 
-Historical discovery below describes the earlier read-only run. The later human-approved safe V06 test established query opentime as remaining seconds (300 requested; 254 -> 144 over about 110.23 seconds), and CLOSED -> OPEN. Close mutation remains NOT VERIFIED. Auto-expiry is observed/consistent, not causally verified. See [current provider/verification contract](STAGE4B_KTVSKY_ADAPTER.md) for evidence scope and remaining gates. This countdown-code correction makes no live provider request.
+Historical discovery below describes the earlier read-only run. The later human-approved safe V06 test established query opentime as remaining seconds (300 requested; 254 -> 144 over about 110.23 seconds), and CLOSED -> OPEN. Close was NOT VERIFIED in that earlier round. The subsequent separately authorized final test verified OPEN -> explicit close -> CLOSED with 289 seconds remaining beforehand; see [final safe V06 evidence](verification/stage4b1-v06-close-2026-10-08.md). Auto-expiry remains observed/consistent, not causally verified. See [current provider/verification contract](STAGE4B_KTVSKY_ADAPTER.md) for evidence scope and remaining gates. This countdown-code correction makes no live provider request.
 
 # KTVSky capability discovery — 2026-10-08
 
