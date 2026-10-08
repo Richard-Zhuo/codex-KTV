@@ -16,7 +16,7 @@ import { createMySqlVoucherStore } from '../vouchers/mysql-store.js';
 import { createCurrentSessionReader } from './query.js';
 import { createHttpApi } from './api.js';
 
-export function createHttpApiFromEnv(env = process.env, logger = console) {
+export function createHttpApiFromEnv(env = process.env, logger = console, {managed=false,mysqlSsl}={}) {
   const production = isProductionEnvironment(env) || (env.KTV_API_MODE === 'enabled' && env.KTV_HTTP_ENV !== 'development');
   const productionConfig = production ? validateProductionConfig(env) : null;
   const deviceControlMode=env.DEVICE_CONTROL_MODE??'disabled';
@@ -46,7 +46,7 @@ export function createHttpApiFromEnv(env = process.env, logger = console) {
     throw new TypeError('KTV_LEDGER_ID, KTV_STORE_ID and KTV_BUSINESS_TIME_ZONE are required');
   }
   const pool = mysql.createPool({ uri: raw, database, connectionLimit: 10,
-    waitForConnections: true, supportBigNumbers: true, bigNumberStrings: true });
+    waitForConnections: true, supportBigNumbers: true, bigNumberStrings: true,connectTimeout:2000,...(mysqlSsl?{ssl:mysqlSsl}:{}) });
   const authStore = createMySqlAuthStore({ pool, database, bindRecoveryGuard:bindRecoveryWriteGuard });
   const authService = createAuthService({
     store: authStore, rateLimiter: createMemoryLoginRateLimiter()
@@ -65,8 +65,9 @@ export function createHttpApiFromEnv(env = process.env, logger = console) {
     deviceSnapshot: (connection,head)=>readDeviceHead(connection,database,head),
     businessTimeZone, origin: env.KTV_PUBLIC_ORIGIN, environment,
     allowInsecureCookie: env.KTV_INSECURE_COOKIE === 'true', logger });
-  if(!production) runtime?.start().catch(()=>logger.error({code:'RECOVERY_WORKER_START_FAILED'}));
+  if(!production&&!managed) runtime?.start().catch(()=>logger.error({code:'RECOVERY_WORKER_START_FAILED'}));
   const composed=recoveryApiGate({...api,async close(){await runtime?.stop();await pool.end();}},{pool});
+  if(managed){if(!production)throw TypeError('Managed runtime requires production');return Object.freeze({...composed,readiness:async()=>{const report=await readProductionReadiness({pool,config:productionConfig});const c=await pool.getConnection();try{const {recoveryMode}=await import('../recovery/gate.js');const mode=await recoveryMode(c);return {...report,ready:report.ready&&mode==='NORMAL',blockers:[...report.blockers,...(mode==='NORMAL'?[]:[{code:'RECOVERY_PAUSED'}])]};}finally{c.release();}},startWorker:()=>runtime?.start(),stopWorker:()=>runtime?.stop()});}
   return production ? productionApiGate(composed,()=>readProductionReadiness({pool,config:productionConfig,
     credentialFile:env.KTVSKY_CREDENTIALS_FILE}),{logger,start:()=>runtime?.start()}) : composed;
 }

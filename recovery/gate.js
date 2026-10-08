@@ -17,6 +17,6 @@ export function recoveryApiGate(api,{pool}) {
   if(!new URL(req.url,'http://localhost').pathname.startsWith('/api/'))return api.handle(req,res);
   let c,ready=false;try{c=await pool.getConnection();ready=await recoveryMode(c)==='NORMAL';}catch{}finally{c?.release();}
   if(ready)return api.handle(req,res);
-  const requestId=randomUUID();res.writeHead(503,{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store','X-Request-Id':requestId});res.end(JSON.stringify({error:{code:'recovery_in_progress',message:'Service is paused for recovery',requestId}}));return true;
+  const requestId=req.ktvRequestId??randomUUID();res.writeHead(503,{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store','X-Request-Id':requestId});res.end(JSON.stringify({error:{code:'recovery_in_progress',message:'Service is paused for recovery',requestId}}));return true;
  }});
 }

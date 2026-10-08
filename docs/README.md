@@ -1,3 +1,7 @@
+## Stage 5C deployment/runtime candidate
+
+Accepted main=origin/main=25c95f1 (Stage5B). Stage5C is local only; [runtime contract](STAGE5C_DEPLOYMENT_RUNTIME.md). Earlier candidate descriptions below are historical.
+
 ## Stage 5B backup / recovery candidate
 
 Stage 5A is accepted and closed out: main=origin/main=b188df811926bf4d6cf6c535d1a186ff270e699c. Stage 5B develops only on codex/p0-1-stage5b-backup-recovery. No production initialization, provider request, deployment, merge or push. [Contract](STAGE5B_BACKUP_RECOVERY.md).

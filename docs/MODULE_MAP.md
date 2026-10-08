@@ -1,3 +1,7 @@
+## Stage 5C
+
+production/runtime-config.js owns production/Node validation, unified secrets and Windows ACL checks; runtime-log.js owns safe structured output; runtime.js owns HTTPS/health/draining; start.js is the sole production entry. server.js exposes the shared static request handler. http/bootstrap.js managed composition exposes readonly readiness and explicit worker lifecycle to the runtime. [Contract](STAGE5C_DEPLOYMENT_RUNTIME.md).
+
 ## Stage 5B recovery delivery
 
 recovery/gate.js owns HTTP/transaction/dispatch freeze; recovery/invariants.js is the readonly business/reference checker; recovery/operator.js owns freeze/inspect/verify/resume; recovery/cli.js consumes private external config. http/bootstrap.js composes all formal transaction guards; devices/runtime.js composes guarded worker startup/dispatch. recovery/drill.integration.test.js exercises the complete real MySQL recovery sequence with FakeGateway; recovery/gate.test.js covers fail-closed, startup races and concurrent drain. recovery/audit.integration.test.js uses test-support/recovery-process.js for real process termination/restart, resume locking, the artifact capacity limit and migration011 upgrade/repetition. recovery/cli.test.js covers inherited action rejection without private config output. Official schema is migrations001-011; production/schema-manifest.json is derived verification data. [Contract](STAGE5B_BACKUP_RECOVERY.md).

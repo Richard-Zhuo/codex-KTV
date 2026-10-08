@@ -1,3 +1,7 @@
+## Stage 5C runtime foundation candidate
+
+Stage5B is human-accepted and closed out at main=origin/main=25c95f162f4c7d75a52b6843e13590ffda573290. Stage5C develops only on codex/p0-1-stage5c-deployment-runtime. Target audit and production runtime/secret/logging foundation are implemented; focused5/5. HTTPS hardening, service/preflight, integration/browser/full evidence are pending. No merge/push/deployment/real initialization/provider operations. [Contract](STAGE5C_DEPLOYMENT_RUNTIME.md). Earlier status sections are historical.
+
 ## Stage 5B high-risk audit fix; human re-acceptance required (2026-10-09)
 
 Audited candidate176bf7e879c564807882647a6fc6b8291790ee32 exposed three P1 findings (recovery CLI private-config output through inherited action, resume concurrent-edit window, and schema-complete restore crash before durable recovery mode) and one P2 repeated-resume response gap. One independent audit-fix commit closes them. Disposition: FIXED, NEEDS HUMAN RE-ACCEPTANCE. No merge, fetch or push; main and locally recorded origin/main remain b188df811926bf4d6cf6c535d1a186ff270e699c.

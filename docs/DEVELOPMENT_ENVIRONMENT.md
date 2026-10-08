@@ -1,3 +1,7 @@
+## Stage 5C
+
+Target Windows, pinned Node24.19.x, MySQL8.4/InnoDB. Production entry: node ABSOLUTE_APP/production/start.js --config-file ABSOLUTE_EXTERNAL_CONFIG with NODE_ENV=KTV_HTTP_ENV=KTV_DEPLOYMENT_ENV=production. Focused foundation: node --test --test-isolation=none --test-reporter=tap production/runtime.test.js server-static.test.js. No production start is authorized here; synthetic smoke only. [Contract](STAGE5C_DEPLOYMENT_RUNTIME.md).
+
 ## Stage 5B verification commands
 
 Focused: node --test --test-isolation=none --test-reporter=tap backup/format.test.js backup/mysql-backup.integration.test.js recovery/gate.test.js recovery/drill.integration.test.js recovery/cli.test.js recovery/audit.integration.test.js

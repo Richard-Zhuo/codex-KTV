@@ -53,7 +53,7 @@ export function createHttpApi(options) {
       catch { return false; }
       const path = url.pathname;
       if (!path.startsWith('/api/v1/')) return false;
-      const requestId = auth.newRequestId();
+      const requestId = req.ktvRequestId ?? auth.newRequestId();
       try {
         if (await auth.handleAuth(req, res, path, requestId)) return true;
         if (path.startsWith('/api/v1/commands/')) {

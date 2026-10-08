@@ -1,3 +1,7 @@
+## Stage 5C runtime boundary
+
+Windows service -> explicit production entry -> direct TLS -> existing authenticated HTTP/trusted application/MySQL. External protected config/secrets and safe logs; health/readiness/worker/drain belong to runtime, not domain. No proxy trust, direct remote DB access or production migration at startup. [Contract](STAGE5C_DEPLOYMENT_RUNTIME.md).
+
 ## Stage 5B recovery boundary
 
 MySQL remains the sole business authority. Recovery control/event tables coordinate HTTP writes, guarded SQL transactions and provider dispatch; they are not a second ledger. Verified artifacts restore exact values into a separate TEST database and remain VERIFYING until invariant checks/session invalidation/workflow fencing, then require explicit resume and target application restart. Backup is an online consistent readonly snapshot. [Contract](STAGE5B_BACKUP_RECOVERY.md).
