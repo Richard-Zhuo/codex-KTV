@@ -1,3 +1,7 @@
+## Stage 5B
+
+Stage 5B operator commands and safety acknowledgments are in STAGE5B_BACKUP_RECOVERY.md. Focused backup tests use LEDGER_MYSQL_TEST_URL on the owned33313 instance and separate jbhh_ktv_restore_* targets; no production DB is exercised.
+
 ## Stage 5A controlled commands
 
 Use node production/bootstrap-cli.js (default --dry-run; explicit --apply), node production/mapping-cli.js, node production/change-password-cli.js and node production/readiness-cli.js only with reviewed Git-external files and exact database/store/ledger confirmation. Full parameters and production-required environment settings: [Stage 5A](STAGE5A_PRODUCTION_BOOTSTRAP.md). Production startup validates configuration and remains API-unavailable until read-only readiness succeeds. Live-control true is refused in this stage. Focused: node --test --test-isolation=none --test-reporter=tap production/bootstrap.test.js production/readiness.test.js production/mysql-bootstrap.integration.test.js with the explicitly isolated LEDGER_MYSQL_TEST_URL. Full: node --test --test-isolation=none --test-reporter=tap. npm test remains required by AGENTS; attempt and report unavailable when absent. Production environment prohibits destructive fixtures even against a test URL. NODE_ENV, KTV_HTTP_ENV and KTV_DEPLOYMENT_ENV use a shared strict parser; noncanonical values and aliases are rejected before SQL or startup, not normalized to development.

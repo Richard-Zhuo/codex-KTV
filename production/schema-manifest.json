@@ -9,7 +9,8 @@
     "007_mysql_platform_vouchers.sql": "cda8811b0ecc8aa7dd4be9362b9533ff5d220b4086c64adc06a036c3f3e5f106",
     "008_mysql_room_control.sql": "a7e9c879f0f6a5e95f4580a9f9ee60419c82d27470f64f7f161ef473082aa44a",
     "009_mysql_room_device_mapping.sql": "543637a123be3be6ac3f15ae6b03253dccbd7dbb975be37d1279e68873257a30",
-    "010_mysql_production_bootstrap.sql": "deea64891de3c37f1187ef8a5fa5bd2a295df19eed445e4e0ed495d0e4fe809c"
+    "010_mysql_production_bootstrap.sql": "deea64891de3c37f1187ef8a5fa5bd2a295df19eed445e4e0ed495d0e4fe809c",
+    "011_mysql_recovery_control.sql": "f913001e6747927827e5674e14032feb0d9558e80ebab9729d5457f8993f70c6"
   },
   "tables": {
     "auth_accounts": "62a0df35f7e920c233631b3ce9025953cae34cc1e0ddc3478b63db31d588c025",
@@ -25,6 +26,8 @@
     "ledger_success_audit": "d58010d7a3f26489a4899780412bc8d8e1fdfb96a927b9cc82d1e28a76cffe3a",
     "production_bootstrap_events": "3729708b80426a13945137a15da49e6f66d6f52e9854d23444db949a08b2f38c",
     "provider_events": "71e1c586a876f03f8abcf04e4d8df28164872f7a1d51e7392d29b07df2f83aa9",
+    "recovery_control": "1703e856f81cb0d70d9f1bf3bb3f425a09834216e1273942c97f09aaddacc78d",
+    "recovery_events": "f0010f52eef7240965f957f12d4445e45a47a482b6fdd554db2fdb5e4651d5ae",
     "room_control_workflows": "ef7a943cd172f910e3976038be7f6b79201cd9e73f7ff7e21df4da30cd7381da",
     "room_device_mappings": "b17a7ba2e6fabcd3ce939a1c6d36971fe0b3bdabcffecbf2ba58083a4198cb5f",
     "voucher_exceptions": "b864e028a39e7ca4b88074a68e435e246722fdf4dd48b238db71d715a70e0d91",

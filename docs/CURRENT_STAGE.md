@@ -1,3 +1,7 @@
+## Stage 5B backup / recovery candidate
+
+Stage 5A is accepted and closed out: main=origin/main=b188df811926bf4d6cf6c535d1a186ff270e699c. Stage 5B develops only on codex/p0-1-stage5b-backup-recovery. No production initialization, provider request, deployment, merge or push. [Contract](STAGE5B_BACKUP_RECOVERY.md).
+
 ## Stage 5A high-risk audit fix candidate (2026-10-08)
 
 Audited HEAD 37a2542504580f9ee405f59221ee1dfd65ebc8c3 exposed one P0 destructive-environment guard defect, two P1 issues (completed-plan grant expansion and deployment-environment readiness bypass), and two P2 audit/diagnostic gaps. All are fixed in one local audit-fix commit above that candidate; disposition is FIXED, NEEDS HUMAN RE-ACCEPTANCE. No merge or push. Main and the locally recorded origin/main remain f64e4752a483b7b316aa86777bea006269c80024, ahead/behind 0/0. No remote fetch/push was needed because findings prohibit closeout.

@@ -1,3 +1,7 @@
+## Stage 5B
+
+backup/format.js defines canonical artifacts/path/checksum/schema validation; backup/mysql-backup.js owns one-snapshot export and official-schema parameterized restore; backup/cli.js is the private-file operator entry. test-support/backup-fixture.js owns isolated synthetic drill resources.
+
 ## Stage 5A modules
 
 shared/deployment-environment.js supplies strict environment selection shared by HTTP bootstrap, production configuration, test-target validation and destructive fixture guards. production/plan.js defines explicit permission templates and strict identity/target validation; bootstrap.js and bootstrap-cli.js initialize existing auth/employee records with audit; secret-file.js validates private external input; change-password-cli.js calls auth.changeOwnPassword. schema.js and schema-manifest.json verify the structure derived from migrations 001–010. mapping.js / mapping-cli.js initialize explicit room_device_mappings with provenance audit. config.js, readiness.js and readiness-cli.js report production blockers; http/bootstrap.js gates production API/worker startup. test-support/destructive-safety.js guards real DB fixture loading/cleanup and the historical recovery harness. Focused verification: production/*.test.js and production/mysql-bootstrap.integration.test.js; [contract](STAGE5A_PRODUCTION_BOOTSTRAP.md).

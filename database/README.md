@@ -1,3 +1,7 @@
+## Stage 5B
+
+Schema authority: versioned MySQL migrations001-011. Migration011 adds recovery_control/recovery_events only. Twenty InnoDB tables; no identity, mapping or inventory seeds. production/schema-manifest.json remains a derived verification digest, not another authority.
+
 ## Stage 5A schema addition
 
 Schema authority: versioned MySQL migrations 001–010. Migration 010 adds only production_bootstrap_events: operator identity, UTC time, config version, plan digest and non-secret facts. It seeds nothing. Apply once after 009; repeated CREATE refuses an existing table. Inspect partial DDL failure; bootstrap never executes DDL.

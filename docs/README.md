@@ -1,3 +1,7 @@
+## Stage 5B backup / recovery candidate
+
+Stage 5A is accepted and closed out: main=origin/main=b188df811926bf4d6cf6c535d1a186ff270e699c. Stage 5B develops only on codex/p0-1-stage5b-backup-recovery. No production initialization, provider request, deployment, merge or push. [Contract](STAGE5B_BACKUP_RECOVERY.md).
+
 ## Stage 5A production bootstrap
 
 Controlled initialization and production readiness: [Stage 5A](STAGE5A_PRODUCTION_BOOTSTRAP.md). Current formal schema authority is MySQL migrations 001–010; no production cutover or live-control activation.

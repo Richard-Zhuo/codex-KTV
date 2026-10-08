@@ -48,7 +48,7 @@ test('production bootstrap against fresh migrated isolated MySQL', {skip:!raw},a
       const result={};for(const name of created.filter(name=>!omit.includes(name))){const [rows]=await connection.query('SELECT * FROM '+name);result[name]=createHash('sha256').update(JSON.stringify(rows.map(r=>JSON.stringify(r)).sort())).digest('hex');}return result;
     };
     await t.test('001 through current schema installed and unknown schema refused',async()=>{
-      assert.equal((await validateSchema(setup,'jbhh_ktv_test')).tables,18);
+      assert.equal((await validateSchema(setup,'jbhh_ktv_test')).tables,20);
       await setup.query('ALTER TABLE employees ADD COLUMN unexpected INT NULL');
       await assert.rejects(validateSchema(setup,'jbhh_ktv_test'),{code:'BOOTSTRAP_SCHEMA_MISMATCH'});
       const before=await snapshot();
@@ -59,13 +59,16 @@ test('production bootstrap against fresh migrated isolated MySQL', {skip:!raw},a
       finally{assertFixtureEnvironment();await setup.query('DROP TABLE synthetic_future_table');created.pop();}
     });
     await t.test('migration 010 upgrade preserves 001-009 rows, repeat refuses, no identity seeds',async()=>{
-      assertFixtureEnvironment();await setup.query('DROP TABLE production_bootstrap_events');
+      assertFixtureEnvironment();await setup.query('DROP TABLE recovery_events');await setup.query('DROP TABLE recovery_control');await setup.query('DROP TABLE production_bootstrap_events');
       await setup.query("INSERT INTO auth_events(event_type,reason_code) VALUES('login-failure','synthetic-migration-probe')");
-      const before=await snapshot(pool,['production_bootstrap_events']);
+      const before=await snapshot(pool,['production_bootstrap_events','recovery_control','recovery_events']);
       await assert.rejects(bootstrapIdentities({...args,dryRun:false}),{code:'BOOTSTRAP_SCHEMA_MISMATCH'});
-      assert.deepEqual(await snapshot(pool,['production_bootstrap_events']),before);
+      assert.deepEqual(await snapshot(pool,['production_bootstrap_events','recovery_control','recovery_events']),before);
       const ddl=(await readFile(new URL('../database/migrations/010_mysql_production_bootstrap.sql',import.meta.url),'utf8')).split(/\r?\n/).filter(l=>!l.trim().startsWith('--')).join('\n').trim().replace(/;$/,'');
-      await setup.query(ddl);assert.deepEqual(await snapshot(pool,['production_bootstrap_events']),before);
+      await setup.query(ddl);
+      const recoveryDdl=await readFile(new URL('../database/migrations/011_mysql_recovery_control.sql',import.meta.url),'utf8');
+      for(const sql of recoveryDdl.split(/\r?\n/).filter(l=>!l.trim().startsWith('--')).join('\n').split(';').map(s=>s.trim()).filter(Boolean))await setup.query(sql);
+      assert.deepEqual(await snapshot(pool,['production_bootstrap_events','recovery_control','recovery_events']),before);
       const installed=await snapshot();await assert.rejects(setup.query(ddl),{code:'ER_TABLE_EXISTS_ERROR'});
       assert.deepEqual(await snapshot(),installed);assert.equal((await counts()).auth_accounts,'0');assert.equal((await counts()).employees,'0');
     });

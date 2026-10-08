@@ -1,3 +1,7 @@
+## Stage 5B
+
+Stage 5B requires consistent server-side backup, checksum-before-restore, separate empty test target, persisted recovery freeze, explicit session invalidation, invariant verification and operator resume. No real initialization/provider/deployment.
+
 ## Stage 5A accepted scope (2026-10-08)
 
 Provide stable separate employee/principal identities, explicit known grants, reviewed per-person bootstrap, secret-safe credential handling, idempotency/conflict refusal and a genuinely read-only dry-run. Add explicit human room mappings, schema/config/catalog/inventory readiness and production destructive-fixture guards. Unknown permissions, schema or config fail closed. Completed bootstrap identity plans cannot silently expand/rebind/repair grants; canonical environment parsing must guard every production and destructive-fixture entry point. Keep production device control OFF; no deployment/backup drill. [Detailed contract and owner decisions](STAGE5A_PRODUCTION_BOOTSTRAP.md).

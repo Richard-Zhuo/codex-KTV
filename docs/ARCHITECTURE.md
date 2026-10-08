@@ -1,3 +1,7 @@
+## Stage 5B
+
+Stage 5B preserves existing MySQL business/auth/workflow facts in one consistent logical snapshot; restore never replays business commands to rebuild history. Recovery operational state is separate from the ledger revision.
+
 ## Stage 4C opening integration
 
 The current integration supersedes historical no-employee-wiring notes below: ledger/application.js enrolls through devices/mysql-port.js on the same ledger connection; devices/runtime.js composes the existing workflow with a bounded persistent worker. Snapshot reads combine business and workflow facts before server-side projection. Provider I/O stays outside SQL transactions and the real adapter remains disabled. See [contract](STAGE4C_OPEN_DEVICE.md).
