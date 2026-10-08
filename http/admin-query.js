@@ -33,7 +33,7 @@ export function projectAdminSnapshot(head, context) {
   const principalId = context.principalId;
   const view = {
     serverNow: context.dbNow,
-    rooms: state.rooms.map(room => pick(room, ['id', 'type', 'status', 'issueType'])),
+    rooms: state.rooms.map(room => pick(room, ['id', 'type', 'status', 'issueType', 'businessState', 'deviceControl', 'deviceWorkflowId'])),
     reviewQueue: []
   };
   view.dashboard = {
@@ -44,7 +44,7 @@ export function projectAdminSnapshot(head, context) {
 
   if (grants.has('report.view')) {
     view.orders = state.orders.map(order => pick(order,
-      ['id', 'kind', 'room', 'status', 'businessDate']));
+      ['id', 'kind', 'room', 'status', 'businessDate', 'businessState', 'deviceControl', 'deviceWorkflowId']));
     view.dashboard.orderCount = view.orders.length;
   }
   if (grants.has('catalog.manage')) {

@@ -1,3 +1,6 @@
+import { createRoomControlRuntime } from '../devices/runtime.js';
+import { KtvSkyRoomControlGateway } from '../devices/gateway.js';
+import { readDeviceHead } from '../devices/mysql-port.js';
 import mysql from 'mysql2/promise';
 import { createMySqlAuthStore } from '../auth/mysql-store.js';
 import { createAuthService } from '../auth/service.js';
@@ -10,6 +13,9 @@ import { createCurrentSessionReader } from './query.js';
 import { createHttpApi } from './api.js';
 
 export function createHttpApiFromEnv(env = process.env, logger = console) {
+  const deviceControlMode=env.DEVICE_CONTROL_MODE??'disabled';
+  if(!['disabled','required'].includes(deviceControlMode))throw TypeError('Invalid DEVICE_CONTROL_MODE');
+  // Real KTVSky productionEnabled remains false. No live credentials or gate are read here.
   const mode = env.KTV_API_MODE ?? 'disabled';
   if (mode === 'disabled') return null;
   if (mode !== 'enabled') throw new TypeError('Invalid KTV_API_MODE');
@@ -45,10 +51,14 @@ export function createHttpApiFromEnv(env = process.env, logger = console) {
   const store = createMySqlLedgerStore({ pool, ledgerId, database,
     bindSessionRevalidation: authStore.bindSessionRevalidation,
     bindEmployeeResolver: employeeStore.bindEmployeeResolver,
-    bindVoucherRedemptions: voucherStore.bindVoucherRedemptions });
+    bindVoucherRedemptions: voucherStore.bindVoucherRedemptions, deviceControlMode });
   const application = createTrustedLedgerApplication({ store, businessTimeZone });
   const sessionReader = createCurrentSessionReader({ pool, authStore });
-  return createHttpApi({ authService, application, store, sessionReader, employeeStore,
+  const runtime=deviceControlMode==='required' ? createRoomControlRuntime({pool,database,ledgerId,authStore,gateway:new KtvSkyRoomControlGateway()}) : null;
+  const api=createHttpApi({ authService, application, store, sessionReader, employeeStore,
+    deviceSnapshot: (connection,head)=>readDeviceHead(connection,database,head),
     businessTimeZone, origin: env.KTV_PUBLIC_ORIGIN, environment,
     allowInsecureCookie: env.KTV_INSECURE_COOKIE === 'true', logger });
+  runtime?.start();
+  return Object.freeze({...api,async close(){await runtime?.stop();await pool.end();}});
 }

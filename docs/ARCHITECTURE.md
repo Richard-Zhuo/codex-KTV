@@ -1,3 +1,7 @@
+## Stage 4C opening integration
+
+The current integration supersedes historical no-employee-wiring notes below: ledger/application.js enrolls through devices/mysql-port.js on the same ledger connection; devices/runtime.js composes the existing workflow with a bounded persistent worker. Snapshot reads combine business and workflow facts before server-side projection. Provider I/O stays outside SQL transactions and the real adapter remains disabled. See [contract](STAGE4C_OPEN_DEVICE.md).
+
 ## Stage 4B provider transport boundary
 
 devices/ktvsky-http-client.js owns bounded server-side HTTP with TLS verification, no redirects or retries. devices/ktvsky-gateway.js owns provider credentials, private token/Cookie cache, observed response mapping and conservative UNKNOWN results. productionEnabled remains false; there is no employee open, HTTP registry or bootstrap connection. Raw provider evidence alone does not establish settled operations or a verified countdown end time. The isolated validation boundary combines persisted ACK, dispatch/observation times and bounded remaining-seconds evidence to confirm its own open step, preserving that historical observation after expiry. It does not enable production workflow control. The isolated validation tool applies a branded three-factor policy and a flushed exclusive external UNKNOWN journal before control; restart and concurrent processes can only query a claimed device. It does not change the MySQL business/schema authority or expose a new employee/API path. See [Stage 4B contract](STAGE4B_KTVSKY_ADAPTER.md).

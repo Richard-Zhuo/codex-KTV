@@ -1,3 +1,4 @@
+import { bindRoomControl } from './mysql-port.js';
 import { decodeLedgerSnapshot, encodeLedgerSnapshot } from '../ledger/mysql-snapshot.js';
 export class DeviceCommitOutcomeUnknown extends Error {
   constructor(cause){super('Device commit outcome unknown; query original workflow before dispatch',{cause});this.code='DEVICE_COMMIT_OUTCOME_UNKNOWN';}
@@ -15,6 +16,11 @@ export function createMySqlRoomControlStore({pool,database,ledgerId,bindSessionR
     return record;
   }
   return Object.freeze({ledgerId,testOnly,
+    async listPending(limit=10) {
+      if(!Number.isSafeInteger(limit)||limit<1||limit>25)throw TypeError('Bounded device batch required');
+      const [rows]=await pool.execute('SELECT state_json,state_checksum FROM '+workflows+" WHERE ledger_id=? AND JSON_UNQUOTE(JSON_EXTRACT(state_json,'$.status')) NOT IN ('ACTIVE','DEVICE_FAILED') ORDER BY updated_at,workflow_id LIMIT "+limit,[ledgerId]);
+      return rows.map(row=>decodeLedgerSnapshot(row.state_json,row.state_checksum)).filter(r=>!['ACTIVE','DEVICE_FAILED'].includes(r.status)).slice(0,limit).map(r=>r.id);
+    },
     async runAtomic(work){
       const connection=await pool.getConnection();let begun=false,commitSent=false;
       try{
@@ -23,7 +29,7 @@ export function createMySqlRoomControlStore({pool,database,ledgerId,bindSessionR
         if(!head || !Number.isSafeInteger(Number(head.revision)))throw Error('Missing confirmed device ledger');
         const readDbNow=async()=>{const [[row]]=await connection.execute("SELECT DATE_FORMAT(UTC_TIMESTAMP(6), '%Y-%m-%dT%H:%i:%s.%fZ') AS db_now");return row.db_now;};
         const select=async(column,value)=>{const [[row]]=await connection.execute('SELECT * FROM '+workflows+' WHERE ledger_id=? AND '+column+'=? FOR UPDATE',[ledgerId,value]);return decode(row);};
-        const result=await work({sessionRevalidation:bindSessionRevalidation(connection),
+        const result=await work({...bindRoomControl(connection,database,ledgerId),sessionRevalidation:bindSessionRevalidation(connection),
           readHead:async()=>({revision:Number(head.revision),state:decodeLedgerSnapshot(head.state_json,head.state_checksum)}),readDbNow,
           get:id=>select('workflow_id',id),findByOperation:key=>select('operation_key',key),findByOrder:id=>select('order_id',id),
           async write(record,expectedVersion){

@@ -1,3 +1,7 @@
+## Stage 4C accepted implementation scope (2026-10-08)
+
+Connect the existing trusted employee open to one atomic durable device intent. Pending and offline rooms remain reserved; only verified device evidence yields ACTIVE in required mode. Preserve business snapshots, idempotency, session/price authority, query-only UNKNOWN recovery and historical facts. The server owns execution and restart recovery; staff reads progress. Real KTVSky stays production-disabled. See [Stage 4C contract](STAGE4C_OPEN_DEVICE.md).
+
 ## Stage 4B.1 remaining countdown correction (2026-10-08)
 
 This task changes verification/recovery code and offline tests only; no real provider HTTP/mutation, V06 control, merge, push or Stage 4C. Safe live V06 evidence establishes query opentime as remaining seconds, distinct from the initial requested duration. Confirm only persisted ACK + fresh ONLINE/OPEN + positive remaining seconds consistent with elapsed time within a fixed bounded tolerance; preserve query-only recovery, genuine UNKNOWN interlocks and historical successful OPEN after expiry. Preserve original external evidence/journal. Close contract remains NOT VERIFIED. The exact timing rule, offline archive recovery and next human gate are maintained in [Stage 4B contract](STAGE4B_KTVSKY_ADAPTER.md).

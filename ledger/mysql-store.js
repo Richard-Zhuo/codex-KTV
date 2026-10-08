@@ -1,5 +1,6 @@
 // Transitional MySQL 8.4 / InnoDB adapter for the frozen Stage 1A ledger port.
 // The caller owns the mysql2 promise Pool and must select an already migrated database.
+import { bindRoomControl } from '../devices/mysql-port.js';
 import { decodeLedgerJson, decodeLedgerSnapshot, encodeLedgerJson, encodeLedgerSnapshot } from './mysql-snapshot.js';
 
 const fingerprintPattern = /^[0-9a-f]{64}$/;
@@ -65,7 +66,8 @@ export class LedgerCommitOutcomeUnknown extends Error {
   }
 }
 
-export function createMySqlLedgerStore({ pool, ledgerId, database, bindSessionRevalidation, bindEmployeeResolver, bindVoucherRedemptions }) {
+export function createMySqlLedgerStore({ pool, ledgerId, database, bindSessionRevalidation, bindEmployeeResolver, bindVoucherRedemptions, deviceControlMode = 'disabled' }) {
+  if (!['disabled','required'].includes(deviceControlMode)) throw TypeError('Invalid device control mode');
   if (typeof pool?.getConnection !== 'function' || typeof ledgerId !== 'string' ||
       !ledgerId || ledgerId.trim() !== ledgerId || ledgerId.length > 64 ||
       typeof database !== 'string' || !/^[a-z][a-z0-9_]{0,63}$/.test(database) ||
@@ -195,6 +197,7 @@ export function createMySqlLedgerStore({ pool, ledgerId, database, bindSessionRe
         if (typeof port?.lockForOpen !== 'function' || typeof port?.linkToOrder !== 'function') throw TypeError('同事务 voucher binding port 无效');
         transaction.voucherBinding = port;
       }
+      transaction.roomControl = bindRoomControl(connection, database, ledgerId);
       const response = await work(transaction);
       if (!proposed) {
         await connection.rollback();
@@ -248,5 +251,5 @@ export function createMySqlLedgerStore({ pool, ledgerId, database, bindSessionRe
     }
   };
 
-  return { ledgerId, read, readInTransaction, runAtomic };
+  return { ledgerId, deviceControlMode, read, readInTransaction, runAtomic };
 }

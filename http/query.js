@@ -57,7 +57,7 @@ export function projectStoreSnapshot(head, context) {
   const view = {};
   if (any(grants, roomGrants)) {
     view.rooms = state.rooms.map(room => ({ id: room.id, type: room.type,
-      status: room.status }));
+      status: room.status, ...(room.businessState?{businessState:room.businessState,deviceControl:room.deviceControl}:{}) }));
   }
   if (any(grants, catalogGrants)) {
     view.catalog = { products: (state.catalog?.products ?? []).filter(item => item.active !== false)

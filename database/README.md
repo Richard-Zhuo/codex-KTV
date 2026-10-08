@@ -1,3 +1,7 @@
+## Stage 4C schema addition
+
+Schema authority: versioned MySQL migrations 001…009. Migration 009 adds only explicit ledger-scoped room_device_mappings, default disabled, with unique internal room and provider/device constraints. No real mapping is seeded. Apply once after 008; repeat refuses existing table. The guarded fixture now creates/cleans seventeen owned InnoDB tables; it refuses pre-existing mapping tables. Catalog JSON and immutable order facts keep their existing authority.
+
 ## Stage 4A schema addition
 
 Schema authority: versioned MySQL migrations 001…008. Migration 008 adds only room_control_workflows, an independent InnoDB device workflow table with unique ledger/order and ledger/operation identity, version and checksummed JSON. No business seed or production credentials. Apply once after 001…007; duplicate install fails explicitly. Catalog schema v1 -> v2 is a deterministic transformation of catalog JSON inside the existing ledger state, not an alternative SQL schema authority. The guarded integration fixture verifies fresh installation, upgrade preserving confirmed ledger data, and duplicate-install refusal. Existing ledger facts and legacy PostgreSQL exclusion remain unchanged. The real MySQL fixture explicitly adds this sixteenth table to its pre-existing-table refusal and owned cleanup.

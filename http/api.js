@@ -11,7 +11,7 @@ const forbiddenFields = new Set([
   'permissions', 'permissionIds', 'capabilities', 'policyAttributes',
   'policyAttributeIds', 'trustedContext', 'actualActorPrincipalId',
   'actor', 'actorId', 'clock', 'dbNow', 'submittedByPrincipalId',
-  'sessionType', 'pricePlanId', 'businessSession', 'targetEndAt', 'targetTime', 'durationMinutes'
+  'sessionType', 'pricePlanId', 'businessSession', 'targetEndAt', 'targetTime', 'durationMinutes', 'countdownSeconds', 'deviceWorkflowId', 'businessState', 'deviceControl'
 ]);
 
 function rejectAuthorityFields(value, depth = 0) {
@@ -73,7 +73,7 @@ export function createHttpApi(options) {
           if (url.search) throw new HttpBoundaryError('invalid_input');
           const projected = await sessionReader.withContext(session.credential,
             async (context, connection) => projectAdminSnapshot(
-              await store.readInTransaction(connection), context));
+              await (options.deviceSnapshot ? options.deviceSnapshot(connection, await store.readInTransaction(connection)) : store.readInTransaction(connection)), context));
           sendJson(res, 200, projected, { 'X-Request-Id': requestId });
           return true;
         }
@@ -82,7 +82,8 @@ export function createHttpApi(options) {
           if (url.search) throw new HttpBoundaryError('invalid_input');
           const projected = await sessionReader.withContext(session.credential,
             async (context, connection) => {
-              const head = await store.readInTransaction(connection);
+              const rawHead = await store.readInTransaction(connection);
+              const head = options.deviceSnapshot ? await options.deviceSnapshot(connection,rawHead) : rawHead;
               const result = projectStoreSnapshot(head, context);
               const employees = options.employeeStore ?
                 await options.employeeStore.listActiveInTransaction(connection) : [];

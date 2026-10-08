@@ -71,7 +71,7 @@ const credit = (value, context, grants) => {
 };
 const order = (value, context, grants) => ({
   ...pick(value, ['id', 'kind', 'room', 'time', 'createdAt', 'businessDate',
-    'businessDayRuleVersion', 'businessSession', 'person', 'recordedBy', 'employeeId', 'openedBy',
+    'businessDayRuleVersion', 'businessState', 'deviceWorkflowId', 'openingOperationKey', 'deviceControl', 'businessSession', 'person', 'recordedBy', 'employeeId', 'openedBy',
     'openSource', 'reservedBy', 'reservationSource', 'status', 'packageId',
     'packageNameSnapshot', 'packagePriceCents', 'packageBaseCents',
     'packageGiftValueCents', 'base', 'gift', 'period', 'rounding',
@@ -175,7 +175,7 @@ export function projectEmployeeWorkspace(state, context, {
       .map(item => pick(item, ['employeeId', 'displayName']));
   }
   if (sections.rooms) workspace.rooms = rows(state.rooms, item => ({
-    ...pick(item, ['id', 'type', 'status', 'issueType', 'issueNote',
+    ...pick(item, ['id', 'type', 'status', 'businessState', 'deviceControl', 'deviceWorkflowId', 'issueType', 'issueNote',
       'issueAt', 'issueBy', 'issueApprovedBy']),
     order: sections.orders && state.orders.some(order =>
       order.id === item.order &&

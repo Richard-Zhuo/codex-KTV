@@ -100,7 +100,8 @@ export async function testRoomControl({t,pool,setup,auth,provision,seed,inspect,
   }finally{await independent.end();}
   const opens=mutations(f).filter(c=>c.method==='openRoom');
   assert.equal(opens.length,1);assert.ok(opens[0].countdownSeconds>0);
-  assert.equal(opens[0].countdownSeconds,opens[0].durationMinutes*60);
+  assert.ok(opens[0].countdownSeconds<=opens[0].durationMinutes*60);
+  assert.ok(opens[0].durationMinutes*60-opens[0].countdownSeconds<60,'Seconds are rounded once toward frozen target, not to a whole minute');
   assert.equal(f.gateway.room.countdownTargetEndAt,r.businessSession.targetEndAt);
   assert.deepEqual(await inspect(f.ledgerId),before);
  });

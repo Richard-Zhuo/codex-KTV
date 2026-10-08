@@ -1,3 +1,4 @@
+import { verifyRemainingCountdown } from './ktvsky-countdown.js';
 import { randomUUID, createHash } from 'node:crypto';
 import { requireTrustedPermission, AuthorizationDenied } from '../shared/identity.js';
 import { prepareSessionCredential, revalidateCommandSession } from '../ledger/trusted-execution.js';
@@ -14,14 +15,16 @@ function stillOwnsRoom(head,record) {
   return head.state.rooms.some(r=>r.id===record.internalRoomId && r.order===record.orderId) &&
     head.state.orders.some(o=>o.id===record.orderId && o.status==='营业中');
 }
-export function createRoomControlApplication({store,gateway,mappings,allowTestGateway=false,timeoutMs=15000,leaseMs=30000}) {
+export function createRoomControlApplication({store,gateway,mappings,allowTestGateway=false,timeoutMs=15000,leaseMs=30000,serverWorker=false}) {
   if(typeof store?.runAtomic!=='function' || !store.ledgerId ||
       ['ensureSession','getRoomStatus','closeRoom','openRoom','queryRoomState'].some(k=>typeof gateway?.[k]!=='function') ||
       !Number.isSafeInteger(timeoutMs) || timeoutMs<1 || !Number.isSafeInteger(leaseMs) || leaseMs<=timeoutMs) throw TypeError('Invalid room-control composition');
   if(gateway.testOnly && (!allowTestGateway || store.testOnly!==true))throw TypeError('Fake gateway requires explicit isolated test mode');
-  const mapping=createRoomDeviceMappings(mappings);
+  const mapping=mappings===undefined?null:createRoomDeviceMappings(mappings);
+  const targetFor=(tx,id)=>mapping?mapping.get(id):tx.readMapping(id);
   const available=()=>{if(gateway.productionEnabled===false)throw Error('KTVSky production control is not enabled');};
   async function authorized(tx,credential) {
+    if(serverWorker && !credential) return {dbNow:await tx.readDbNow()};
     const context=await revalidateCommandSession(tx,credential);requireTrustedPermission(context,'room.open');return context;
   }
   async function callGateway(input,queryOnly) {
@@ -46,7 +49,7 @@ export function createRoomControlApplication({store,gateway,mappings,allowTestGa
   }
   return Object.freeze({
     // Starts only from an existing server-confirmed order; never creates a second
-    // order, payment or inventory movement. Stage 4B will wire the open outbox.
+    // order, payment or inventory movement. Formal open enrolls atomically through mysql-port.
     async start(command,sessionCredential) {
       available();
       if(!exact(command,['operationKey','expectedRevision','payload']) || typeof command.operationKey!=='string' ||
@@ -62,7 +65,7 @@ export function createRoomControlApplication({store,gateway,mappings,allowTestGa
         if(head.revision!==command.expectedRevision)return {status:'revision-conflict',currentRevision:head.revision};
         const order=head.state.orders.find(o=>o.id===command.payload.orderId && o.kind==='room' && o.status==='营业中');
         if(!order || !head.state.rooms.some(r=>r.id===order.room && r.order===order.id))throw TypeError('Confirmed active room order required');
-        const target=mapping.get(order.room);
+        const target=await targetFor(tx,order.room);
         if(!target?.enabled)throw TypeError('Enabled stable room/device mapping required');
         countdownFor(order.businessSession,context.dbNow);
         if(await tx.findByOrder(order.id))return {status:'idempotency-conflict',reason:'order-already-has-workflow'};
@@ -83,22 +86,22 @@ export function createRoomControlApplication({store,gateway,mappings,allowTestGa
     // In-flight duplicates return without sending; expired claims reconcile only.
     async advance(workflowId,sessionCredential) {
       available();if(!uuid.test(workflowId))throw TypeError('Workflow UUID required');
-      const credential=prepareSessionCredential(sessionCredential);
+      const credential=serverWorker && sessionCredential===undefined?null:prepareSessionCredential(sessionCredential);
       const claim=await store.runAtomic(async tx=>{
         const context=await authorized(tx,credential),head=await tx.readHead(),record=await tx.get(workflowId);
-        if(!record)throw TypeError('Unknown workflow');identity(record,context);
+        if(!record)throw TypeError('Unknown workflow');if(credential)identity(record,context);
         if(['ACTIVE','DEVICE_FAILED'].includes(record.status))return {immediate:record};
         if(record.inFlight && Date.parse(record.inFlight.until)>Date.parse(context.dbNow))return {immediate:record};
         const observingClose=record.step==='CLOSE' && record.closeAcknowledged===true;
         const observingOpen=record.step==='OPEN' && record.openAcknowledged===true;
         const observingMutation=observingClose || observingOpen;
         const recovering=!observingMutation && (record.uncertain || Boolean(record.inFlight));
-        const configured=mapping.get(record.internalRoomId);
+        const configured=await targetFor(tx,record.internalRoomId);
         if(!recovering && (!stillOwnsRoom(head,record) || !configured?.enabled || configured.provider!==record.provider || configured.externalDeviceId!==record.externalDeviceId)){
           const next=changeWorkflow(record,{status:'DEVICE_FAILED',inFlight:null},context.dbNow,'order-or-mapping-changed');await tx.write(next,record.version);return {immediate:next};
         }
         let countdown;
-        if(!recovering){try{countdown=countdownFor(record.businessSession,context.dbNow);}catch{
+        if(!recovering && !observingMutation && !record.openConfirmedAt){try{countdown=countdownFor(record.businessSession,context.dbNow);}catch{
           const next=changeWorkflow(record,{status:'DEVICE_FAILED',inFlight:null},context.dbNow,'session-ended');await tx.write(next,record.version);return {immediate:next};}}
         const attemptId=randomUUID(),stepId=record.id+':'+record.step;
         const next=changeWorkflow(record,{status:observingMutation?'DEVICE_VERIFYING':recovering?'DEVICE_UNKNOWN':statusForStep(record.step),
@@ -106,7 +109,7 @@ export function createRoomControlApplication({store,gateway,mappings,allowTestGa
         await tx.write(next,record.version);
         return {record:next,attemptId,recovering,observingClose,observingOpen,observingMutation,input:{provider:record.provider,externalDeviceId:record.externalDeviceId,
           workflowId:record.id,stepId,step:record.step,targetEndAt:record.businessSession.targetEndAt,...countdown,
-          ...(countdown?{countdownSeconds:countdown.durationMinutes*60}:{})}};
+          ...(countdown?{countdownSeconds:Math.ceil((Date.parse(record.businessSession.targetEndAt)-Date.parse(context.dbNow))/1000)}:{})}};
       });
       if(claim.immediate)return claim.immediate;
       const evidence=await callGateway(claim.input,claim.recovering || claim.observingMutation); // outside every SQL transaction
@@ -121,7 +124,11 @@ export function createRoomControlApplication({store,gateway,mappings,allowTestGa
         else if(scoped){
           const applied=claim.recovering ? evidence.stepResult==='APPLIED' && evidence.settled===true : evidence.kind==='APPLIED' && evidence.settled===true;
           const readSuccess=record.step==='STATUS' && evidence.kind==='STATE' && evidence.room?.online===true && typeof evidence.room.open==='boolean';
-          const verified=record.step==='VERIFY' && evidence.kind==='STATE' && desiredState('VERIFY',evidence.room,record.businessSession.targetEndAt);
+          const timedOpen=evidence.kind==='STATE' && evidence.room?.online===true && evidence.room?.open===true &&
+            record.openDispatch && verifyRemainingCountdown({...record.openDispatch,
+              observedAt:evidence.room.observedAt,remainingCountdownSeconds:evidence.room.remainingCountdownSeconds});
+          const verified=record.step==='VERIFY' && evidence.kind==='STATE' &&
+            (desiredState('VERIFY',evidence.room,record.businessSession.targetEndAt) || timedOpen);
           const alreadyClosed=!claim.recovering && !claim.observingClose && evidence.room?.online===true && evidence.room.open===false &&
             ((record.step==='STATUS' && readSuccess) || (record.step==='CLOSE' && evidence.kind==='PRECONDITION_SATISFIED'));
           if(alreadyClosed){
@@ -137,7 +144,7 @@ export function createRoomControlApplication({store,gateway,mappings,allowTestGa
            }else if(record.step==='OPEN' && !claim.recovering &&
               (claim.observingOpen || (evidence.kind==='ACKNOWLEDGED' && evidence.acknowledged===true))){
             openAcknowledged=true;uncertain=false;status='DEVICE_VERIFYING';outcome='open-acknowledged-awaiting-state';
-            if(claim.observingOpen && evidence.kind==='STATE' && desiredState('OPEN',evidence.room,record.businessSession.targetEndAt)){
+            if(claim.observingOpen && evidence.kind==='STATE' && (desiredState('OPEN',evidence.room,record.businessSession.targetEndAt)||timedOpen)){
               step='VERIFY';outcome='open-desired-state-confirmed';
             }
           }else if((applied && desiredState(record.step,evidence.room,record.businessSession.targetEndAt)) || readSuccess || verified){
@@ -151,7 +158,10 @@ export function createRoomControlApplication({store,gateway,mappings,allowTestGa
           stepResult:['APPLIED','NOT_APPLIED'].includes(evidence.stepResult)?evidence.stepResult:'UNKNOWN',settled:evidence.settled===true,
           online:evidence.room?.online===true,open:evidence.room?.open===true,
           targetMatched:evidence.room?.countdownTargetEndAt===record.businessSession.targetEndAt}:null;
-        const next=changeWorkflow(record,{status,step,uncertain,closeAcknowledged,openAcknowledged,closePrerequisite,inFlight:null,lastEvidence:safeEvidence},now,outcome);
+        const openDispatch=record.openDispatch ?? (record.step==='OPEN' && evidence.kind==='ACKNOWLEDGED' && scoped &&
+          typeof evidence.sentAt==='string' ? {requestedCountdownSeconds:claim.input.countdownSeconds,sentAt:evidence.sentAt}:null);
+        const openConfirmedAt=record.openConfirmedAt ?? ((record.step==='OPEN' && step==='VERIFY' && !uncertain)?now:null);
+        const next=changeWorkflow(record,{status,step,uncertain,closeAcknowledged,openAcknowledged,closePrerequisite,openDispatch,openConfirmedAt,inFlight:null,lastEvidence:safeEvidence},now,outcome);
         await tx.write(next,record.version);return next;
       });
     }

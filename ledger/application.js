@@ -119,8 +119,24 @@ export function createLedgerApplication({ store, principal, executionMode = 'dem
               orderBusinessDaySnapshot(context.dbNow, { timeZone: businessTimeZone }));
           }
           if (trusted && request.action === 'open') executionContext = await resolveVoucherOpeningContext(transaction, executionContext, request.payload);
+          if (trusted && request.action !== 'open') {
+            const order = state.orders.find(o => o.id === request.payload.order);
+            if (order?.deviceControl?.mode === 'required') {
+              const record=await transaction.roomControl.findByOrder(order.id);
+              if (!record || record.roomReadiness !== 'ACTIVE') throw new BusinessRejection('设备尚未确认开房，请先查看进度');
+            }
+          }
           nextState = transactCommand(state, request.action, request.payload, request.operationKey,
             trusted ? { mode: 'trusted', context: executionContext } : { mode: 'demo' });
+          if (trusted && request.action === 'open') {
+            const order=nextState.orders.find(o=>o.id===executionContext.openingOrderId);
+            order.openingOperationKey=request.operationKey;
+            if(store.deviceControlMode==='required') {
+              const record=await transaction.roomControl.enroll(order,request,context);
+              order.deviceWorkflowId=record.id;order.businessState='OPENING';
+              order.deviceControl={mode:'required',status:'DEVICE_PENDING'};
+            } else {order.businessState='ACTIVE';order.deviceControl={mode:'disabled',status:'DISABLED'};}
+          }
         } catch (error) {
           // Only explicit domain rejections reserve the key; unknown failures roll back.
           if (!(error instanceof BusinessRejection)) throw error;
@@ -135,7 +151,9 @@ export function createLedgerApplication({ store, principal, executionMode = 'dem
         if (typeof committedAt !== 'string' || !/T.+(?:Z|[+-]\d{2}:\d{2})$/.test(committedAt) || !Number.isFinite(Date.parse(committedAt))) throw TypeError('成功审计时间无效');
         const result = {
           status: 'committed', ledgerId, actorId, operationKey: request.operationKey, requestFingerprint: request.requestFingerprint,
-          previousRevision: currentRevision, revision, committedAt
+          previousRevision: currentRevision, revision, committedAt,
+          ...(trusted && request.action==='open' ? (()=>{const o=nextState.orders.find(o=>o.id===executionContext.openingOrderId);
+            return {orderId:o.id,deviceWorkflowId:o.deviceWorkflowId??null,businessState:o.businessState,deviceControl:o.deviceControl};})() : {})
         };
         const audit = {
           kind: 'command.succeeded', ledgerId, actorId, operationKey: request.operationKey, action: request.action,
