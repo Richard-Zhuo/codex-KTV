@@ -1,3 +1,10 @@
+## Stage 4B.1 countdown verification route
+
+- devices/ktvsky-countdown.js: one bounded elapsed/remaining-seconds predicate, shared by validation and the adapter interlock; paired observation checks.
+- devices/ktvsky-countdown.test.js: timing/tolerance/monotonic regressions based on sanitized V06 values.
+- devices/ktvsky-validation.js / validation-journal.js: durable dispatch/ACK times and historical OPEN evidence, query-only pending recovery, narrowly digest-bound offline recoverAcknowledgedOpen; no live calls in offline recovery.
+- devices/ktvsky-validation.test.js / ktvsky-gateway.test.js: mocked ACK/read timeout, implausible countdown, expiry preservation, archive integrity and unchanged UNKNOWN interlocks.
+
 ## Stage 4B adapter route
 
 - test-support/trusted-sales-fixture.js: seedFixedPriceSalesState gives legacy SQL transaction/payment tests an explicit OTHER category, independent of real DB time. Dedicated DAY/NIGHT tests retain their normal categories.

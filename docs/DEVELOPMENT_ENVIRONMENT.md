@@ -160,3 +160,7 @@ ledger/trusted-clean.integration.test.js 复用现有 fixture lock，新增明�
 ### Stage 4B manual validation
 
 See [safe tool configuration and stops](STAGE4B_KTVSKY_ADAPTER.md). The command is node tools/ktvsky-validate.js --config <external-config-path> --action query --room <confirmed-room-id>. Secrets are environment-only; no live control is enabled by default. Mutation needs the explicit live flag, matching human-approved unoccupied target, enabled mapping and one stable external journal directory. No real target is preconfigured. Pending records may not be deleted to bypass reconciliation.
+
+## Stage 4B.1 countdown verification regression
+
+Focused: node --test --test-isolation=none --test-reporter=tap devices/ktvsky-countdown.test.js devices/application.test.js devices/ktvsky-gateway.test.js devices/ktvsky-validation.test.js ledger/trusted-sales.test.js. Provider requests use local synthetic fixtures only. Full regression uses the existing dedicated MySQL harness; counts and current evidence are maintained in CURRENT_STAGE.md. The original live archives and journal are not test fixtures and must not be changed by these tests.

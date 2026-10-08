@@ -22,7 +22,7 @@ test('observed login/search contract carries private token and Cookie, returns o
  const result=await f.gateway.getRoomStatus(deviceInput);
  assert.equal(result.kind,'STATE');assert.equal(result.exists,true);assert.equal(result.room.online,true);
  assert.equal(result.room.open,false);assert.equal(result.evidenceVersion,1);
- assert.equal(result.room.countdownTargetEndAt,null);assert.equal(result.room.countdownUnit,'UNVERIFIED');
+ assert.equal(result.room.countdownTargetEndAt,null);assert.equal(result.room.countdownUnit,'SECONDS');
  assert.deepEqual(f.requests[0].body,syntheticCredentials);assert.equal(f.requests[0].method,'POST');
  const read=f.requests[1];assert.equal(read.method,'GET');assert.equal(read.path,'/h5/search');
  assert.equal(read.telno,syntheticCredentials.telno);
@@ -147,4 +147,23 @@ test('a query started before ACK cannot release the device interlock for a new m
  release();await read;
  const next=await f.gateway.openRoom({...deviceInput,workflowId:'new-workflow',stepId:'new-step'});
  assert.equal(next.kind,'UNKNOWN');assert.equal(controls(f).length,1);
+});
+
+
+test('gateway ACK interlock accepts elapsed remaining seconds, while same open identity cannot replay',async t=>{
+ let clock=Date.parse('2026-10-08T06:33:05Z');
+ const f=await providerFixture(t,{gatewayOptions:{enabled:true,mutationPolicy:()=>true,now:()=>clock}});
+ const request={...deviceInput,countdownSeconds:300};
+ const ack=await f.gateway.openRoom(request);
+ clock+=1000;f.state.opentime=20;
+ await f.gateway.queryRoomState(request);
+ const close={...request,stepId:'synthetic-workflow:CLOSE'};
+ assert.equal((await f.gateway.closeRoom(close)).kind,'UNKNOWN');assert.equal(controls(f).length,1);
+ clock+=45000;f.state.opentime=254;
+ const read=await f.gateway.queryRoomState(request);
+ assert.equal(read.room.remainingCountdownSeconds,254);assert.equal(read.room.countdownUnit,'SECONDS');
+ assert.equal(Date.parse(read.room.observedAt)-Date.parse(ack.sentAt),46000);
+ await f.gateway.openRoom(request);assert.equal(controls(f).length,1);
+ assert.equal((await f.gateway.closeRoom({...close,stepId:'synthetic-workflow:CLOSE-2'})).kind,'ACKNOWLEDGED');
+ assert.equal(controls(f).length,2);
 });

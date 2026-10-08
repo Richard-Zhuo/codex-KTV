@@ -1,4 +1,5 @@
 import { createKtvSkyHttpClient } from './ktvsky-http-client.js';
+import { verifyRemainingCountdown } from './ktvsky-countdown.js';
 import { isKtvSkySafetyPolicy } from './ktvsky-safety.js';
 
 const authCodes=new Set([30010,30011]); // Observed frontend, not an official guarantee.
@@ -85,6 +86,7 @@ export class KtvSkyRoomControlGateway {
     if(!auth.ready)return {error:auth.code};
     try {
       if(endpoint==='control'&&this.#mutationPolicy(input)!==true)return {error:'SAFE_VALIDATION_REQUIRED'};
+      const sentAt=new Date(this.#now()).toISOString();
       const response=await this.#client.request({endpoint,telno:this.#telno,body:endpoint==='control'?{...body,telno:this.#telno}:body,
         token:this.#session.token,cookie:this.#cookieHeader(endpoint),signal:input?.signal});
       if(response.status===401||response.status===403||authCodes.has(response.data?.code)){
@@ -92,7 +94,7 @@ export class KtvSkyRoomControlGateway {
       }
       if(response.status!==200)return {error:'PROVIDER_UNAVAILABLE'};
       if(response.data?.code!==200)return {error:'DEVICE_UNKNOWN'};
-      this.#acceptCookies(response.setCookies,endpoint);return {data:response.data};
+      this.#acceptCookies(response.setCookies,endpoint);return {data:response.data,sentAt,acknowledgedAt:new Date(this.#now()).toISOString()};
     }catch{return {error:'PROVIDER_UNAVAILABLE'};}
   }
   async getRoomStatus(input) {
@@ -108,14 +110,17 @@ export class KtvSkyRoomControlGateway {
     if(matches.length!==1)return this.#unknown(input,'INVALID_PROVIDER_EVIDENCE');
     const row=matches[0];
     if(![0,1].includes(row.alive)||![0,1].includes(row.status))return this.#unknown(input,'INVALID_PROVIDER_EVIDENCE');
+    const observedAt=new Date(this.#now()).toISOString();
+    const remainingCountdownSeconds=Number.isSafeInteger(row.opentime)&&row.opentime>=0?row.opentime:null;
     const ack=this.#acknowledgedDevices.get(input.externalDeviceId);
-    if(ack && ack===acknowledgedAtQueryStart && row.alive===1 && row.status===ack.status && (ack.status===0 || row.opentime===ack.countdownSeconds)){
+    if(ack && ack===acknowledgedAtQueryStart && row.alive===1 && row.status===ack.status && (ack.status===0 || verifyRemainingCountdown({...ack,observedAt,remainingCountdownSeconds}))){
       this.#pendingDevices.delete(input.externalDeviceId);this.#acknowledgedDevices.delete(input.externalDeviceId);
     }
     return {...scope,kind:'STATE',exists:true,stepResult:'UNKNOWN',settled:false,retrySafe:false,
       room:{online:row.alive===1,open:row.status===1,countdownTargetEndAt:null,
-        observedCountdownValue:Number.isSafeInteger(row.opentime)&&row.opentime>=0?row.opentime:null,
-        countdownUnit:'UNVERIFIED'}};
+        remainingCountdownSeconds,observedAt,
+        observedCountdownValue:remainingCountdownSeconds, // Compatibility alias.
+        countdownUnit:'SECONDS'}};
   }
   async queryRoomState(input){return this.getRoomStatus(input);}
   async #mutate(input,status) {
@@ -135,8 +140,9 @@ export class KtvSkyRoomControlGateway {
     if(response.error)return this.#unknown(input,response.error==='AUTH_REQUIRED'?'AUTH_REQUIRED':'DEVICE_UNKNOWN');
     // ACK is known transport outcome, not completion. The caller must query the
     // desired state before another step; the same operation identity stays blocked.
-    this.#acknowledgedDevices.set(input.externalDeviceId,{status,countdownSeconds:input.countdownSeconds});
-    return {...this.#unknown(input,'ACKNOWLEDGED',{acknowledged:true}),kind:'ACKNOWLEDGED'};
+    this.#acknowledgedDevices.set(input.externalDeviceId,{status,requestedCountdownSeconds:input.countdownSeconds,sentAt:response.sentAt});
+    return {...this.#unknown(input,'ACKNOWLEDGED',{acknowledged:true}),kind:'ACKNOWLEDGED',
+      sentAt:response.sentAt,acknowledgedAt:response.acknowledgedAt};
   }
   async closeRoom(input){return this.#mutate(input,0);}
   async openRoom(input){return this.#mutate(input,1);}

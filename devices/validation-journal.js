@@ -2,11 +2,13 @@ import { open, mkdir, readFile, realpath, rename, unlink } from 'node:fs/promise
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { denyValidation, insideDirectory, repositoryRoot } from './ktvsky-safety.js';
+import { verifyRemainingCountdown } from './ktvsky-countdown.js';
 
 const uuid=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const statuses=['UNKNOWN','ACKNOWLEDGED','DESIRED_STATE_CONFIRMED','PRECONDITION_SATISFIED'];
 const keys=['schemaVersion','scopeKey','workflowId','stepId','action','status','countdownSeconds','targetEndAt',
-  'acknowledged','preExistingDesiredState','causalEffect','evidenceSha256','history'];
+  'acknowledged','preExistingDesiredState','causalEffect','evidenceSha256','history',
+  'requestedCountdownSeconds','sentAt','acknowledgedAt','openObservation'];
 export const isPending=record=>record && ['UNKNOWN','ACKNOWLEDGED'].includes(record.status);
 export async function journalLocation(directory,key) {
   if(typeof directory!=='string'||!path.isAbsolute(directory)||insideDirectory(repositoryRoot,path.resolve(directory)))denyValidation('EXTERNAL_JOURNAL_REQUIRED');
@@ -15,6 +17,7 @@ export async function journalLocation(directory,key) {
   if(insideDirectory(repositoryRoot,root))denyValidation('EXTERNAL_JOURNAL_REQUIRED');
   return path.join(root,key+'.json');
 }
+const timestamp=value=>typeof value==='string'&&value.length<=32&&Number.isFinite(Date.parse(value));
 function valid(record,key,historical=false) {
   return record && [1,2].includes(record.schemaVersion) && record.scopeKey===key && uuid.test(record.workflowId) &&
     ['close','open'].includes(record.action) && record.stepId===record.workflowId+':'+record.action &&
@@ -25,6 +28,17 @@ function valid(record,key,historical=false) {
       typeof record.targetEndAt==='string' && record.targetEndAt.length<=191 && Number.isFinite(Date.parse(record.targetEndAt)) :
       !Object.hasOwn(record,'countdownSeconds') && !Object.hasOwn(record,'targetEndAt')) &&
     (record.status!=='UNKNOWN' || record.acknowledged!==true) &&
+    (!(record.action==='open'&&record.status==='DESIRED_STATE_CONFIRMED'&&Object.hasOwn(record,'requestedCountdownSeconds')) ||
+      Object.hasOwn(record,'openObservation')) &&
+    (!Object.hasOwn(record,'requestedCountdownSeconds') || (record.action==='open' &&
+      record.requestedCountdownSeconds===record.countdownSeconds)) &&
+    ((!Object.hasOwn(record,'sentAt')&&!Object.hasOwn(record,'acknowledgedAt')) ||
+      (record.acknowledged===true&&timestamp(record.sentAt)&&timestamp(record.acknowledgedAt)&&
+        Date.parse(record.acknowledgedAt)>=Date.parse(record.sentAt))) &&
+    (!Object.hasOwn(record,'openObservation') || (record.action==='open'&&record.status==='DESIRED_STATE_CONFIRMED'&&
+      record.openObservation&&Object.keys(record.openObservation).every(k=>['observedAt','remainingCountdownSeconds'].includes(k))&&
+      timestamp(record.openObservation.observedAt)&&Date.parse(record.openObservation.observedAt)>=Date.parse(record.acknowledgedAt)&&
+      verifyRemainingCountdown({requestedCountdownSeconds:record.requestedCountdownSeconds,sentAt:record.sentAt,...record.openObservation}))) &&
     (!['ACKNOWLEDGED','DESIRED_STATE_CONFIRMED'].includes(record.status) ||
       (record.acknowledged===true && record.causalEffect==='UNVERIFIED')) &&
     (record.status!=='PRECONDITION_SATISFIED' ||

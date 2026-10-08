@@ -255,7 +255,7 @@ test('validation CLOSED skips close; explicit 300-second open then close uses on
  const opened=await b.run({...command,action:'open',countdownSeconds:300,targetEndAt:deviceInput.targetEndAt});
  assert.equal(opened.code,'DESIRED_STATE_CONFIRMED');assert.equal(opened.pending,false);
  assert.equal(opened.evidence.kind,'ACKNOWLEDGED');assert.equal(opened.evidence.settled,false);
- assert.equal(opened.observation.room.observedCountdownValue,300);assert.equal(opened.observation.room.countdownUnit,'UNVERIFIED');
+ assert.equal(opened.observation.room.observedCountdownValue,300);assert.equal(opened.observation.room.countdownUnit,'SECONDS');
  const closed=await b.run(command);assert.equal(closed.code,'DESIRED_STATE_CONFIRMED');assert.equal(closed.pending,false);
  assert.notEqual(opened.workflowId,closed.workflowId);
  assert.deepEqual(controls(f).map(c=>[c.body.status,c.body.opentime]),[[1,300],[0,undefined]]);
@@ -367,4 +367,161 @@ test('partial terminal journal without ACK cannot authorize a new workflow',asyn
  await writeFile(a.file,JSON.stringify({...a.original,schemaVersion:2,status:'DESIRED_STATE_CONFIRMED',history:[a.original]}));
  await assert.rejects(boundary(f,a.root).run({...command,action:'open',countdownSeconds:300,targetEndAt:deviceInput.targetEndAt}),{code:'INVALID_PENDING_RECORD'});
  assert.equal(f.requests.length,0);
+});
+
+
+test('remaining countdown: 300 requested and 254 after 46 seconds confirms open',async t=>{
+ let clock=at,dispatched=false;
+ const f=await providerFixture(t,{handler:({entry,state})=>{
+  if(entry.path==='/h5/mac_control')dispatched=true;
+  if(entry.path==='/h5/search'&&dispatched){clock=at+46000;state.opentime=254;}
+  return false;
+ }});
+ const result=await boundary(f,await directory(t),{now:()=>clock}).run({
+  ...command,action:'open',countdownSeconds:300,targetEndAt:new Date(at+300000).toISOString()});
+ assert.equal(result.code,'DESIRED_STATE_CONFIRMED');
+ assert.equal(result.pending,false);assert.equal(controls(f).length,1);
+});
+
+async function remainingFixture(t,{elapsed=46,remaining=254,failRead=false}={}) {
+ let clock=at,dispatched=false,unavailable=failRead;
+ const f=await providerFixture(t,{handler:({entry,req})=>{
+  if(entry.path==='/h5/mac_control')dispatched=true;
+  if(dispatched&&entry.path==='/h5/search'){
+   if(unavailable){req.socket.destroy();return true;}
+   clock=at+elapsed*1000;f.state.opentime=remaining;
+  }
+  return false;
+ }});
+ const root=await directory(t),b=boundary(f,root,{now:()=>clock});
+ const opened=await b.run({...command,action:'open',countdownSeconds:300,targetEndAt:new Date(at+300000).toISOString()});
+ return {f,root,b,opened,set:(seconds,value)=>{elapsed=seconds;remaining=value;unavailable=false;},
+  restart:()=>boundary(f,root,{now:()=>clock,env:{}}),
+  record:async()=>JSON.parse(await readFile(path.join(root,(await readdir(root))[0]),'utf8'))};
+}
+test('valid remaining seconds settle the durable ACK and survive restart with original timing',async t=>{
+ const a=await remainingFixture(t),j=await a.record();
+ assert.equal(a.opened.code,'DESIRED_STATE_CONFIRMED');assert.equal(a.opened.pending,false);
+ assert.equal(a.opened.mutationUnknown,false);assert.equal(a.opened.verificationPending,false);
+ assert.equal(j.requestedCountdownSeconds,300);assert.equal(j.openObservation.remainingCountdownSeconds,254);
+ assert.equal(j.sentAt,new Date(at).toISOString());assert.equal(j.openObservation.observedAt,new Date(at+46000).toISOString());
+ assert.ok(j.history.some(r=>r.status==='ACKNOWLEDGED'));
+ a.set(156.23,144);
+ const next=await a.restart().run({...command,action:'query'});
+ assert.equal(next.pending,false);assert.equal(next.workflowId,a.opened.workflowId);
+ assert.equal(next.observation.room.remainingCountdownSeconds,144);
+ assert.equal(next.openVerification.remainingCountdownSeconds,254,'historical confirmation is immutable');
+ assert.equal(controls(a.f).length,1);
+});
+test('implausible twenty seconds immediately after 300-second ACK stays pending and blocks close',async t=>{
+ const a=await remainingFixture(t,{elapsed:1,remaining:20});
+ assert.equal(a.opened.code,'ACKNOWLEDGED');assert.equal(a.opened.verificationPending,true);
+ assert.equal(a.opened.verificationStatus,'COUNTDOWN_INCONSISTENT');
+ assert.equal((await a.record()).status,'ACKNOWLEDGED');
+ const blocked=await a.b.run(command);assert.equal(blocked.pending,true);
+ assert.equal(controls(a.f).length,1);
+});
+test('open ACK then query failure is verification pending, not mutation UNKNOWN; recovery is query only',async t=>{
+ const a=await remainingFixture(t,{failRead:true});
+ assert.equal(a.opened.code,'ACKNOWLEDGED');assert.equal(a.opened.mutationUnknown,false);
+ assert.equal(a.opened.verificationPending,true);assert.equal(a.opened.verificationStatus,'QUERY_UNAVAILABLE');
+ assert.equal(a.opened.observation.kind,'UNKNOWN');assert.equal(controls(a.f).length,1);
+ a.set(46,254);
+ // Even a close request resumes the old pending query, never dispatches close.
+ const recovered=await a.restart().run(command);
+ assert.equal(recovered.workflowId,a.opened.workflowId);assert.equal(recovered.code,'DESIRED_STATE_CONFIRMED');
+ assert.equal(recovered.pending,false);assert.equal(controls(a.f).length,1);
+});
+test('expiry read CLOSED cannot erase a previously confirmed open',async t=>{
+ const a=await remainingFixture(t),before=await a.record();
+ a.set(464,0);a.f.state.status=0;
+ const after=await a.restart().run({...command,action:'query'});
+ assert.equal(after.observation.room.open,false);assert.equal(after.observation.room.remainingCountdownSeconds,0);
+ assert.equal(after.pending,false);assert.equal(after.mutationUnknown,false);
+ assert.equal(after.verificationStatus,'DESIRED_STATE_CONFIRMED');
+ assert.deepEqual(await a.record(),before);assert.deepEqual(after.openVerification,a.opened.openVerification);
+ assert.equal(controls(a.f).length,1);
+});
+test('expiry CLOSED without earlier valid open evidence never confirms the open',async t=>{
+ const a=await remainingFixture(t,{elapsed:1,remaining:20});
+ a.set(464,0);a.f.state.status=0;
+ const after=await a.restart().run({...command,action:'query'});
+ assert.equal(after.pending,true);assert.equal(after.code,'ACKNOWLEDGED');
+ assert.equal(after.openVerification,undefined);assert.equal(controls(a.f).length,1);
+});
+test('legacy ACK without send timing stays query-only instead of guessing a verification timestamp',async t=>{
+ const a=await remainingFixture(t,{elapsed:1,remaining:20}),files=await readdir(a.root);
+ const j=await a.record();delete j.sentAt;delete j.acknowledgedAt;delete j.requestedCountdownSeconds;
+ await writeFile(path.join(a.root,files[0]),JSON.stringify(j));
+ a.set(46,254);
+ const next=await a.restart().run(command);
+ assert.equal(next.verificationStatus,'TIMING_EVIDENCE_REQUIRED');assert.equal(next.pending,true);
+ assert.equal(controls(a.f).length,1);
+});
+
+
+async function archivedRemaining(t,mutate=()=>{}) {
+ const a=await remainingFixture(t,{elapsed:1,remaining:20}),files=await readdir(a.root),file=path.join(a.root,files[0]);
+ const original=await a.record();delete original.sentAt;delete original.acknowledgedAt;delete original.requestedCountdownSeconds;
+ await writeFile(file,JSON.stringify(original));
+ const atSeconds=n=>new Date(at+n*1000).toISOString();
+ const read=(n,value)=>({controlRequests:0,result:{workflowId:original.workflowId},events:[{
+  category:'search',at:atSeconds(n),elapsedMs:0,httpStatus:200,providerCode:200,storeMatches:true,targetMatches:1,
+  observed:{alive:1,status:1,opentime:value}}]});
+ const report={safeTarget:{internalRoomId:command.internalRoomId},live:{phase:'V06_SECOND_SAFE_LIVE_VALIDATION',
+  initiallyClosed:true,controlRequests:1,automaticMutationRetries:0,steps:[{label:'open-with-countdown',workflowId:original.workflowId,
+   controlEvidence:{kind:'ACKNOWLEDGED',acknowledged:true}}],events:[
+   {category:'search',at:atSeconds(-1),elapsedMs:0,httpStatus:200,providerCode:200,storeMatches:true,targetMatches:1,observed:{alive:1,status:0,opentime:0}},
+   {category:'control',at:atSeconds(0),elapsedMs:0,httpStatus:200,providerCode:200,
+    intent:{status:1,internalRoomId:command.internalRoomId,deviceSuffix:'vice',countdownSeconds:300,opentime:300}}
+  ]},recoveryQuery:read(46,254),countdownQuery:read(156.23,144)};
+ mutate(report);
+ const evidenceFile=path.join(a.root,'reviewed-archive.json'),bytes=JSON.stringify(report);await writeFile(evidenceFile,bytes);
+ const c=config();c.safeTarget.approvedAt=atSeconds(199);c.safeTarget.expiresAt=atSeconds(260);
+ const b=boundary(a.f,a.root,{config:c,now:()=>at+200000});
+ return {...a,b,file,original,evidenceFile,evidenceSha256:createHash('sha256').update(bytes).digest('hex')};
+}
+test('offline archived remaining-countdown recovery preserves the old ACK and never calls provider',async t=>{
+ const a=await archivedRemaining(t),beforeRequests=a.f.requests.length;
+ const result=await a.b.recoverAcknowledgedOpen({...a,internalRoomId:command.internalRoomId,workflowId:a.original.workflowId});
+ assert.equal(result.code,'DESIRED_STATE_CONFIRMED');assert.equal(result.pending,false);
+ const journal=JSON.parse(await readFile(a.file,'utf8'));
+ assert.deepEqual(journal.history.at(-1),Object.fromEntries(Object.entries(a.original).filter(([k])=>k!=='history')));
+ assert.equal(journal.openObservation.remainingCountdownSeconds,144);assert.equal(journal.evidenceSha256,a.evidenceSha256);
+ assert.equal(a.f.requests.length,beforeRequests);assert.equal(controls(a.f).length,1);
+});
+for(const [name,mutate] of [
+ ['no ACK',r=>r.live.steps[0].controlEvidence.acknowledged=false],
+ ['mutation timeout',r=>r.live.events[1].failure='REQUEST_TIMEOUT'],
+ ['wrong workflow',r=>r.countdownQuery.result.workflowId=randomUUID()],
+ ['wrong room',r=>r.live.events[1].intent.internalRoomId='other-room'],
+ ['wrong device',r=>r.live.events[1].intent.deviceSuffix='else'],
+ ['duplicate control',r=>r.live.events.push({...r.live.events[1]})],
+ ['not originally closed',r=>r.live.events[0].observed.status=1],
+ ['inconsistent remaining',r=>r.recoveryQuery.events[0].observed.opentime=20],
+ ['increasing remaining',r=>r.countdownQuery.events[0].observed.opentime=255],
+ ['query not scoped',r=>r.countdownQuery.events[0].storeMatches=false],
+ ['future observation',r=>{r.countdownQuery.events[0].at=new Date(at+210000).toISOString();r.countdownQuery.events[0].observed.opentime=90;}],
+ ['invalid control time',r=>r.live.events[1].at='invalid'],
+ ['malformed step list',r=>r.live.steps={}],
+ ['malformed read list',r=>r.recoveryQuery.events={}]
+])test('archived open recovery rejects '+name+' without HTTP or journal changes',async t=>{
+ const a=await archivedRemaining(t,mutate),before=await readFile(a.file,'utf8'),requests=a.f.requests.length;
+ await assert.rejects(a.b.recoverAcknowledgedOpen({...a,internalRoomId:command.internalRoomId,workflowId:a.original.workflowId}),{code:'INVALID_RECOVERY_EVIDENCE'});
+ assert.equal(await readFile(a.file,'utf8'),before);assert.equal(a.f.requests.length,requests);
+});
+test('archived open recovery cannot clear true mutation UNKNOWN or a different digest',async t=>{
+ const a=await archivedRemaining(t),requests=a.f.requests.length;
+ await assert.rejects(a.b.recoverAcknowledgedOpen({...a,internalRoomId:command.internalRoomId,workflowId:a.original.workflowId,
+  evidenceSha256:'0'.repeat(64)}),{code:'INVALID_RECOVERY_EVIDENCE'});
+ const unknown={...a.original,status:'UNKNOWN'};delete unknown.acknowledged;
+ await writeFile(a.file,JSON.stringify(unknown));
+ await assert.rejects(a.b.recoverAcknowledgedOpen({...a,internalRoomId:command.internalRoomId,workflowId:a.original.workflowId}),{code:'INVALID_RECOVERY_EVIDENCE'});
+ assert.deepEqual(JSON.parse(await readFile(a.file,'utf8')),unknown);assert.equal(a.f.requests.length,requests);
+});
+test('a new timed terminal record missing its open observation fails closed',async t=>{
+ const a=await remainingFixture(t),files=await readdir(a.root),journal=await a.record();delete journal.openObservation;
+ await writeFile(path.join(a.root,files[0]),JSON.stringify(journal));
+ await assert.rejects(a.restart().run(command),{code:'INVALID_PENDING_RECORD'});
+ assert.equal(controls(a.f).length,1);
 });
