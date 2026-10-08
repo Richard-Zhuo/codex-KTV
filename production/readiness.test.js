@@ -18,6 +18,8 @@ test('production startup rejects invalid or incomplete config before connecting'
   const patches=[{KTV_BUSINESS_TIME_ZONE:'Unknown/Zone'},{KTV_BUSINESS_TIME_ZONE:''},{KTV_MYSQL_URL:''},{KTV_MYSQL_URL:'mysql://u:p@localhost/jbhh_ktv_test'},{KTV_MYSQL_URL:'mysql://u@localhost/live'},{DEVICE_CONTROL_MODE:'guess'},{KTVSKY_LIVE_CONTROL_ENABLED:'true'},{KTVSKY_LIVE_CONTROL_ENABLED:undefined},{KTV_BUSINESS_DATE_CUTOFF:'02:00'},{KTV_SESSION_RULE_VERSION:'unknown'},{KTV_API_MODE:'disabled'},{KTV_INSECURE_COOKIE:'true'},{KTV_PUBLIC_ORIGIN:'http://store.invalid'},{KTV_HTTP_ENV:'development'}];
   for(const patch of patches)assert.throws(()=>validateProductionConfig({...env,...patch}));
   assert.throws(()=>createHttpApiFromEnv({NODE_ENV:'production'}));
+  for(const key of ['NODE_ENV','KTV_HTTP_ENV','KTV_DEPLOYMENT_ENV'])for(const value of ['Production',' production ','prod','live','staging','unknown',''])assert.throws(()=>createHttpApiFromEnv({[key]:value}));
+  assert.throws(()=>createHttpApiFromEnv({KTV_DEPLOYMENT_ENV:'production',KTV_HTTP_ENV:'development',KTV_API_MODE:'enabled'}),{code:'PRODUCTION_CONFIG_INVALID'});
 });
 test('catalog readiness reports exact DAY half/dozen, unchanged singles and null inventory',()=>{
   const state=initialState(),before=JSON.stringify(state),r=catalogReadiness(state);
@@ -68,13 +70,16 @@ test('successful readiness starts worker once and delegates authenticated API',a
   assert.equal(started,1);assert.equal(executed,2);
 });
 test('production destructive fixture guards run before any SQL',async()=>{
-  for(const key of ['NODE_ENV','KTV_HTTP_ENV','KTV_DEPLOYMENT_ENV'])assert.throws(()=>assertFixtureEnvironment({[key]:'production'}),{code:'PRODUCTION_FIXTURE_DENIED'});
+  for(const key of ['NODE_ENV','KTV_HTTP_ENV','KTV_DEPLOYMENT_ENV'])for(const value of ['production','Production',' production ','prod','live','staging','unknown',''])assert.throws(()=>assertFixtureEnvironment({[key]:value}),{code:'PRODUCTION_FIXTURE_DENIED'});
   assertFixtureEnvironment({NODE_ENV:'test'});
-  const before=process.env.NODE_ENV;process.env.NODE_ENV='production';
+  const saved=Object.fromEntries(['NODE_ENV','KTV_HTTP_ENV','KTV_DEPLOYMENT_ENV'].map(key=>[key,process.env[key]]));
   let sql=0;const c={query:async()=>{sql++;},execute:async()=>{sql++;}};
   try{
-    await assert.rejects(acquireMySqlFixtureLock(c),{code:'PRODUCTION_FIXTURE_DENIED'});
-    await assert.rejects(applyPolicyAttributeMigration(c,[]),{code:'PRODUCTION_FIXTURE_DENIED'});
+    for(const key of Object.keys(saved))for(const value of ['production','Production',' production ','prod','live','staging','unknown','']) {
+      for(const name of Object.keys(saved))delete process.env[name];process.env[key]=value;
+      await assert.rejects(acquireMySqlFixtureLock(c),{code:'PRODUCTION_FIXTURE_DENIED'});
+      await assert.rejects(applyPolicyAttributeMigration(c,[]),{code:'PRODUCTION_FIXTURE_DENIED'});
+    }
     assert.equal(sql,0);
-  }finally{if(before===undefined)delete process.env.NODE_ENV;else process.env.NODE_ENV=before;}
+  }finally{for(const [key,value] of Object.entries(saved)){if(value===undefined)delete process.env[key];else process.env[key]=value;}}
 });

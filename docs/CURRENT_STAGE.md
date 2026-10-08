@@ -1,3 +1,11 @@
+## Stage 5A high-risk audit fix candidate (2026-10-08)
+
+Audited HEAD 37a2542504580f9ee405f59221ee1dfd65ebc8c3 exposed one P0 destructive-environment guard defect, two P1 issues (completed-plan grant expansion and deployment-environment readiness bypass), and two P2 audit/diagnostic gaps. All are fixed in one local audit-fix commit above that candidate; disposition is FIXED, NEEDS HUMAN RE-ACCEPTANCE. No merge or push. Main and the locally recorded origin/main remain f64e4752a483b7b316aa86777bea006269c80024, ahead/behind 0/0. No remote fetch/push was needed because findings prohibit closeout.
+
+This audit run: focused 38/38, real MySQL 21/21, full node --test --test-isolation=none --test-reporter=tap 2091/2091, fail 0, skip 0, exit 0. Owned isolated MySQL 8.4.11/InnoDB on loopback 33313 only. npm test was attempted but npm is unavailable. Windows junction/realpath checks passed; file symlink creation was denied by Windows EPERM and is not claimed as runtime-verified. Logs are outside Git. No post-merge regression applies because nothing was merged.
+
+[Findings, regressions and retained gates](verification/stage5a-high-risk-audit.md). The six-person plan remains unapproved and disabled; real staff/account initialization, real room mapping, inventory initialization and provider operations were not executed. Backend/approval/self-review/policy attributes remain NEEDS OWNER DECISION. Backup/restore and deployment remain not done, live production control OFF, PRODUCTION READY=NO. Stage 5B is only the next planned gate and has not started.
+
 ## Stage 5A production bootstrap candidate (2026-10-08)
 
 Stage 4C is human-accepted and closed out: main=origin/main=f64e4752a483b7b316aa86777bea006269c80024. Stage 5A develops locally on codex/p0-1-stage5a-production-bootstrap. Commit 1 0a8b988 adds stable identity bootstrap, a read-only preview, migration-derived schema validation, external secret handling and controlled own-password change. Commit 2 adds reviewed mappings, production startup/readiness checks, catalog/inventory reporting, production fixture guards and owner-review documentation. Both remain unmerged/unpushed; no production initialization, deployment, backup/restore drill, real provider query or mutation.

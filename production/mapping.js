@@ -20,11 +20,13 @@ export function validateMappingPlan(input) {
 export async function bootstrapMappings({pool,plan:input,databaseUrl,confirmation,initiatedBy,dryRun=true,env=process.env}) {
   const plan=validateMappingPlan(input);validateTarget(plan,databaseUrl,confirmation,env);text(initiatedBy);
   if(typeof dryRun!=='boolean'||(!dryRun&&!plan.approved))throw refused('BOOTSTRAP_NOT_APPROVED');
-  const c=await pool.getConnection();let locked=false,begun=false,committing=false,destroy=false;
+  let c;let locked=false,begun=false,committing=false,destroy=false;
   try{
+    c=await pool.getConnection();
     await validateSchema(c,plan.database);
     if(!dryRun){const [[lock]]=await c.execute('SELECT GET_LOCK(?,10) AS acquired',[plan.database+'.production-bootstrap']);if(Number(lock.acquired)!==1)throw refused('BOOTSTRAP_BUSY');locked=true;}
     if(dryRun)await c.query('START TRANSACTION READ ONLY');else await c.beginTransaction();begun=true;
+    const [[start]]=await c.query("SELECT DATE_FORMAT(UTC_TIMESTAMP(6),'%Y-%m-%dT%H:%i:%s.%fZ') AS timestamp");
     const [events]=await c.query('SELECT DISTINCT store_id,ledger_id,environment FROM production_bootstrap_events');
     if(events.some(e=>e.store_id!==plan.storeId||e.ledger_id!==plan.ledgerId||e.environment!==plan.environment))throw refused('BOOTSTRAP_STORE_MISMATCH');
     const [[head]]=await c.execute('SELECT state_json,state_checksum FROM ledger_heads WHERE ledger_id=?'+(dryRun?'':' FOR UPDATE'),[plan.ledgerId]);
@@ -39,10 +41,12 @@ export async function bootstrapMappings({pool,plan:input,databaseUrl,confirmatio
       if(!old)create.push(m);
     }
     const result={environment:plan.environment,database:plan.database,storeId:plan.storeId,ledgerId:plan.ledgerId,
-      configVersion:plan.configVersion,dryRun,mappingsCreated:create.length,
+      configVersion:plan.configVersion,dryRun,status:dryRun?'planned':create.length?'applied':'already_satisfied',source:'mapping-bootstrap',startedAt:start.timestamp,mappingsCreated:create.length,
       mappings:plan.mappings.map(m=>({internalRoomId:m.internalRoomId,provider:m.provider,deviceSuffix:m.externalDeviceId.slice(-4),enabled:m.enabled,source:m.source,confirmedAt:m.confirmedAt,confirmedBy:m.confirmedBy}))};
     if(!dryRun) {
       for(const m of create)await c.execute('INSERT INTO room_device_mappings(ledger_id,internal_room_id,provider,external_device_id,enabled) VALUES(?,?,?,?,?)',[plan.ledgerId,m.internalRoomId,m.provider,m.externalDeviceId,m.enabled?1:0]);
+      const [[end]]=await c.query("SELECT DATE_FORMAT(UTC_TIMESTAMP(6),'%Y-%m-%dT%H:%i:%s.%fZ') AS timestamp");
+      result.completedAt=end.timestamp;
       await c.execute('INSERT INTO production_bootstrap_events(store_id,ledger_id,environment,initiated_by,config_version,plan_digest,facts) VALUES(?,?,?,?,?,?,?)',[plan.storeId,plan.ledgerId,plan.environment,initiatedBy,plan.configVersion,createHash('sha256').update(JSON.stringify(plan)).digest('hex'),JSON.stringify({...result,mappings:plan.mappings})]);
     }
     if(dryRun)await c.rollback();else{committing=true;await c.commit();}begun=false;return result;
@@ -52,6 +56,6 @@ export async function bootstrapMappings({pool,plan:input,databaseUrl,confirmatio
     throw refused(/^BOOTSTRAP_[A-Z_]+$/.test(error?.code??'')?error.code:'BOOTSTRAP_FAILED');
   }finally{
     if(locked&&!destroy)try{await c.execute('SELECT RELEASE_LOCK(?)',[plan.database+'.production-bootstrap']);}catch{destroy=true;}
-    if(destroy)c.destroy();else c.release();
+    if(c){if(destroy)c.destroy();else c.release();}
   }
 }

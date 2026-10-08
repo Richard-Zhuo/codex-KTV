@@ -1,3 +1,4 @@
+import { isProductionEnvironment } from '../shared/deployment-environment.js';
 import { PERMISSION_IDS } from '../shared/identity.js';
 import { POLICY_ATTRIBUTE_IDS } from '../ledger/command-policy.js';
 export const TEMPLATES = Object.freeze({
@@ -45,6 +46,8 @@ export function validateTarget(plan, raw, confirmation, env=process.env) {
   let url; try { url=new URL(raw); } catch { throw refused('BOOTSTRAP_INVALID_DATABASE'); }
   if(url.protocol!=='mysql:' || !url.hostname || decodeURIComponent(url.pathname.slice(1))!==plan.database || confirmation!==plan.database+'/'+plan.storeId+'/'+plan.ledgerId) throw refused('BOOTSTRAP_TARGET_MISMATCH');
   if(plan.environment==='production' && /(?:^|_)test(?:_|$)/i.test(plan.database)) throw refused('BOOTSTRAP_PRODUCTION_TEST_DATABASE');
-  if(plan.environment==='test' && (plan.database!=='jbhh_ktv_test' || raw!==env.LEDGER_MYSQL_TEST_URL || env.NODE_ENV==='production' || env.KTV_HTTP_ENV==='production')) throw refused('BOOTSTRAP_TEST_TARGET_DENIED');
+  let production;
+  try { production=isProductionEnvironment(env); } catch { throw refused('BOOTSTRAP_ENVIRONMENT_INVALID'); }
+  if(plan.environment==='test' && (plan.database!=='jbhh_ktv_test' || raw!==env.LEDGER_MYSQL_TEST_URL || production)) throw refused('BOOTSTRAP_TEST_TARGET_DENIED');
   return url;
 }

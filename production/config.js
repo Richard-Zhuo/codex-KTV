@@ -1,8 +1,10 @@
+import { isProductionEnvironment } from '../shared/deployment-environment.js';
 import { text, refused } from './plan.js';
 import { BUSINESS_DAY_POLICY } from '../shared/business-day.js';
 import { SESSION_RULE_VERSION } from '../shared/business-session.js';
 export function validateProductionConfig(env) {
   const fail=()=>{throw refused('PRODUCTION_CONFIG_INVALID');};
+  try { isProductionEnvironment(env); } catch { fail(); }
   if(env.NODE_ENV&&env.NODE_ENV!=='production')fail();
   if(env.KTV_HTTP_ENV!=='production'||env.KTV_API_MODE!=='enabled'||![undefined,'false'].includes(env.KTV_INSECURE_COOKIE))fail();
   for(const key of ['KTV_STORE_ID','KTV_LEDGER_ID','KTV_BUSINESS_TIME_ZONE','KTV_MYSQL_URL','KTV_PUBLIC_ORIGIN'])text(env[key],key==='KTV_MYSQL_URL'?4096:191);

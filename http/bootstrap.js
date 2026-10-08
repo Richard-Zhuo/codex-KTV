@@ -1,3 +1,4 @@
+import { isProductionEnvironment } from '../shared/deployment-environment.js';
 import { validateProductionConfig } from '../production/config.js';
 import { readProductionReadiness, productionApiGate } from '../production/readiness.js';
 import { createRoomControlRuntime } from '../devices/runtime.js';
@@ -15,7 +16,7 @@ import { createCurrentSessionReader } from './query.js';
 import { createHttpApi } from './api.js';
 
 export function createHttpApiFromEnv(env = process.env, logger = console) {
-  const production = env.NODE_ENV === 'production' || env.KTV_HTTP_ENV === 'production' || (env.KTV_API_MODE === 'enabled' && env.KTV_HTTP_ENV !== 'development');
+  const production = isProductionEnvironment(env) || (env.KTV_API_MODE === 'enabled' && env.KTV_HTTP_ENV !== 'development');
   const productionConfig = production ? validateProductionConfig(env) : null;
   const deviceControlMode=env.DEVICE_CONTROL_MODE??'disabled';
   if(!['disabled','required'].includes(deviceControlMode))throw TypeError('Invalid DEVICE_CONTROL_MODE');

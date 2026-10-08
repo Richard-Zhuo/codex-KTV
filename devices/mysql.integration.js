@@ -1,3 +1,4 @@
+import { assertFixtureEnvironment } from '../test-support/destructive-safety.js';
 import { createTrustedLedgerApplication } from '../ledger/application.js';
 import { createMySqlLedgerStore } from '../ledger/mysql-store.js';
 import { createMySqlEmployeeStore } from '../employees/mysql-store.js';
@@ -63,6 +64,7 @@ export async function testRoomControl({t,pool,setup,auth,provision,seed,inspect,
   const f=await make(),before=await inspect(f.ledgerId);
   const [[count]]=await setup.query('SELECT COUNT(*) AS count FROM '+table('room_control_workflows'));
   assert.equal(Number(count.count),0,'Only the empty table created by this fixture may be recreated');
+  assertFixtureEnvironment();
   await setup.query('DROP TABLE '+table('room_control_workflows'));
   await setup.query(statement); // Upgrade an existing 001..007 schema containing confirmed business facts.
   assert.deepEqual(await inspect(f.ledgerId),before);

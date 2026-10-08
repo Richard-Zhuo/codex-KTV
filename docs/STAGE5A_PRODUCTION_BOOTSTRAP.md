@@ -54,9 +54,9 @@ Default is dry-run. Explicit --apply requires approved=true in the reviewed plan
 
 Production plans refuse test database names. Test plans require exact jbhh_ktv_test, the explicitly supplied LEDGER_MYSQL_TEST_URL, and a non-production environment. Initialization records the store/ledger/environment and refuses subsequent cross-store use.
 
-Apply uses one transaction and a database-scoped bootstrap lock. Account locks precede employee locks. It reuses existing scrypt derivation and auth persistence operations. Rerun preserves credentials, existing accounts/employees/bindings and grants. Missing compatible employee/grant data may be added; existing names, enablement, different bindings, extra grants and conflicting policy attributes are never overwritten or deleted. A configured policy set must match exactly; changes to it use the existing separately authorized policy management service. Disabled accounts/employees are supported at creation. Later disable/revoke uses the existing auth administration service; bootstrap rejects enablement conflicts.
+Apply uses one transaction and a database-scoped bootstrap lock. Account locks precede employee locks. It reuses existing scrypt derivation and auth persistence operations. Rerun preserves credentials, existing accounts/employees/bindings and grants. Before the first receipt for an identity, missing compatible employee/grant data may be added. Once recorded, the normalized person plan (including template, expanded grants and attributes) and current grants must match; altered bindings, additional grants or missing grants are conflicts, never reconciliation. Same-plan no-op returns status=already_satisfied and writes only an execution audit receipt; existing names, enablement, different bindings, extra grants and conflicting policy attributes are never overwritten or deleted. A configured policy set must match exactly; changes to it use the existing separately authorized policy management service. Disabled accounts/employees are supported at creation. Later disable/revoke uses the existing auth administration service; bootstrap rejects enablement conflicts.
 
-production_bootstrap_events records external initiatedBy, UTC time, config version/digest and exact non-secret identities/grants/policy facts and counts. This is an OS-authorized CLI operation; initiatedBy is not falsely presented as an authenticated browser actor. Existing auth events also record creation/grants/disable. No fabricated technical employee or auth account is needed. Commit ambiguity returns BOOTSTRAP_COMMIT_UNKNOWN; inspect persisted facts and rerun the same plan, never reset data.
+production_bootstrap_events records external initiatedBy, UTC startedAt/completedAt transaction-work timestamps, source, config version/digest and exact non-secret identities/grants/policy facts and counts. This is an OS-authorized CLI operation; initiatedBy is not falsely presented as an authenticated browser actor. Existing auth events also record creation/grants/disable. No fabricated technical employee or auth account is needed. Commit ambiguity returns BOOTSTRAP_COMMIT_UNKNOWN; inspect persisted facts and rerun the same plan, never reset data.
 
 ## Password changes
 
@@ -68,7 +68,7 @@ Current credential is verified with existing scrypt under the account/session lo
 
 production/mapping-cli.js accepts --plan, --secrets-file (databaseUrl), --confirm-target, --initiated-by, --dry-run/--apply. A mapping plan has configVersion, environment, database, storeId, ledgerId, approved and mappings. Each explicit mapping requires internalRoomId, provider=ktvsky, externalDeviceId, enabled, source=human-confirmed, confirmedAt (UTC ISO) and confirmedBy.
 
-Requires a valid existing ledger room and schema; never guesses from room names. Dry-run does not write. Same target reruns create zero mappings. Any different existing target/enablement or duplicate external device fails without overwrite. Mapping rows remain in room_device_mappings; source/time/operator are durably recorded in production_bootstrap_events.facts.mappings. Ordinary CLI/readiness output masks devices to their last four characters. No MAC is hardcoded in business code.
+Requires a valid existing ledger room and schema; never guesses from room names. Dry-run does not write. Same target reruns create zero mappings. Any different existing target/enablement or duplicate external device fails without overwrite. Identity bootstrap and mapping bootstrap are separate transactions; no cross-tool atomicity is claimed. Mapping rows remain in room_device_mappings; source/time/operator are durably recorded in production_bootstrap_events.facts.mappings. Ordinary CLI/readiness output masks devices to their last four characters. No MAC is hardcoded in business code.
 
 | Room | Human mapping evidence | Stage 5A initialization |
 |---|---|---|
@@ -86,7 +86,7 @@ A confirmed mapping does not activate provider control. Stage 5A rejects KTVSKY_
 
 ## Production configuration and startup
 
-Production is selected by NODE_ENV=production, KTV_HTTP_ENV=production, or enabled API without explicit development HTTP mode. validateProductionConfig requires:
+Production is selected by any of NODE_ENV, KTV_HTTP_ENV or KTV_DEPLOYMENT_ENV=production, or enabled API without explicit development HTTP mode. The shared deployment parser accepts only absent values or canonical development/test/production; other case, surrounding whitespace, empty values and aliases (including prod/live/staging) are rejected, never interpreted as development. validateProductionConfig requires:
 
 | Setting | Required value |
 |---|---|
@@ -125,7 +125,7 @@ Current DEFAULT_CATALOG inspection (not a production DB read): 23 active entries
 
 ## Destructive safety and verification
 
-test-support/destructive-safety.js rejects NODE_ENV, KTV_HTTP_ENV or KTV_DEPLOYMENT_ENV equal to production. All five real MySQL fixture entry points acquire the common guard before DDL; every fixture cleanup DROP rechecks it. The policy fixture loader and historical browser recovery harness also guard before fixture writes. Existing exact jbhh_ktv_test target checks, ownership lists and fixture lock remain. Formal / never invokes demo reset/fixture loading.
+test-support/destructive-safety.js uses the same strict deployment parser as startup and the test-target guard: any production value or any noncanonical/unknown value for NODE_ENV, KTV_HTTP_ENV or KTV_DEPLOYMENT_ENV is refused. All five real MySQL fixture entry points acquire the common guard before DDL; every fixture cleanup DROP rechecks it. The policy fixture loader and historical browser recovery harness also guard before fixture writes. Existing exact jbhh_ktv_test target checks, ownership lists and fixture lock remain. Formal / never invokes demo reset/fixture loading.
 
 Focused tests cover preview zero writes, fresh migration, first/repeated/concurrent bootstrap, partial rows, conflicts, unknown capabilities, one-to-one binding, scrypt/non-secret audit, current-password verification, session invalidation, disabled trusted writes, mapping roundtrip, required missing mappings, null versus zero, config/zone validation and production cleanup refusal. Real integration uses only the owned loopback MySQL 8.4.11/InnoDB instance on33313, not any production service.
 
