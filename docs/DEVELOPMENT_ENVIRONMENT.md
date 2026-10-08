@@ -1,3 +1,7 @@
+### Stage 4B adapter verification
+
+Focused: node --test --test-isolation=none --test-reporter=tap devices/ktvsky-gateway.test.js devices/application.test.js. Tests use an explicit loopback mock provider and synthetic credentials only; no real KTVSky account, mapping or device is required. Full regression continues to use the guarded disposable MySQL harness. Production provider requests require verified TLS and never follow redirects or retry automatically.
+
 ### Stage 4A device verification
 
 Focused: node --test --test-isolation=none --test-reporter=tap devices/application.test.js shared/business-session.test.js catalog-pricing.test.js database.test.js ledger/trusted-sales.test.js ledger/trusted-open.test.js http/staff-query.test.js ui/session-pricing.test.js server-static.test.js. Real integration: ledger/trusted-clean.integration.test.js under the existing guarded MySQL fixture. The fixture now explicitly owns migration 008 room_control_workflows (sixteen InnoDB tables); it refuses a pre-existing device table, and removes only tables it created. Provider calls are fake, must use explicit allowTestGateway and testOnly mode, and never use real devices or credentials. Full command remains node --test --test-isolation=none --test-reporter=tap.

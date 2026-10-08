@@ -8,11 +8,4 @@ export class KtvRoomControlGateway {
   async openRoom() { throw Error('Gateway not implemented'); }
   async queryRoomState() { throw Error('Gateway not implemented'); }
 }
-export class KtvSkyRoomControlGateway extends KtvRoomControlGateway {
-  get productionEnabled() { return false; }
-  async ensureSession() { throw Error('KTVSky production control is not enabled'); }
-  async getRoomStatus() { return this.ensureSession(); }
-  async closeRoom() { return this.ensureSession(); }
-  async openRoom() { return this.ensureSession(); }
-  async queryRoomState() { return this.ensureSession(); }
-}
+export { KtvSkyRoomControlGateway } from './ktvsky-gateway.js';

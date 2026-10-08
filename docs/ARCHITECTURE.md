@@ -1,3 +1,7 @@
+## Stage 4B provider transport boundary
+
+devices/ktvsky-http-client.js owns bounded server-side HTTP with TLS verification, no redirects or retries. devices/ktvsky-gateway.js owns provider credentials, private token/Cookie cache, observed response mapping and conservative UNKNOWN results. productionEnabled remains false; there is no employee open, HTTP registry or bootstrap connection. Provider evidence does not establish settled operations or a verified countdown end time. See [Stage 4B contract](STAGE4B_KTVSKY_ADAPTER.md).
+
 ## Stage 4A independent device boundary
 
 Server session/price facts remain in the existing ledger snapshot. devices/application.js holds a separate durable room-control workflow using devices/mysql-store.js and migration 008, with claim/effect/evidence phases and no external call inside a DB transaction. No HTTP registry entry or employee open wiring exists yet. See [contract](STAGE4A_SESSION_DEVICE.md) and [provider discovery](KTVSKY_CAPABILITY_DISCOVERY.md).

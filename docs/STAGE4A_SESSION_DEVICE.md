@@ -2,7 +2,7 @@
 
 ## Accepted basis and cases
 
-Stage 3C accepted HEAD 3ebfad2 was fast-forwarded into main, passed 1859/1859 (0 fail, 0 skip), and was normally pushed after fetch verified no remote drift. Stage 4A stays local for human acceptance.
+Stage 3C accepted HEAD 3ebfad2 was fast-forwarded into main, passed 1859/1859 (0 fail, 0 skip), and was normally pushed after fetch verified no remote drift. Stage 4A accepted HEAD 8e03fb0 was subsequently fast-forwarded and normally pushed after 1917/1917 regression; Stage 4B remains a separate local candidate.
 
 Server opening schedule reuses shared/time.js: DAY [14:00,18:00), NIGHT [18:00,02:00), closed [02:00,14:00). The reservation start at 20:00 is a separate reservation window, not a change to opening hours. No new opening hours are assumed. Existing noon business-date attribution is unchanged.
 
@@ -18,7 +18,7 @@ Cases: trusted DAY room/retail sale charges 100/100/120; NIGHT stays existing; f
 
 No HTTP endpoint or formal employee open invokes devices/application.js in Stage 4A. Its internal start accepts only operationKey, expectedRevision and an existing orderId. Existing session revalidation and room.open permission run in each claim transaction; the principal is server resolved and saved as workflow actor. Start derives room/session/target only from the locked ledger order. Mapping is an explicit immutable server configuration of internalRoomId, provider, externalDeviceId, enabled; duplicate target devices are rejected. Only synthetic mappings exist in tests.
 
-Migration 008 adds room_control_workflows (InnoDB), scoped by ledger, with unique order and operation keys, immutable actor/fingerprint identity, monotonic version and checksummed JSON. Business order/payment/inventory/revision remain untouched; readiness is a separate workflow projection. Replaying start returns the existing workflow; a second key for the same order conflicts. Foreign actor replay conflicts and foreign actor resume is denied. Formal order/device integration and transactional outbox creation during open remain Stage 4B.
+Migration 008 adds room_control_workflows (InnoDB), scoped by ledger, with unique order and operation keys, immutable actor/fingerprint identity, monotonic version and checksummed JSON. Business order/payment/inventory/revision remain untouched; readiness is a separate workflow projection. Replaying start returns the existing workflow; a second key for the same order conflicts. Foreign actor replay conflicts and foreign actor resume is denied. Formal order/device integration and transactional outbox creation during open remain Stage 4C, after safe Stage 4B mutation validation.
 
 State path: DEVICE_PENDING -> DEVICE_CLOSING -> DEVICE_OPENING -> DEVICE_VERIFYING -> ACTIVE. roomReadiness is OPENING until actual final verification, WAITING_DEVICE while offline, ACTIVE only after online/open/correct target evidence, FAILED on known terminal failure. DEVICE_OFFLINE_WAIT retains its original workflow and step, then resumes after online. DEVICE_UNKNOWN means effect not proven; queryRoomState is required first. Definitive failure requires settled evidence. Raw provider responses, diagnostics, cookies and credentials are not persisted; only scoped boolean/status evidence is retained.
 

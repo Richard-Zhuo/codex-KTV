@@ -1,3 +1,7 @@
+## Stage 4B accepted scope (2026-10-08)
+
+Stage 4A accepted HEAD 8e03fb0 is closed out. Stage 4B implements a server-side KTVSky adapter from observed frontend contracts, with bounded HTTP/auth/session/query handling, redacted diagnostics and mock-provider tests. Real mutations require explicit live enable, a manually confirmed enabled mapping and an explicitly approved unoccupied safe target. Without a safe target no real close/open is permitted. Formal employee open remains disconnected until Stage 4C and a separately accepted safe mutation verification. See [Stage 4B contract](STAGE4B_KTVSKY_ADAPTER.md).
+
 ## Stage 4A accepted scope (2026-10-08)
 
 User clarification: DAY single prices unchanged, half-dozens exactly half of whole dozens (50/50/60 yuan). Formal DAY/NIGHT, DAY dozen pricing and frozen transaction snapshots follow [Stage 4A contract](STAGE4A_SESSION_DEVICE.md). Device gateway/workflow is independent of employee open; real provider mutation is deferred to Stage 4B. The gateway expresses open-with-countdown as one effect and does not require an unverified independent timer mutation. Missing v2 price classification must retain existing prices without inheriting a default DAY discount; detailed behavior and provider verification gates are in the contract.

@@ -1,3 +1,10 @@
+## Stage 4B adapter route
+
+- devices/ktvsky-http-client.js: pinned provider origin, explicit loopback mock mode, bounded transport, TLS and redacted diagnostics.
+- devices/ktvsky-gateway.js, re-exported by devices/gateway.js: private provider session, read DTO, combined mutation mapping, default denial and no automatic retries.
+- devices/ktvsky-gateway.test.js / test-support/ktvsky-provider-fixture.js: local HTTP contract fixture; no live internet dependency.
+- [Stage 4B contract](STAGE4B_KTVSKY_ADAPTER.md): observed versus verified facts and safety gates.
+
 ## Stage 4A device route
 
 - devices/application.js / domain.js: authenticated workflow claims, readiness, offline/unknown recovery; CLOSE -> combined OPEN with countdown -> VERIFY, no independent TIMER mutation.

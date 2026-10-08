@@ -1,3 +1,9 @@
+## 2026-10-08: Stage 4B real adapter candidate (Commit 1)
+
+Stage 4A human-accepted 8e03fb0 was fast-forwarded into main, passed full 1917/1917 (0 fail, 0 skip), fetched without drift and normally pushed; main=origin/main=8e03fb0 with ahead/behind 0/0. Stage 4B starts from that point and remains local.
+
+The provider adapter implements bounded server HTTP, private token/Cookie handling, bounded re-authentication, explicit store/device reads and one combined open/countdown request. Mutation defaults deny, productionEnabled remains false, and no employee/API/bootstrap wiring was added. Public-source recheck confirmed top-level login token and frontend auth codes 30010/30011; actual credential-login lifecycle and real mutation behavior remain unverified. Mock-backed focused tests passed 34/34; full Node regression passed 1933/1933 (0 fail, 0 skip) on isolated MySQL 8.4.11/InnoDB. npm test was attempted but npm is unavailable. See [Stage 4B contract](STAGE4B_KTVSKY_ADAPTER.md). No real safe target or credentials are configured; real device mutations executed: NO.
+
 ## 2026-10-08: Stage 4A contract audit fix awaiting human re-acceptance
 
 The scoped audit of 570b81e found two P1 issues: the mandatory OPEN -> TIMER sequence assumed an unverified independent provider mutation; and catalog merging could fill a missing v2 category from defaults before classification, silently granting a DAY discount. The audit fix makes openRoom(countdownSeconds, targetEndAt) one combined effect, removes TIMER/setCountdown, and requires both open state and target evidence before advancing. Raw catalog products are classified before defaults merge; missing v2 categories retain existing prices as OTHER, while v1 stable-ID migration remains unchanged.

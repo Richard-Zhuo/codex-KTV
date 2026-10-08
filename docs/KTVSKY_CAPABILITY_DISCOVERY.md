@@ -39,3 +39,9 @@ The provider public login code offers a remember option using its own local logi
 ## Stage 4B gates
 
 Require an explicitly authorized safe device; verify close/open/combined timer semantics, authoritative state and late-response recovery, stable mapping and store scope, provider identity/idempotency capability, server credential lifecycle and timeout behavior before enabling a real adapter. Device gateway remains productionEnabled=false. Formal employee open is not wired to it.
+
+## Stage 4B public-source recheck (2026-10-08)
+
+Read-only server-side HTTP recheck fetched the same public /js/app.fa8df8f0.js and /js/login.fe1b238f.js assets (HTTP 200). The user store takes token from the login response's top-level token field; the shared interceptor treats body codes 30010/30011 as auth invalidation. These are observed frontend contracts, not fresh credential-login or mutation evidence. No account password, token, Cookie or device mapping was extracted.
+
+The adapter's local mock provider tests verify this mapping and HTTP 401/403 handling. Actual account lifecycle, provider response completion and opentime meaning remain unverified. No KTVSky credentials or explicit safe device were supplied in this run.
