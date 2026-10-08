@@ -1,3 +1,8 @@
+## Stage 5A schema addition
+
+Schema authority: versioned MySQL migrations 001–010. Migration 010 adds only production_bootstrap_events: operator identity, UTC time, config version, plan digest and non-secret facts. It seeds nothing. Apply once after 009; repeated CREATE refuses an existing table. Inspect partial DDL failure; bootstrap never executes DDL.
+
+production/schema-manifest.json is a verification digest of the eighteen-table structure produced by these migrations on MySQL 8.4. It is not a migration runner or another schema authority. Bootstrap checks migration source digests (normalized line endings), exact SHOW CREATE TABLE digests (excluding the next AUTO_INCREMENT counter), InnoDB and the complete table set. Unknown, missing, extra or changed schema stops initialization. An operator must apply/review versioned migrations separately. Any migration change requires recapturing the manifest from a fresh isolated database and running integration tests.
 ## Stage 4C schema addition
 
 Schema authority: versioned MySQL migrations 001…009. Migration 009 adds only explicit ledger-scoped room_device_mappings, default disabled, with unique internal room and provider/device constraints. No real mapping is seeded. Apply once after 008; repeat refuses existing table. The guarded fixture now creates/cleans seventeen owned InnoDB tables; it refuses pre-existing mapping tables. Catalog JSON and immutable order facts keep their existing authority.

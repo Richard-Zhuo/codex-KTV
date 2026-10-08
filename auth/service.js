@@ -78,6 +78,36 @@ export function createAuthService({
     return result;
   }
 
+  // Controlled server CLI only: caller proves possession of the current secret.
+  // No admin reset and no role-derived authority are introduced here.
+  async function changeOwnPassword({ loginIdentifier, currentPassword, newPassword }) {
+    assertLoginIdentifier(loginIdentifier);
+    assertPasswordInput(currentPassword); assertPasswordInput(newPassword);
+    if (!rateLimiter.canAttempt(loginIdentifier)) return invalidCredentials;
+    const result = await store.runTransaction(async tx => {
+      const candidate = await tx.findCredentialForLogin(loginIdentifier);
+      const matches = candidate ? await verifyPassword(currentPassword, candidate.credential)
+        : await verifyAbsentPassword(currentPassword);
+      if (!candidate || !candidate.enabled || !matches) {
+        await tx.appendEvent({ principalId: candidate?.principalId ?? null,
+          eventType: 'login-failure', reasonCode: 'invalid-credentials' });
+        return invalidCredentials;
+      }
+      const credential = await derivePassword(newPassword);
+      const sessions = await tx.listUnrevokedSessions(candidate.principalId);
+      await tx.replaceCredential(candidate.principalId, credential);
+      for (const sessionId of sessions) {
+        await tx.revokeSession(sessionId);
+        await tx.appendEvent({ principalId: candidate.principalId, sessionId,
+          eventType: 'session-revoked' });
+      }
+      await tx.appendEvent({ principalId: candidate.principalId, eventType: 'credential-rotated' });
+      return Object.freeze({ ok: true });
+    });
+    if (result.ok) rateLimiter.recordSuccess(loginIdentifier);
+    else rateLimiter.recordFailure(loginIdentifier);
+    return result;
+  }
   async function authenticateSession(token) {
     const digest = digestSessionToken(token);
     if (!digest) return null;
@@ -111,7 +141,7 @@ export function createAuthService({
     return store.runTransaction(async tx => {
       const session = await tx.findSessionByIdForUpdate(sessionId);
       if (!session || session.revoked) return false;
-      await tx.revokeSession(sessionId);
+      await tx.revokeSession(session.sessionId);
       await tx.appendEvent({ principalId: session.principalId, sessionId,
         eventType: 'session-revoked' });
       return true;
@@ -170,6 +200,6 @@ export function createAuthService({
     });
   }
 
-  return Object.freeze({ createAccount, login, authenticateSession, logout, revokeSession,
+  return Object.freeze({ createAccount, login, changeOwnPassword, authenticateSession, logout, revokeSession,
     disableAccount, rotateCredential, grantPermission, revokePermission });
 }

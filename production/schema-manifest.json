@@ -1,0 +1,34 @@
+{
+  "migrations": {
+    "001_mysql_ledger_core.sql": "9e67e034d883cd2fc36856d293f2d03194cf90144f6178987b2da053f51d1784",
+    "002_mysql_auth_core.sql": "715bcbdb81818b09259f47c6d5683b9ffb0d73af102a5857d322b7c5704903a8",
+    "003_mysql_employee_core.sql": "697b202e19d288f1cdf133034355a6123318009b67d121a9371cf1c3a5ff50a5",
+    "004_mysql_auth_policy_attributes.sql": "7d123b50023604d85dabbda04f001ac5f6ccb9f5b1e9946484ffc0850c5d1033",
+    "005_mysql_expense_approval_attribute.sql": "885b114516f3874955fa1166e023ccacd486a0c40aa3831d8328e218fd7237f1",
+    "006_mysql_credit_approval_attributes.sql": "669ba5d17b5a0ee812a92c975ad7b9a5417079330396bf80d7e81375ddfd63f9",
+    "007_mysql_platform_vouchers.sql": "cda8811b0ecc8aa7dd4be9362b9533ff5d220b4086c64adc06a036c3f3e5f106",
+    "008_mysql_room_control.sql": "a7e9c879f0f6a5e95f4580a9f9ee60419c82d27470f64f7f161ef473082aa44a",
+    "009_mysql_room_device_mapping.sql": "543637a123be3be6ac3f15ae6b03253dccbd7dbb975be37d1279e68873257a30",
+    "010_mysql_production_bootstrap.sql": "deea64891de3c37f1187ef8a5fa5bd2a295df19eed445e4e0ed495d0e4fe809c"
+  },
+  "tables": {
+    "auth_accounts": "62a0df35f7e920c233631b3ce9025953cae34cc1e0ddc3478b63db31d588c025",
+    "auth_credentials": "03ff8383fcebaa3f938598f20b981379a297fc23c9ee212c454516b498fe40a2",
+    "auth_events": "80a739c9cfdaaabe8beb351162f169a8dc29ad4177b52363f48ec4054d012f46",
+    "auth_grants": "76fde91b5e948264682cb13ea43fda31fb3820076ecfcecdf8ed202b793ecc79",
+    "auth_policy_attributes": "4072f5c771cd10ef0582d0f26e3bd8b8bc009c3002bab29c37c80578cad8dfef",
+    "auth_sessions": "87d39c2e100c8d26b267c34749ee30e70e9842a66f2d956d166c627505028992",
+    "employee_events": "3f520d2fa14e35246a54bcf07e1e7a645a1e535a4dd6643dcf4caa200aa48efc",
+    "employees": "208a427bad2e559dab8d01744a46984ea3d14a2f96d6f06300f4fa39550ca97f",
+    "ledger_heads": "a3634c2642991175f00b0070fb8d56c8cd902fba1cf235772e962151f16965e6",
+    "ledger_operations": "5e0d21aafabd95d0345fb0cc737c9ee3af9335cf072581a2341a76640a83156c",
+    "ledger_success_audit": "d58010d7a3f26489a4899780412bc8d8e1fdfb96a927b9cc82d1e28a76cffe3a",
+    "production_bootstrap_events": "3729708b80426a13945137a15da49e6f66d6f52e9854d23444db949a08b2f38c",
+    "provider_events": "71e1c586a876f03f8abcf04e4d8df28164872f7a1d51e7392d29b07df2f83aa9",
+    "room_control_workflows": "ef7a943cd172f910e3976038be7f6b79201cd9e73f7ff7e21df4da30cd7381da",
+    "room_device_mappings": "b17a7ba2e6fabcd3ce939a1c6d36971fe0b3bdabcffecbf2ba58083a4198cb5f",
+    "voucher_exceptions": "b864e028a39e7ca4b88074a68e435e246722fdf4dd48b238db71d715a70e0d91",
+    "voucher_operations": "c7b414676a54ece92879c3062572163be097d74deae4e80f5a97d47788cbfbd6",
+    "voucher_redemptions": "37bec8e3f0833b914290b9a504d501197cb6b27711cebe8cb28597226b7242a4"
+  }
+}

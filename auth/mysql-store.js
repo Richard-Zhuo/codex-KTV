@@ -276,5 +276,12 @@ export function createMySqlAuthStore({ pool, database }) {
     }
   }
 
-  return Object.freeze({ runTransaction, bindSessionRevalidation });
+  async function bindManagementTransaction(connection) {
+    const [status] = await connection.execute('DO 0');
+    if (!(status.serverStatus & 1)) throw Error('Management capability requires an active transaction');
+    const port = transactionPort(connection);
+    return Object.freeze(Object.fromEntries(['insertAccount','appendEvent','configurePolicyAttributes',
+      'addPolicyAttribute','disableAccount','addGrant'].map(name => [name, port[name]])));
+  }
+  return Object.freeze({ runTransaction, bindSessionRevalidation, bindManagementTransaction });
 }
