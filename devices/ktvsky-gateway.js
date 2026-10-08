@@ -1,4 +1,5 @@
 import { createKtvSkyHttpClient } from './ktvsky-http-client.js';
+import { isKtvSkySafetyPolicy } from './ktvsky-safety.js';
 
 const authCodes=new Set([30010,30011]); // Observed frontend, not an official guarantee.
 const text=value=>typeof value==='string'&&value.length>0&&value.length<=191&&value.trim()===value;
@@ -14,7 +15,7 @@ export const createKtvSkyCredentialProvider=(env=process.env)=>async()=>({
 export class KtvSkyRoomControlGateway {
   #client;#credentials;#storeId;#enabled;#mutationPolicy;#now;#ttl;#cooldown;#maxLogins;
   #session=null;#cookies=new Map();#telno=null;#loggingIn=null;#lastLogin=-Infinity;#logins=0;
-  #attempts=new Set();
+  #attempts=new Set();#pendingDevices=new Set();
   constructor({httpClient=createKtvSkyHttpClient(),credentialProvider=createKtvSkyCredentialProvider(),
     storeId=null,enabled=false,mutationPolicy=()=>false,now=Date.now,
     sessionTtlMs=300000,reauthCooldownMs=30000,maxLoginAttempts=3}={}) {
@@ -83,6 +84,7 @@ export class KtvSkyRoomControlGateway {
     const auth=await this.ensureSession(input);
     if(!auth.ready)return {error:auth.code};
     try {
+      if(endpoint==='control'&&this.#mutationPolicy(input)!==true)return {error:'SAFE_VALIDATION_REQUIRED'};
       const response=await this.#client.request({endpoint,telno:this.#telno,body:endpoint==='control'?{...body,telno:this.#telno}:body,
         token:this.#session.token,cookie:this.#cookieHeader(endpoint),signal:input?.signal});
       if(response.status===401||response.status===403||authCodes.has(response.data?.code)){
@@ -114,13 +116,13 @@ export class KtvSkyRoomControlGateway {
   async #mutate(input,status) {
     this.#scope(input);
     if(!this.#enabled)throw new KtvSkyBoundaryError('LIVE_CONTROL_DISABLED');
-    if(this.#mutationPolicy(input)!==true)throw new KtvSkyBoundaryError('SAFE_VALIDATION_REQUIRED');
+    if((!this.testOnly&&!isKtvSkySafetyPolicy(this.#mutationPolicy))||this.#mutationPolicy(input)!==true)throw new KtvSkyBoundaryError('SAFE_VALIDATION_REQUIRED');
     if(status===1&&(!Number.isSafeInteger(input.countdownSeconds)||input.countdownSeconds<=0||
         typeof input.targetEndAt!=='string'||!Number.isFinite(Date.parse(input.targetEndAt))))throw TypeError('Combined countdown input required');
     const key=JSON.stringify([input.workflowId,input.stepId,input.externalDeviceId]);
-    if(this.#attempts.has(key))return this.#unknown(input);
+    if(this.#attempts.has(key)||this.#pendingDevices.has(input.externalDeviceId))return this.#unknown(input);
     if(this.#attempts.size>=1000)throw new KtvSkyBoundaryError('RECONCILIATION_REQUIRED');
-    this.#attempts.add(key); // Reserve before any asynchronous transport; never auto retry.
+    this.#attempts.add(key);this.#pendingDevices.add(input.externalDeviceId); // Unknown effects also block new steps.
     const response=await this.#request('control',input,{
       mac:input.externalDeviceId,status,telno:this.#telno,
       ...(status===1?{opentime:input.countdownSeconds}:{})

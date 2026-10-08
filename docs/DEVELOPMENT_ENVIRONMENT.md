@@ -1,6 +1,6 @@
 ### Stage 4B adapter verification
 
-Focused: node --test --test-isolation=none --test-reporter=tap devices/ktvsky-gateway.test.js devices/application.test.js. Tests use an explicit loopback mock provider and synthetic credentials only; no real KTVSky account, mapping or device is required. Full regression continues to use the guarded disposable MySQL harness. Production provider requests require verified TLS and never follow redirects or retry automatically.
+Focused: node --test --test-isolation=none --test-reporter=tap devices/ktvsky-gateway.test.js devices/ktvsky-validation.test.js devices/application.test.js. Tests use an explicit loopback mock provider and synthetic credentials only; no real KTVSky account, mapping or device is required. Full regression continues to use the guarded disposable MySQL harness. Production provider requests require verified TLS and never follow redirects or retry automatically.
 
 ### Stage 4A device verification
 
@@ -150,3 +150,7 @@ ledger/trusted-clean.integration.test.js 复用现有 fixture lock，新增明�
 2026-10-06 本机网页复验使用 jbhh_ktv_test 中的临时合成 fixture 与仅绑定 127.0.0.1 的开发服务。该库在完整回归后建表；fixture 存续时，既有真实 MySQL 测试的“预置 auth 表必须为空”前置条件不成立。重新跑完整测试前，先停止本地网页服务，并只清理由本次 fixture 创建且已确认所有权的测试数据；不要对来源不明的表执行清理。合成测试账号不是正式员工账号，凭据不进入仓库。
 
 静态员工模块交付验证：node --test --test-isolation=none --test-reporter=tap server-static.test.js。定向验证：node --test --test-isolation=none --test-reporter=tap entry.test.js ui/api-client.test.js ui/server-state.test.js ui/command-flow.test.js ui/formal-workspace.test.js ui/formal-entry.test.js ui/room-card-accessibility.test.js http/staff-query.test.js employees/mysql-roster-read.test.js。真实 MySQL 集成：node --test --test-isolation=none --test-reporter=tap ledger/trusted-clean.integration.test.js。完整回归：node --test --test-isolation=none --test-reporter=tap。JavaScript 修改后也尝试 npm test；若当前环境没有 npm，应如实记录此证据缺口，不能把 Node 完整回归写作 npm 执行结果。
+
+### Stage 4B manual validation
+
+See [safe tool configuration and stops](STAGE4B_KTVSKY_ADAPTER.md). The command is node tools/ktvsky-validate.js --config <external-config-path> --action query --room <confirmed-room-id>. Secrets are environment-only; no live control is enabled by default. Mutation needs the explicit live flag, matching human-approved unoccupied target, enabled mapping and one stable external journal directory. No real target is preconfigured. Pending records may not be deleted to bypass reconciliation.

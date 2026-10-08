@@ -1,6 +1,6 @@
 ## Stage 4B provider transport boundary
 
-devices/ktvsky-http-client.js owns bounded server-side HTTP with TLS verification, no redirects or retries. devices/ktvsky-gateway.js owns provider credentials, private token/Cookie cache, observed response mapping and conservative UNKNOWN results. productionEnabled remains false; there is no employee open, HTTP registry or bootstrap connection. Provider evidence does not establish settled operations or a verified countdown end time. See [Stage 4B contract](STAGE4B_KTVSKY_ADAPTER.md).
+devices/ktvsky-http-client.js owns bounded server-side HTTP with TLS verification, no redirects or retries. devices/ktvsky-gateway.js owns provider credentials, private token/Cookie cache, observed response mapping and conservative UNKNOWN results. productionEnabled remains false; there is no employee open, HTTP registry or bootstrap connection. Provider evidence does not establish settled operations or a verified countdown end time. The isolated validation tool applies a branded three-factor policy and a flushed exclusive external UNKNOWN journal before control; restart and concurrent processes can only query a claimed device. It does not change the MySQL business/schema authority or expose a new employee/API path. See [Stage 4B contract](STAGE4B_KTVSKY_ADAPTER.md).
 
 ## Stage 4A independent device boundary
 

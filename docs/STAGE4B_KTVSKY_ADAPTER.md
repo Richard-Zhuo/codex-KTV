@@ -33,3 +33,25 @@ KTVSKY READ CONTRACT = VERIFIED AGAINST MOCK; prior live read discovery remains 
 KTVSKY MUTATION CONTRACT = IMPLEMENTED FROM OBSERVED FRONTEND.
 LIVE MUTATION VALIDATION = BLOCKED BY SAFE TEST TARGET.
 KTVSKY PRODUCTION CONTROL is not ready.
+
+## Safe validation boundary (Commit 2)
+
+devices/ktvsky-safety.js owns strict versioned configuration and immutable safety policies. A real client cannot substitute a permissive callback for a validated policy. All three factors are mandatory before any mutation: KTVSKY_LIVE_CONTROL_ENABLED exactly "true"; an enabled explicit internalRoomId/provider/externalDeviceId mapping; and an approved, unoccupied safeTarget matching room, device and store. Approval must name a human authorization reference and a time window no longer than 15 minutes. It is checked again after asynchronous authentication immediately before dispatch. Server configuration is trusted operator input, not an employee/browser claim. No mapping is derived from room names or provider order.
+
+devices/ktvsky-validation.example.json is deliberately empty (no account, device or safe target). Copy it OUTSIDE the repository, fill schemaVersion=1, storeId, mappings and safeTarget only after human authorization. Each mapping has internalRoomId, provider="ktvsky", externalDeviceId and enabled. safeTarget has internalRoomId, externalDeviceId, storeId, approved, unoccupied, approvalReference, approvedAt and expiresAt. Account/password are never configuration fields: provide KTVSKY_TELNO and KTVSKY_PASSWORD using server environment/secrets. Actual mappings and approval metadata must not be committed.
+
+tools/ktvsky-validate.js is a server-side manual tool, not a browser adapter or HTTP employee command. Its arguments are --config (absolute external JSON), --action (auth/query/close/open), --room (explicit internalRoomId), --countdown-seconds and --target-end-at. It does not accept password/token/cookie flags. Example read-only invocation:
+
+    node tools/ktvsky-validate.js --config <external-config-path> --action query --room <confirmed-room-id>
+
+auth/query do not require the live-control gate; no credentials means AUTH_REQUIRED. Mutation additionally requires KTVSKY_VALIDATION_JOURNAL_DIR to name one stable, operator-owned directory OUTSIDE Git, shared by every validation process for that provider/store/device. Do not vary the directory between invocations. open validation accepts exactly 60 seconds (a deliberately narrow test policy); the gateway itself preserves any positive integer application countdown without recalculating from wall time. Seconds, targetEndAt, UTC/IANA business-session computation and provider unit verification remain distinct facts.
+
+## Durable ambiguity and validation limits
+
+Before any control request, validation preflights exact store/device existence and online state, atomically creates a device-scoped UNKNOWN file (exclusive create), and flushes it to disk. It contains schema version, a hashed scope, original workflow/step identity and minimal intent only. It contains no raw device/account/password, token, Cookie, CSRF data, full provider response or business snapshot. This is a manual-validation safety interlock, not a second business ledger or schema authority; MySQL migrations 001..008 remain unchanged.
+
+A concurrent process cannot win the same claim. A partial/corrupt record fails closed. A new process, changed requested action or new workflow still loads the original claim and only queries. The gateway also blocks another step for the same unresolved device within its instance. Auth rejection, connection reset, timeout and a success acknowledgement all preserve UNKNOWN pending evidence. A later successful login or on/off read cannot authorize resending, clearing the journal or chaining close -> open. Logs and CLI output expose only allowlisted summaries and correlation identity.
+
+There is intentionally no automatic journal reset/clear/retry command. Current observed KTVSky reads lack scoped settled APPLIED or NOT_APPLIED + retrySafe proof. Therefore the tool stops after one ambiguous control and queries; the full live close -> query -> open -> query sequence is NOT yet verified or automatically enabled. Do not remove a pending record or change its scope to force continuation. First establish authoritative provider recovery evidence and obtain human acceptance of the next controlled step. Synthetic Fake proof is not evidence about KTVSky.
+
+Automated evidence covers all three missing factors, occupied/expired/mismatched target, approval expiry during auth, exact sixty-second validation, offline/missing device, redaction, process restart, connection loss, concurrent claims, corrupt records and shared Fake/real combined-open intent. Provider contract tests run only against a local mock. This run performed no real credential login or account API read, and no real device mutation. Public JavaScript reinspection is not live provider validation. Stage 4C and employee open remain blocked on a separately authorized safe mutation and authoritative recovery verification.

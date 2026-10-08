@@ -1,3 +1,11 @@
+## 2026-10-08: Stage 4B safe validation candidate (Commit 2)
+
+Commit 1 01ee6a8 adds the server-side adapter; Commit 2 adds strict live/mapping/human-approved safe-target gates, approval revalidation before dispatch, an external durable UNKNOWN interlock and a manual CLI. Configured targets and credentials remain absent. Production wiring stays disabled and formal employee open is unchanged. See [Stage 4B contract](STAGE4B_KTVSKY_ADAPTER.md) for configuration, recovery limits and exact validation semantics.
+
+This run: focused 64/64; full node --test --test-isolation=none --test-reporter=tap 1963/1963 (0 fail, 0 skip), on this task's isolated MySQL 8.4.11/InnoDB instance. An initial full attempt failed four DB integration entry points because the dedicated process had exited (ECONNREFUSED); after verifying/restarting only that owned instance, the full retry passed. npm test was attempted and is unavailable. Logs remain outside Git. No actual account login/read or device mutation was executed; public-asset inspection and loopback mock evidence are explicitly distinct from live verification.
+
+Stage 4A main=origin/main=8e03fb0, ahead/behind 0/0, was normally pushed. Stage 4B consists of two local linear commits, unmerged/unpushed, awaiting human acceptance. KTVSKY REAL ADAPTER = IMPLEMENTED, DISABLED; READ CONTRACT = VERIFIED AGAINST MOCK; MUTATION CONTRACT = IMPLEMENTED FROM OBSERVED FRONTEND; LIVE MUTATION VALIDATION = BLOCKED BY SAFE TEST TARGET. No production-ready or Stage 4C integration claim.
+
 ## 2026-10-08: Stage 4B real adapter candidate (Commit 1)
 
 Stage 4A human-accepted 8e03fb0 was fast-forwarded into main, passed full 1917/1917 (0 fail, 0 skip), fetched without drift and normally pushed; main=origin/main=8e03fb0 with ahead/behind 0/0. Stage 4B starts from that point and remains local.
