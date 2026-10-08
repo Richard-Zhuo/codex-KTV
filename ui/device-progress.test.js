@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {deviceProgressLabel,isDevicePending,shouldPollDevice,progressReadKey} from './device-progress.js';
+import {deviceProgressLabel,isDevicePending,shouldPollDevice,progressReadKey,deviceOpeningRejectionText} from './device-progress.js';
 const pending=(status='DEVICE_PENDING',businessState='OPENING')=>({id:'V01',businessState,deviceControl:{mode:'required',status}});
 test('formal progress labels distinguish waiting, resetting, opening, verifying, active and exception',()=>{
  for(const [status,label,state] of [['DEVICE_PENDING','正在开房','OPENING'],['DEVICE_OFFLINE_WAIT','等待设备上线','WAITING_DEVICE'],['DEVICE_CLOSING','正在重置点歌设备','OPENING'],['DEVICE_OPENING','正在开台','OPENING'],['DEVICE_VERIFYING','正在确认','OPENING'],['ACTIVE','营业中','ACTIVE'],['DEVICE_FAILED','设备异常','FAILED']]){
@@ -31,4 +31,10 @@ test('progress polling retains focused DOM on time-only reads, but renders readi
  const b=structuredClone(a);b.snapshot.view.workspace.serverNow='later';b.snapshot.view.workspace.rooms[0].deviceControl.version=42;assert.equal(progressReadKey(a),progressReadKey(b));
  b.snapshot.view.workspace.rooms[0].businessState='ACTIVE';assert.notEqual(progressReadKey(a),progressReadKey(b));
  b.snapshot=structuredClone(a.snapshot);b.session.permissionIds=[];assert.notEqual(progressReadKey(a),progressReadKey(b));
+});
+
+test('missing device mapping has accurate employee guidance without exposing arbitrary server details',()=>{
+ assert.match(deviceOpeningRejectionText({code:'business_rejection',result:{reasonCode:'device_mapping_required'}}),/该房间设备尚未完成系统绑定/);
+ assert.equal(deviceOpeningRejectionText({code:'internal_error',result:{reasonCode:'device_mapping_required',reason:'SQL secret'}}),null);
+ assert.equal(deviceOpeningRejectionText({code:'business_rejection',result:{reason:'arbitrary detail'}}),null);
 });

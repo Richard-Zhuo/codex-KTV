@@ -27,3 +27,9 @@ The guarded existing ledger/trusted-clean.integration.test.js fixture applies mi
 ## Staff and admin UI
 
 The formal opening form explicitly requires an employee UUID from the server roster; the authenticated actor remains separate. Pending/WAIT/FAILED cards and order routes show progress only. Current readiness labels come from safe server fields. Polls perform session/snapshot reads only, stop when unauthenticated, unavailable, writing, editing or failed, and avoid replacing DOM on time-only or claim-version-only changes. The original actor-bound write-before-send journal is unchanged. The committed HTTP envelope means the intent was saved, not that the device is ready. Minimal admin room/order progress follows existing backend.view and report.view filtering. No direct device mutation API or permission is added.
+
+## Final directed audit correction
+
+A persisted valid OPEN observation is historical confirmation. If a restart reaches the extra VERIFY step after targetEndAt, retain that confirmation as ACTIVE without another provider call. An ACK without a valid OPEN observation cannot take this path. Dedicated regressions distinguish both cases. This does not claim the device remains open after its countdown expires and does not repeat open/close or alter business facts.
+
+Missing mapping uses business_rejection plus stable result.reasonCode=device_mapping_required; the staff UI displays the exact binding guidance, without echoing unknown exception details.

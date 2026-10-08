@@ -22,3 +22,8 @@ export function progressReadKey(model) {
   return JSON.stringify({snapshot,principalId:model.session?.principalId,
     permissions:model.session?.permissionIds,attributes:model.session?.policyAttributeIds});
 }
+
+export function deviceOpeningRejectionText(error) {
+  return error?.code==='business_rejection' && error.result?.reasonCode==='device_mapping_required'
+    ? '该房间设备尚未完成系统绑定，请联系管理员。' : null;
+}

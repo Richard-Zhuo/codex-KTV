@@ -40,7 +40,7 @@ export function bindRoomControl(connection, database, ledgerId) {
     },
     async enroll(order, request, context) {
       const target=await port.readMapping(order.room);
-      if(!target?.enabled) throw new BusinessRejection('该房间设备尚未完成系统绑定');
+      if(!target?.enabled) {const error=new BusinessRejection('该房间设备尚未完成系统绑定');error.reasonCode='device_mapping_required';throw error;}
       if(!order.businessSession) throw new BusinessRejection('当前场次不可开房');
       const record={id:randomUUID(),ledgerId,operationKey:request.operationKey,fingerprint:request.requestFingerprint,
         actorId:context.principalId,orderId:order.id,...target,businessSession:structuredClone(order.businessSession),

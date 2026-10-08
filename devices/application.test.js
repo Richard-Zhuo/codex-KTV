@@ -232,3 +232,17 @@ test('open ACK remains verifying until matching countdown state, without repeati
  r=await advance(f,r);assert.equal(r.step,'VERIFY');r=await advance(f,r);assert.equal(r.status,'ACTIVE');
  assert.deepEqual(mutations(f).map(c=>c.method),['openRoom']);
 });
+
+test('restart after valid OPEN confirmation retains historical success when countdown has expired',async()=>{
+ const f=fixture({open:false});let r=await start(f);r=await advance(f,r);r=await advance(f,r);
+ assert.equal(r.step,'VERIFY');assert.ok(r.openConfirmedAt);const proof=r.openConfirmedAt,calls=f.gateway.calls.length;
+ f.setClock(r.businessSession.targetEndAt.replace('.000Z','.000000Z'));f.gateway.room.open=false;f.gateway.room.countdownTargetEndAt=null;
+ r=await advance(f,r);assert.equal(r.status,'ACTIVE');assert.equal(r.openConfirmedAt,proof);
+ assert.equal(f.gateway.calls.length,calls);assert.equal(mutations(f).length,1);
+});
+test('unverified ACK at expiry cannot become historical successful OPEN',async()=>{
+ const f=fixture({open:false,outcomes:{openRoom:(i,g)=>g.evidence(i,{kind:'ACKNOWLEDGED',acknowledged:true,settled:false})}});
+ let r=await start(f);r=await advance(f,r);r=await advance(f,r);assert.equal(r.openConfirmedAt,null);
+ f.setClock(r.businessSession.targetEndAt.replace('.000Z','.000000Z'));r=await advance(f,r);assert.notEqual(r.status,'ACTIVE');
+ assert.equal(r.openConfirmedAt,null);assert.equal(mutations(f).length,1);
+});

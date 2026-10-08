@@ -100,6 +100,12 @@ export function createRoomControlApplication({store,gateway,mappings,allowTestGa
         if(!recovering && (!stillOwnsRoom(head,record) || !configured?.enabled || configured.provider!==record.provider || configured.externalDeviceId!==record.externalDeviceId)){
           const next=changeWorkflow(record,{status:'DEVICE_FAILED',inFlight:null},context.dbNow,'order-or-mapping-changed');await tx.write(next,record.version);return {immediate:next};
         }
+        // A persisted, valid OPEN observation is historical success. The provider's
+        // later countdown expiry must not turn that confirmation into UNKNOWN.
+        if(record.step==='VERIFY' && record.openConfirmedAt && Date.parse(context.dbNow)>=Date.parse(record.businessSession.targetEndAt)){
+          const next=changeWorkflow(record,{status:'ACTIVE',uncertain:false,inFlight:null},context.dbNow,'confirmed-open-retained-after-expiry');
+          await tx.write(next,record.version);return {immediate:next};
+        }
         let countdown;
         if(!recovering && !observingMutation && !record.openConfirmedAt){try{countdown=countdownFor(record.businessSession,context.dbNow);}catch{
           const next=changeWorkflow(record,{status:'DEVICE_FAILED',inFlight:null},context.dbNow,'session-ended');await tx.write(next,record.version);return {immediate:next};}}

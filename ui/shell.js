@@ -1,3 +1,4 @@
+import { deviceOpeningRejectionText } from './device-progress.js';
 // 应用外壳：persist/toast/openDialog/commit/render（Phase 7 自 app.js 迁入）。
 // 唯一机械转换：模块级可变状态 → ctx.*；函数体逐字保留。
 
@@ -90,7 +91,7 @@ function renderFormal() {
   const navigation = [['rooms','房态'],['retail','零售'],['deposits','寄取酒'],
     ['tasks','待办'],['report','报表'],['mine','我的']]
     .filter(([id]) => available[id]);
-  const label = error => ({
+  const label = error => deviceOpeningRejectionText(error) ?? ({
     unauthenticated: '登录已失效，请重新登录。',
     authorization_denied: '当前账号没有执行此操作的权限，请查看最新状态。',
     csrf_denied: '会话校验失效，请确认最新状态后重新操作。',

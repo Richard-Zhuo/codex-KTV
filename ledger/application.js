@@ -140,7 +140,7 @@ export function createLedgerApplication({ store, principal, executionMode = 'dem
         } catch (error) {
           // Only explicit domain rejections reserve the key; unknown failures roll back.
           if (!(error instanceof BusinessRejection)) throw error;
-          return finishRejected({ status: 'business-rejected', ledgerId, actorId, operationKey: request.operationKey, expectedRevision: request.expectedRevision, currentRevision, reason: error.message });
+          return finishRejected({ status: 'business-rejected', ledgerId, actorId, operationKey: request.operationKey, expectedRevision: request.expectedRevision, currentRevision, reason: error.message, ...(error.reasonCode==='device_mapping_required'?{reasonCode:error.reasonCode}:{}) });
         }
         if (nextState === state || !Array.isArray(nextState?.processed) || !nextState.processed.includes(request.operationKey)) {
           throw Error('领域事务未确认操作键，停止提交');

@@ -112,7 +112,7 @@ export async function testOpenDevice({t,pool,auth,seed,inspect,roster,employeeSt
   }finally{await f.close();await other.end();}
  });
  await t.test('Stage4C missing mapping fails closed; disabled mode has explicit DISABLED evidence',async()=>{
-  const f=await make({mapping:false});try{const r=await f.open();assert.equal(r.body.error.code,'business_rejection');assert.match(r.body.result.reason,/尚未完成系统绑定/);assert.equal((await facts(f)).orders,0);assert.equal(f.mutations().length,0);}finally{await f.close();}
+  const f=await make({mapping:false});try{const r=await f.open();assert.equal(r.body.error.code,'business_rejection');assert.match(r.body.result.reason,/尚未完成系统绑定/);assert.equal(r.body.result.reasonCode,'device_mapping_required');assert.equal((await facts(f)).orders,0);assert.equal(f.mutations().length,0);}finally{await f.close();}
   const g=await make({mode:'disabled',mapping:false});try{const r=await g.open();assert.equal(r.body.result.businessState,'ACTIVE');assert.equal(r.body.result.deviceControl.status,'DISABLED');assert.equal((await facts(g)).workflows,0);}finally{await g.close();}
  });
  await t.test('Stage4C two clients same revision commit at most one opening',async()=>{
