@@ -9,5 +9,8 @@
   },
   "dependencies": {
     "mysql2": "^3.24.4"
+  },
+  "engines": {
+    "node": ">=24.19.0 <24.20.0"
   }
 }

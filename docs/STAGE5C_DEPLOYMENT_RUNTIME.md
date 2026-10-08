@@ -23,3 +23,15 @@ Logs are structured, allowlisted and written outside Git. Arbitrary error proper
 Stage5C is a local development candidate: no push, merge, real deployment, real initialization, production backup/restore or provider operation. TLS transport hardening, native Windows service templates/preflight and isolated production-like/browser smoke follow in subsequent linear commits.
 
 No new production dependency is added. A small Windows ServiceBase host will use the installed .NET Framework and SCM; no startup-folder/task/login requirement.
+
+## HTTPS and HTTP hardening
+
+Production accepts direct TLS1.2+ only. Exact configured Host is mandatory; duplicate/foreign Host, absolute request targets and Forwarded/X-Forwarded-Proto/Host/Port are rejected. Forwarded source IP is ignored. No proxy trust exists. Plain HTTP on the TLS listener cannot reach auth/business handlers; there is no plaintext business listener.
+
+Existing exact Origin + per-session HMAC CSRF and HttpOnly/Secure/SameSite=Strict/Path=/ cookies remain unchanged. HSTS max-age31536000 is emitted only by the production TLS runtime (no includeSubDomains/preload). CSP uses self scripts/connect, self/data images, no objects/base/frame embedding; unsafe-inline is allowed only for current style attributes/styles. nosniff, no-referrer, DENY frames and disabled camera/microphone/geolocation accompany all responses.
+
+Global declared request body limit1MiB; streamed formal JSON remains bounded by existing readJson (login16KiB, command1MiB). Production oversize returns413 payload_too_large; development's frozen400 input contract is retained. Rejected declared bodies close their connection to prevent reuse with unread bytes. Headers5s, request15s, keepalive5s, inactivity15s, max64 connections,100 requests/socket,64 headers.
+
+Login retains existing auth account failure policy5/15min, now bounded2048 keys. Production adds direct source60 attempts/min and account+source12/15min with2048-key cap, rejecting429 rate_limited. Source comes from the socket, never forwarded headers; expiration allows recovery. These are single-process limits; multiple production workers are not supported without shared limiting.
+
+Real local TLS transport tests validate CA/hostname, secure headers, plaintext/Host/forwarded rejection, oversize, paused readiness and in-flight draining. No global TLS verification bypass is used by the application or Node client.

@@ -12,7 +12,7 @@ export class HttpBoundaryError extends Error {
 export const HTTP_STATUS = Object.freeze({
   unauthenticated: 401, authorization_denied: 403, csrf_denied: 403,
   business_rejection: 422, revision_conflict: 409, idempotency_conflict: 409,
-  invalid_input: 400, internal_error: 500
+  invalid_input: 400, internal_error: 500, payload_too_large:413, rate_limited:429
 });
 
 export function sendJson(res, status, value, headers = {}) {
@@ -43,14 +43,14 @@ export async function readJson(req, maxBody = MAX_BODY) {
   const declared = Number(req.headers['content-length']);
   if (req.headers['content-length'] !== undefined &&
       (!Number.isSafeInteger(declared) || declared < 0 || declared > maxBody)) {
-    throw new HttpBoundaryError('invalid_input');
+    throw new HttpBoundaryError(req.ktvProduction&&declared>maxBody?'payload_too_large':'invalid_input');
   }
   const chunks = [];
   let size = 0;
   try {
     for await (const chunk of req) {
       size += chunk.length;
-      if (size > maxBody) throw new HttpBoundaryError('invalid_input');
+      if (size > maxBody) throw new HttpBoundaryError(req.ktvProduction?'payload_too_large':'invalid_input');
       chunks.push(chunk);
     }
     if (!size) throw new HttpBoundaryError('invalid_input');
@@ -84,7 +84,7 @@ function csrfToken(token) {
 }
 
 export function createHttpAuthBoundary({
-  authService, origin, environment = 'production', allowInsecureCookie = false, logger = console
+  authService, origin, environment = 'production', allowInsecureCookie = false, logger = console, loginGate
 }) {
   if (typeof authService?.login !== 'function' ||
       typeof authService?.authenticateSession !== 'function' ||
@@ -142,6 +142,7 @@ export function createHttpAuthBoundary({
           Buffer.byteLength(body.password, 'utf8') > 1024) {
         throw new HttpBoundaryError('invalid_input');
       }
+      if(loginGate&&!loginGate(req,body.loginIdentifier))throw new HttpBoundaryError('rate_limited');
       const result = await authService.login(body);
       if (!result.ok) throw new HttpBoundaryError('unauthenticated');
       const session = await authService.authenticateSession(result.token);
