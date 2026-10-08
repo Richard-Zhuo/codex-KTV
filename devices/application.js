@@ -16,7 +16,7 @@ function stillOwnsRoom(head,record) {
 }
 export function createRoomControlApplication({store,gateway,mappings,allowTestGateway=false,timeoutMs=15000,leaseMs=30000}) {
   if(typeof store?.runAtomic!=='function' || !store.ledgerId ||
-      ['ensureSession','getRoomStatus','closeRoom','openRoom','setCountdown','queryRoomState'].some(k=>typeof gateway?.[k]!=='function') ||
+      ['ensureSession','getRoomStatus','closeRoom','openRoom','queryRoomState'].some(k=>typeof gateway?.[k]!=='function') ||
       !Number.isSafeInteger(timeoutMs) || timeoutMs<1 || !Number.isSafeInteger(leaseMs) || leaseMs<=timeoutMs) throw TypeError('Invalid room-control composition');
   if(gateway.testOnly && (!allowTestGateway || store.testOnly!==true))throw TypeError('Fake gateway requires explicit isolated test mode');
   const mapping=createRoomDeviceMappings(mappings);
@@ -35,7 +35,7 @@ export function createRoomControlApplication({store,gateway,mappings,allowTestGa
       if(status.room?.online===false)return {...status,kind:'OFFLINE',notDispatched:true};
       if(status.room?.online!==true)return {kind:'UNKNOWN'};
       if(input.step==='STATUS')return status;
-      const method={CLOSE:'closeRoom',OPEN:'openRoom',TIMER:'setCountdown',VERIFY:'queryRoomState'}[input.step];
+      const method={CLOSE:'closeRoom',OPEN:'openRoom',VERIFY:'queryRoomState'}[input.step];
       return gateway[method]({...input,signal:abort.signal});
     };
     try{return await Promise.race([work(),new Promise(resolve=>{timer=setTimeout(()=>{abort.abort();resolve({kind:'UNKNOWN'});},timeoutMs);})]);}
@@ -100,7 +100,8 @@ export function createRoomControlApplication({store,gateway,mappings,allowTestGa
           inFlight:{attemptId,until:new Date(Date.parse(context.dbNow)+leaseMs).toISOString()}},context.dbNow,recovering?'query-claimed':'step-claimed');
         await tx.write(next,record.version);
         return {record:next,attemptId,recovering,input:{provider:record.provider,externalDeviceId:record.externalDeviceId,
-          workflowId:record.id,stepId,step:record.step,targetEndAt:record.businessSession.targetEndAt,...countdown}};
+          workflowId:record.id,stepId,step:record.step,targetEndAt:record.businessSession.targetEndAt,...countdown,
+          ...(countdown?{countdownSeconds:countdown.durationMinutes*60}:{})}};
       });
       if(claim.immediate)return claim.immediate;
       const evidence=await callGateway(claim.input,claim.recovering); // outside every SQL transaction

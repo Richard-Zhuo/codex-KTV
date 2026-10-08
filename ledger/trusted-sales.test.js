@@ -252,3 +252,18 @@ test('Stage 4A clarification: DAY half-dozens are half price; singles and NIGHT 
  assert.equal((await f.app.execute(salesCommand('retailSale',employeeId,'night-half',1,{items:[{product:'bw',spec:'half',count:1}],payments:[{method:'现金',amount:5900}]}),f.credential)).status,'committed');
  assert.equal(soldOrder((await f.memory.read()).state,'retailSale').sales[0].pricePerSaleUnitCents,5900);
 });
+
+for(const action of ['sale','retailSale'])test('Stage 4A '+action+': a missing v2 category cannot inherit a default DAY discount',async()=>{
+ const {businessSessionFor}=await import('../shared/business-session.js');
+ const clock='2026-10-08T07:00:00.000000Z';
+ const f=fixture(action,{clock,setup:s=>{
+  delete s.catalog.products.find(p=>p.id==='bw').priceCategory;
+  if(action==='sale')s.orders.at(-1).businessSession=businessSessionFor(clock,{timeZone:'Asia/Shanghai'});
+ }});
+ const request=salesCommand(action,employeeId,'missing-category',0,{items:[{product:'bw',spec:'dozen',count:1}],
+  ...(action==='retailSale'?{payments:[{method:'现金',amount:11800}]}:{})});
+ assert.equal((await f.app.execute(request,f.credential)).status,'committed');
+ const line=soldOrder((await f.memory.read()).state,action).sales.at(-1);
+ assert.equal(line.pricePerSaleUnitCents,11800);assert.equal(line.amountCents,11800);
+ assert.equal(line.priceCategorySnapshot,'OTHER');assert.equal(line.businessSession.sessionType,'DAY');
+});

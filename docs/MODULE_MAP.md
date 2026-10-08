@@ -1,6 +1,6 @@
 ## Stage 4A device route
 
-- devices/application.js / domain.js: authenticated workflow claims, readiness, offline/unknown recovery.
+- devices/application.js / domain.js: authenticated workflow claims, readiness, offline/unknown recovery; CLOSE -> combined OPEN with countdown -> VERIFY, no independent TIMER mutation.
 - devices/mapping.js: stable server-owned room mapping; gateway.js: disabled real-provider seam; fake-gateway.js: explicit test simulator.
 - devices/mysql-store.js / database/migrations/008_mysql_room_control.sql: short transactions and durable workflow identity.
 - devices/application.test.js and devices/mysql.integration.js through ledger/trusted-clean.integration.test.js: isolated unit/real MySQL evidence.
@@ -9,7 +9,7 @@
 ## Stage 4A route
 
 - shared/business-session.js: explicit-zone DAY/NIGHT snapshots and trusted countdown calculation.
-- catalog-pricing.js: schema-v2 category migration and versioned DAY/existing sale options.
+- catalog-pricing.js / catalog.js: raw category migration before default merging and versioned DAY/existing sale options; missing v2 categories retain existing prices.
 - rooms.js / sales.js: trusted new-order/line snapshots; http/staff-query.js projects them; ui/forms.js uses server-selected plans.
 - Focused: shared/business-session.test.js, catalog-pricing.test.js, ledger/trusted-sales.test.js, ledger/trusted-open.test.js, http/staff-query.test.js, ui/session-pricing.test.js, server-static.test.js.
 - Contract: [Stage 4A](STAGE4A_SESSION_DEVICE.md).

@@ -1,8 +1,8 @@
 export const DEVICE_STATES = Object.freeze(['DEVICE_PENDING','DEVICE_OFFLINE_WAIT','DEVICE_CLOSING',
-  'DEVICE_OPENING','DEVICE_TIMER_SETTING','DEVICE_VERIFYING','ACTIVE','DEVICE_UNKNOWN','DEVICE_FAILED']);
-export const STEPS = Object.freeze(['STATUS','CLOSE','OPEN','TIMER','VERIFY']);
+  'DEVICE_OPENING','DEVICE_VERIFYING','ACTIVE','DEVICE_UNKNOWN','DEVICE_FAILED']);
+export const STEPS = Object.freeze(['STATUS','CLOSE','OPEN','VERIFY']);
 export const statusForStep = step => ({STATUS:'DEVICE_PENDING',CLOSE:'DEVICE_CLOSING',OPEN:'DEVICE_OPENING',
-  TIMER:'DEVICE_TIMER_SETTING',VERIFY:'DEVICE_VERIFYING'})[step];
+  VERIFY:'DEVICE_VERIFYING'})[step];
 export function readinessFor(status) {
   if (!DEVICE_STATES.includes(status)) throw TypeError('Invalid device status');
   return status === 'ACTIVE' ? 'ACTIVE' : status === 'DEVICE_OFFLINE_WAIT' ? 'WAITING_DEVICE' :
@@ -20,6 +20,6 @@ export function scopeMatches(input, evidence) {
     evidence.workflowId===input.workflowId && evidence.stepId===input.stepId;
 }
 export function desiredState(step, room, targetEndAt) {
-  return room?.online===true && (step==='CLOSE' ? room.open===false : step==='OPEN' ? room.open===true :
-    ['TIMER','VERIFY'].includes(step) ? room.open===true && room.countdownTargetEndAt===targetEndAt : true);
+  return room?.online===true && (step==='CLOSE' ? room.open===false :
+    ['OPEN','VERIFY'].includes(step) ? room.open===true && room.countdownTargetEndAt===targetEndAt : step==='STATUS');
 }

@@ -40,7 +40,7 @@ export async function testRoomControl({t,pool,setup,auth,provision,seed,inspect,
   const command={operationKey:'start-device',expectedRevision:0,payload:{orderId:'device-order'}};
   return {ledgerId,login,command,gateway,app:appFor(),appFor};
  };
- const mutations=f=>f.gateway.calls.filter(c=>['closeRoom','openRoom','setCountdown'].includes(c.method));
+ const mutations=f=>f.gateway.calls.filter(c=>['closeRoom','openRoom'].includes(c.method));
  await t.test('Stage 4A MySQL: DAY half/dozen prices persist as frozen line snapshots; replay preserves head',async()=>{
   const f=await make();await auth.grantPermission({principalId:f.login.principalId,permissionId:'staff.record'});
   const employee=await roster.createEmployee({displayName:'Synthetic DAY seller'},{actorPrincipalId:f.login.principalId});
@@ -57,10 +57,17 @@ export async function testRoomControl({t,pool,setup,auth,provision,seed,inspect,
   for(const line of order.sales){assert.equal(line.pricePlanId,'day-v1');assert.deepEqual(line.businessSession,order.businessSession);}
   await app.execute(request,f.login.credential);assert.deepEqual(await inspect(f.ledgerId),actual);
  });
- await t.test('device migration 008: InnoDB, unique order/operation identity and duplicate install refusal',async()=>{
+ await t.test('device migration 008: fresh install and upgrade preserve business data; repeat is rejected',async()=>{
   const ddl=await readFile(new URL('../database/migrations/008_mysql_room_control.sql',import.meta.url),'utf8');
   const statement=ddl.split('\n').filter(l=>!l.trim().startsWith('--')).join('\n').split(';')[0];
+  const f=await make(),before=await inspect(f.ledgerId);
+  const [[count]]=await setup.query('SELECT COUNT(*) AS count FROM '+table('room_control_workflows'));
+  assert.equal(Number(count.count),0,'Only the empty table created by this fixture may be recreated');
+  await setup.query('DROP TABLE '+table('room_control_workflows'));
+  await setup.query(statement); // Upgrade an existing 001..007 schema containing confirmed business facts.
+  assert.deepEqual(await inspect(f.ledgerId),before);
   await assert.rejects(setup.query(statement),{code:'ER_TABLE_EXISTS_ERROR'});
+  assert.deepEqual(await inspect(f.ledgerId),before);
   const [[row]]=await setup.query("SELECT engine FROM information_schema.tables WHERE table_schema=? AND table_name='room_control_workflows'",[database]);assert.equal(row.ENGINE??row.engine,'InnoDB');
  });
  await t.test('device MySQL: offline persists WAIT, reconnect continues same workflow to ACTIVE; ledger untouched',async()=>{
@@ -68,10 +75,10 @@ export async function testRoomControl({t,pool,setup,auth,provision,seed,inspect,
   r=await f.app.advance(r.id,f.login.credential);assert.equal(r.status,'DEVICE_OFFLINE_WAIT');assert.equal(r.roomReadiness,'WAITING_DEVICE');assert.equal(mutations(f).length,0);
   const independent=mysql.createPool(poolOptions);
   try{const reconnected=f.appFor(independent);r=await reconnected.get(r.id,f.login.credential);assert.equal(r.status,'DEVICE_OFFLINE_WAIT');
-   f.gateway.room.online=true;for(let n=0;n<5;n++)r=await reconnected.advance(r.id,f.login.credential);assert.equal(r.status,'ACTIVE');assert.equal(r.roomReadiness,'ACTIVE');
+   f.gateway.room.online=true;for(let n=0;n<4;n++)r=await reconnected.advance(r.id,f.login.credential);assert.equal(r.status,'ACTIVE');assert.equal(r.roomReadiness,'ACTIVE');
    const again=await reconnected.start(f.command,f.login.credential);assert.equal(again.id,r.id);
   }finally{await independent.end();}
-  assert.deepEqual(mutations(f).map(c=>c.method),['closeRoom','openRoom','setCountdown']);assert.deepEqual(await inspect(f.ledgerId),before);
+  assert.deepEqual(mutations(f).map(c=>c.method),['closeRoom','openRoom']);assert.deepEqual(await inspect(f.ledgerId),before);
   const [[count]]=await pool.execute('SELECT COUNT(*) AS count FROM '+table('room_control_workflows')+' WHERE ledger_id=?',[f.ledgerId]);assert.equal(Number(count.count),1);
  });
  await t.test('device MySQL: timeout after close persists UNKNOWN; query after reconnect advances without repeat',async()=>{
@@ -79,6 +86,23 @@ export async function testRoomControl({t,pool,setup,auth,provision,seed,inspect,
   let r=await f.app.start(f.command,f.login.credential);r=await f.app.advance(r.id,f.login.credential);r=await f.app.advance(r.id,f.login.credential);assert.equal(r.status,'DEVICE_UNKNOWN');
   const independent=mysql.createPool(poolOptions);try{r=await f.appFor(independent).advance(r.id,f.login.credential);assert.equal(r.status,'DEVICE_OPENING');}finally{await independent.end();}
   assert.equal(mutations(f).length,1);assert.ok(f.gateway.calls.some(c=>c.method==='queryRoomState'));
+ });
+ await t.test('device MySQL: lost combined-open response queries after reconnect without repeating open',async()=>{
+  const f=await make({outcomes:{openRoom:(input,g,normal)=>{normal();throw Error('synthetic open response lost');}}});
+  const before=await inspect(f.ledgerId);let r=await f.app.start(f.command,f.login.credential);
+  for(let n=0;n<3;n++)r=await f.app.advance(r.id,f.login.credential);
+  assert.equal(r.status,'DEVICE_UNKNOWN');assert.equal(r.step,'OPEN');
+  const independent=mysql.createPool(poolOptions);
+  try{
+   const reconnected=f.appFor(independent);r=await reconnected.advance(r.id,f.login.credential);
+   assert.equal(r.status,'DEVICE_VERIFYING');r=await reconnected.advance(r.id,f.login.credential);
+   assert.equal(r.status,'ACTIVE');
+  }finally{await independent.end();}
+  const opens=mutations(f).filter(c=>c.method==='openRoom');
+  assert.equal(opens.length,1);assert.ok(opens[0].countdownSeconds>0);
+  assert.equal(opens[0].countdownSeconds,opens[0].durationMinutes*60);
+  assert.equal(f.gateway.room.countdownTargetEndAt,r.businessSession.targetEndAt);
+  assert.deepEqual(await inspect(f.ledgerId),before);
  });
  await t.test('device MySQL: simultaneous claims dispatch once and persist one workflow',async()=>{
   const f=await make();const [a,b]=await Promise.all([f.app.start(f.command,f.login.credential),f.app.start(f.command,f.login.credential)]);assert.equal(a.id,b.id);

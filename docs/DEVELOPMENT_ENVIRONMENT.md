@@ -1,6 +1,6 @@
 ### Stage 4A device verification
 
-Focused: node --test --test-isolation=none --test-reporter=tap devices/application.test.js database.test.js. Real integration: ledger/trusted-clean.integration.test.js under the existing guarded MySQL fixture. The fixture now explicitly owns migration 008 room_control_workflows (sixteen InnoDB tables); it refuses a pre-existing device table, and removes only tables it created. Provider calls are fake, must use explicit allowTestGateway and testOnly mode, and never use real devices or credentials. Full command remains node --test --test-isolation=none --test-reporter=tap.
+Focused: node --test --test-isolation=none --test-reporter=tap devices/application.test.js shared/business-session.test.js catalog-pricing.test.js database.test.js ledger/trusted-sales.test.js ledger/trusted-open.test.js http/staff-query.test.js ui/session-pricing.test.js server-static.test.js. Real integration: ledger/trusted-clean.integration.test.js under the existing guarded MySQL fixture. The fixture now explicitly owns migration 008 room_control_workflows (sixteen InnoDB tables); it refuses a pre-existing device table, and removes only tables it created. Provider calls are fake, must use explicit allowTestGateway and testOnly mode, and never use real devices or credentials. Full command remains node --test --test-isolation=none --test-reporter=tap.
 
 ### K10 验证路线
 

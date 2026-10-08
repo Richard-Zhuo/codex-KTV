@@ -42,13 +42,13 @@ function fixture({online=true,outcomes={}}={}) {
 const start=f=>f.app.start(f.command,f.credential);
 const advance=(f,r)=>f.app.advance(r.id,f.credential);
 async function finish(f,r){for(let n=0;n<7&&r.status!=='ACTIVE';n++)r=await advance(f,r);return r;}
-const mutations=f=>f.gateway.calls.filter(c=>['closeRoom','openRoom','setCountdown'].includes(c.method));
+const mutations=f=>f.gateway.calls.filter(c=>['closeRoom','openRoom'].includes(c.method));
 
-test('online close/open/timer/verify becomes ACTIVE, uses trusted DAY target, never changes ledger',async()=>{
+test('online close/open-with-countdown/verify becomes ACTIVE, uses trusted DAY target, never changes ledger',async()=>{
  const f=fixture(),before=structuredClone(f.head);let r=await start(f);assert.equal(r.roomReadiness,'OPENING');
  r=await finish(f,r);assert.equal(r.status,'ACTIVE');assert.equal(r.roomReadiness,'ACTIVE');
- assert.deepEqual(mutations(f).map(c=>c.method),['closeRoom','openRoom','setCountdown']);
- assert.equal(mutations(f).at(-1).targetEndAt,'2026-10-08T10:00:00.000Z');assert.equal(mutations(f).at(-1).durationMinutes,180);
+ assert.deepEqual(mutations(f).map(c=>c.method),['closeRoom','openRoom']);
+ assert.equal(mutations(f).at(-1).targetEndAt,'2026-10-08T10:00:00.000Z');assert.equal(mutations(f).at(-1).durationMinutes,180);assert.equal(mutations(f).at(-1).countdownSeconds,10800);
  assert.deepEqual(f.head,before);assert.equal(f.records.size,1);
  const beforeCalls=f.gateway.calls.length;await advance(f,r);assert.equal(f.gateway.calls.length,beforeCalls);
 });
@@ -58,7 +58,7 @@ test('offline waits, comes online and continues same workflow without a new loca
  const original=r.id;f.gateway.room.online=true;r=await finish(f,r);
  assert.equal(r.id,original);assert.equal(r.status,'ACTIVE');assert.equal(f.records.size,1);assert.equal(f.head.revision,1);
 });
-for(const method of ['closeRoom','openRoom','setCountdown'])test(method+' timeout after applied requires query, recovers without repeating mutation',async()=>{
+for(const method of ['closeRoom','openRoom'])test(method+' timeout after applied requires query, recovers without repeating mutation',async()=>{
  const f=fixture({outcomes:{[method]:async(input,gateway,normal)=>{normal();throw Error('synthetic timeout after effect');}}});
  let r=await start(f);for(let n=0;n<5&&r.status!=='DEVICE_UNKNOWN';n++)r=await advance(f,r);
  assert.equal(r.status,'DEVICE_UNKNOWN');const calls=mutations(f).length;r=await advance(f,r);
@@ -110,7 +110,7 @@ test('definitive failure, scoped evidence, verification mismatch and expired ses
  const other=fixture({outcomes:{closeRoom:(input,g)=>({...g.evidence(input,{kind:'APPLIED',settled:true}),externalDeviceId:'wrong-device'})}});
  r=await start(other);r=await advance(other,r);r=await advance(other,r);assert.equal(r.status,'DEVICE_UNKNOWN');
  const expired=fixture();r=await start(expired);expired.setClock('2026-10-08T10:00:00.000000Z');r=await advance(expired,r);assert.equal(r.status,'DEVICE_FAILED');assert.equal(expired.gateway.calls.length,0);
- const verify=fixture();r=await start(verify);for(let n=0;n<4;n++)r=await advance(verify,r);verify.gateway.room.countdownTargetEndAt=null;r=await advance(verify,r);assert.equal(r.status,'DEVICE_UNKNOWN');
+ const verify=fixture();r=await start(verify);for(let n=0;n<3;n++)r=await advance(verify,r);verify.gateway.room.countdownTargetEndAt=null;r=await advance(verify,r);assert.equal(r.status,'DEVICE_UNKNOWN');
 });
 test('provider diagnostics/secrets are not persisted; mapping is stable and production adapter disabled',async()=>{
  const f=fixture({outcomes:{closeRoom:(input,g)=>g.evidence(input,{kind:'UNKNOWN',password:'do-not-save',cookie:'do-not-save',stack:'do-not-save'})}});
@@ -128,4 +128,53 @@ test('late preflight response after timeout cannot dispatch an unclaimed mutatio
  f.gateway.outcomes.getRoomStatus=async(input,g,normal)=>{await pending;return normal();};
  r=await advance(f,r);assert.equal(r.status,'DEVICE_UNKNOWN');release();await new Promise(resolve=>setTimeout(resolve,5));
  assert.equal(mutations(f).length,0);
+});
+
+test('OPEN is a combined capability; the gateway has no independent timer requirement',async()=>{
+ const f=fixture();assert.equal(typeof f.gateway.setCountdown,'undefined');
+ const r=await finish(f,await start(f));assert.equal(r.status,'ACTIVE');
+ assert.equal(r.events.some(e=>e.step==='TIMER' || e.status==='DEVICE_TIMER_SETTING'),false);
+ assert.equal(f.gateway.room.countdownTargetEndAt,r.businessSession.targetEndAt);
+});
+test('open acknowledgement without the desired countdown remains UNKNOWN',async()=>{
+ const f=fixture({outcomes:{openRoom:(input,g)=>{g.room.open=true;return g.evidence(input,{kind:'APPLIED',settled:true});}}});
+ let r=await start(f);for(let n=0;n<3;n++)r=await advance(f,r);
+ assert.equal(r.status,'DEVICE_UNKNOWN');assert.equal(r.step,'OPEN');
+ r=await advance(f,r);assert.equal(r.status,'DEVICE_UNKNOWN');
+ assert.equal(mutations(f).filter(c=>c.method==='openRoom').length,1);
+});
+test('open timeout and matching current state without settled step proof never replays',async()=>{
+ const f=fixture({outcomes:{openRoom:()=>new Promise(()=>{})}});
+ let r=await start(f);for(let n=0;n<3;n++)r=await advance(f,r);
+ f.gateway.room.open=true;f.gateway.room.countdownTargetEndAt=r.businessSession.targetEndAt;
+ for(let n=0;n<3;n++)r=await advance(f,r);
+ assert.equal(r.status,'DEVICE_UNKNOWN');assert.equal(r.step,'OPEN');
+ assert.equal(mutations(f).filter(c=>c.method==='openRoom').length,1);
+});
+test('open retries only after scoped settled NOT_APPLIED and explicit retrySafe',async()=>{
+ const f=fixture({outcomes:{openRoom:[Error('timeout')]}});
+ let r=await start(f);for(let n=0;n<3;n++)r=await advance(f,r);
+ f.gateway.outcomes.queryRoomState=(input,g)=>g.evidence(input,{stepResult:'NOT_APPLIED',settled:true});
+ r=await advance(f,r);assert.equal(r.status,'DEVICE_UNKNOWN');
+ f.gateway.outcomes.queryRoomState=(input,g)=>g.evidence(input,{stepResult:'NOT_APPLIED',settled:true,retrySafe:true});
+ r=await advance(f,r);assert.equal(r.status,'DEVICE_OPENING');
+ assert.equal(mutations(f).filter(c=>c.method==='openRoom').length,1);
+ delete f.gateway.outcomes.queryRoomState;r=await finish(f,r);
+ assert.equal(r.status,'ACTIVE');assert.equal(mutations(f).filter(c=>c.method==='openRoom').length,2);
+});
+test('expired open lease queries without re-dispatch; late completion is fenced',async()=>{
+ let release;const wait=new Promise(resolve=>release=resolve);
+ const f=fixture({outcomes:{openRoom:async(input,g,normal)=>{await wait;return normal();}}});
+ let r=await start(f);r=await advance(f,r);r=await advance(f,r);
+ const pending=advance(f,r);await new Promise(resolve=>setTimeout(resolve,1));
+ await advance(f,r);assert.equal(mutations(f).filter(c=>c.method==='openRoom').length,1);
+ f.setClock('2026-10-08T07:00:02.000000Z');
+ const queried=await advance(f,r);assert.equal(queried.status,'DEVICE_UNKNOWN');
+ release();await pending;
+ const current=await f.app.get(r.id,f.credential);
+ assert.equal(current.version,queried.version);assert.equal(current.status,'DEVICE_UNKNOWN');
+ r=await advance(f,current);assert.equal(r.status,'DEVICE_VERIFYING');
+ r=await advance(f,r);assert.equal(r.status,'ACTIVE');
+ assert.equal(mutations(f).filter(c=>c.method==='openRoom').length,1);
+ assert.equal(f.head.revision,1);assert.equal(f.head.state.orders.length,1);
 });

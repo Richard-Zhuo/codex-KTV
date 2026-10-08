@@ -215,9 +215,13 @@ function mergeItems(defaultItems, rawItems) {
 
 export function mergeCatalog(raw) {
   if (!raw || typeof raw !== 'object') return cloneCatalog(DEFAULT_CATALOG);
+  // Classify raw facts before defaults can fill a missing v2 category.
+  // Only v1 records may inherit the explicit stable-ID migration mapping.
+  const products = (Array.isArray(raw.products) ? raw.products : []).filter(item => item && item.id)
+    .map(item => migratePriceCategory(item, Number(raw.schemaVersion || 1)));
   return {
     schemaVersion: 2,
-    products: mergeItems(DEFAULT_CATALOG.products, raw.products).map(item => migratePriceCategory(item, Number(raw.schemaVersion || 1))),
+    products: mergeItems(DEFAULT_CATALOG.products, products),
     packages: mergeItems(DEFAULT_CATALOG.packages, raw.packages)
   };
 }

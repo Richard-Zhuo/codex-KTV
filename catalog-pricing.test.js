@@ -30,3 +30,26 @@ test('non-DAY and OTHER prices, historical unit prices and amounts never migrate
  const migrated=migrateLegacyOrderPricing(records);assert.equal(migrated[0].sales[0].pricePerSaleUnitCents,11800);
  assert.equal(migrated[0].sales[0].pricePlanId,EXISTING_PRICE_PLAN);assert.equal(records[0].sales[0].amount,11800);
 });
+
+test('missing classification keeps existing options; unknown category and malformed DAY units reject',()=>{
+ const p=findProduct(cloneCatalog(),'bw'),existing=structuredClone(p.saleOptions);
+ const missing={...p};delete missing.priceCategory;
+ assert.deepEqual(pricedSaleOptions(missing,DAY_PRICE_PLAN),existing);
+ const catalog=cloneCatalog();delete catalog.products.find(p=>p.id==='bw').priceCategory;
+ const migrated=findProduct(mergeCatalog(catalog),'bw');assert.equal(migrated.priceCategory,'OTHER');
+ assert.deepEqual(pricedSaleOptions(migrated,DAY_PRICE_PLAN),existing);
+ assert.throws(()=>pricedSaleOptions({...p,priceCategory:'UNVERIFIED'},DAY_PRICE_PLAN),/分类无效/);
+ for(const [id,quantity] of [['half',5],['dozen',11]]) {
+  const invalid={...p,saleOptions:p.saleOptions.map(o=>o.id===id?{...o,baseQuantity:quantity}:o)};
+  assert.throws(()=>pricedSaleOptions(invalid,DAY_PRICE_PLAN),/基础单位/);
+ }
+});
+test('classified DAY options are derived when absent; single price and input remain unchanged',()=>{
+ const p={id:'custom',name:'arbitrary',priceCategory:'PREMIUM_BEER',
+  saleOptions:[{id:'single',name:'单支',baseQuantity:1,priceCents:1150}]};
+ const options=pricedSaleOptions(p,DAY_PRICE_PLAN);
+ assert.equal(options.find(o=>o.id==='half').priceCents,6000);
+ assert.equal(options.find(o=>o.id==='dozen').priceCents,12000);
+ assert.equal(options.find(o=>o.id==='single').priceCents,1150);
+ assert.deepEqual(p.saleOptions,[{id:'single',name:'单支',baseQuantity:1,priceCents:1150}]);
+});

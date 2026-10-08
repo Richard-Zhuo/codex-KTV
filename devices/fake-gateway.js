@@ -7,7 +7,7 @@ export class FakeKtvRoomControlGateway extends KtvRoomControlGateway {
   }
   async invoke(method,input,normal) {
     this.calls.push({method,workflowId:input.workflowId,stepId:input.stepId,
-      ...(input.targetEndAt?{targetEndAt:input.targetEndAt,durationMinutes:input.durationMinutes}:{})});
+      ...(input.targetEndAt?{targetEndAt:input.targetEndAt,durationMinutes:input.durationMinutes,countdownSeconds:input.countdownSeconds}:{})});
     const outcome=this.outcomes[method];
     const selected=Array.isArray(outcome)?outcome.shift():outcome;
     if(typeof selected==='function') return selected(input,this,normal);
@@ -28,8 +28,10 @@ export class FakeKtvRoomControlGateway extends KtvRoomControlGateway {
     });
   }
   async closeRoom(input) { return this.mutate('closeRoom',input,()=>{this.room.open=false;this.room.countdownTargetEndAt=null;}); }
-  async openRoom(input) { return this.mutate('openRoom',input,()=>{this.room.open=true;}); }
-  async setCountdown(input) { return this.mutate('setCountdown',input,()=>{this.room.countdownTargetEndAt=input.targetEndAt;}); }
+  async openRoom(input) {
+    if(!Number.isSafeInteger(input.countdownSeconds) || input.countdownSeconds<=0 || !input.targetEndAt)throw TypeError('Combined open countdown required');
+    return this.mutate('openRoom',input,()=>{this.room.open=true;this.room.countdownTargetEndAt=input.targetEndAt;});
+  }
   async queryRoomState(input) {
     return this.invoke('queryRoomState',input,()=>this.evidence(input,{stepResult:this.steps.get(input.stepId)??'UNKNOWN',settled:this.steps.has(input.stepId)}));
   }
