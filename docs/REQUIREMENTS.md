@@ -1,6 +1,6 @@
 ## Stage 5B
 
-Stage 5B requires consistent server-side backup, checksum-before-restore, separate empty test target, persisted recovery freeze, explicit session invalidation, invariant verification and operator resume. No real initialization/provider/deployment.
+Stage 5B requires consistent server-side backup, checksum-before-restore, separate empty test target, persisted recovery freeze before business schema preparation, explicit session invalidation, invariant verification and operator resume. Verify/resume must fence concurrent changes through commit; repeated successful resume is a no-op. Recovery CLI must reject inherited actions without reading or exposing private configuration. No real initialization/provider/deployment.
 
 ## Stage 5A accepted scope (2026-10-08)
 

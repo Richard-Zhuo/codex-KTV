@@ -1,5 +1,5 @@
 import test from 'node:test';import assert from 'node:assert/strict';
-import mysql from 'mysql2/promise';import { join } from 'node:path';import { writeFile } from 'node:fs/promises';
+import mysql from 'mysql2/promise';import { join } from 'node:path';import { writeFile,readFile,cp } from 'node:fs/promises';
 import { withBackupFixture } from '../test-support/backup-fixture.js';
 import { backupDatabase,restoreDatabase,connect,readTables,rowsOf } from '../backup/mysql-backup.js';
 import { canonical,digest,verifyArtifact } from '../backup/format.js';
@@ -56,6 +56,26 @@ test('Stage 5B isolated real MySQL full recovery drill',{skip:!process.env.LEDGE
  const head=await source.store.read();assert.equal(head.state.inventory.qd.count,null);assert.ok(head.state.orders.length>=7);assert.ok(head.state.handovers.length);
  const beforeBusiness=canonical(head.state);mark('backupStart');const backup=await backupDatabase({...f.backupArgs,outputDirectory:join(f.dir,'drill')});mark('backupComplete');
  const verified=await verifyArtifact(backup.directory,{expectedChecksum:backup.checksum,storeId:f.storeId,ledgerId:f.ledgerId});
+
+ await t.test('each critical payload mutation fails checksum before target connection',async()=>{
+  const mutations=[
+   ['order-amount',data=>{const table=data.tables.ledger_heads,i=table.columns.indexOf('state_json'),s=JSON.parse(table.rows[0][i]);s.orders[0].packageBaseCents=(s.orders[0].packageBaseCents??s.orders[0].base??0)+1;table.rows[0][i]=JSON.stringify(s);}],
+   ['payment-time',data=>{const table=data.tables.ledger_heads,i=table.columns.indexOf('state_json'),s=JSON.parse(table.rows[0][i]);s.orders.find(o=>o.payments.length).payments[0].occurredAt='2000-01-01T00:00:00.000Z';table.rows[0][i]=JSON.stringify(s);}],
+   ['inventory-null',data=>{const table=data.tables.ledger_heads,i=table.columns.indexOf('state_json'),s=JSON.parse(table.rows[0][i]);s.inventory.qd.count=0;table.rows[0][i]=JSON.stringify(s);}],
+   ['auth-grant',data=>{const table=data.tables.auth_grants;table.rows[0][table.columns.indexOf('permission_id')]='synthetic-corrupt-grant';}],
+   ['operation-key',data=>{const table=data.tables.ledger_operations;table.rows[0][table.columns.indexOf('operation_key')]='corrupt-key';}],
+   ['device-workflow',data=>{const table=data.tables.room_control_workflows;table.rows[0][table.columns.indexOf('state_json')]='{}';}]
+  ];
+  for(const [name,mutate]of mutations){
+   const directory=join(f.dir,'corrupt-'+name);await cp(backup.directory,directory,{recursive:true});const data=structuredClone(verified.data);mutate(data);await writeFile(join(directory,'data.json'),canonical(data));
+   await assert.rejects(restoreDatabase({...f.targetArgs(backup,name.replaceAll('-','_')),directory,databaseUrl:'not-a-url'}),{code:'BACKUP_CHECKSUM_MISMATCH'});
+  }
+  const directory=join(f.dir,'corrupt-manifest');await cp(backup.directory,directory,{recursive:true});
+  await writeFile(join(directory,'manifest.json'),canonical({...verified.manifest,createdAt:'2000-01-01T00:00:00.000Z'}));
+  await assert.rejects(restoreDatabase({...f.targetArgs(backup,'manifest'),directory,databaseUrl:'not-a-url'}),{code:'BACKUP_CHECKSUM_MISMATCH'});
+  const bytes=await readFile(join(backup.directory,'data.json'),'utf8');assert.equal(bytes.includes(f.secret),false);assert.equal(bytes.includes(f.login.token),false);assert.equal(bytes.includes(f.raw),false);
+ });
+
  await t.test('read-only checker accepts original facts and blocks broken relational/business facts',()=>{
   const good=checkRecoveryInvariants(verified.data,verified.manifest);assert.equal(good.ready,true,canonical(good));
   for(const mutate of [
@@ -109,7 +129,7 @@ test('Stage 5B isolated real MySQL full recovery drill',{skip:!process.env.LEDGE
  const signed=await restored.auth.login({loginIdentifier:f.people[0].loginIdentifier,password:f.secret});assert.equal(signed.ok,true);const credential={tokenDigest:digestSessionToken(signed.token)};
  await t.test('fresh session works, first new command is R+1, historical sale replays without side effects',async()=>{
   await execute('clean',{room:'999'},{...restored,credential,operationKey:'post-restore-R-plus-1'});assert.equal((await restored.store.read()).revision,head.revision+1);
-  const before=canonical(await restored.store.read()),c=await connect(target.databaseUrl);try{const ops=digest(canonical({tables:await readTables(c,['ledger_operations','ledger_success_audit'])}));assert.deepEqual(await restored.app.execute(historical.command,credential),historical.result);assert.equal(canonical(await restored.store.read()),before);assert.equal(digest(canonical({tables:await readTables(c,['ledger_operations','ledger_success_audit'])})),ops);}finally{await c.end();}
+  const before=canonical(await restored.store.read()),c=await connect(target.databaseUrl);try{const ops=digest(canonical({tables:await readTables(c,['ledger_operations','ledger_success_audit'])}));assert.deepEqual(await restored.app.execute(historical.command,credential),historical.result);assert.equal((await restored.app.execute({...historical.command,payload:{...historical.command.payload,items:[{product:'bw',spec:'half',count:2}]}},credential)).status,'idempotency-conflict');assert.equal(canonical(await restored.store.read()),before);assert.equal(digest(canonical({tables:await readTables(c,['ledger_operations','ledger_success_audit'])})),ops);}finally{await c.end();}
  });
  await t.test('restored worker ticks query ACK/UNKNOWN only and resume the same offline order after proof',async()=>{
   for(const w of work)w.gateway.calls=[];

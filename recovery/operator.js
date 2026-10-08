@@ -40,10 +40,10 @@ export async function verifyRecovery(args) {
  let c,begun=false;
  try {
   const backup=await verifyArtifact(args.directory,{expectedChecksum:args.expectedChecksum,storeId:args.storeId,ledgerId:args.ledgerId});
-  c=await checkedConnection(args,'/'+args.expectedChecksum);await c.beginTransaction();begun=true;
+  c=await checkedConnection(args,'/'+args.expectedChecksum);await c.query('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ');await c.beginTransaction();begun=true;
   const [[control]]=await c.query('SELECT * FROM recovery_control WHERE control_id=1 FOR UPDATE');
   if(!control||control.mode!=='VERIFYING'||control.backup_digest!==args.expectedChecksum||control.store_id!==args.storeId||control.ledger_id!==args.ledgerId||control.environment!==args.environment)throw fail('RECOVERY_STATE_MISMATCH');
-  const data={tables:await readTables(c,backup.spec.tables)};
+  const data={tables:await readTables(c,backup.spec.tables,{lock:true})};
   for(const name of preserved(backup.spec))if(digest(canonical(data.tables[name]))!==digest(canonical(backup.data.tables[name])))throw fail('RECOVERY_RESTORED_DATA_MISMATCH');
   const report=checkRecoveryInvariants(data,backup.manifest);if(!report.ready)throw fail('RECOVERY_INVARIANT_FAILED');
   const [sessions]=await c.query('SELECT session_id,principal_id FROM auth_sessions WHERE revoked_at IS NULL FOR UPDATE');
@@ -57,7 +57,7 @@ export async function verifyRecovery(args) {
    const next=changeWorkflow(r,{uncertain:r.uncertain===true||!currentStepAcknowledged,inFlight:null},clock.now,'recovery-query-required');
    const encoded=encodeLedgerSnapshot(next);await c.execute('UPDATE room_control_workflows SET version=?,state_json=?,state_checksum=?,updated_at=UTC_TIMESTAMP(6) WHERE ledger_id=? AND workflow_id=? AND version=?',[next.version,encoded.json,encoded.checksum,w.ledger_id,w.workflow_id,w.version]);workflowsFenced++;
   }
-  const preparedDigest=digest(canonical({tables:await readTables(c,preserved(backup.spec))}));
+  const preparedDigest=digest(canonical({tables:await readTables(c,preserved(backup.spec),{lock:true})}));
   const facts={...decodeLedgerJson(control.facts),verifiedAt:clock.now,preparedDigest,sessionsInvalidated:sessions.length,workflowsFenced,report};
   await c.execute("UPDATE recovery_control SET mode='READY_FOR_RESUME',facts=?,updated_at=UTC_TIMESTAMP(6) WHERE control_id=1",[canonical(facts)]);
   await audit(c,'verified',args.initiatedBy,'recovery-session-invalidation',facts);await c.commit();begun=false;
@@ -67,11 +67,18 @@ export async function verifyRecovery(args) {
 export async function resumeRecovery(args) {
  let c;
  try{
-  c=await checkedConnection(args,'/'+args.expectedChecksum+'/RESUME');await c.beginTransaction();
+  c=await checkedConnection(args,'/'+args.expectedChecksum+'/RESUME');await c.query('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ');await c.beginTransaction();
   const [[control]]=await c.query('SELECT * FROM recovery_control WHERE control_id=1 FOR UPDATE');
-  if(!control||control.mode!=='READY_FOR_RESUME'||control.backup_digest!==args.expectedChecksum||control.store_id!==args.storeId||control.ledger_id!==args.ledgerId||control.environment!==args.environment)throw fail('RECOVERY_NOT_VERIFIED');
+  if(!control||!['READY_FOR_RESUME','NORMAL'].includes(control.mode)||control.backup_digest!==args.expectedChecksum||control.store_id!==args.storeId||control.ledger_id!==args.ledgerId||control.environment!==args.environment)throw fail('RECOVERY_NOT_VERIFIED');
   const facts=decodeLedgerJson(control.facts),spec=await schemaSpec();
-  if(facts.preparedDigest!==digest(canonical({tables:await readTables(c,preserved(spec))})))throw fail('RECOVERY_CHANGED_AFTER_VERIFICATION');
+  if(control.mode==='NORMAL'){
+   if(!facts.preparedDigest||!facts.verifiedAt)throw fail('RECOVERY_NOT_VERIFIED');
+   await c.rollback();return {code:'RECOVERY_ALREADY_NORMAL',mode:'NORMAL'};
+  }
+  // Current locking reads fence rows, empty ranges and metadata until NORMAL commits.
+  const tables=await readTables(c,preserved(spec),{lock:true});
+  await validateSchema(c,decodeURIComponent(new URL(args.databaseUrl).pathname.slice(1)));
+  if(facts.preparedDigest!==digest(canonical({tables})))throw fail('RECOVERY_CHANGED_AFTER_VERIFICATION');
   await c.query("UPDATE recovery_control SET mode='NORMAL',updated_at=UTC_TIMESTAMP(6) WHERE control_id=1");await audit(c,'resumed',args.initiatedBy,'explicit-operator-resume',{checksum:args.expectedChecksum});await c.commit();return {code:'RECOVERY_RESUMED',mode:'NORMAL'};
  }catch(e){try{await c?.rollback();}catch{}throw fail(/^RECOVERY_[A-Z_]+$/.test(e.code??'')?e.code:'RECOVERY_RESUME_FAILED');}finally{await c?.end();}
 }

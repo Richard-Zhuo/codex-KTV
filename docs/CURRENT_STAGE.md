@@ -1,3 +1,11 @@
+## Stage 5B high-risk audit fix; human re-acceptance required (2026-10-09)
+
+Audited candidate176bf7e879c564807882647a6fc6b8291790ee32 exposed three P1 findings (recovery CLI private-config output through inherited action, resume concurrent-edit window, and schema-complete restore crash before durable recovery mode) and one P2 repeated-resume response gap. One independent audit-fix commit closes them. Disposition: FIXED, NEEDS HUMAN RE-ACCEPTANCE. No merge, fetch or push; main and locally recorded origin/main remain b188df811926bf4d6cf6c535d1a186ff270e699c.
+
+This run: focused27/27 and full2118/2118, fail0, skip0, exit0. Real owned MySQL8.4.11/InnoDB on loopback33313, real child-process crashes/restarts, three-session invalidation rollback/retry, four paused modes, startup race, final resume row/range fencing, checksum-before-SQL, Windows junction rejection and capacity failure with no artifact. Existing complete drill again preserves23->24, five payments/eight orders/nine inventory effects and four FakeGateway workflows. npm test was attempted; npm remains unavailable. No after-merge regression applies.
+
+[Independent findings, changes and current evidence](verification/STAGE5B_HIGH_RISK_AUDIT.md). No real initialization, production backup/restore, provider operation or deployment. Production restore remains disabled; production backup storage/scheduling/retention/encryption/capacity/ACL gates remain open. KTVSky live production control OFF; PRODUCTION READY=NO;14-DAY OFFSITE MVP READY=NO. Stage5C has not started.
+
 ## Stage 5B implementation complete; human acceptance pending
 
 The candidate contains two linear commits above accepted main b188df811926bf4d6cf6c535d1a186ff270e699c. Backup/restore tooling, persisted write/worker freeze, readonly checker, session invalidation and explicit resume are implemented. The real isolated MySQL drill covers eight synthetic orders, five payment records, nine inventory effects, four recovery workflow states, historical replay and R -> R+1. Final focused18/18 and full2109/2109,0fail,0skip,exit0; timings/browser evidence are in [verification](verification/STAGE5B_RECOVERY_DRILL.md); the operational authority is [the contract](STAGE5B_BACKUP_RECOVERY.md).

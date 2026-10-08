@@ -14,11 +14,11 @@ export async function connect(raw,admin=false) {
 export async function serverIdentity(c) {
   const [[r]]=await c.query('SELECT DATABASE() AS database_name,@@server_uuid AS server_uuid,VERSION() AS version');return r;
 }
-export async function readTables(c,names) {
+export async function readTables(c,names,{lock=false}={}) {
   const result={};
   for(const name of names) {
     const [columns]=await c.execute('SELECT COLUMN_NAME AS name FROM information_schema.columns WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME=? ORDER BY ORDINAL_POSITION',[name]);
-    const [rows]=await c.query({sql:'SELECT * FROM '+name,rowsAsArray:true});
+    const [rows]=await c.query({sql:'SELECT * FROM '+name+(lock?' FOR SHARE':''),rowsAsArray:true});
     result[name]={columns:columns.map(r=>r.name),rows:rows.map(row=>row.map(pack)).sort((a,b)=>JSON.stringify(a)<JSON.stringify(b)?-1:JSON.stringify(a)>JSON.stringify(b)?1:0)};
   }
   return result;
@@ -71,9 +71,14 @@ export async function restoreDatabase({directory,expectedChecksum,databaseUrl,se
     const [[claim]]=await c.execute('SELECT GET_LOCK(?,10) AS acquired',['restore.'+target]);if(Number(claim.acquired)!==1)throw fail('RESTORE_BUSY');lock=true;
     const [tables]=await c.execute('SELECT TABLE_NAME FROM information_schema.tables WHERE TABLE_SCHEMA=?',[target]);if(tables.length)throw fail('RESTORE_TARGET_NOT_EMPTY');
     await c.query('CREATE DATABASE IF NOT EXISTS '+target+' CHARACTER SET utf8mb4 COLLATE utf8mb4_bin');await c.query('USE '+target);
-    for(const sql of spec.statements)await c.query(sql);
-    await validateSchema(c,target);
+    // Bootstrap the official operational guard before business DDL. A crash before
+    // its row exists leaves an incomplete schema; after it exists the target stays paused.
+    const controlDdl=spec.statements.find(sql=>/^CREATE TABLE recovery_control\b/.test(sql));
+    if(!controlDdl)throw fail('RESTORE_SCHEMA_UNSUPPORTED');
+    await c.query(controlDdl);
     await c.execute('INSERT INTO recovery_control(control_id,mode,store_id,ledger_id,environment,backup_digest,initiated_by,facts) VALUES(1,?,?,?,?,?,?,?)',['RESTORING',storeId,ledgerId,environment,expectedChecksum,initiatedBy,canonical({source:manifest.source,backupCreatedAt:manifest.createdAt,restoreStartedAt:new Date().toISOString()})]);controlCreated=true;
+    for(const sql of spec.statements)if(sql!==controlDdl)await c.query(sql);
+    await validateSchema(c,target);
     await c.beginTransaction();begun=true;
     for(const name of spec.tables) {
       if(name==='recovery_control')continue; // Restored operational mode must never become the source's NORMAL mode.

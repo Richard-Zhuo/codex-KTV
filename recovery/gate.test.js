@@ -26,3 +26,19 @@ test('formal room-control runtime enables recovery protection by default',async(
  const runtime=createRoomControlRuntime({pool:{getConnection:async()=>({query:async()=>{throw Error('missing recovery schema');},release(){}})},database:'synthetic_formal_db',ledgerId:'synthetic',authStore:{bindSessionRevalidation(){}},gateway});
  await assert.rejects(runtime.start(),/missing recovery schema/);assert.equal(calls,0);await runtime.stop();
 });
+
+test('HTTP and worker wait for recovery mode before permitting startup work',async()=>{
+ let release,status,delegated=0,connections=0,calls=0;
+ const ready=new Promise(resolve=>{release=resolve;});
+ const pool={getConnection:async()=>{connections++;await ready;return {query:async()=>[[{mode:'FROZEN'}]],release(){}};}};
+ const api=recoveryApiGate({handle(){delegated++;}},{pool});
+ const handling=api.handle({url:'/api/v1/commands/clean'},{writeHead:s=>{status=s;},end(){}});
+ const {createRoomControlRuntime}=await import('../devices/runtime.js');
+ const gateway={};for(const method of ['ensureSession','getRoomStatus','queryRoomState','openRoom','closeRoom'])gateway[method]=async()=>{calls++;};
+ const runtime=createRoomControlRuntime({pool,database:'synthetic_startup',ledgerId:'synthetic',authStore:{bindSessionRevalidation(){}},gateway,intervalMs:100});
+ const starting=runtime.start();
+ try{
+  await pause(150);assert.equal(delegated,0);assert.equal(status,undefined);assert.equal(calls,0);assert.equal(connections,2,'Only HTTP and startup mode reads; worker has not started');
+  release();await Promise.all([handling,starting]);assert.equal(status,503);assert.equal(delegated,0);assert.equal(calls,0);
+ }finally{release();await runtime.stop();}
+});

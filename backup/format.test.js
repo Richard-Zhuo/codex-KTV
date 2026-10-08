@@ -11,3 +11,14 @@ test('backup refuses repository storage and secret command-line options',async()
  const output=[];assert.equal(await runBackupCli(['backup','--password','synthetic-secret'],{},{log:v=>output.push(v),error:v=>output.push(v)}),1);
  assert.equal(output.length,1);assert.equal(output[0].includes('synthetic-secret'),false);
 });
+
+test('backup destination refuses overwrite and Windows junctions resolving into Git',async()=>{
+ const {mkdtemp,rm,symlink}=await import('node:fs/promises'),{tmpdir}=await import('node:os'),{join}=await import('node:path');
+ const {newArtifactDirectory}=await import('./format.js');
+ const parent=await mkdtemp(join(tmpdir(),'ktv-backup-path-'));
+ try{
+  const target=join(parent,'new-artifact');await newArtifactDirectory(target);await assert.rejects(newArtifactDirectory(target),{code:'EEXIST'});
+  const link=join(parent,'repo-link');await symlink(fileURLToPath(new URL('../',import.meta.url)),link,process.platform==='win32'?'junction':'dir');
+  await assert.rejects(newArtifactDirectory(join(link,'forbidden-artifact')),{code:'BACKUP_PATH_DENIED'});
+ }finally{await rm(parent,{recursive:true,force:true});}
+});

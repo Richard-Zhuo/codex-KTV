@@ -1,6 +1,6 @@
 ## Stage 5B verification commands
 
-Focused: node --test --test-isolation=none --test-reporter=tap backup/format.test.js backup/mysql-backup.integration.test.js recovery/gate.test.js recovery/drill.integration.test.js
+Focused: node --test --test-isolation=none --test-reporter=tap backup/format.test.js backup/mysql-backup.integration.test.js recovery/gate.test.js recovery/drill.integration.test.js recovery/cli.test.js recovery/audit.integration.test.js
 
 Full: node --test --test-isolation=none --test-reporter=tap
 
