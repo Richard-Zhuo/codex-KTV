@@ -3,7 +3,7 @@ import mysql from 'mysql2/promise';
 import { transact } from '../rules.js';
 import { createMySqlAuthStore } from '../auth/mysql-store.js';
 import { AuthorizationDenied } from '../shared/identity.js';
-import { seedTrustedSalesState, salesCommand } from '../test-support/trusted-sales-fixture.js';
+import { seedFixedPriceSalesState as seedTrustedSalesState, salesCommand } from '../test-support/trusted-sales-fixture.js';
 import { seedRepaymentReview, repaymentReviewCommand, repayOrder } from '../test-support/trusted-repayment-review-fixture.js';
 import { handoverCommand, drawerPay, seedHandover } from '../test-support/trusted-handover-fixture.js';
 

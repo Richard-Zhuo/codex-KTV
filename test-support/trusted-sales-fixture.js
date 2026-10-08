@@ -13,6 +13,13 @@ export function seedTrustedSalesState(state) {
       pricePerSaleUnitCents:null,amountCents:7000,person:'Historical Employee'}],
     payments:[{method:'现金',amount:100},{method:'微信',amount:200}],otherCharges:[],credit:null});
 }
+// Legacy transaction/locking tests assert fixed 5900-cent half-dozen payments.
+// Explicit OTHER test classification removes their DB wall-clock dependence.
+// Dedicated DAY/NIGHT tests retain the ordinary beer classification.
+export function seedFixedPriceSalesState(state) {
+  seedTrustedSalesState(state);
+  state.catalog.products.find(p=>p.id==='bw').priceCategory='OTHER';
+}
 export function salesPayload(action, employeeId, changes = {}) {
   return {creditedEmployeeId:employeeId,...(action==='sale'?{order:'synthetic-room'}:{}),
     items:[{product:'bw',spec:'half',count:1},{product:'water',spec:'single',count:2}],

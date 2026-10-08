@@ -6,7 +6,7 @@ import { total } from '../sales.js';
 import { AuthorizationDenied } from '../shared/identity.js';
 import { createMySqlAuthStore } from '../auth/mysql-store.js';
 import { createMySqlEmployeeStore } from '../employees/mysql-store.js';
-import { SALES_TEST_ACTIONS, seedTrustedSalesState, salesCommand, soldOrder } from '../test-support/trusted-sales-fixture.js';
+import { SALES_TEST_ACTIONS, seedFixedPriceSalesState as seedTrustedSalesState, salesCommand, soldOrder } from '../test-support/trusted-sales-fixture.js';
 
 // Shares the existing guarded ten-table fixture; owns no DDL/cleanup lifecycle.
 export async function testTrustedSales({t,pool,setup,auth,table,provision,seed,inspect,application,roster,

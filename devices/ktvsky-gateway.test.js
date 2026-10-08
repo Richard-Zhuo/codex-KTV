@@ -48,7 +48,7 @@ for(const action of ['closeRoom','openRoom'])test(action+' maps one POST; acknow
  assert.equal(controls(f).length,1);assert.equal(controls(f)[0].method,'POST');
  assert.deepEqual(controls(f)[0].body,{mac:'synthetic-device',status:action==='openRoom'?1:0,
   telno:'synthetic-account',...(action==='openRoom'?{opentime:60}:{})});
- assert.equal(result.kind,'UNKNOWN');assert.equal(result.acknowledged,true);
+ assert.equal(result.kind,'ACKNOWLEDGED');assert.equal(result.acknowledged,true);
  assert.equal(result.settled,false);assert.equal(result.retrySafe,false);
  const queried=await f.gateway.queryRoomState(deviceInput);
  assert.equal(queried.stepResult,'UNKNOWN');assert.equal(queried.settled,false);
@@ -134,4 +134,17 @@ test('Cookie deletion, path scope and Secure flag are honored',async t=>{
  await f.gateway.getRoomStatus(deviceInput);await f.gateway.getRoomStatus(deviceInput);
  const readsActual=f.requests.filter(r=>r.path==='/h5/search');
  assert.equal(readsActual[0].headers.cookie,'normal=yes');assert.equal(readsActual[1].headers.cookie,undefined);
+});
+
+test('a query started before ACK cannot release the device interlock for a new mutation',async t=>{
+ let release,started;const start=new Promise(resolve=>started=resolve),wait=new Promise(resolve=>release=resolve);
+ const f=await providerFixture(t,{gatewayOptions:{enabled:true,mutationPolicy:()=>true},handler:async({entry,res})=>{
+  if(entry.path!=='/h5/search')return false;started();await wait;
+  res.end(JSON.stringify({code:200,result:{store_id:123,list:[{mac:'synthetic-device',alive:1,status:0,opentime:0}]}}));return true;
+ }});
+ const read=f.gateway.queryRoomState(deviceInput);await start;
+ const ack=await f.gateway.closeRoom(deviceInput);assert.equal(ack.kind,'ACKNOWLEDGED');
+ release();await read;
+ const next=await f.gateway.openRoom({...deviceInput,workflowId:'new-workflow',stepId:'new-step'});
+ assert.equal(next.kind,'UNKNOWN');assert.equal(controls(f).length,1);
 });

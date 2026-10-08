@@ -24,17 +24,19 @@ export function createRoomControlApplication({store,gateway,mappings,allowTestGa
   async function authorized(tx,credential) {
     const context=await revalidateCommandSession(tx,credential);requireTrustedPermission(context,'room.open');return context;
   }
-  async function callGateway(input,recovering) {
+  async function callGateway(input,queryOnly) {
     const abort=new AbortController();let timer;
     const work=async()=>{
       const session=await gateway.ensureSession({provider:input.provider,signal:abort.signal});
       if(abort.signal.aborted || session?.ready!==true)return {kind:'UNKNOWN'};
-      if(recovering)return gateway.queryRoomState({...input,signal:abort.signal});
+      if(queryOnly)return gateway.queryRoomState({...input,signal:abort.signal});
       const status=await gateway.getRoomStatus({...input,signal:abort.signal});
       if(abort.signal.aborted || !scopeMatches(input,status))return {kind:'UNKNOWN'};
       if(status.room?.online===false)return {...status,kind:'OFFLINE',notDispatched:true};
       if(status.room?.online!==true)return {kind:'UNKNOWN'};
       if(input.step==='STATUS')return status;
+      if(input.step==='CLOSE' && typeof status.room.open!=='boolean')return {kind:'UNKNOWN'};
+      if(input.step==='CLOSE' && status.room.open===false)return {...status,kind:'PRECONDITION_SATISFIED'};
       const method={CLOSE:'closeRoom',OPEN:'openRoom',VERIFY:'queryRoomState'}[input.step];
       return gateway[method]({...input,signal:abort.signal});
     };
@@ -87,7 +89,10 @@ export function createRoomControlApplication({store,gateway,mappings,allowTestGa
         if(!record)throw TypeError('Unknown workflow');identity(record,context);
         if(['ACTIVE','DEVICE_FAILED'].includes(record.status))return {immediate:record};
         if(record.inFlight && Date.parse(record.inFlight.until)>Date.parse(context.dbNow))return {immediate:record};
-        const recovering=record.uncertain || Boolean(record.inFlight);
+        const observingClose=record.step==='CLOSE' && record.closeAcknowledged===true;
+        const observingOpen=record.step==='OPEN' && record.openAcknowledged===true;
+        const observingMutation=observingClose || observingOpen;
+        const recovering=!observingMutation && (record.uncertain || Boolean(record.inFlight));
         const configured=mapping.get(record.internalRoomId);
         if(!recovering && (!stillOwnsRoom(head,record) || !configured?.enabled || configured.provider!==record.provider || configured.externalDeviceId!==record.externalDeviceId)){
           const next=changeWorkflow(record,{status:'DEVICE_FAILED',inFlight:null},context.dbNow,'order-or-mapping-changed');await tx.write(next,record.version);return {immediate:next};
@@ -96,37 +101,57 @@ export function createRoomControlApplication({store,gateway,mappings,allowTestGa
         if(!recovering){try{countdown=countdownFor(record.businessSession,context.dbNow);}catch{
           const next=changeWorkflow(record,{status:'DEVICE_FAILED',inFlight:null},context.dbNow,'session-ended');await tx.write(next,record.version);return {immediate:next};}}
         const attemptId=randomUUID(),stepId=record.id+':'+record.step;
-        const next=changeWorkflow(record,{status:recovering?'DEVICE_UNKNOWN':statusForStep(record.step),
+        const next=changeWorkflow(record,{status:observingMutation?'DEVICE_VERIFYING':recovering?'DEVICE_UNKNOWN':statusForStep(record.step),
           inFlight:{attemptId,until:new Date(Date.parse(context.dbNow)+leaseMs).toISOString()}},context.dbNow,recovering?'query-claimed':'step-claimed');
         await tx.write(next,record.version);
-        return {record:next,attemptId,recovering,input:{provider:record.provider,externalDeviceId:record.externalDeviceId,
+        return {record:next,attemptId,recovering,observingClose,observingOpen,observingMutation,input:{provider:record.provider,externalDeviceId:record.externalDeviceId,
           workflowId:record.id,stepId,step:record.step,targetEndAt:record.businessSession.targetEndAt,...countdown,
           ...(countdown?{countdownSeconds:countdown.durationMinutes*60}:{})}};
       });
       if(claim.immediate)return claim.immediate;
-      const evidence=await callGateway(claim.input,claim.recovering); // outside every SQL transaction
+      const evidence=await callGateway(claim.input,claim.recovering || claim.observingMutation); // outside every SQL transaction
       return store.runAtomic(async tx=>{
         const record=await tx.get(workflowId);
         if(record?.inFlight?.attemptId!==claim.attemptId)return record; // late outcome is fenced
         const now=await tx.readDbNow();let status='DEVICE_UNKNOWN',step=record.step,uncertain=true,outcome='unknown';
         const scoped=scopeMatches(claim.input,evidence);
+        let closeAcknowledged=record.closeAcknowledged===true,openAcknowledged=record.openAcknowledged===true,closePrerequisite=record.closePrerequisite??null;
         if(scoped && evidence.kind==='FAILED' && evidence.settled===true){status='DEVICE_FAILED';uncertain=false;outcome='definitive-failure';}
-        else if(scoped && evidence.room?.online===false){status='DEVICE_OFFLINE_WAIT';uncertain=claim.recovering || evidence.notDispatched!==true;outcome='offline';}
+        else if(scoped && evidence.room?.online===false){status='DEVICE_OFFLINE_WAIT';uncertain=claim.observingMutation?false:claim.recovering || evidence.notDispatched!==true;outcome='offline';}
         else if(scoped){
           const applied=claim.recovering ? evidence.stepResult==='APPLIED' && evidence.settled===true : evidence.kind==='APPLIED' && evidence.settled===true;
-          const readSuccess=record.step==='STATUS' && evidence.kind==='STATE' && evidence.room?.online===true;
+          const readSuccess=record.step==='STATUS' && evidence.kind==='STATE' && evidence.room?.online===true && typeof evidence.room.open==='boolean';
           const verified=record.step==='VERIFY' && evidence.kind==='STATE' && desiredState('VERIFY',evidence.room,record.businessSession.targetEndAt);
-          if((applied && desiredState(record.step,evidence.room,record.businessSession.targetEndAt)) || readSuccess || verified){
+          const alreadyClosed=!claim.recovering && !claim.observingClose && evidence.room?.online===true && evidence.room.open===false &&
+            ((record.step==='STATUS' && readSuccess) || (record.step==='CLOSE' && evidence.kind==='PRECONDITION_SATISFIED'));
+          if(alreadyClosed){
+            step='OPEN';status=statusForStep(step);uncertain=false;outcome='close-precondition-satisfied';
+            closePrerequisite={kind:'PRECONDITION_SATISFIED',mutationDispatched:false,settled:false};
+          }else if(record.step==='CLOSE' && !claim.recovering &&
+              (claim.observingClose || (evidence.kind==='ACKNOWLEDGED' && evidence.acknowledged===true))){
+            closeAcknowledged=true;uncertain=false;status='DEVICE_VERIFYING';outcome='close-acknowledged-awaiting-state';
+            if(claim.observingClose && evidence.kind==='STATE' && desiredState('CLOSE',evidence.room)){
+              step='OPEN';status=statusForStep(step);outcome='close-desired-state-confirmed';
+              closePrerequisite={kind:'DESIRED_STATE_CONFIRMED',mutationDispatched:true,acknowledged:true,settled:false,causalEffect:'UNVERIFIED'};
+            }
+           }else if(record.step==='OPEN' && !claim.recovering &&
+              (claim.observingOpen || (evidence.kind==='ACKNOWLEDGED' && evidence.acknowledged===true))){
+            openAcknowledged=true;uncertain=false;status='DEVICE_VERIFYING';outcome='open-acknowledged-awaiting-state';
+            if(claim.observingOpen && evidence.kind==='STATE' && desiredState('OPEN',evidence.room,record.businessSession.targetEndAt)){
+              step='VERIFY';outcome='open-desired-state-confirmed';
+            }
+          }else if((applied && desiredState(record.step,evidence.room,record.businessSession.targetEndAt)) || readSuccess || verified){
             const index=STEPS.indexOf(record.step);step=STEPS[index+1]??'VERIFY';status=index===STEPS.length-1?'ACTIVE':statusForStep(step);uncertain=false;outcome=claim.recovering?'queried-applied':'confirmed';
           }else if(claim.recovering && evidence.stepResult==='NOT_APPLIED' && evidence.settled===true && evidence.retrySafe===true){
             status=statusForStep(step);uncertain=false;outcome='queried-not-applied-safe';
           }
         }
-        const safeEvidence=scoped?{kind:['STATE','APPLIED','FAILED','OFFLINE','UNKNOWN'].includes(evidence.kind)?evidence.kind:'UNKNOWN',
+        if(claim.observingMutation && !scoped){status='DEVICE_VERIFYING';uncertain=false;outcome='mutation-awaiting-valid-state';}
+        const safeEvidence=scoped?{kind:['STATE','APPLIED','ACKNOWLEDGED','PRECONDITION_SATISFIED','FAILED','OFFLINE','UNKNOWN'].includes(evidence.kind)?evidence.kind:'UNKNOWN',
           stepResult:['APPLIED','NOT_APPLIED'].includes(evidence.stepResult)?evidence.stepResult:'UNKNOWN',settled:evidence.settled===true,
           online:evidence.room?.online===true,open:evidence.room?.open===true,
           targetMatched:evidence.room?.countdownTargetEndAt===record.businessSession.targetEndAt}:null;
-        const next=changeWorkflow(record,{status,step,uncertain,inFlight:null,lastEvidence:safeEvidence},now,outcome);
+        const next=changeWorkflow(record,{status,step,uncertain,closeAcknowledged,openAcknowledged,closePrerequisite,inFlight:null,lastEvidence:safeEvidence},now,outcome);
         await tx.write(next,record.version);return next;
       });
     }

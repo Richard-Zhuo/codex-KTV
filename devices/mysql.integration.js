@@ -12,14 +12,14 @@ import { FakeKtvRoomControlGateway } from './fake-gateway.js';
 
 export async function testRoomControl({t,pool,setup,auth,provision,seed,inspect,database,table,poolOptions,roster}) {
  let serial=0;
- const make=async({online=true,outcomes={}}={})=>{
+ const make=async({online=true,open=true,outcomes={}}={})=>{
   const ledgerId='device-workflow-'+(++serial),login=await provision(['room.open']);
   const [[clock]]=await setup.query("SELECT DATE_FORMAT(UTC_TIMESTAMP(6), '%Y-%m-%dT%H:%i:%s.%fZ') AS now,HOUR(UTC_TIMESTAMP()) AS hour");
   let offset=15-Number(clock.hour);if(offset>14)offset-=24;if(offset< -12)offset+=24;
   const timeZone='Etc/GMT'+(offset===0?'':offset>0?'-'+offset:'+'+(-offset));
   await seed(ledgerId,state=>{state.rooms[0].order='device-order';state.rooms[0].status='营业中';state.inventory.bw.count=state.inventory.lm.count=state.inventory.drink0.count=100;
    state.orders.push({id:'device-order',kind:'room',room:'V01',status:'营业中',sales:[],payments:[],otherCharges:[],businessSession:businessSessionFor(clock.now,{timeZone})});});
-  const gateway=new FakeKtvRoomControlGateway({online,outcomes});
+  const gateway=new FakeKtvRoomControlGateway({online,open,outcomes});
   const invoke=gateway.invoke.bind(gateway);
   gateway.invoke=async(...args)=>{
    // A second connection must acquire both rows while the external call runs.
@@ -131,5 +131,29 @@ export async function testRoomControl({t,pool,setup,auth,provision,seed,inspect,
   try{await assert.rejects(f.appFor(faulty).start(f.command,f.login.credential),e=>e instanceof DeviceCommitOutcomeUnknown);
    const r=await f.app.start(f.command,f.login.credential);assert.equal(r.status,'DEVICE_PENDING');assert.equal(f.gateway.calls.length,0);
   }finally{await dedicated.end();}
+ });
+
+ await t.test('device MySQL: initial CLOSED skips close and persists PRECONDITION_SATISFIED across reconnect',async()=>{
+  const f=await make({open:false}),before=await inspect(f.ledgerId);
+  let r=await f.app.start(f.command,f.login.credential);r=await f.app.advance(r.id,f.login.credential);
+  assert.equal(r.step,'OPEN');assert.equal(mutations(f).length,0);
+  const independent=mysql.createPool(poolOptions);
+  try{const loaded=await f.appFor(independent).get(r.id,f.login.credential);
+   assert.equal(loaded.closePrerequisite.kind,'PRECONDITION_SATISFIED');assert.equal(loaded.closePrerequisite.mutationDispatched,false);
+  }finally{await independent.end();}
+  assert.deepEqual(await inspect(f.ledgerId),before);
+ });
+ await t.test('device MySQL: persisted close ACK waits for CLOSED after reconnect, never re-closes',async()=>{
+  const f=await make({outcomes:{closeRoom:(input,g)=>g.evidence(input,{kind:'ACKNOWLEDGED',acknowledged:true,settled:false})}});
+  const before=await inspect(f.ledgerId);let r=await f.app.start(f.command,f.login.credential);
+  r=await f.app.advance(r.id,f.login.credential);r=await f.app.advance(r.id,f.login.credential);
+  assert.equal(r.status,'DEVICE_VERIFYING');assert.equal(r.closeAcknowledged,true);
+  const independent=mysql.createPool(poolOptions);
+  try{const app=f.appFor(independent);r=await app.advance(r.id,f.login.credential);
+   assert.equal(r.step,'CLOSE');assert.equal(r.status,'DEVICE_VERIFYING');assert.equal(mutations(f).length,1);
+   f.gateway.room.open=false;r=await app.advance(r.id,f.login.credential);
+   assert.equal(r.step,'OPEN');assert.equal(r.closePrerequisite.kind,'DESIRED_STATE_CONFIRMED');assert.equal(r.closePrerequisite.settled,false);
+  }finally{await independent.end();}
+  assert.equal(mutations(f).length,1);assert.deepEqual(await inspect(f.ledgerId),before);
  });
 }

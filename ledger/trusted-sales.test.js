@@ -7,17 +7,17 @@ import { createTransactionBoundEmployeeResolver } from '../employees/employee-re
 import { AuthorizationDenied } from '../shared/identity.js';
 import { createMemoryLedgerStore } from './memory-store.js';
 import { createTrustedLedgerApplication } from './application.js';
-import { SALES_TEST_ACTIONS, seedTrustedSalesState, salesCommand, soldOrder } from '../test-support/trusted-sales-fixture.js';
+import { SALES_TEST_ACTIONS, seedTrustedSalesState, seedFixedPriceSalesState, salesCommand, soldOrder } from '../test-support/trusted-sales-fixture.js';
 
 const employeeId='10000000-0000-4000-8000-000000000001';
 const secondId='10000000-0000-4000-8000-000000000002';
 const dbNow='2026-10-04T12:00:00.123456Z';
 const denied=e=>e instanceof AuthorizationDenied&&e.status==='authorization-denied';
-function fixture(action,{permissions=action==='sale'?['staff.record']:['retail.sale','staff.record'],setup=()=>{},resolver=true,execute=transact,clock=dbNow,businessTimeZone='Asia/Shanghai',configureBusinessDay=true}={}) {
+function fixture(action,{seedState=seedTrustedSalesState,permissions=action==='sale'?['staff.record']:['retail.sale','staff.record'],setup=()=>{},resolver=true,execute=transact,clock=dbNow,businessTimeZone='Asia/Shanghai',configureBusinessDay=true}={}) {
   const state=initialState();state.user='not-a-demo-user';state.clock='invalid-demo-clock';
   state.administrator=true;state.permissions={administrator:['管理员']};state.capabilities={administrator:['*']};
   state.orders=[{id:'history',kind:'retail',room:null,sales:[{productNameSnapshot:'unknown historical',pricePerSaleUnitCents:null}],payments:[]}];
-  seedTrustedSalesState(state);setup(state);
+  seedState(state);setup(state);
   const memory=createMemoryLedgerStore(state,{ledgerId:'sales-unit'}),digest=Buffer.alloc(32,11),events=[];
   const auth={id:'synthetic-actual-actor',permissions,enabled:true,revoked:false,version:1,sessionVersion:1,
     idle:'2099-01-01T00:00:00.000000Z',absolute:'2099-01-02T00:00:00.000000Z'};
@@ -266,4 +266,12 @@ for(const action of ['sale','retailSale'])test('Stage 4A '+action+': a missing v
  const line=soldOrder((await f.memory.read()).state,action).sales.at(-1);
  assert.equal(line.pricePerSaleUnitCents,11800);assert.equal(line.amountCents,11800);
  assert.equal(line.priceCategorySnapshot,'OTHER');assert.equal(line.businessSession.sessionType,'DAY');
+});
+
+for(const clock of ['2026-10-08T06:00:00.000000Z','2026-10-08T10:00:00.000000Z','2026-10-08T18:00:00.000000Z'])
+test('fixed-price SQL sales fixture preserves declared payments in DAY/NIGHT/CLOSED: '+clock,async()=>{
+ const f=fixture('retailSale',{clock,seedState:seedFixedPriceSalesState}),request=salesCommand('retailSale',employeeId,'fixed-prices');
+ assert.equal((await f.app.execute(request,f.credential)).status,'committed');
+ const order=soldOrder((await f.memory.read()).state,'retailSale');
+ assert.equal(total(order),6300);assert.equal(order.sales[0].priceCategorySnapshot,'OTHER');
 });

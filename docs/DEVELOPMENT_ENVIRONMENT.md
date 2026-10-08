@@ -1,3 +1,9 @@
+### Stage 4B.1 semantics regression
+
+Focused command remains node --test --test-isolation=none --test-reporter=tap devices/application.test.js devices/ktvsky-gateway.test.js devices/ktvsky-validation.test.js. It covers synthetic legacy recovery, ACK waiting, simulated timeout/reset, concurrent claims and pre-ACK read fencing. Include ledger/trusted-sales.test.js in the focused run for the fixed-price SQL fixture regression (DAY/NIGHT/CLOSED); production price rules are unchanged. MySQL persistence cases remain in devices/mysql.integration.js under the guarded ledger/trusted-clean.integration.test.js harness. Full: node --test --test-isolation=none --test-reporter=tap.
+
+No live validation command is run for this fix. The future 300-second plan and the offline recoverAcknowledgedClose application API are described in [the contract](STAGE4B_KTVSKY_ADAPTER.md); neither authorizes current device control. Keep original archives and the stable external journal intact; stale locks and UNKNOWN must not be manually cleared.
+
 ### Stage 4B adapter verification
 
 Focused: node --test --test-isolation=none --test-reporter=tap devices/ktvsky-gateway.test.js devices/ktvsky-validation.test.js devices/application.test.js. Tests use an explicit loopback mock provider and synthetic credentials only; no real KTVSky account, mapping or device is required. Full regression continues to use the guarded disposable MySQL harness. Production provider requests require verified TLS and never follow redirects or retry automatically.

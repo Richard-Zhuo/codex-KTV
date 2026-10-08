@@ -22,7 +22,7 @@ if(process.argv[1]&&path.resolve(process.argv[1])===fileURLToPath(import.meta.ur
   catch(error){
     const known=new Set(['INVALID_CONFIG','EXTERNAL_CONFIG_REQUIRED','INVALID_VALIDATION_ACTION','MAPPING_REQUIRED',
       'LIVE_CONTROL_DISABLED','SAFE_TEST_TARGET_REQUIRED','SAFE_APPROVAL_EXPIRED','SAFE_COUNTDOWN_REQUIRED',
-      'EXTERNAL_JOURNAL_REQUIRED','INVALID_PENDING_RECORD','JOURNAL_IO_ERROR','SAFE_VALIDATION_REQUIRED']);
+      'EXTERNAL_JOURNAL_REQUIRED','INVALID_PENDING_RECORD','JOURNAL_IO_ERROR','JOURNAL_BUSY','JOURNAL_HISTORY_FULL','SAFE_VALIDATION_REQUIRED']);
     console.log(JSON.stringify({code:known.has(error.code)?error.code:'VALIDATION_ERROR',message:'Validation could not continue'}));
     process.exitCode=1;
   }

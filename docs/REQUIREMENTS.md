@@ -1,3 +1,7 @@
+## Stage 4B.1 workflow semantics correction (2026-10-08)
+
+本轮仅修复状态语义、回归测试与一个本地提交；禁止真实设备请求、Stage 4C、employee open 接入、合入或推送。ONLINE+CLOSED 跳过 close 并准确记录 PRECONDITION_SATISFIED；ONLINE+OPEN 才发送一次 close，ACK 后查询 CLOSED 才进入 OPEN。ACK 后仍 OPEN 继续等待，不能盲目重复 close。真正 timeout/disconnect 仍 UNKNOWN、只查询，不因当前状态匹配或新 identity 放行。旧 V06 evidence/journal 不删除、不伪造 APPLIED；恢复只能通过保留原记录的正式离线 recovery 方法。下次人工接受后才按 CLOSED → open(300) → query OPEN → close → query CLOSED，最多两个实际控制。详细契约见 [Stage 4B](STAGE4B_KTVSKY_ADAPTER.md)。
+
 ## Stage 4B accepted scope (2026-10-08)
 
 Stage 4A accepted HEAD 8e03fb0 is closed out. Stage 4B implements a server-side KTVSky adapter from observed frontend contracts, with bounded HTTP/auth/session/query handling, redacted diagnostics and mock-provider tests. Real mutations require explicit live enable, a manually confirmed enabled mapping and an explicitly approved unoccupied safe target. Without a safe target no real close/open is permitted. Formal employee open remains disconnected until Stage 4C and a separately accepted safe mutation verification. See [Stage 4B contract](STAGE4B_KTVSKY_ADAPTER.md).

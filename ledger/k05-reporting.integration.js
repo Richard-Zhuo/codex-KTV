@@ -3,7 +3,7 @@ import mysql from 'mysql2/promise';
 import { transact } from '../rules.js';
 import { businessDateFor } from '../shared/business-day.js';
 import { selectRevenueOrders, selectPaymentFlows, reportViewModel } from '../reporting.js';
-import { seedTrustedSalesState, salesCommand, soldOrder } from '../test-support/trusted-sales-fixture.js';
+import { seedFixedPriceSalesState as seedTrustedSalesState, salesCommand, soldOrder } from '../test-support/trusted-sales-fixture.js';
 import { seedRepaymentReview, repaymentReviewCommand, repayOrder } from '../test-support/trusted-repayment-review-fixture.js';
 
 // Reuses the guarded fixture. Owns no database/table creation or cleanup.

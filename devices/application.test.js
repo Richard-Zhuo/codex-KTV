@@ -7,7 +7,7 @@ import { createRoomControlApplication } from './application.js';
 import { FakeKtvRoomControlGateway } from './fake-gateway.js';
 import { KtvSkyRoomControlGateway } from './gateway.js';
 import { createRoomDeviceMappings } from './mapping.js';
-function fixture({online=true,outcomes={}}={}) {
+function fixture({online=true,open=true,outcomes={}}={}) {
  let clock='2026-10-08T07:00:00.000000Z',active=false,failWrite=false;
  const head={revision:1,state:initialState()},records=new Map();
  head.state.rooms[0].order='order-1';head.state.rooms[0].status='营业中';
@@ -32,7 +32,7 @@ function fixture({online=true,outcomes={}}={}) {
    }catch(e){records.clear();for(const [id,row]of before)records.set(id,row);throw e;}finally{active=false;}
   });tail=run.catch(()=>{});return run;
  }};
- const gateway=new FakeKtvRoomControlGateway({online,outcomes});
+ const gateway=new FakeKtvRoomControlGateway({online,open,outcomes});
  const invoke=gateway.invoke.bind(gateway);gateway.invoke=(...args)=>{assert.equal(active,false,'external call must not hold a transaction');return invoke(...args);};
  const mappings=[{internalRoomId:'V01',provider:'fake',externalDeviceId:'synthetic-device-1',enabled:true}];
  const app=createRoomControlApplication({store,gateway,mappings,allowTestGateway:true,timeoutMs:20,leaseMs:1000});
@@ -177,4 +177,58 @@ test('expired open lease queries without re-dispatch; late completion is fenced'
  r=await advance(f,r);assert.equal(r.status,'ACTIVE');
  assert.equal(mutations(f).filter(c=>c.method==='openRoom').length,1);
  assert.equal(f.head.revision,1);assert.equal(f.head.state.orders.length,1);
+});
+
+test('initial CLOSED satisfies close prerequisite without a provider mutation',async()=>{
+ const f=fixture({open:false});let r=await start(f);r=await advance(f,r);
+ assert.equal(r.step,'OPEN');assert.equal(r.status,'DEVICE_OPENING');assert.equal(mutations(f).length,0);
+ assert.deepEqual(r.closePrerequisite,{kind:'PRECONDITION_SATISFIED',mutationDispatched:false,settled:false});
+ assert.equal(r.lastEvidence.stepResult,'UNKNOWN');assert.equal(r.lastEvidence.kind,'STATE');
+ r=await finish(f,r);assert.equal(r.status,'ACTIVE');assert.deepEqual(mutations(f).map(c=>c.method),['openRoom']);
+});
+test('CLOSE preflight rechecks CLOSED and skips a redundant mutation after STATUS',async()=>{
+ const f=fixture();let r=await start(f);r=await advance(f,r);assert.equal(r.step,'CLOSE');
+ f.gateway.room.open=false;r=await advance(f,r);
+ assert.equal(r.step,'OPEN');assert.equal(r.lastEvidence.kind,'PRECONDITION_SATISFIED');assert.equal(mutations(f).length,0);
+});
+test('OPEN then close ACK requires a fresh CLOSED query, not ACK as APPLIED',async()=>{
+ const f=fixture({outcomes:{closeRoom:(input,g)=>{g.room.open=false;return g.evidence(input,{kind:'ACKNOWLEDGED',acknowledged:true,settled:false});}}});
+ let r=await start(f);r=await advance(f,r);r=await advance(f,r);
+ assert.equal(r.step,'CLOSE');assert.equal(r.status,'DEVICE_VERIFYING');assert.equal(r.uncertain,false);assert.equal(r.closeAcknowledged,true);
+ assert.equal(r.closePrerequisite,null);assert.equal(mutations(f).length,1);
+ r=await advance(f,r);assert.equal(r.step,'OPEN');
+ assert.deepEqual(r.closePrerequisite,{kind:'DESIRED_STATE_CONFIRMED',mutationDispatched:true,acknowledged:true,settled:false,causalEffect:'UNVERIFIED'});
+ assert.equal(mutations(f).length,1);assert.equal(f.gateway.calls.at(-1).method,'queryRoomState');
+});
+test('OPEN then close ACK with OPEN, offline or invalid reads stays query-only across lease recovery',async()=>{
+ const f=fixture({outcomes:{closeRoom:(input,g)=>g.evidence(input,{kind:'ACKNOWLEDGED',acknowledged:true,settled:false})}});
+ let r=await start(f);r=await advance(f,r);r=await advance(f,r);
+ for(let n=0;n<2;n++)r=await advance(f,r);
+ assert.equal(r.status,'DEVICE_VERIFYING');assert.equal(r.step,'CLOSE');assert.equal(r.uncertain,false);
+ f.gateway.room.online=false;r=await advance(f,r);assert.equal(r.status,'DEVICE_OFFLINE_WAIT');assert.equal(r.closeAcknowledged,true);
+ f.gateway.room.online=true;
+ f.gateway.outcomes.queryRoomState=()=>({kind:'UNKNOWN'});
+ r=await advance(f,r);assert.equal(r.status,'DEVICE_VERIFYING');
+ f.records.get(r.id).inFlight={attemptId:'abandoned-query',until:'2026-10-08T06:00:00Z'};
+ r=await advance(f,r);assert.equal(r.status,'DEVICE_VERIFYING');
+ assert.equal(mutations(f).length,1);assert.equal(mutations(f)[0].method,'closeRoom');
+ delete f.gateway.outcomes.queryRoomState;f.gateway.room.open=false;r=await advance(f,r);assert.equal(r.step,'OPEN');
+ assert.equal(mutations(f).length,1);
+});
+test('close response lost and plain CLOSED read remains UNKNOWN without ACK or settled proof',async()=>{
+ const f=fixture({outcomes:{closeRoom:()=>{f.gateway.room.open=false;throw Error('connection reset');}}});
+ let r=await start(f);r=await advance(f,r);r=await advance(f,r);assert.equal(r.status,'DEVICE_UNKNOWN');
+ for(let n=0;n<3;n++)r=await advance(f,r);
+ assert.equal(r.status,'DEVICE_UNKNOWN');assert.equal(r.uncertain,true);assert.equal(r.closeAcknowledged,false);
+ assert.equal(r.step,'CLOSE');assert.equal(mutations(f).length,1);assert.equal(r.closePrerequisite,null);
+});
+
+test('open ACK remains verifying until matching countdown state, without repeating the mutation',async()=>{
+ const f=fixture({open:false,outcomes:{openRoom:(input,g)=>{g.room.open=true;return g.evidence(input,{kind:'ACKNOWLEDGED',acknowledged:true,settled:false});}}});
+ let r=await start(f);r=await advance(f,r);r=await advance(f,r);
+ assert.equal(r.status,'DEVICE_VERIFYING');assert.equal(r.step,'OPEN');assert.equal(r.openAcknowledged,true);assert.equal(r.uncertain,false);
+ r=await advance(f,r);assert.equal(r.step,'OPEN');assert.equal(r.status,'DEVICE_VERIFYING');
+ f.gateway.room.countdownTargetEndAt=r.businessSession.targetEndAt;
+ r=await advance(f,r);assert.equal(r.step,'VERIFY');r=await advance(f,r);assert.equal(r.status,'ACTIVE');
+ assert.deepEqual(mutations(f).map(c=>c.method),['openRoom']);
 });

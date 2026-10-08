@@ -15,7 +15,7 @@ export const createKtvSkyCredentialProvider=(env=process.env)=>async()=>({
 export class KtvSkyRoomControlGateway {
   #client;#credentials;#storeId;#enabled;#mutationPolicy;#now;#ttl;#cooldown;#maxLogins;
   #session=null;#cookies=new Map();#telno=null;#loggingIn=null;#lastLogin=-Infinity;#logins=0;
-  #attempts=new Set();#pendingDevices=new Set();
+  #attempts=new Set();#pendingDevices=new Set();#acknowledgedDevices=new Map();
   constructor({httpClient=createKtvSkyHttpClient(),credentialProvider=createKtvSkyCredentialProvider(),
     storeId=null,enabled=false,mutationPolicy=()=>false,now=Date.now,
     sessionTtlMs=300000,reauthCooldownMs=30000,maxLoginAttempts=3}={}) {
@@ -98,6 +98,7 @@ export class KtvSkyRoomControlGateway {
   async getRoomStatus(input) {
     const scope=this.#scope(input);
     if(!text(this.#storeId))return this.#unknown(input,'STORE_SCOPE_REQUIRED');
+    const acknowledgedAtQueryStart=this.#acknowledgedDevices.get(input.externalDeviceId);
     const response=await this.#request('search',input);
     if(response.error)return this.#unknown(input,response.error);
     const result=response.data.result;
@@ -107,6 +108,10 @@ export class KtvSkyRoomControlGateway {
     if(matches.length!==1)return this.#unknown(input,'INVALID_PROVIDER_EVIDENCE');
     const row=matches[0];
     if(![0,1].includes(row.alive)||![0,1].includes(row.status))return this.#unknown(input,'INVALID_PROVIDER_EVIDENCE');
+    const ack=this.#acknowledgedDevices.get(input.externalDeviceId);
+    if(ack && ack===acknowledgedAtQueryStart && row.alive===1 && row.status===ack.status && (ack.status===0 || row.opentime===ack.countdownSeconds)){
+      this.#pendingDevices.delete(input.externalDeviceId);this.#acknowledgedDevices.delete(input.externalDeviceId);
+    }
     return {...scope,kind:'STATE',exists:true,stepResult:'UNKNOWN',settled:false,retrySafe:false,
       room:{online:row.alive===1,open:row.status===1,countdownTargetEndAt:null,
         observedCountdownValue:Number.isSafeInteger(row.opentime)&&row.opentime>=0?row.opentime:null,
@@ -128,8 +133,10 @@ export class KtvSkyRoomControlGateway {
       ...(status===1?{opentime:input.countdownSeconds}:{})
     });
     if(response.error)return this.#unknown(input,response.error==='AUTH_REQUIRED'?'AUTH_REQUIRED':'DEVICE_UNKNOWN');
-    // HTTP code=200 is acknowledgement only. No observed settled operation proof.
-    return this.#unknown(input,'DEVICE_UNKNOWN',{acknowledged:true});
+    // ACK is known transport outcome, not completion. The caller must query the
+    // desired state before another step; the same operation identity stays blocked.
+    this.#acknowledgedDevices.set(input.externalDeviceId,{status,countdownSeconds:input.countdownSeconds});
+    return {...this.#unknown(input,'ACKNOWLEDGED',{acknowledged:true}),kind:'ACKNOWLEDGED'};
   }
   async closeRoom(input){return this.#mutate(input,0);}
   async openRoom(input){return this.#mutate(input,1);}

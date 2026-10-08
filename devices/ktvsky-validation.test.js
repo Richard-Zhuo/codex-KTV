@@ -4,6 +4,7 @@ import { mkdtemp, readFile, readdir, writeFile, rm } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
+import { createHash, randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { createKtvSkySafetyPolicy, parseKtvSkyValidationConfig, loadKtvSkyValidationConfig } from './ktvsky-safety.js';
 import { createKtvSkyValidationBoundary, summarizeValidation } from './ktvsky-validation.js';
@@ -21,6 +22,9 @@ const env={KTVSKY_LIVE_CONTROL_ENABLED:'true'};
 const command={action:'close',internalRoomId:'safe-synthetic-room'};
 const input={...deviceInput,internalRoomId:'safe-synthetic-room'};
 const controls=f=>f.requests.filter(r=>r.path==='/h5/mac_control');
+async function initiallyOpenFixture(t,options) {
+ const f=await providerFixture(t,options);f.state.status=1;return f;
+}
 async function directory(t) {
  const root=await mkdtemp(path.join(os.tmpdir(),'ktvsky-validation-test-'));
  t.after(()=>rm(root,{recursive:true,force:true}));return root;
@@ -43,7 +47,7 @@ for(const [name,change,code] of [
  ['future approval',c=>{c.safeTarget.approvedAt=new Date(at+1000).toISOString();return {config:c};},'SAFE_APPROVAL_EXPIRED'],
  ['approval over fifteen minutes',c=>{c.safeTarget.expiresAt=new Date(at+900000).toISOString();return {config:c};},'SAFE_APPROVAL_EXPIRED']
 ])test('safe boundary rejects '+name+' before any HTTP',async t=>{
- const f=await providerFixture(t),root=await directory(t),options=change(config());
+ const f=await initiallyOpenFixture(t),root=await directory(t),options=change(config());
  await assert.rejects(boundary(f,root,options).run(command),{code});
  assert.equal(f.requests.length,0);assert.deepEqual(await readdir(root),[]);
 });
@@ -69,7 +73,7 @@ test('production HTTP adapter cannot use an unbranded permissive callback as its
 });
 test('approval is revalidated after authentication, immediately before dispatch',async t=>{
  let clock=at;
- const f=await providerFixture(t,{handler:({entry})=>{if(entry.path==='/h5/login')clock=at+60001;return false;}});
+ const f=await initiallyOpenFixture(t,{handler:({entry})=>{if(entry.path==='/h5/login')clock=at+60001;return false;}});
  await assert.rejects(boundary(f,await directory(t),{now:()=>clock}).run(command),{code:'SAFE_APPROVAL_EXPIRED'});
  assert.equal(controls(f).length,0);
  clock=at;
@@ -77,14 +81,14 @@ test('approval is revalidated after authentication, immediately before dispatch'
   enabled:true,now:()=>clock,mutationPolicy:createKtvSkySafetyPolicy({config:config(),liveEnabled:true,now:()=>clock})});
  assert.equal((await direct.closeRoom(input)).kind,'UNKNOWN');assert.equal(controls(f).length,0);
 });
-test('safe close persists UNKNOWN before dispatch, queries afterwards, and blocks a new open or workflow after restart',async t=>{
- const f=await providerFixture(t),root=await directory(t);
+test('safe close ACK still OPEN waits for state and blocks a new open after restart',async t=>{
+ const f=await initiallyOpenFixture(t,{handler:({entry,res})=>{if(entry.path!=='/h5/mac_control')return false;res.end(JSON.stringify({code:200}));return true;}}),root=await directory(t);
  const first=await boundary(f,root).run(command);
- assert.equal(first.pending,true);assert.equal(first.code,'DEVICE_UNKNOWN');assert.equal(controls(f).length,1);
+ assert.equal(first.pending,true);assert.equal(first.code,'ACKNOWLEDGED');assert.equal(controls(f).length,1);
  assert.deepEqual(controls(f)[0].body,{mac:'synthetic-device',status:0,telno:'synthetic-account'});
  const records=await readdir(root);assert.equal(records.length,1);
  const raw=await readFile(path.join(root,records[0]),'utf8'),record=JSON.parse(raw);
- assert.equal(record.workflowId,first.workflowId);assert.equal(record.status,'UNKNOWN');
+ assert.equal(record.workflowId,first.workflowId);assert.equal(record.status,'ACKNOWLEDGED');
  for(const secret of ['synthetic-account','synthetic-device','synthetic-password','synthetic-provider-token','synthetic-cookie','snapshot','csrf'])
   assert.equal(raw.includes(secret),false);
  const resumed=await boundary(f,root).run({...command,action:'open',countdownSeconds:60,targetEndAt:deviceInput.targetEndAt});
@@ -94,7 +98,8 @@ test('safe close persists UNKNOWN before dispatch, queries afterwards, and block
  for(const value of ['synthetic-device','synthetic-account','synthetic-provider-token','private-detail'])assert.equal(summary.includes(value),false);
 });
 test('safe open maps exactly sixty seconds into one combined control and then query',async t=>{
- const f=await providerFixture(t),root=await directory(t);
+ const f=await initiallyOpenFixture(t),root=await directory(t);
+ f.state.status=0;
  const result=await boundary(f,root).run({...command,action:'open',countdownSeconds:60,targetEndAt:deviceInput.targetEndAt});
  assert.equal(controls(f).length,1);
  assert.deepEqual(controls(f)[0].body,{mac:'synthetic-device',status:1,opentime:60,telno:'synthetic-account'});
@@ -102,33 +107,34 @@ test('safe open maps exactly sixty seconds into one combined control and then qu
  assert.equal(result.observation.settled,false);assert.equal(result.observation.retrySafe,false);
 });
 test('validation duration and mandatory external journal reject before network',async t=>{
- const f=await providerFixture(t),root=await directory(t);
+ const f=await initiallyOpenFixture(t),root=await directory(t);
  for(const seconds of [0,1,59,61,3600,NaN])
   await assert.rejects(boundary(f,root).run({...command,action:'open',countdownSeconds:seconds,targetEndAt:deviceInput.targetEndAt}),{code:'SAFE_COUNTDOWN_REQUIRED'});
  await assert.rejects(boundary(f,undefined).run(command),{code:'EXTERNAL_JOURNAL_REQUIRED'});
  assert.equal(f.requests.length,0);
 });
 test('offline or missing device cannot receive a safe mutation',async t=>{
- const f=await providerFixture(t),root=await directory(t);f.state.alive=0;
+ const f=await initiallyOpenFixture(t),root=await directory(t);f.state.alive=0;
  assert.equal((await boundary(f,root).run(command)).code,'DEVICE_OFFLINE');
  assert.equal(controls(f).length,0);assert.deepEqual(await readdir(root),[]);
- const missing=await providerFixture(t,{handler:({entry,res})=>{
+ const missing=await initiallyOpenFixture(t,{handler:({entry,res})=>{
   if(entry.path!=='/h5/search')return false;res.end(JSON.stringify({code:200,result:{store_id:123,list:[]}}));return true;
  }});
  assert.equal((await boundary(missing,root).run(command)).pending,false);assert.equal(controls(missing).length,0);
 });
 test('query is available with live control disabled and never claims missing credentials as a verified read',async t=>{
- const f=await providerFixture(t),root=await directory(t);
+ const f=await initiallyOpenFixture(t),root=await directory(t);
  assert.equal((await boundary(f,root,{env:{}}).run({...command,action:'query'})).code,'READ_OBSERVED');
  const noAuth=boundary(f,root,{credentialProvider:async()=>({})});
  assert.equal((await noAuth.run({...command,action:'query'})).code,'AUTH_REQUIRED');
  assert.equal(controls(f).length,0);
 });
 test('timeout after sent open remains durable UNKNOWN; restarted validation only queries',async t=>{
- const f=await providerFixture(t,{clientOptions:{requestTimeoutMs:80},handler:({entry,state})=>{
+ const f=await initiallyOpenFixture(t,{clientOptions:{requestTimeoutMs:80},handler:({entry,state})=>{
   if(entry.path!=='/h5/mac_control')return false;
   state.status=1;state.opentime=entry.body.opentime;return true;
  }}),root=await directory(t);
+ f.state.status=0;
  const first=await boundary(f,root).run({...command,action:'open',countdownSeconds:60,targetEndAt:deviceInput.targetEndAt});
  assert.equal(first.pending,true);assert.equal(first.code,'DEVICE_UNKNOWN');assert.equal(first.observation.room.open,true);
  const resumed=await boundary(f,root).run(command);
@@ -136,7 +142,7 @@ test('timeout after sent open remains durable UNKNOWN; restarted validation only
  assert.equal(controls(f).length,1);
 });
 test('definite auth rejection stays distinct and never replays the device request',async t=>{
- const f=await providerFixture(t,{handler:({entry,res})=>{
+ const f=await initiallyOpenFixture(t,{handler:({entry,res})=>{
   if(entry.path!=='/h5/mac_control')return false;res.writeHead(401);res.end('provider secret detail');return true;
  }}),root=await directory(t);
  const first=await boundary(f,root).run(command);assert.equal(first.code,'AUTH_REQUIRED');assert.equal(first.pending,true);
@@ -144,14 +150,14 @@ test('definite auth rejection stays distinct and never replays the device reques
  assert.equal(controls(f).length,1);
 });
 test('concurrent validation instances atomically claim at most one device mutation',async t=>{
- const f=await providerFixture(t),root=await directory(t);
+ const f=await initiallyOpenFixture(t),root=await directory(t);
  const results=await Promise.allSettled([boundary(f,root).run(command),boundary(f,root).run(command)]);
  assert.equal(controls(f).length,1);
- for(const r of results)if(r.status==='rejected')assert.equal(r.reason.code,'INVALID_PENDING_RECORD');
- assert.equal((await boundary(f,root).run(command)).pending,true);assert.equal(controls(f).length,1);
+ for(const r of results)if(r.status==='rejected')assert.ok(['INVALID_PENDING_RECORD','JOURNAL_BUSY'].includes(r.reason.code));
+ assert.equal((await boundary(f,root).run(command)).pending,false);assert.equal(controls(f).length,1);
 });
 test('corrupt durable record fails closed before auth and no repository journal is allowed',async t=>{
- const f=await providerFixture(t),root=await directory(t);await boundary(f,root).run(command);
+ const f=await initiallyOpenFixture(t),root=await directory(t);await boundary(f,root).run(command);
  const [name]=await readdir(root);await writeFile(path.join(root,name),'{"rawSecret":"synthetic-secret"}');
  const count=f.requests.length;
  await assert.rejects(boundary(f,root).run(command),{code:'INVALID_PENDING_RECORD'});
@@ -182,7 +188,7 @@ test('CLI rejects default live control without HTTP or dumping supplied values',
 });
 
 for(const kind of ['fake','real'])test('shared combined-open contract: '+kind+' uses one open intent and no separate countdown',async t=>{
- const f=kind==='real'?await providerFixture(t,{gatewayOptions:{enabled:true,mutationPolicy:()=>true}}):null;
+ const f=kind==='real'?await initiallyOpenFixture(t,{gatewayOptions:{enabled:true,mutationPolicy:()=>true}}):null;
  const gateway=f?.gateway??new FakeKtvRoomControlGateway();
  assert.equal(typeof gateway.setCountdown,'undefined');
  await gateway.openRoom(deviceInput);const read=await gateway.queryRoomState(deviceInput);
@@ -197,7 +203,7 @@ for(const kind of ['fake','real'])test('shared combined-open contract: '+kind+' 
  }
 });
 test('changing workflow or step identity cannot bypass unresolved device effect in one adapter instance',async t=>{
- const f=await providerFixture(t,{gatewayOptions:{enabled:true,mutationPolicy:()=>true}});
+ const f=await initiallyOpenFixture(t,{clientOptions:{requestTimeoutMs:80},gatewayOptions:{enabled:true,mutationPolicy:()=>true},handler:({entry,req})=>{if(entry.path!=='/h5/mac_control')return false;req.socket.destroy();return true;}});
  await f.gateway.closeRoom(deviceInput);
  await f.gateway.openRoom({...deviceInput,workflowId:'new-workflow',stepId:'new-step'});
  assert.equal(controls(f).length,1);
@@ -205,10 +211,11 @@ test('changing workflow or step identity cannot bypass unresolved device effect 
 
 test('the durable UNKNOWN record exists before provider side effect; a fresh process can only query it',async t=>{
  const root=await directory(t);let journalBeforeEffect=false;
- const f=await providerFixture(t,{handler:async({entry})=>{
+ const f=await initiallyOpenFixture(t,{clientOptions:{requestTimeoutMs:80},handler:async({entry})=>{
   if(entry.path==='/h5/mac_control'){
    const names=await readdir(root);
    journalBeforeEffect=names.length===1&&JSON.parse(await readFile(path.join(root,names[0]),'utf8')).status==='UNKNOWN';
+   return true;
   }
   return false;
  }});
@@ -233,9 +240,131 @@ test('the durable UNKNOWN record exists before provider side effect; a fresh pro
  assert.equal(JSON.parse(result.stdout).pending,true);assert.equal(controls(f).length,1);
 });
 test('connection loss after accepted close cannot turn into automatic replay',async t=>{
- const f=await providerFixture(t,{handler:({entry,state,req})=>{
+ const f=await initiallyOpenFixture(t,{handler:({entry,state,req})=>{
   if(entry.path!=='/h5/mac_control')return false;state.status=0;req.socket.destroy();return true;
  }}),root=await directory(t);
  const result=await boundary(f,root).run(command);assert.equal(result.code,'DEVICE_UNKNOWN');assert.equal(result.pending,true);
  await boundary(f,root).run(command);assert.equal(controls(f).length,1);
+});
+
+test('validation CLOSED skips close; explicit 300-second open then close uses only two controls',async t=>{
+ const f=await providerFixture(t),root=await directory(t),b=boundary(f,root);
+ const skipped=await b.run(command);
+ assert.equal(skipped.code,'PRECONDITION_SATISFIED');assert.equal(skipped.mutationDispatched,false);assert.equal(skipped.settled,false);
+ assert.equal(controls(f).length,0);
+ const opened=await b.run({...command,action:'open',countdownSeconds:300,targetEndAt:deviceInput.targetEndAt});
+ assert.equal(opened.code,'DESIRED_STATE_CONFIRMED');assert.equal(opened.pending,false);
+ assert.equal(opened.evidence.kind,'ACKNOWLEDGED');assert.equal(opened.evidence.settled,false);
+ assert.equal(opened.observation.room.observedCountdownValue,300);assert.equal(opened.observation.room.countdownUnit,'UNVERIFIED');
+ const closed=await b.run(command);assert.equal(closed.code,'DESIRED_STATE_CONFIRMED');assert.equal(closed.pending,false);
+ assert.notEqual(opened.workflowId,closed.workflowId);
+ assert.deepEqual(controls(f).map(c=>[c.body.status,c.body.opentime]),[[1,300],[0,undefined]]);
+ const [name]=await readdir(root),journal=JSON.parse(await readFile(path.join(root,name),'utf8'));
+ assert.ok(journal.history.some(r=>r.status==='PRECONDITION_SATISFIED'));
+ assert.equal(JSON.stringify(journal).includes('APPLIED'),false);
+});
+test('close ACK with fresh CLOSED satisfies prerequisite; ACK alone with OPEN never repeats close',async t=>{
+ const f=await initiallyOpenFixture(t,{handler:({entry,res})=>{
+  if(entry.path!=='/h5/mac_control')return false;res.end(JSON.stringify({code:200}));return true;
+ }}),root=await directory(t);
+ const first=await boundary(f,root).run(command);assert.equal(first.code,'ACKNOWLEDGED');assert.equal(first.pending,true);
+ for(let n=0;n<2;n++){
+  const waiting=await boundary(f,root).run({...command,action:'open',countdownSeconds:300,targetEndAt:deviceInput.targetEndAt});
+  assert.equal(waiting.code,'ACKNOWLEDGED');assert.equal(waiting.workflowId,first.workflowId);
+ }
+ assert.equal(controls(f).length,1);
+ f.state.status=0;
+ const confirmed=await boundary(f,root,{env:{}}).run({...command,action:'query'});
+ assert.equal(confirmed.code,'DESIRED_STATE_CONFIRMED');assert.equal(confirmed.pending,false);
+ assert.equal(confirmed.observation.settled,false);assert.equal(controls(f).length,1);
+});
+test('already OPEN validation cannot reset countdown by issuing another explicit open',async t=>{
+ const f=await initiallyOpenFixture(t),root=await directory(t);
+ const result=await boundary(f,root).run({...command,action:'open',countdownSeconds:300,targetEndAt:deviceInput.targetEndAt});
+ assert.equal(result.code,'OPEN_PRECONDITION_NOT_SATISFIED');assert.equal(controls(f).length,0);
+ assert.deepEqual(await readdir(root),[]);
+});
+test('ACK with failed read persists waiting state and recovers by query after restart',async t=>{
+ let after=false;
+ const f=await initiallyOpenFixture(t,{handler:({entry,res})=>{
+  if(entry.path==='/h5/mac_control'){after=true;return false;}
+  if(after&&entry.path==='/h5/search'){res.writeHead(500);res.end('{}');return true;}
+  return false;
+ }}),root=await directory(t);
+ const first=await boundary(f,root).run(command);assert.equal(first.code,'ACKNOWLEDGED');assert.equal(first.pending,true);
+ after=false;
+ const resolved=await boundary(f,root).run({...command,action:'query'});
+ assert.equal(resolved.code,'DESIRED_STATE_CONFIRMED');assert.equal(controls(f).length,1);
+});
+async function legacyArchive(t,{mutate=()=>{}}={}) {
+ const root=await directory(t),workflowId=randomUUID();
+ const key=createHash('sha256').update(JSON.stringify(['123','ktvsky','synthetic-device'])).digest('hex');
+ const original={schemaVersion:1,scopeKey:key,workflowId,stepId:workflowId+':close',action:'close',status:'UNKNOWN'};
+ const file=path.join(root,key+'.json');await writeFile(file,JSON.stringify(original));
+ const archive={phase:'ONE_V06_CLOSE_THEN_QUERY',controlRequests:1,openExecuted:false,automaticMutationRetries:0,
+  result:{workflowId},controlEvidence:{acknowledged:true,settled:false},
+  events:[
+   {category:'search',at:'2026-10-08T01:00:00Z',httpStatus:200,providerCode:200,targetMatches:1,observed:{alive:1,status:0}},
+   {category:'control',at:'2026-10-08T01:00:01Z',httpStatus:200,providerCode:200,intent:{status:0,deviceSuffix:'vice'}},
+   {category:'search',at:'2026-10-08T01:00:02Z',httpStatus:200,providerCode:200,targetMatches:1,observed:{alive:1,status:0}}
+  ]};
+ mutate(archive);
+ const evidenceFile=path.join(root,'archive.json'),bytes=JSON.stringify(archive);
+ await writeFile(evidenceFile,bytes);
+ return {root,file,original,workflowId,evidenceFile,evidenceSha256:createHash('sha256').update(bytes).digest('hex')};
+}
+test('legacy UNKNOWN is query-only; formal archived ACK recovery preserves original and unverified causality',async t=>{
+ const f=await providerFixture(t),a=await legacyArchive(t),b=boundary(f,a.root);
+ const before=await readFile(a.file,'utf8');
+ const blocked=await b.run({...command,action:'open',countdownSeconds:300,targetEndAt:deviceInput.targetEndAt});
+ assert.equal(blocked.code,'DEVICE_UNKNOWN');assert.equal(controls(f).length,0);assert.equal(await readFile(a.file,'utf8'),before);
+ const requests=f.requests.length;
+ const result=await b.recoverAcknowledgedClose({...a,internalRoomId:command.internalRoomId});
+ assert.equal(f.requests.length,requests,'offline recovery must make no provider requests');
+ assert.equal(result.acknowledged,true);assert.equal(result.preExistingDesiredState,true);
+ assert.equal(result.causalEffect,'UNVERIFIED');assert.equal(result.settled,false);
+ const recovered=JSON.parse(await readFile(a.file,'utf8'));
+ assert.deepEqual(recovered.history,[a.original]);assert.equal(recovered.evidenceSha256,a.evidenceSha256);
+ const opened=await b.run({...command,action:'open',countdownSeconds:300,targetEndAt:deviceInput.targetEndAt});
+ assert.notEqual(opened.workflowId,a.workflowId);assert.equal(controls(f).length,1);
+ assert.equal(JSON.stringify(JSON.parse(await readFile(a.file,'utf8'))).includes('APPLIED'),false);
+});
+for(const [name,mutate]of [
+ ['no ACK',a=>a.controlEvidence.acknowledged=false],
+ ['control timeout',a=>a.events[1].timeout=true],
+ ['connection loss',a=>a.events[1].disconnect=true],
+ ['provider rejection',a=>a.events[1].providerCode=500],
+ ['wrong workflow',a=>a.result.workflowId=randomUUID()],
+ ['wrong device',a=>a.events[1].intent.deviceSuffix='else'],
+ ['not pre-existing CLOSED',a=>a.events[0].observed.status=1],
+ ['additional control',a=>a.events.push({...a.events[1]})],
+ ['post read not CLOSED',a=>a.events[2].observed.status=1]
+])test('legacy recovery rejects '+name+' and cannot bypass unresolved mutation',async t=>{
+ const f=await providerFixture(t),a=await legacyArchive(t,{mutate}),b=boundary(f,a.root),before=await readFile(a.file,'utf8');
+ await assert.rejects(b.recoverAcknowledgedClose({...a,internalRoomId:command.internalRoomId}),{code:'INVALID_RECOVERY_EVIDENCE'});
+ assert.equal(await readFile(a.file,'utf8'),before);assert.equal(f.requests.length,0);
+ const blocked=await b.run({...command,action:'open',countdownSeconds:300,targetEndAt:deviceInput.targetEndAt});
+ assert.equal(blocked.code,'DEVICE_UNKNOWN');assert.equal(controls(f).length,0);
+});
+test('legacy recovery rejects hash mismatch and cannot reclassify new-schema genuine UNKNOWN',async t=>{
+ const f=await providerFixture(t),a=await legacyArchive(t),b=boundary(f,a.root),before=await readFile(a.file,'utf8');
+ await assert.rejects(b.recoverAcknowledgedClose({...a,internalRoomId:command.internalRoomId,evidenceSha256:'0'.repeat(64)}),{code:'INVALID_RECOVERY_EVIDENCE'});
+ assert.equal(await readFile(a.file,'utf8'),before);
+ await writeFile(a.file,JSON.stringify({...a.original,schemaVersion:2,history:[]}));
+ await assert.rejects(b.recoverAcknowledgedClose({...a,internalRoomId:command.internalRoomId}),{code:'INVALID_RECOVERY_EVIDENCE'});
+ assert.equal(f.requests.length,0);
+});
+test('abandoned journal write lock fails closed rather than expiring into a fresh mutation',async t=>{
+ const f=await initiallyOpenFixture(t),root=await directory(t);
+ const key=createHash('sha256').update(JSON.stringify(['123','ktvsky','synthetic-device'])).digest('hex');
+ await writeFile(path.join(root,key+'.json.lock'),'');
+ await assert.rejects(boundary(f,root).run(command),{code:'JOURNAL_BUSY'});
+ assert.equal(controls(f).length,0);
+});
+
+test('partial terminal journal without ACK cannot authorize a new workflow',async t=>{
+ const f=await providerFixture(t),a=await legacyArchive(t);
+ await writeFile(a.file,JSON.stringify({...a.original,schemaVersion:2,status:'DESIRED_STATE_CONFIRMED',history:[a.original]}));
+ await assert.rejects(boundary(f,a.root).run({...command,action:'open',countdownSeconds:300,targetEndAt:deviceInput.targetEndAt}),{code:'INVALID_PENDING_RECORD'});
+ assert.equal(f.requests.length,0);
 });
