@@ -1,3 +1,4 @@
+import { assertFixtureEnvironment } from '../test-support/destructive-safety.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
@@ -291,7 +292,7 @@ test('MySQL 8.4 InnoDB employee roster foundation in jbhh_ktv_test',
     } finally {
       try {if(pool) await pool.end();}
       finally {
-        try {for(const name of [...created].reverse()) await setup.query('DROP TABLE '+table(name));}
+        try {for(const name of [...created].reverse()) {assertFixtureEnvironment(); await setup.query('DROP TABLE '+table(name));}}
         finally {await setup.end();}
       }
     }

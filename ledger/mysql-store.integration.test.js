@@ -1,3 +1,4 @@
+import { assertFixtureEnvironment } from '../test-support/destructive-safety.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
@@ -41,7 +42,7 @@ test('MySQL 8.4 InnoDB ledger integration in jbhh_ktv_test',
     const setupConnection = await mysql.createConnection(testUrl);
     const dropLedgerTables = async () => {
       for (const name of ledgerTablesInDropOrder) {
-        await setupConnection.query('DROP TABLE IF EXISTS ' + qualified(name));
+        assertFixtureEnvironment(); await setupConnection.query('DROP TABLE IF EXISTS ' + qualified(name));
       }
     };
     let verifiedTarget = false;

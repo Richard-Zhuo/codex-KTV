@@ -1,3 +1,4 @@
+import { assertFixtureEnvironment } from '../test-support/destructive-safety.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
@@ -367,7 +368,7 @@ test('MySQL 8.4 InnoDB auth integration in jbhh_ktv_test',
       finally {
         try {
           for (const name of created.reverse()) {
-            await setup.query('DROP TABLE ' + qualified(name));
+            assertFixtureEnvironment(); await setup.query('DROP TABLE ' + qualified(name));
           }
         } finally { await setup.end(); }
       }

@@ -1,3 +1,16 @@
+## Stage 5A production bootstrap candidate (2026-10-08)
+
+Stage 4C is human-accepted and closed out: main=origin/main=f64e4752a483b7b316aa86777bea006269c80024. Stage 5A develops locally on codex/p0-1-stage5a-production-bootstrap. Commit 1 0a8b988 adds stable identity bootstrap, a read-only preview, migration-derived schema validation, external secret handling and controlled own-password change. Commit 2 adds reviewed mappings, production startup/readiness checks, catalog/inventory reporting, production fixture guards and owner-review documentation. Both remain unmerged/unpushed; no production initialization, deployment, backup/restore drill, real provider query or mutation.
+
+This run: Commit 1 focused 21/21 and full 2068/2068; final Stage 5A focused 30/30 and full node --test --test-isolation=none --test-reporter=tap 2083/2083, 0 fail, 0 skip, exit 0. Real integration used only owned loopback MySQL 8.4.11/InnoDB on33313 and a fresh jbhh_ktv_test fixture with all migrations001–010. Logs remain outside Git. npm test was attempted and is unavailable; no npm execution evidence is claimed. Production cleanup/reset guards deny before SQL. Six-person plan is unapproved and disabled; historical V06 confirmation is retained without initializing a production mapping. Default catalog inspection reports20 uninitialized inventory entries, not a production inventory read.
+
+PRODUCTION IDENTITY BOOTSTRAP = implemented candidate
+PRODUCTION CONFIG READINESS CHECKS = implemented candidate
+KTVSKY LIVE PRODUCTION CONTROL = OFF
+PRODUCTION READY = NO
+14-DAY OFFSITE MVP READY = NO
+
+Contract, CLI usage, room checklist and remaining decisions: [Stage 5A](STAGE5A_PRODUCTION_BOOTSTRAP.md). Stable staff UUIDs and exact permissions: [matrix](REAL_STAFF_PERMISSION_MATRIX.md).
 ## Stage 4C candidate (2026-10-08)
 
 Stage 4B.1 accepted a05359f has been fast-forwarded and ordinarily pushed: main=origin/main=a05359f, clean, 2033/2033 full regression. Stage 4C develops locally on codex/p0-1-stage4c-open-device-integration. Commit 1 e13bb85 adds atomic open/workflow enrollment and server worker; Commit 2 adds staff/admin progress and acceptance evidence. No Stage 4C merge/push/deployment and no real provider request.

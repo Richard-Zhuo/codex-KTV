@@ -1,0 +1,70 @@
+{
+  "configVersion": "jbhh-staff-proposal-v1",
+  "environment": "production",
+  "database": "jbhh_ktv",
+  "storeId": "jbhh",
+  "ledgerId": "main",
+  "approved": false,
+  "people": [
+    {
+      "displayName": "卓老板",
+      "employeeId": "9d2ac576-575c-4a98-8e46-d170333b46b1",
+      "principalId": "71a8d829-ad0e-4e0e-b6cd-5f907d748ba5",
+      "loginIdentifier": "zhuo-laoban",
+      "enabled": false,
+      "template": "NIGHT_OPERATOR",
+      "permissions": [],
+      "policyAttributes": []
+    },
+    {
+      "displayName": "老板娘",
+      "employeeId": "e7d3abd9-82a5-4446-a07c-e03d7844e4a4",
+      "principalId": "629ec12e-a030-4e01-a012-54796e73c4a8",
+      "loginIdentifier": "laobanniang",
+      "enabled": false,
+      "template": "NIGHT_OPERATOR",
+      "permissions": [],
+      "policyAttributes": []
+    },
+    {
+      "displayName": "邵叔",
+      "employeeId": "21b8362a-e065-4381-b735-4b0b11b46d25",
+      "principalId": "9f032ade-9cf6-4329-aa26-b2b2a3088605",
+      "loginIdentifier": "shao-shu",
+      "enabled": false,
+      "template": "NIGHT_OPERATOR",
+      "permissions": [],
+      "policyAttributes": []
+    },
+    {
+      "displayName": "雄老板",
+      "employeeId": "41a239fc-0be9-446d-9c28-3d6ef16e14e2",
+      "principalId": "cb83cdaa-0064-421c-a1a1-a32fc1eb3d5f",
+      "loginIdentifier": "xiong-laoban",
+      "enabled": false,
+      "template": "NIGHT_OPERATOR",
+      "permissions": [],
+      "policyAttributes": []
+    },
+    {
+      "displayName": "卓益",
+      "employeeId": "31773658-a1a6-466c-a98d-a169012454fc",
+      "principalId": "e76141ee-1558-4ef3-9083-d2431c3a9ba8",
+      "loginIdentifier": "zhuo-yi",
+      "enabled": false,
+      "template": "SALES_BOOKING",
+      "permissions": [],
+      "policyAttributes": []
+    },
+    {
+      "displayName": "美娇",
+      "employeeId": "a6e4fe91-f26c-45aa-bbe4-ad14bc97cbce",
+      "principalId": "7da426bf-a628-4999-a71d-cb6751f035cf",
+      "loginIdentifier": "mei-jiao",
+      "enabled": false,
+      "template": "BOOKING_STAFF",
+      "permissions": [],
+      "policyAttributes": []
+    }
+  ]
+}

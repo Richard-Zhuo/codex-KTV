@@ -1,3 +1,5 @@
+import { validateProductionConfig } from '../production/config.js';
+import { readProductionReadiness, productionApiGate } from '../production/readiness.js';
 import { createRoomControlRuntime } from '../devices/runtime.js';
 import { KtvSkyRoomControlGateway } from '../devices/gateway.js';
 import { readDeviceHead } from '../devices/mysql-port.js';
@@ -13,6 +15,8 @@ import { createCurrentSessionReader } from './query.js';
 import { createHttpApi } from './api.js';
 
 export function createHttpApiFromEnv(env = process.env, logger = console) {
+  const production = env.NODE_ENV === 'production' || env.KTV_HTTP_ENV === 'production' || (env.KTV_API_MODE === 'enabled' && env.KTV_HTTP_ENV !== 'development');
+  const productionConfig = production ? validateProductionConfig(env) : null;
   const deviceControlMode=env.DEVICE_CONTROL_MODE??'disabled';
   if(!['disabled','required'].includes(deviceControlMode))throw TypeError('Invalid DEVICE_CONTROL_MODE');
   // Real KTVSky productionEnabled remains false. No live credentials or gate are read here.
@@ -59,6 +63,8 @@ export function createHttpApiFromEnv(env = process.env, logger = console) {
     deviceSnapshot: (connection,head)=>readDeviceHead(connection,database,head),
     businessTimeZone, origin: env.KTV_PUBLIC_ORIGIN, environment,
     allowInsecureCookie: env.KTV_INSECURE_COOKIE === 'true', logger });
-  runtime?.start();
-  return Object.freeze({...api,async close(){await runtime?.stop();await pool.end();}});
+  if(!production) runtime?.start();
+  const composed=Object.freeze({...api,async close(){await runtime?.stop();await pool.end();}});
+  return production ? productionApiGate(composed,()=>readProductionReadiness({pool,config:productionConfig,
+    credentialFile:env.KTVSKY_CREDENTIALS_FILE}),{logger,start:()=>runtime?.start()}) : composed;
 }

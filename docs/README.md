@@ -1,3 +1,7 @@
+## Stage 5A production bootstrap
+
+Controlled initialization and production readiness: [Stage 5A](STAGE5A_PRODUCTION_BOOTSTRAP.md). Current formal schema authority is MySQL migrations 001–010; no production cutover or live-control activation.
+
 # 项目文档导航
 
 这里是项目事实的导航入口。先按“要做什么”选择文档，不要求通读全部材料。

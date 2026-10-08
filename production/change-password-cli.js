@@ -16,7 +16,11 @@ export async function runPasswordCli(argv=process.argv.slice(2),env=process.env,
     validateTarget(secret,secret.databaseUrl,argv[3],env);
     pool=mysql.createPool({uri:secret.databaseUrl,connectionLimit:1});
     const c=await pool.getConnection();
-    try{await validateSchema(c,secret.database);}finally{c.release();}
+    try{
+      await validateSchema(c,secret.database);
+      const [rows]=await c.query('SELECT DISTINCT store_id,ledger_id,environment FROM production_bootstrap_events');
+      if(!rows.length||rows.some(r=>r.store_id!==secret.storeId||r.ledger_id!==secret.ledgerId||r.environment!==secret.environment))throw refused('BOOTSTRAP_STORE_MISMATCH');
+    }finally{c.release();}
     const auth=createAuthService({store:createMySqlAuthStore({pool,database:secret.database}),rateLimiter:createMemoryLoginRateLimiter()});
     const result=await auth.changeOwnPassword(secret);
     output.log(JSON.stringify(result.ok?{code:'PASSWORD_CHANGED_SESSIONS_REVOKED'}:{code:'INVALID_CREDENTIALS'}));

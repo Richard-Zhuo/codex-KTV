@@ -1,3 +1,7 @@
+## Stage 5A modules
+
+production/plan.js defines explicit permission templates and strict identity/target validation; bootstrap.js and bootstrap-cli.js initialize existing auth/employee records with audit; secret-file.js validates private external input; change-password-cli.js calls auth.changeOwnPassword. schema.js and schema-manifest.json verify the structure derived from migrations 001–010. mapping.js / mapping-cli.js initialize explicit room_device_mappings with provenance audit. config.js, readiness.js and readiness-cli.js report production blockers; http/bootstrap.js gates production API/worker startup. test-support/destructive-safety.js guards real DB fixture loading/cleanup and the historical recovery harness. Focused verification: production/*.test.js and production/mysql-bootstrap.integration.test.js; [contract](STAGE5A_PRODUCTION_BOOTSTRAP.md).
+
 ## Stage 4C routes
 
 - ledger/application.js: original trusted open plus connection-bound atomic workflow enrollment; current readiness guard for order commands.

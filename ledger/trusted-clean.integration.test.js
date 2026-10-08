@@ -1,3 +1,4 @@
+import { assertFixtureEnvironment } from '../test-support/destructive-safety.js';
 import { testOpenDevice } from '../devices/open.integration.js';
 import { testRoomControl } from '../devices/mysql.integration.js';
 import test from 'node:test';
@@ -90,7 +91,7 @@ test('MySQL trusted clean vertical slice in jbhh_ktv_test',
         'WHERE table_schema = ? AND table_name IN ('+[...authTables,...employeeTables,...policyAttributeTables,...voucherTables,...deviceTables,...mappingTables].map(()=>'?').join(',')+')', [database, ...authTables, ...employeeTables, ...policyAttributeTables, ...voucherTables, ...deviceTables, ...mappingTables]);
       assert.equal(existingAuth.length, 0, '拒绝删除预存 auth／employee 表');
       // The user explicitly designated these three ledger tables as disposable test tables.
-      for (const name of [...ledgerTables].reverse()) await setup.query('DROP TABLE IF EXISTS ' + table(name));
+      for (const name of [...ledgerTables].reverse()) {assertFixtureEnvironment(); await setup.query('DROP TABLE IF EXISTS ' + table(name));}
       for (const [file, names] of [['001_mysql_ledger_core.sql', ledgerTables], ['002_mysql_auth_core.sql', authTables], ['003_mysql_employee_core.sql', employeeTables], ['007_mysql_platform_vouchers.sql', voucherTables], ['008_mysql_room_control.sql', deviceTables], ['009_mysql_room_device_mapping.sql', mappingTables]]) {
         const sql = await readFile(new URL('../database/migrations/' + file, import.meta.url), 'utf8');
         const statements = sql.split(/\r?\n/).filter(line => !line.trim().startsWith('--'))
@@ -571,7 +572,7 @@ test('MySQL trusted clean vertical slice in jbhh_ktv_test',
     } finally {
       try { if (pool) await pool.end(); }
       finally {
-        try { for (const name of created.reverse()) await setup.query('DROP TABLE ' + table(name)); }
+        try { for (const name of created.reverse()) {assertFixtureEnvironment(); await setup.query('DROP TABLE ' + table(name));} }
         finally { await setup.end(); }
       }
     }

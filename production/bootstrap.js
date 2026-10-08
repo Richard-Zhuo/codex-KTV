@@ -1,12 +1,13 @@
 import { createHash } from 'node:crypto';
-import { derivePassword } from '../auth/password.js';
+import { derivePassword, assertPasswordInput } from '../auth/password.js';
 import { createMySqlAuthStore } from '../auth/mysql-store.js';
 import { validatePlan, validateTarget, text, refused } from './plan.js';
 import { validateSchema } from './schema.js';
+function validPassword(value) {try{assertPasswordInput(value);return true;}catch{return false;}}
 const same=(a,b)=>JSON.stringify([...a].sort())===JSON.stringify([...b].sort());
 export async function bootstrapIdentities({pool,plan:input,databaseUrl,confirmation,initiatedBy,dryRun=true,passwords={},env=process.env}) {
   const plan=validatePlan(input);
-  validateTarget(plan,databaseUrl,confirmation,env); text(initiatedBy);
+  const target=validateTarget(plan,databaseUrl,confirmation,env); text(initiatedBy);
   if(typeof dryRun!=='boolean' || (!dryRun&&!plan.approved)) throw refused('BOOTSTRAP_NOT_APPROVED');
   const connection=await pool.getConnection();
   let locked=false,begun=false,committing=false,destroy=false;
@@ -32,16 +33,19 @@ export async function bootstrapIdentities({pool,plan:input,databaseUrl,confirmat
       const [[employee]]=await connection.execute('SELECT employee_id,display_name,enabled,principal_id FROM employees WHERE employee_id=?'+(dryRun?'':' FOR UPDATE'),[person.employeeId]);
       const [[bound]]=await connection.execute('SELECT employee_id FROM employees WHERE principal_id=?',[person.principalId]);
       if((account&&(Boolean(account.enabled)!==person.enabled||account.login_identifier!==person.loginIdentifier)) || (login&&login.principal_id!==person.principalId) || (employee&&(employee.display_name!==person.displayName||Boolean(employee.enabled)!==person.enabled||(employee.principal_id&&employee.principal_id!==person.principalId))) || (bound&&bound.employee_id!==person.employeeId)) throw refused('BOOTSTRAP_IDENTITY_CONFLICT');
-      const [grants]=await connection.execute('SELECT permission_id FROM auth_grants WHERE principal_id=?',[person.principalId]);
-      const [attributes]=await connection.execute('SELECT attribute_id FROM auth_policy_attributes WHERE principal_id=?',[person.principalId]);
+      const [grants]=await connection.execute('SELECT permission_id FROM auth_grants WHERE principal_id=?'+(dryRun?'':' FOR UPDATE'),[person.principalId]);
+      const [attributes]=await connection.execute('SELECT attribute_id FROM auth_policy_attributes WHERE principal_id=?'+(dryRun?'':' FOR UPDATE'),[person.principalId]);
       if(grants.some(row=>!person.permissions.includes(row.permission_id)) || (account&&account.policy_attributes_configured&&!same(attributes.map(row=>row.attribute_id),person.policyAttributes)) || (account&&!account.policy_attributes_configured&&attributes.length)) throw refused('BOOTSTRAP_CAPABILITY_CONFLICT');
       actions.push({person,createAccount:!account,createEmployee:!employee,link:!employee?.principal_id,
         grants:person.permissions.filter(id=>!grants.some(row=>row.permission_id===id)),configure:!account || !account.policy_attributes_configured});
     }
-    const summary={environment:plan.environment,database:plan.database,storeId:plan.storeId,ledgerId:plan.ledgerId,configVersion:plan.configVersion,dryRun,
+    const summary={environment:plan.environment,database:plan.database,databaseHost:target.hostname,databasePort:target.port||'3306',storeId:plan.storeId,ledgerId:plan.ledgerId,configVersion:plan.configVersion,dryRun,
       accountsCreated:actions.filter(a=>a.createAccount).length,employeesCreated:actions.filter(a=>a.createEmployee).length,
       bindingsCreated:actions.filter(a=>a.link).length,grantsAssigned:actions.reduce((n,a)=>n+a.grants.length,0),
       identities:actions.map(a=>({principalId:a.person.principalId,employeeId:a.person.employeeId,enabled:a.person.enabled,permissions:a.person.permissions,policyAttributes:a.person.policyAttributes}))};
+    summary.credentialsRequired=actions.filter(a=>a.createAccount&&!validPassword(passwords[a.person.principalId])).map(a=>a.person.principalId);
+    summary.readyToApply=plan.approved&&summary.credentialsRequired.length===0;
+    if(!dryRun&&summary.credentialsRequired.length)throw refused('BOOTSTRAP_CREDENTIAL_REQUIRED');
     if(!dryRun) {
       for(const action of actions) {
         const p=action.person;

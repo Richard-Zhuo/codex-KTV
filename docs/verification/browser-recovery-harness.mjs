@@ -1,9 +1,11 @@
+import { assertFixtureEnvironment } from '../../test-support/destructive-safety.js';
 import http from 'node:http';
 import { readFile } from 'node:fs/promises';
 import { extname, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { initialState, transact } from '../../rules.js';
 
+assertFixtureEnvironment();
 const root = resolve(fileURLToPath(new URL('../../', import.meta.url)));
 const key = 'jbhh-demo-v1';
 const backupKey = 'jbhh-demo-v1-recovery';

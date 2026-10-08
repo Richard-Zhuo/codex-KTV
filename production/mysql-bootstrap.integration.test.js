@@ -1,3 +1,10 @@
+import { runBootstrapCli } from './bootstrap-cli.js';
+import { mkdtemp,writeFile,unlink,rmdir } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { bootstrapMappings } from './mapping.js';
+import { readProductionReadiness } from './readiness.js';
+import { assertFixtureEnvironment } from '../test-support/destructive-safety.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import mysql from 'mysql2/promise';
@@ -46,6 +53,19 @@ test('production bootstrap against fresh migrated isolated MySQL', {skip:!raw},a
       const before=await counts();const result=await bootstrapIdentities(args);
       assert.equal(result.accountsCreated,1);assert.equal(result.grantsAssigned,3);
       assert.deepEqual(await counts(),before);
+    });
+
+    await t.test('actual CLI dry run from external secret input logs no credentials and writes nothing',async()=>{
+      const dir=await mkdtemp(join(tmpdir(),'ktv-bootstrap-secret-')),planFile=join(dir,'plan.json'),secretFile=join(dir,'credentials.json');
+      const output=[],logger={log:v=>output.push(v),error:v=>output.push(v)};
+      try{
+        await writeFile(planFile,JSON.stringify(plan));await writeFile(secretFile,JSON.stringify({databaseUrl:raw,passwords:{[person.principalId]:secret}}));
+        const before=await counts();
+        const exit=await runBootstrapCli(['--plan',planFile,'--secrets-file',secretFile,'--confirm-target',args.confirmation,'--initiated-by','synthetic-cli-operator','--dry-run'],args.env,logger);
+        assert.equal(exit,0);assert.deepEqual(await counts(),before);
+        assert.equal(output.length,1);assert.equal(output[0].includes(secret),false);assert.equal(output[0].includes(raw),false);
+        assert.equal(JSON.parse(output[0]).dryRun,true);
+      }finally{await unlink(planFile);await unlink(secretFile);await rmdir(dir);}
     });
     await t.test('first apply hashes credentials and binds stable separate identities',async()=>{
       const result=await bootstrapIdentities({...args,dryRun:false});assert.equal(result.accountsCreated,1);
@@ -107,6 +127,45 @@ test('production bootstrap against fresh migrated isolated MySQL', {skip:!raw},a
       await bootstrapIdentities({...args,dryRun:false,passwords:{[p.principalId]:secret},plan:{...plan,people:[p]}});
       assert.equal((await auth.login({loginIdentifier:p.loginIdentifier,password:secret})).ok,false);
     });
-  }finally{try{if(pool)await pool.end();}finally{try{for(const name of created.reverse())await setup.query('DROP TABLE '+name);}finally{await setup.end();}}}
-});
 
+    const mappingPlan={configVersion:'synthetic-mappings-v1',environment:'test',database:'jbhh_ktv_test',storeId:plan.storeId,ledgerId:plan.ledgerId,approved:true,mappings:[{internalRoomId:'V06',provider:'ktvsky',externalDeviceId:'synthetic-device-674B',enabled:false,source:'human-confirmed',confirmedAt:'2026-10-08T00:00:00Z',confirmedBy:'synthetic-operator'}]};
+    const mappingArgs={...args,plan:mappingPlan};
+    const readyConfig={environment:'test',database:plan.database,storeId:plan.storeId,ledgerId:plan.ledgerId,deviceControlMode:'disabled'};
+    await t.test('explicit mapping dry run is read only and first/rerun preserves stable target',async()=>{
+      const state=initialState(),encoded=encodeLedgerSnapshot(state);
+      await pool.execute('INSERT INTO ledger_heads(ledger_id,revision,state_schema_version,state_json,state_checksum) VALUES(?,0,?,?,?)',[plan.ledgerId,state.version,encoded.json,encoded.checksum]);
+      const before=await counts();
+      const preview=await bootstrapMappings(mappingArgs);assert.equal(preview.mappingsCreated,1);assert.deepEqual(await counts(),before);
+      const applied=await bootstrapMappings({...mappingArgs,dryRun:false});assert.equal(applied.mappingsCreated,1);
+      assert.equal(JSON.stringify(applied).includes('synthetic-device-674B'),false);
+      const again=await bootstrapMappings({...mappingArgs,dryRun:false});assert.equal(again.mappingsCreated,0);
+      const [[count]]=await pool.query('SELECT COUNT(*) AS n FROM room_device_mappings');assert.equal(String(count.n),'1');
+      const [[audit]]=await pool.query("SELECT facts FROM production_bootstrap_events WHERE config_version='synthetic-mappings-v1' LIMIT 1");
+      const fact=typeof audit.facts==='string'?JSON.parse(audit.facts):audit.facts;
+      assert.equal(fact.mappings[0].source,'human-confirmed');assert.equal(fact.mappings[0].confirmedBy,'synthetic-operator');assert.ok(fact.mappings[0].confirmedAt);
+    });
+    await t.test('mapping conflicts and unknown room never overwrite existing target or revision',async()=>{
+      const before=await counts();
+      await assert.rejects(bootstrapMappings({...mappingArgs,dryRun:false,plan:{...mappingPlan,mappings:[{...mappingPlan.mappings[0],externalDeviceId:'different'}]}}),{code:'BOOTSTRAP_MAPPING_CONFLICT'});
+      await assert.rejects(bootstrapMappings({...mappingArgs,dryRun:false,plan:{...mappingPlan,mappings:[{...mappingPlan.mappings[0],internalRoomId:'unknown'}]}}),{code:'BOOTSTRAP_UNKNOWN_ROOM'});
+      assert.deepEqual(await counts(),before);
+      const [[head]]=await pool.execute('SELECT revision FROM ledger_heads WHERE ledger_id=?',[plan.ledgerId]);assert.equal(String(head.revision),'0');
+    });
+    await t.test('real MySQL readiness reports null stock and required mappings without writes',async()=>{
+      const before=await counts(),report=await readProductionReadiness({pool,config:{...readyConfig,deviceControlMode:'required'}});
+      assert.equal(report.ready,false);assert.equal(report.revision,0);
+      assert.ok(report.blockers.some(b=>b.code==='OPENING_INVENTORY_REQUIRED'));
+      assert.ok(report.blockers.some(b=>b.code==='ROOM_MAPPING_REQUIRED'));
+      assert.ok(report.blockers.some(b=>b.code==='DEVICE_REQUIRED_PROVIDER_PRODUCTION_DISABLED'));
+      assert.equal(report.mapping.checklist.find(r=>r.internalRoomId==='V06').status,'CONFIRMED_DISABLED');
+      assert.deepEqual(await counts(),before);
+    });
+    await t.test('initialized zero inventory is accepted in disabled mode; store mismatch denied',async()=>{
+      const state=initialState();for(const stock of [...Object.values(state.inventory),...Object.values(state.consumables)])stock.count=0;
+      const encoded=encodeLedgerSnapshot(state);
+      await pool.execute('UPDATE ledger_heads SET state_json=?,state_checksum=? WHERE ledger_id=?',[encoded.json,encoded.checksum,plan.ledgerId]);
+      const report=await readProductionReadiness({pool,config:readyConfig});assert.equal(report.ready,true);assert.equal(report.catalog.blockers.length,0);
+      await assert.rejects(readProductionReadiness({pool,config:{...readyConfig,storeId:'wrong'}}),{code:'PRODUCTION_STORE_MISMATCH'});
+    });
+  }finally{try{if(pool)await pool.end();}finally{try{for(const name of created.reverse()){assertFixtureEnvironment(); await setup.query('DROP TABLE '+name);}}finally{await setup.end();}}}
+});

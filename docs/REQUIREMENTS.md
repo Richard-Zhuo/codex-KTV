@@ -1,3 +1,7 @@
+## Stage 5A accepted scope (2026-10-08)
+
+Provide stable separate employee/principal identities, explicit known grants, reviewed per-person bootstrap, secret-safe credential handling, idempotency/conflict refusal and a genuinely read-only dry-run. Add explicit human room mappings, schema/config/catalog/inventory readiness and production destructive-fixture guards. Unknown permissions, schema or config fail closed. Keep production device control OFF; no deployment/backup drill. [Detailed contract and owner decisions](STAGE5A_PRODUCTION_BOOTSTRAP.md).
+
 ## Stage 4C accepted implementation scope (2026-10-08)
 
 Connect the existing trusted employee open to one atomic durable device intent. Pending and offline rooms remain reserved; only verified device evidence yields ACTIVE in required mode. Preserve business snapshots, idempotency, session/price authority, query-only UNKNOWN recovery and historical facts. The server owns execution and restart recovery; staff reads progress. Real KTVSky stays production-disabled. See [Stage 4C contract](STAGE4C_OPEN_DEVICE.md).
