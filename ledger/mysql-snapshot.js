@@ -50,7 +50,7 @@ export function decodeLedgerSnapshot(value, checksum) {
   const state = decodeLedgerJson(value);
   const encoded = encodeLedgerSnapshot(state);
   if (typeof checksum !== 'string' || !/^[0-9a-f]{64}$/.test(checksum) || encoded.checksum !== checksum) {
-    throw Error('账本快照校验和不一致，停止写入');
+    throw Object.assign(Error('账本快照校验和不一致，停止写入'),{code:'LEDGER_SNAPSHOT_INVALID'});
   }
   return state;
 }

@@ -1,6 +1,6 @@
 import {createOperationalRuntime} from '../operations/runtime.js';
 import { fileURLToPath } from 'node:url';
-import { resolve,join } from 'node:path';
+import { resolve } from 'node:path';
 import {createRotatingLog} from './rotating-log.js';
 import {monitoringConfig} from '../operations/monitors.js';
 import { createInterface } from 'node:readline';

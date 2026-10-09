@@ -18,6 +18,19 @@ test('alert delivery deduplicates, retries with backoff, exhausts and recovers w
  await life.condition('DEVICE_UNKNOWN',true,{workflowId:'synthetic'});for(let n=0;n<4;n++){time+=10;await d.tick();}
  assert.equal(store.read().outbox.at(-1).state,'EXHAUSTED');assert.equal(store.read().outbox.at(-1).attempts,3);
 }));
+test('recovery supersedes stale retries and receiver ignores late older incident sequences',()=>fixture(async dir=>{
+ const store=await createOperationalStore(dir,'synthetic');let time=Date.now();
+ const life=createIncidentLifecycle({store,scope:'synthetic',logger:silent,now:()=>time}),transport=new FakeAlertTransport({failures:1}),dispatcher=createAlertDispatcher({store,transport,logger:silent,now:()=>time,backoffMs:100});
+ await life.condition('DATABASE_UNAVAILABLE',true,{component:'database'});await dispatcher.tick();
+ const opening=structuredClone(store.read().outbox[0]),incident=structuredClone(store.read().incidents[0]);
+ assert.equal(opening.state,'PENDING');assert.equal(opening.attempts,1);
+ await life.condition('DATABASE_UNAVAILABLE',false,{component:'database'});await dispatcher.tick();
+ assert.equal(store.read().outbox[0].state,'SUPERSEDED');assert.equal(transport.messages.length,1);assert.equal(transport.messages[0].transition,'RESOLVED');
+ time+=1000;await dispatcher.tick();assert.equal(transport.messages.length,1);
+ const {alertPayload}=await import('./alerts.js');await transport.send(alertPayload(incident,opening));assert.equal(transport.messages.length,1);
+ await transport.send(transport.messages[0]);assert.equal(transport.messages.length,1);
+ const reloaded=await createOperationalStore(dir,'synthetic');assert.equal(reloaded.read().incidents[0].deliverySequence,2);
+}));
 test('timed out alert send cannot create repeated hanging calls in one process',()=>fixture(async dir=>{
  const store=await createOperationalStore(dir,'synthetic'),life=createIncidentLifecycle({store,scope:'synthetic',logger:silent});await life.condition('DEVICE_UNKNOWN',true);
  let calls=0,time=Date.now();const d=createAlertDispatcher({store,logger:silent,now:()=>time,timeoutMs:10,backoffMs:1,transport:{send(){calls++;return new Promise(()=>{});}}});
@@ -42,7 +55,11 @@ test('runtime monitors TLS thresholds, backup failures, recovery, auth buckets a
   down=true;await ops.tick();const id=ops.store.read().incidents.find(i=>i.type==='DATABASE_UNAVAILABLE').incidentId;await ops.tick();assert.equal(ops.store.read().incidents.filter(i=>i.type==='DATABASE_UNAVAILABLE').length,1);assert.equal(ops.store.read().incidents.some(i=>i.type==='READINESS_LOST'&&i.state==='OPEN'),false);
   down=false;mode='READY_FOR_RESUME';await ops.tick();assert.equal(ops.store.read().incidents.find(i=>i.incidentId===id).state,'RESOLVED');assert.equal(ops.snapshot().recoveryMode,mode);
   const accountHash='a'.repeat(64),sourceHash='b'.repeat(64);await ops.login({accountHash,sourceHash,outcome:'failed'});await ops.login({accountHash,sourceHash,outcome:'rate_limited'});assert.equal(ops.store.read().incidents.filter(i=>i.type==='AUTH_REPEATED_FAILURES').length,2);
-  await ops.login({accountHash,sourceHash,outcome:'success'});assert.equal(ops.store.read().incidents.find(i=>i.type==='AUTH_REPEATED_FAILURES'&&i.context.category.startsWith('account')).state,'RESOLVED');
+  await ops.login({accountHash,sourceHash,outcome:'success'});
+  const pendingReady=ops.store.read().incidents.findLast(i=>i.type==='READINESS_LOST'&&i.state==='OPEN');assert.ok(pendingReady);
+  down=true;await ops.tick();assert.equal(ops.store.read().incidents.find(i=>i.incidentId===pendingReady.incidentId).state,'OPEN');
+  down=false;mode='NORMAL';await ops.tick();assert.equal(ops.store.read().incidents.find(i=>i.incidentId===pendingReady.incidentId).state,'RESOLVED');
+  assert.equal(ops.store.read().incidents.find(i=>i.type==='AUTH_REPEATED_FAILURES'&&i.context.category.startsWith('account')).state,'RESOLVED');
   const serialized=JSON.stringify({projection:ops.snapshot(),events:logs,payloads:transport.messages,state:ops.store.read()});
   for(const value of [...secrets,'password','Cookie','X-TOKEN','stack',dir])assert.equal(serialized.includes(value),false);
   assert.match(renderAdminPage({phase:'ready',session:{principalId:'synthetic'},snapshot:{revision:0,view:{dashboard:{},rooms:[],reviewQueue:[],operations:ops.snapshot()}}}),/运维状态/);
@@ -57,4 +74,23 @@ test('single log sink bounds rotation and keeps unrelated state, secrets and sta
  for(let n=0;n<100;n++)logger.log({code:'DEVICE_UNKNOWN',severity:'ERROR',eventType:'DEVICE_UNKNOWN',message:'safe',password:'synthetic-secret',stack:'C:/private'});
  sink.close();const names=(await readdir(dir)).filter(n=>n.endsWith('.jsonl'));assert.ok(names.length<=2);assert.equal(await readFile(join(dir,'operational-state.json'),'utf8'),'protected');
  const text=(await Promise.all(names.map(n=>readFile(join(dir,n),'utf8')))).join('');assert.equal(text.includes('synthetic-secret'),false);assert.equal(text.includes('C:/private'),false);
+}));
+
+test('required alerting refuses unconfigured or failed delivery, while optional local remains explicit',()=>fixture(async dir=>{
+ const loaded={logDirectory:dir,redactionSecrets:[],tls:{cert:''},config:{storeId:'synthetic',ledgerId:'synthetic',monitoring:{alertingRequired:true,backupDirectory:dir}}};
+ const missing=await createOperationalRuntime({loaded,logger:silent});assert.ok(missing.readyBlockers().includes('ALERT_CHANNEL_REQUIRED'));
+ const failing=await createOperationalRuntime({loaded,logger:silent,transport:new FakeAlertTransport({failures:99})});
+ await failing.lifecycle.condition('DEVICE_UNKNOWN',true,{workflowId:'synthetic'});await failing.dispatcher.tick();assert.ok(failing.readyBlockers().includes('ALERT_DELIVERY_UNAVAILABLE'));assert.equal(failing.store.read().incidents[0].state,'OPEN');
+}));
+test('log failure uses safe fallback and fires one failure signal without exposing raw exception',()=>fixture(async dir=>{
+ const fallback=[];let failures=0;const sink=createRotatingLog(dir,{fallback:s=>fallback.push(s),onFailure:()=>failures++}),log=createSafeLogger({write:s=>sink.write(s),secrets:['synthetic-secret']});
+ sink.close();log.error({code:'SAFE',password:'synthetic-secret',stack:'C:/private'});log.error({code:'SAFE'});await new Promise(r=>queueMicrotask(r));assert.equal(failures,1);assert.ok(fallback.join('').includes('LOG_WRITE_FAILURE'));assert.equal(fallback.join('').includes('synthetic-secret'),false);assert.equal(fallback.join('').includes('C:/private'),false);
+}));
+test('invariant mailbox carries only fixed facts and rejects extra private data',()=>fixture(async dir=>{
+ const {reportInvariant,consumeInvariants}=await import('./signals.js');await reportInvariant(dir,true);let value;await consumeInvariants(dir,r=>{value=r;});assert.equal(value.code,'DATA_INVARIANT_FAILURE');assert.equal(value.active,true);await assert.rejects(reportInvariant(dir,'secret'),/OPERATIONAL_SIGNAL_INVALID/);
+}));
+test('device offline age follows continuous status entry despite fresh polling updates',()=>fixture(async dir=>{
+ const {monitoringConfig,observeWorkflow}=await import('./monitors.js');const time=Date.now(),store=await createOperationalStore(dir,'synthetic'),life=createIncidentLifecycle({store,scope:'synthetic',logger:silent});
+ const record={id:'synthetic',internalRoomId:'V01',status:'DEVICE_OFFLINE_WAIT',roomReadiness:'WAITING_DEVICE',createdAt:new Date(time-20000).toISOString(),updatedAt:new Date(time).toISOString(),events:[{at:new Date(time-20000).toISOString(),status:'DEVICE_PENDING'},{at:new Date(time-10000).toISOString(),status:'DEVICE_OFFLINE_WAIT'},{at:new Date(time).toISOString(),status:'DEVICE_OFFLINE_WAIT'}]};
+ await observeWorkflow(life,record,monitoringConfig({offlineMs:5000}));assert.ok(store.read().incidents.some(i=>i.type==='DEVICE_OFFLINE'&&i.state==='OPEN'));
 }));

@@ -1,3 +1,7 @@
+## Stage 5D
+
+operations/contract.js owns fixed event/severity/redaction; store.js/incidents.js/writer-lock.js own independent durable incident/outbox lifecycle; alerts.js owns Fake/local bounded delivery; runtime.js/monitors.js own read-only collection and safe summary. backup-report.js and signals.js connect existing operator tools through fixed-shape protected mailboxes. production/rotating-log.js is the same logger's bounded sink; runtime/start/preflight compose monitoring. http/api.js adds only the authenticated admin projection; ui/admin-view.js renders it. operations/drills.integration.test.js and test-support/operations-runtime-child.js verify owned isolated incidents/restarts. [Runbook](OPERATIONS_RUNBOOK.md).
+
 ## Stage 5C
 
 production/runtime-config.js owns production/Node validation, unified secrets and Windows ACL checks; runtime-log.js owns safe structured output; runtime.js owns HTTPS/health/draining; start.js is the sole production entry. server.js exposes the shared static request handler. http/bootstrap.js managed composition exposes readonly readiness and explicit worker lifecycle to the runtime. [Contract](STAGE5C_DEPLOYMENT_RUNTIME.md).

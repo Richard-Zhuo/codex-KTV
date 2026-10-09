@@ -19,7 +19,10 @@ export function createIncidentLifecycle({store,logger,scope,now=Date.now,secrets
     const incident={incidentId:randomUUID(),fingerprint:key,state:'OPEN',type,severity:severity??clean.severity,openedAt:clean.timestamp,lastSeenAt:clean.timestamp,resolvedAt:null,context:safeContext(context,secrets),message:clean.message,action:clean.action,runbook:type};
     state.incidents.push(incident);queue(state,incident,'OPEN',time);event={...clean,severity:incident.severity,incidentId:incident.incidentId};return incident;
    }
-   current.state='RESOLVED';current.resolvedAt=new Date(time).toISOString();queue(state,current,'RESOLVED',time);
+   current.state='RESOLVED';current.resolvedAt=new Date(time).toISOString();
+   // A recovered incident must never send a stale opening/reminder after recovery.
+   for(const delivery of state.outbox.filter(e=>e.incidentId===current.incidentId&&['PENDING','EXHAUSTED'].includes(e.state)))delivery.state='SUPERSEDED';
+   queue(state,current,'RESOLVED',time);
    const restored=({DATABASE_UNAVAILABLE:'DATABASE_RESTORED',READINESS_LOST:'READINESS_RESTORED',RECOVERY_IN_PROGRESS:'RECOVERY_RESUMED',RECOVERY_READY_FOR_RESUME:'RECOVERY_RESUMED',PROVIDER_AUTH_FAILURE:'PROVIDER_RESTORED'})[type]??type;
    event={...operationalEvent(restored,context,time,secrets),severity:'INFO',incidentId:current.incidentId,incidentState:'RESOLVED'};return current;
   });
@@ -27,7 +30,8 @@ export function createIncidentLifecycle({store,logger,scope,now=Date.now,secrets
  }
  function queue(state,incident,transition,time){
   if(state.outbox.filter(e=>e.state==='PENDING').length>=1024)throw Error('OPERATIONAL_OUTBOX_CAPACITY');
-  state.outbox.push({deliveryId:randomUUID(),incidentId:incident.incidentId,transition,state:'PENDING',attempts:0,nextAttemptAt:time});
+  incident.deliverySequence=(incident.deliverySequence??0)+1;
+  state.outbox.push({deliveryId:randomUUID(),incidentId:incident.incidentId,sequence:incident.deliverySequence,occurredAt:new Date(time).toISOString(),transition,state:'PENDING',attempts:0,nextAttemptAt:time});
  }
  return {condition,
   async event(type,context={}){const event=operationalEvent(type,context,now(),secrets);logger.log(event);return event;},

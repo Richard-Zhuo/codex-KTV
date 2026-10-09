@@ -13,6 +13,7 @@ export async function createOperationalStore(directory,scope){
  return {read:()=>structuredClone(state),update(work){
   const result=serial.then(async()=>{
    const next=structuredClone(state),value=await work(next),data=JSON.stringify(next);
+   if(data===JSON.stringify(state))return value;
    if(Buffer.byteLength(data)>7*1024*1024)throw Error('OPERATIONAL_STATE_CAPACITY');
    await check();const temporary=resolve(root,'operational-'+randomUUID()+'.tmp');
    let handle;try{handle=await open(temporary,'wx',0o600);await handle.writeFile(JSON.stringify({checksum:checksum(data),data}));await handle.sync();await handle.close();handle=null;await rename(temporary,path);state=next;}

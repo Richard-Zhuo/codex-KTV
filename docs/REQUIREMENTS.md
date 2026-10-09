@@ -1,3 +1,7 @@
+## Stage 5D
+
+Provide safe operational events, persistent deduplicated incidents and correlated recovery, bounded asynchronous alert dispatch, read-only runtime/DB/recovery/device/backup/TLS/disk/auth monitors, rotation/retention, permission-filtered admin status and a tiered runbook. Monitoring never changes business revision or retries UNKNOWN device mutation. Verify real isolated MySQL/native-host drills plus Edge HTTPS admin smoke. Real alert channel, deployment, initialization and cutover remain excluded. [Contract](STAGE5D_MONITORING_RUNBOOK.md).
+
 ## Stage 5C
 
 Provide an explicit production runtime, protected external secrets, direct TLS/private VPN boundary, health/readiness, bounded shutdown, native Windows service supervision and readonly preflight. Reuse existing trusted auth/application/recovery rules. Verify using synthetic isolated MySQL/TLS and real browser smoke; no deployment/cutover, real initialization or live provider control. [Contract](STAGE5C_DEPLOYMENT_RUNTIME.md).

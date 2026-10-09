@@ -1,4 +1,5 @@
 import https from 'node:https';
+import {boundedProbe,readinessFailure} from '../operations/monitors.js';
 import { randomUUID } from 'node:crypto';
 import { createKtvRequestHandler } from '../server.js';
 import { createHttpApiFromEnv } from '../http/bootstrap.js';
@@ -12,7 +13,7 @@ export function createProductionRuntime(loaded,{logger=createSafeLogger({secrets
  const version={appVersion:loaded.config.applicationCommit,schemaVersion:'001-011',configFingerprint:loaded.configFingerprint};
  const unavailable=(res,requestId,code='service_unavailable',status=503)=>{res.writeHead(status,{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store','X-Request-Id':requestId});res.end(JSON.stringify({error:{code,requestId}}));};
  const readiness=()=>checking??(checking=(async()=>{
-  let report;try{report=await services.readiness();}catch{report={ready:false,blockers:[{code:'DATABASE_OR_SCHEMA_UNAVAILABLE'}]};}
+  let report;try{report=await boundedProbe(()=>services.readiness(),loaded.config.monitoring?.probeTimeoutMs??2500);}catch(error){report=readinessFailure(error);}
   const blockers=[...(report.blockers??[]).map(b=>b.code)];
   if(!loaded.config.backupPolicyConfigured)blockers.push('PRODUCTION_BACKUP_POLICY_REQUIRED');
   if(phase==='DRAINING'||phase==='STOPPED')blockers.push('RUNTIME_DRAINING');

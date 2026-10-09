@@ -1,3 +1,11 @@
+## Stage 5D candidate — 2026-10-09
+
+Stable main/origin/main is accepted Stage5C e57af99dd49a46771ff20dd495f71f22d9db97ff. Stage5D on codex/p0-1-stage5d-monitoring-runbook is implemented locally, awaiting human acceptance; not merged/pushed. Persistent incident/outbox lifecycle, bounded Fake/local alerting, admin status, rotation and tiered runbook are implemented. [Contract](STAGE5D_MONITORING_RUNBOOK.md), [runbook](OPERATIONS_RUNBOOK.md), [current evidence](STAGE5D_VERIFICATION.md).
+
+Focused19/19 passed with real isolated MySQL8.4.11/InnoDB and native-host recovery drills. Real Edge HTTPS narrow admin smoke passed; scope/favicon404 recorded in evidence. Final full regression2148/2148,fail0,skip0,exit0. Author review has no remaining P0/P1; no independent review claimed.
+
+Real channel NOT_CONFIGURED, deployment/cutover NOT_DONE, real staff/inventory/mappings NOT_INITIALIZED, KTVSky live production control OFF. PRODUCTION READY=NO;14-DAY OFFSITE MVP READY=NO. Next only Stage5E Production Cutover Rehearsal; not started. Earlier stage entries below are historical.
+
 ## Stage 5C runtime foundation candidate
 
 Stage5B is human-accepted and closed out at main=origin/main=25c95f162f4c7d75a52b6843e13590ffda573290. Stage5C develops only on codex/p0-1-stage5c-deployment-runtime. Target audit and production runtime/secret/logging foundation are implemented; focused5/5. HTTPS hardening, service/preflight, integration/browser/full evidence are pending. No merge/push/deployment/real initialization/provider operations. [Contract](STAGE5C_DEPLOYMENT_RUNTIME.md). Earlier status sections are historical.

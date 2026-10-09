@@ -10,6 +10,7 @@ export function monitoringConfig(input={}){
  if(c.intervalMs<1000||c.intervalMs>60000||c.probeTimeoutMs>10000||c.maxHistory>5000||c.logMaxFiles>100||c.logMaxBytes<1024||c.tlsWarnDays<c.tlsErrorDays||c.tlsErrorDays<c.tlsCriticalDays||typeof c.alertingRequired!=='boolean'||!['none','local'].includes(c.alertTransport)||c.backupDirectory!==undefined&&typeof c.backupDirectory!=='string')throw Error('MONITORING_CONFIG_INVALID');
  return Object.freeze(c);
 }
+export function readinessFailure(error){return {ready:false,blockers:[{code:['LEDGER_SNAPSHOT_INVALID','BOOTSTRAP_SCHEMA_MISMATCH','PRODUCTION_STORE_MISMATCH'].includes(error?.code)?'DATA_INVARIANT_FAILURE':'DATABASE_OR_SCHEMA_UNAVAILABLE'}]};}
 export function boundedProbe(work,ms){
  let timer;return Promise.race([Promise.resolve().then(work),new Promise((_,reject)=>{timer=setTimeout(()=>reject(Error('MONITOR_PROBE_TIMEOUT')),ms);})]).finally(()=>clearTimeout(timer));
 }

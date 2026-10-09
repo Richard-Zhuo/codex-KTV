@@ -1,3 +1,7 @@
+## Stage 5D operational boundary
+
+Existing safe logger → bounded rotating file/stderr. Runtime reads confirmed sources → independent atomic incident/outbox file → asynchronous bounded transport → permission-filtered admin summary. Business/auth transactions never await alert sends. Incident state is protected Git-external operational telemetry, not a second ledger or MySQL schema authority. One writer per dedicated directory, recovery-first UNKNOWN behavior unchanged, no automatic remediation. [Contract](STAGE5D_MONITORING_RUNBOOK.md).
+
 ## Stage 5C runtime boundary
 
 Windows service -> explicit production entry -> direct TLS -> existing authenticated HTTP/trusted application/MySQL. External protected config/secrets and safe logs; health/readiness/worker/drain belong to runtime, not domain. No proxy trust, direct remote DB access or production migration at startup. [Contract](STAGE5C_DEPLOYMENT_RUNTIME.md).

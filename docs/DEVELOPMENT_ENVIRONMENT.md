@@ -1,3 +1,11 @@
+## Stage 5D
+
+Focused: node --test --test-isolation=none --test-reporter=tap operations/lifecycle.test.js operations/runtime.test.js operations/drills.integration.test.js production/runtime.integration.test.js recovery/cli.test.js
+
+Full: node --test --test-isolation=none --test-reporter=tap
+
+Real MySQL fixtures require the explicitly owned LEDGER_MYSQL_TEST_URL and loopback33313 instance, serialize with the existing fixture lock, and reject operating databases. Runtime monitoring settings, timing and retention: [contract](STAGE5D_MONITORING_RUNBOOK.md). Backup/recovery protected operator config may specify operationalDirectory; reporting never authorizes a scheduled backup/restore. Preflight remains read-only. npm test was attempted; npm remains unavailable. No real alert/deployment/cutover.
+
 ## Stage 5C
 
 Target Windows, pinned Node24.19.x, MySQL8.4/InnoDB. Production entry: node ABSOLUTE_APP/production/start.js --config-file ABSOLUTE_EXTERNAL_CONFIG with NODE_ENV=KTV_HTTP_ENV=KTV_DEPLOYMENT_ENV=production. Focused foundation: node --test --test-isolation=none --test-reporter=tap production/runtime.test.js server-static.test.js. No production start is authorized here; synthetic smoke only. [Contract](STAGE5C_DEPLOYMENT_RUNTIME.md).

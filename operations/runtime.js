@@ -2,7 +2,8 @@ import {acquireOperationalWriter} from './writer-lock.js';
 import {createOperationalStore} from './store.js';
 import {createIncidentLifecycle} from './incidents.js';
 import {createAlertDispatcher,localAlertTransport} from './alerts.js';
-import {MONITOR_DEFAULTS,monitoringConfig,boundedProbe,tlsSummary,directorySummary,observeWorkflow} from './monitors.js';
+import {MONITOR_DEFAULTS,monitoringConfig,boundedProbe,tlsSummary,directorySummary,observeWorkflow,readinessFailure} from './monitors.js';
+import {consumeInvariants} from './signals.js';
 import {consumeBackupReports} from './backup-report.js';
 import {EVENTS,hash,safeContext} from './contract.js';
 export async function createOperationalRuntime({loaded,logger,transport,now=Date.now}){
@@ -10,17 +11,19 @@ export async function createOperationalRuntime({loaded,logger,transport,now=Date
  const store=await createOperationalStore(loaded.logDirectory,scope),lifecycle=createIncidentLifecycle({store,logger,scope,now,secrets:loaded.redactionSecrets,maxHistory:c.maxHistory,retentionMs:c.retentionDays*86400000});
  transport??=c.alertTransport==='local'?localAlertTransport(logger):null;
  const dispatcher=createAlertDispatcher({store,transport,logger,now,secrets:loaded.redactionSecrets,timeoutMs:c.probeTimeoutMs});
- let timer=null,running=null,started=false,failed=false,services,stopping=false,releaseWriter;
- const safely=async work=>{try{return await work();}catch{failed=true;logger.log({event:'monitoring_failure',code:'MONITORING_FAILURE',severity:'ERROR'});return null;}};
- const readyBlockers=()=>[...(!loaded.config.monitoring?['MONITORING_CONFIG_REQUIRED']:[]),...(c.alertingRequired&&!transport?.configured?['ALERT_CHANNEL_REQUIRED']:[]),...(failed?['MONITORING_UNAVAILABLE']:[])];
+ let timer=null,running=null,started=false,failed=false,services,stopping=false,releaseWriter,activeLogins=0;
+ const safely=async work=>{try{return await work();}catch(error){failed=true;if(error?.code==='LEDGER_SNAPSHOT_INVALID')await lifecycle.condition('DATA_INVARIANT_FAILURE',true,{component:'device'}).catch(()=>{});logger.log({event:'monitoring_failure',code:'MONITORING_FAILURE',severity:'ERROR'});return null;}};
+ const readyBlockers=()=>[...(!loaded.config.monitoring?['MONITORING_CONFIG_REQUIRED']:[]),...(!c.backupDirectory?['BACKUP_DIRECTORY_REQUIRED']:[]),...(c.alertingRequired&&!transport?.configured?['ALERT_CHANNEL_REQUIRED']:[]),...(failed?['MONITORING_UNAVAILABLE']:[]),...(c.alertingRequired&&transport?.configured&&store.read().outbox.some(e=>e.state==='EXHAUSTED'||e.state==='PENDING'&&e.attempts>0)?['ALERT_DELIVERY_UNAVAILABLE']:[])];
  async function observeReadiness(report){
   if(!started||stopping)return;
   const codes=report.blockers??[],databaseDown=codes.includes('DATABASE_OR_SCHEMA_UNAVAILABLE');
   const previous=store.read().observations;
+  const invariant=codes.includes('DATA_INVARIANT_FAILURE')||codes.includes('INVENTORY_INVALID');
+  await lifecycle.condition('DATA_INVARIANT_FAILURE',invariant,{component:'ledger'});
   if(previous.readiness?.ready===report.ready&&previous.database?.available===!databaseDown)return;
   await lifecycle.condition('DATABASE_UNAVAILABLE',databaseDown,{component:'database'});
-  // Suppress the cascading generic incident during the root database outage.
-  await lifecycle.condition('READINESS_LOST',!report.ready&&!databaseDown,{component:'runtime'});
+  // Suppress new cascades, but only actual readiness can resolve an existing incident.
+  if(report.ready||!databaseDown)await lifecycle.condition('READINESS_LOST',!report.ready,{component:'runtime'});
   await lifecycle.condition('BACKUP_POLICY_MISSING',!loaded.config.backupPolicyConfigured,{component:'backup'});
   await store.update(s=>{s.observations.readiness={ready:report.ready,at:new Date(now()).toISOString()};s.observations.database={available:!databaseDown,at:new Date(now()).toISOString()};});
  }
@@ -38,8 +41,9 @@ export async function createOperationalRuntime({loaded,logger,transport,now=Date
   await store.update(s=>{s.observations.tls={daysRemaining:summary.daysRemaining,valid:!invalid,notAfter:summary.notAfter};});
  }
  async function login({accountHash,sourceHash,outcome}){
-  if(!started)return;
-  await safely(async()=>{await store.update(s=>{
+  if(!started||activeLogins>=100)return;
+  activeLogins++;
+  try{await safely(async()=>{await store.update(s=>{
    const cutoff=now()-c.authWindowMs;
    for(const [key,value]of Object.entries(s.auth)){value.failures=value.failures.filter(t=>t>=cutoff);if(!value.failures.length)delete s.auth[key];}
    for(const [kind,value]of [['account',accountHash],['source',sourceHash]]){
@@ -50,7 +54,7 @@ export async function createOperationalRuntime({loaded,logger,transport,now=Date
     const bucket=s.auth[key]??={kind,hash:value,failures:[]};bucket.failures.push(now());bucket.failures=bucket.failures.slice(-c.authFailures);
     bucket.rateLimited=outcome==='rate_limited';
    }
-  });await authConditions();});
+  });await authConditions();});}finally{activeLogins--;}
  }
  async function authConditions(){
   const auth=store.read().auth;
@@ -68,6 +72,7 @@ export async function createOperationalRuntime({loaded,logger,transport,now=Date
   if(stopping)return;
   await safely(async()=>{
    await consumeBackupReports(loaded.logDirectory,backup);
+   await consumeInvariants(loaded.logDirectory,r=>lifecycle.condition(r.code,r.active,{component:'recovery',category:'invariant'}));
    const backupState=store.read().observations.backup;
    await lifecycle.condition('BACKUP_OVERDUE',!backupState?.lastSuccessAt||now()-backupState.lastSuccessAt>c.backupMaxAgeMs,{component:'backup'});
    await lifecycle.condition('ALERT_CHANNEL_MISSING',!transport?.configured,{component:'alerts'});
@@ -78,7 +83,7 @@ export async function createOperationalRuntime({loaded,logger,transport,now=Date
     catch{await lifecycle.condition('DIRECTORY_UNWRITABLE',true,{component});}
    }
    if(services){
-    let report;try{report=await services.readiness();}catch{report={ready:false,blockers:['DATABASE_OR_SCHEMA_UNAVAILABLE']};}
+    let report;try{report=await boundedProbe(()=>services.readiness(),c.probeTimeoutMs);}catch(error){report=readinessFailure(error);}
     await observeReadiness({...report,blockers:(report.blockers??[]).map(b=>typeof b==='string'?b:b.code)});
     if(store.read().observations.database?.available&&services.operationalFacts){
      const facts=await boundedProbe(()=>services.operationalFacts(),c.probeTimeoutMs);
@@ -93,7 +98,7 @@ export async function createOperationalRuntime({loaded,logger,transport,now=Date
    }
    await authConditions();await dispatcher.remind();await lifecycle.prune();
    // A healthy, completed probe cycle can resolve a crash/restart incident.
-   if(store.read().observations.readiness?.ready)await lifecycle.condition('PROCESS_FAILURE',false,{component:'runtime'});
+   if(store.read().observations.readiness?.ready){for(const code of ['PROCESS_FAILURE','UNCAUGHT_EXCEPTION','UNHANDLED_REJECTION','LOG_WRITE_FAILURE'])await lifecycle.condition(code,false,{component:'runtime'});}
    const recent=store.read().process.crashes.filter(t=>t>=now()-600000);
    await lifecycle.condition('PROCESS_CRASH_LOOP',recent.length>=3,{component:'runtime'});
    failed=false;
@@ -117,8 +122,8 @@ export async function createOperationalRuntime({loaded,logger,transport,now=Date
    if(clean)await safely(()=>store.update(s=>{s.process.running=false;}));await store.flush();await releaseWriter?.();
   },
   snapshot(){
-   const s=store.read(),incidents=s.incidents.slice(-c.maxHistory).map(i=>({incidentId:i.incidentId,code:i.type,severity:i.severity,state:i.state,openedAt:i.openedAt,resolvedAt:i.resolvedAt,...safeContext(i.context,loaded.redactionSecrets),message:EVENTS[i.type]?.message,action:EVENTS[i.type]?.action,runbook:i.type}));
-   return {runtime:stopping?'STOPPING':started?'RUNNING':'STARTING',ready:s.observations.readiness?.ready===true,database:s.observations.database?.available===true?'AVAILABLE':'UNAVAILABLE',recoveryMode:s.observations.recoveryMode??'UNKNOWN',worker:s.observations.worker??'DISABLED',backup:{lastSuccessAt:s.observations.backup?.lastSuccessAt?new Date(s.observations.backup.lastSuccessAt).toISOString():null,lastResult:s.observations.backup?.lastResult??'NOT_OBSERVED',lastFailureAt:s.observations.backup?.lastFailureAt?new Date(s.observations.backup.lastFailureAt).toISOString():null,ageMs:s.observations.backup?.lastSuccessAt?Math.max(0,now()-s.observations.backup.lastSuccessAt):null,overdue:!s.observations.backup?.lastSuccessAt||now()-s.observations.backup.lastSuccessAt>c.backupMaxAgeMs},tls:s.observations.tls??null,criticalIncidents:s.incidents.filter(i=>i.state==='OPEN'&&i.severity==='CRITICAL').length,alerting:transport?.configured?'CONFIGURED':'NOT_CONFIGURED',monitoring:failed?'DEGRADED':'AVAILABLE',incidents};
+   const s=store.read(),visible=[...s.incidents.filter(i=>i.state==='OPEN'),...s.incidents.filter(i=>i.state==='RESOLVED').slice(-c.maxHistory)],incidents=visible.map(i=>({incidentId:i.incidentId,code:i.type,severity:i.severity,state:i.state,openedAt:i.openedAt,resolvedAt:i.resolvedAt,...safeContext(i.context,loaded.redactionSecrets),message:EVENTS[i.type]?.message,action:EVENTS[i.type]?.action,runbook:i.type}));
+   return {runtime:stopping?'STOPPING':started?'RUNNING':'STARTING',ready:s.observations.readiness?.ready===true,database:s.observations.database?.available===true?'AVAILABLE':'UNAVAILABLE',recoveryMode:s.observations.recoveryMode??'UNKNOWN',worker:s.observations.worker??'DISABLED',backup:{lastSuccessAt:s.observations.backup?.lastSuccessAt?new Date(s.observations.backup.lastSuccessAt).toISOString():null,lastResult:s.observations.backup?.lastResult??'NOT_OBSERVED',lastFailureAt:s.observations.backup?.lastFailureAt?new Date(s.observations.backup.lastFailureAt).toISOString():null,ageMs:s.observations.backup?.lastSuccessAt?Math.max(0,now()-s.observations.backup.lastSuccessAt):null,overdue:!s.observations.backup?.lastSuccessAt||now()-s.observations.backup.lastSuccessAt>c.backupMaxAgeMs},tls:s.observations.tls??null,criticalIncidents:s.incidents.filter(i=>i.state==='OPEN'&&i.severity==='CRITICAL').length,alerting:transport?.configured?'CONFIGURED':'NOT_CONFIGURED',monitoring:failed?'DEGRADED':'AVAILABLE',alertDelivery:store.read().outbox.some(e=>e.state==='EXHAUSTED'||e.state==='PENDING'&&e.attempts>0)?'DEGRADED':'AVAILABLE',incidents};
   }
  };
 }
