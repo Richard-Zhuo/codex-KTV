@@ -1,3 +1,14 @@
+## Stage 5E isolated rehearsal
+
+Windows / Node24.19.0 / MySQL8.4.11，显式 STAGE5E_RUN=synthetic-only；三个 environment selector 只允许未设置、test 或 development。rehearsal/fresh-environment.js 创建带唯一 ID 的新 temp datadir/server（33315），不读取生产 DB URL；完整旧 fixtures 使用另一个 owned33313实例。端口占用即拒绝，不接管现有实例。
+
+- Focused: node --test --test-isolation=none --test-reporter=tap rehearsal/gates.test.js rehearsal/tooling.test.js rehearsal/browser-evidence.test.js ui/sale-attribution.test.js http/staff-query.test.js
+- Real MySQL: 设置 STAGE5E_RUN=synthetic-only 后运行 node --test --test-isolation=none --test-reporter=tap rehearsal/integration.test.js。没有 opt-in 时此测试明确 skip，不虚构真实 DB PASS。
+- Full isolated runner: 设置 STAGE5E_RUN=synthetic-only 及 STAGE5E_TAP_LOG=Git外新TAP文件，再运行 node rehearsal/regression.js；内部执行原命令 node --test --test-isolation=none --test-reporter=tap，结束清理两台 owned服务器。
+- Browser: node rehearsal/run.js --browser-hold（同样 opt-in）；记录打印的 UID/origin/临时 CA 指纹，人工信任确切测试 CA 后使用 browser-skill/Edge，不 bypass TLS。支付确认遵守工具人工接管。完成浏览器、导出脱敏证据、退出owned session、删除并核对该 CA 后，向hold进程提交一行仅含 browser 的 JSON（status/各步骤值仅 PASS、FAIL、BLOCKED、NOT_RUN；recordId 为13位小写十六进制；不接受任意文本或秘密字段），再完成资源清理。不要手工删除不明目录，不杀共享 daemon。
+
+CLI 不是生产部署命令；不安装生产服务、不更改公网网络、不连接真实 provider。实际 SCM 安装仍 BLOCKED；仅 process lifecycle 模拟。npm test 仍需尝试，缺少 npm 时明确报告，不能以历史测试数替代本轮结果。完整事实见 [演练证据](verification/STAGE5E_CUTOVER_REHEARSAL.md)。
+
 ## Stage 5D
 
 Audit focused additionally includes operations/audit.test.js operations/audit.integration.test.js production/runtime.test.js. [Current audit evidence](STAGE5D_HIGH_RISK_AUDIT.md).

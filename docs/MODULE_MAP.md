@@ -1,3 +1,9 @@
+## Stage 5E
+
+rehearsal/gates.js 只报告十二类 cutover 与首笔业务写入后的回退门禁；artifact.js 固定接受 commit/锁依赖/校验包；scope.js 与 fresh-environment.js 保护独占临时 MySQL/目录/清理；migration.js 只执行官方版本 SQL。prepare.js 复用正式身份初始化、库存审核和首份备份；mapping.js 仅记录 rehearsal-confirmed Fake 映射且排除 V06；restored-backup.js 是严格限 owned TEST restore 库的只读格式1导出辅助，不是生产 restore 扩权。launcher.js/runtime-child.js 是独立 Fake 测试 composition，production/start.js 不导入它。scenarios.js / integration.test.js 验证真实 MySQL 完整演练；regression.js 在另一个临时服务器运行全套原命令；secrets.js 扫描 raw/JSON/base64 秘密标记。browser-evidence.js 将异步输入错误送回 cleanup，限制为固定状态字段；regression-guard.js 为旧 fixture/child 验证精确 owned server/root/UUID。
+
+必要 P1 修复仅 ui/dialogs/orders.js 正式直接加单员工选择及 http/staff-query.js sale/otherCharge batch 投影；对应 ui/sale-attribution.test.js / http/staff-query.test.js 验证。没有新认证、权限、业务规则或 schema。[计划](PRODUCTION_CUTOVER_PLAN.md)。
+
 ## Stage 5D
 
 operations/contract.js owns fixed event/severity/redaction; store.js/incidents.js/writer-lock.js own independent durable incident/outbox lifecycle; alerts.js owns Fake/local bounded delivery; runtime.js/monitors.js own read-only collection and safe summary. backup-report.js and signals.js connect existing operator tools through fixed-shape protected mailboxes. production/rotating-log.js is the same logger's bounded sink; runtime/start/preflight compose monitoring. http/api.js adds only the authenticated admin projection; ui/admin-view.js renders it. operations/drills.integration.test.js and test-support/operations-runtime-child.js verify owned isolated incidents/restarts. operations/audit.test.js and audit.integration.test.js verify crash-safe retry budget, writer handoff, effective readiness, mailbox isolation and committed retail independence. [Runbook](OPERATIONS_RUNBOOK.md).

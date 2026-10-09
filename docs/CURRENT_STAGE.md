@@ -1,3 +1,11 @@
+## Stage 5E candidate — 2026-10-10
+
+人工接受的稳定基线为 main=origin/main=c1502c0fb0713ef040b210e5ea35f6c31079b7ee（Stage5D 已接受并收尾）；以下旧候选标题仅为历史证据。本轮在 codex/p0-1-stage5e-cutover-rehearsal 实施隔离生产切换演练，不 merge/push。
+
+新增 rehearsal tooling、受限版本包、fresh migrations、初始化、Fake 设备与告警、独立 heartbeat 模拟、恢复/回退门禁。真实 Edge 演练发现并最小修复两处营业 P1（加单 employee UUID、收款 batch 投影），另修复一项异步证据输入可能绕过 cleanup 的审计 P1，窄范围复核无剩余 P0/P1。收款修复后的真实浏览器 payment/settlement/clean 因人工接管超时仍 BLOCKED，需补验和人工重新接受。最终测试、真实浏览器、清理和高风险审核事实以 [本轮证据](verification/STAGE5E_CUTOVER_REHEARSAL.md) 为准；历史2157不是本轮重跑结果。
+
+真实生产切换/部署/人员/库存/mapping未执行，真实告警/异机heartbeat/备份策略/网络/SCM/TLS未配置，KTVSky live OFF。PRODUCTION READY=NO；14-DAY OFFSITE MVP READY=NO。下一步仅 PRODUCTION READINESS DECISION / REAL-WORLD PREREQUISITES，不能自动上线。[门禁](PRODUCTION_READINESS_CHECKLIST.md)。
+
 ## Stage 5D high-risk audit fix — human re-acceptance required (2026-10-09)
 
 Candidate a8ad51a had six P1 findings across independent Standards/Spec review: stale successor state, contradictory readiness, raw logging messages, crash-unsafe send budget, missing-policy overdue and partial-mailbox probe starvation. Minimal fixes and regressions are complete; no remaining P0/P1 in independent source recheck. [Current audit evidence](STAGE5D_HIGH_RISK_AUDIT.md).

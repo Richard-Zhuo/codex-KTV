@@ -1,3 +1,7 @@
+## Stage 5E
+
+[Production cutover plan](PRODUCTION_CUTOVER_PLAN.md) · [Readiness checklist](PRODUCTION_READINESS_CHECKLIST.md) · [Synthetic rehearsal evidence](verification/STAGE5E_CUTOVER_REHEARSAL.md)。Stage5D 稳定基线 c1502c0 已接受；Stage5E 为本地候选，真实生产仍未就绪。
+
 ## Stage 5D audit fix
 
 [High-risk audit and current acceptance evidence](STAGE5D_HIGH_RISK_AUDIT.md): local audit-fix candidate awaiting human re-acceptance; no merge/push.

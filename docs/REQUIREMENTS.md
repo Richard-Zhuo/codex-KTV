@@ -1,3 +1,7 @@
+## Stage 5E
+
+在完全隔离 synthetic 环境演练干净部署、十二类 GO/NO-GO、营业与故障恢复、首笔业务前/后不同回退边界；不自动 GO。仅复用已接受的 auth/trusted application/MySQL migrations001–011/backup/recovery，Fake provider/alert/heartbeat 不升级为生产能力。真实切换、部署、初始化、真实 provider 均禁止。演练暴露的 P1：正式房间加单必须显式选择 employee UUID；员工 snapshot 必须保留 sale/otherCharge batch，保证现有收款标识一致。没有修改领域价格、权限或支付规则。[切换与回退计划](PRODUCTION_CUTOVER_PLAN.md)。
+
 ## Stage 5D
 
 Provide safe operational events, persistent deduplicated incidents and correlated recovery, bounded asynchronous alert dispatch, read-only runtime/DB/recovery/device/backup/TLS/disk/auth monitors, rotation/retention, permission-filtered admin status and a tiered runbook. Monitoring never changes business revision or retries UNKNOWN device mutation. Verify real isolated MySQL/native-host drills plus Edge HTTPS admin smoke. Real alert channel, deployment, initialization and cutover remain excluded. [Contract](STAGE5D_MONITORING_RUNBOOK.md).
