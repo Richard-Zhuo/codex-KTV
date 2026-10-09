@@ -24,7 +24,9 @@ export async function withBackupFixture(work) {
  const raw=process.env.LEDGER_MYSQL_TEST_URL,setup=await connect(raw),created=[],targets=[];let pool,dir;
  try {
   assertFixtureEnvironment();const [[owned]]=await setup.query('SELECT @@port AS port,@@datadir AS datadir');
-  assert.equal(Number(owned.port),33313);assert.ok(owned.datadir.includes('ktv-stage4b-mysql-ExY9Do'));
+  assert.equal(Number(owned.port),33313);
+  if(process.env.STAGE5E_FIXTURE_ID){const {assertRegressionFixture}=await import('../rehearsal/regression-guard.js');await assertRegressionFixture(setup);}
+  else assert.ok(owned.datadir.includes('ktv-stage4b-mysql-ExY9Do'));
   await acquireMySqlFixtureLock(setup);assert.equal((await setup.query('SHOW TABLES'))[0].length,0);
   for(const sql of (await schemaSpec()).statements){await setup.query(sql);const m=/^CREATE TABLE (\w+)/.exec(sql);if(m)created.push(m[1]);}
   pool=mysql.createPool({uri:raw,connectionLimit:8,supportBigNumbers:true,bigNumberStrings:true});dir=await mkdtemp(join(tmpdir(),'ktv-stage5b-'));
