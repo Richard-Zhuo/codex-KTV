@@ -23,14 +23,14 @@ export async function withProductionRuntimeFixture(work){
   const logs=join(f.dir,'logs');await mkdir(logs);
   const configPath=join(f.dir,'runtime.json'),secretPath=join(f.dir,'secrets.json'),hostExe=join(f.dir,'service-host.exe');
   let userCreated=false,child;
-  const config={configVersion:1,applicationCommit:execFileSync('git',['rev-parse','HEAD'],{cwd:fileURLToPath(new URL('../',import.meta.url)),encoding:'utf8'}).trim(),publicOrigin:'https://'+domain+':'+port,listenHost:'127.0.0.1',port,storeId:f.storeId,ledgerId:f.ledgerId,timeZone:'Asia/Shanghai',businessDateCutoff:BUSINESS_DAY_POLICY.cutoff,sessionRuleVersion:SESSION_RULE_VERSION,deviceControlMode:'disabled',liveControlEnabled:false,secretsFile:secretPath,logDirectory:logs,serviceAccountSid:tls.sid,backupPolicyConfigured:true,directoryAclReviewed:true,networkModel:'private-vpn'};
+  const config={configVersion:1,applicationCommit:execFileSync('git',['rev-parse','HEAD'],{cwd:fileURLToPath(new URL('../',import.meta.url)),encoding:'utf8'}).trim(),publicOrigin:'https://'+domain+':'+port,listenHost:'127.0.0.1',port,storeId:f.storeId,ledgerId:f.ledgerId,timeZone:'Asia/Shanghai',businessDateCutoff:BUSINESS_DAY_POLICY.cutoff,sessionRuleVersion:SESSION_RULE_VERSION,deviceControlMode:'disabled',liveControlEnabled:false,secretsFile:secretPath,logDirectory:logs,serviceAccountSid:tls.sid,backupPolicyConfigured:true,directoryAclReviewed:true,networkModel:'private-vpn',monitoring:{intervalMs:1000,minFreeBytes:1,backupDirectory:join(f.dir,'runtime-backup')}};
   const secret={database:{host:'127.0.0.1',port:33313,name:database,user,password:dbPassword},tls:{certificate:tls.certificate,privateKey:tls.privateKey}};
   const request=(path,{method='GET',headers={},body}={})=>new Promise((resolve,reject)=>{
    const req=https.request({host:'127.0.0.1',port,servername:domain,ca:tls.certificate,agent:false,path,method,headers:{Host:new URL(config.publicOrigin).host,...headers}},res=>{let text='';res.on('data',c=>{text+=c;});res.on('end',()=>resolve({status:res.statusCode,headers:res.headers,text,json:()=>JSON.parse(text)}));});req.on('error',reject);req.end(body===undefined?undefined:JSON.stringify(body));
   });
-  const start=()=>{
+  const start=(entry=fileURLToPath(new URL('../production/start.js',import.meta.url)))=>{
    if(child&&child.exitCode===null&&child.signalCode===null)throw Error('SYNTHETIC_CHILD_ALREADY_RUNNING');
-   child=spawn(hostExe,['--console','--node',process.execPath,'--entry',fileURLToPath(new URL('../production/start.js',import.meta.url)),'--config',configPath],{cwd:f.dir,windowsHide:true,stdio:['pipe','pipe','pipe'],env:{...process.env}});
+   child=spawn(hostExe,['--console','--node',process.execPath,'--entry',entry,'--config',configPath],{cwd:f.dir,windowsHide:true,stdio:['pipe','pipe','pipe'],env:{...process.env}});
    child.stdout.resume();child.stderr.resume();return child;
   };
   const wait=async (ready=true)=>{

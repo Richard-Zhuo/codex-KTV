@@ -1,3 +1,4 @@
+import {monitoringConfig} from '../operations/monitors.js';
 import { realpath } from 'node:fs/promises';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
@@ -22,7 +23,8 @@ export function validateRuntimeConfig(c,env=process.env,nodeVersion=process.vers
  isProductionEnvironment(env);
  if(env.KTV_DEPLOYMENT_ENV!=='production'||env.NODE_ENV!=='production'||env.KTV_HTTP_ENV!=='production'||env.NODE_OPTIONS||env.NODE_TLS_REJECT_UNAUTHORIZED!==undefined)fail();
  if(!/^24\.19\.\d+$/.test(nodeVersion))throw runtimeFailure('RUNTIME_NODE_UNSUPPORTED');
- fields(c,['configVersion','applicationCommit','publicOrigin','listenHost','port','storeId','ledgerId','timeZone','businessDateCutoff','sessionRuleVersion','deviceControlMode','liveControlEnabled','secretsFile','logDirectory','serviceAccountSid','backupPolicyConfigured','directoryAclReviewed','networkModel']);
+ fields(c,['configVersion','applicationCommit','publicOrigin','listenHost','port','storeId','ledgerId','timeZone','businessDateCutoff','sessionRuleVersion','deviceControlMode','liveControlEnabled','secretsFile','logDirectory','serviceAccountSid','backupPolicyConfigured','directoryAclReviewed','networkModel'],['monitoring']);
+ if(c.monitoring!==undefined)monitoringConfig(c.monitoring);
  if(c.configVersion!==1||!/^[a-f0-9]{40}$/.test(c.applicationCommit)||!privateHost(c.listenHost)||!Number.isInteger(c.port)||c.port<1024||c.port>65535||c.liveControlEnabled!==false||typeof c.backupPolicyConfigured!=='boolean'||c.directoryAclReviewed!==true||c.networkModel!=='private-vpn'||!/^S-1-5-(?:\d+-)*\d+$/.test(c.serviceAccountSid)||['S-1-5-18','S-1-5-32-544'].includes(c.serviceAccountSid))fail();
  let origin;try{origin=new URL(c.publicOrigin);}catch{fail();}
  if(origin.protocol!=='https:'||origin.origin!==c.publicOrigin||origin.username||origin.password||['localhost','127.0.0.1','[::1]'].includes(origin.hostname)||origin.hostname.endsWith('.localhost')||Number(origin.port||443)!==c.port)fail();
@@ -60,7 +62,8 @@ export async function loadRuntimeConfig(path,env=process.env){
  const apiEnv={NODE_ENV:'production',KTV_HTTP_ENV:'production',KTV_DEPLOYMENT_ENV:'production',KTV_API_MODE:'enabled',KTV_INSECURE_COOKIE:'false',KTV_MYSQL_URL:url.href,KTV_STORE_ID:config.storeId,KTV_LEDGER_ID:config.ledgerId,KTV_BUSINESS_TIME_ZONE:config.timeZone,KTV_PUBLIC_ORIGIN:config.publicOrigin,KTV_BUSINESS_DATE_CUTOFF:config.businessDateCutoff,KTV_SESSION_RULE_VERSION:config.sessionRuleVersion,DEVICE_CONTROL_MODE:config.deviceControlMode,KTVSKY_LIVE_CONTROL_ENABLED:'false'};
  const productionConfig=validateProductionConfig(apiEnv);
  const logDirectory=await externalDirectory(config.logDirectory);
- const publicFacts={configVersion:config.configVersion,backupPolicyConfigured:config.backupPolicyConfigured,directoryAclReviewed:config.directoryAclReviewed,businessDateCutoff:config.businessDateCutoff,sessionRuleVersion:config.sessionRuleVersion,liveControlEnabled:config.liveControlEnabled,applicationCommit:config.applicationCommit,publicOrigin:config.publicOrigin,listenHost:config.listenHost,port:config.port,storeId:config.storeId,ledgerId:config.ledgerId,timeZone:config.timeZone,deviceControlMode:config.deviceControlMode,networkModel:config.networkModel};
+ if(config.monitoring?.backupDirectory)await externalDirectory(config.monitoring.backupDirectory);
+ const publicFacts={configVersion:config.configVersion,backupPolicyConfigured:config.backupPolicyConfigured,directoryAclReviewed:config.directoryAclReviewed,businessDateCutoff:config.businessDateCutoff,sessionRuleVersion:config.sessionRuleVersion,liveControlEnabled:config.liveControlEnabled,applicationCommit:config.applicationCommit,publicOrigin:config.publicOrigin,listenHost:config.listenHost,port:config.port,storeId:config.storeId,ledgerId:config.ledgerId,timeZone:config.timeZone,deviceControlMode:config.deviceControlMode,networkModel:config.networkModel,monitoring:config.monitoring??null};
  const configFingerprint=createHash('sha256').update(JSON.stringify(publicFacts)).digest('hex');
  return {config,productionConfig,apiEnv,logDirectory,configFingerprint,tls:{cert:secrets.tls.certificate,key:secrets.tls.privateKey,minVersion:'TLSv1.2'},mysqlSsl:db.ca?{ca:db.ca,rejectUnauthorized:true}:undefined,redactionSecrets:[db.password,url.href,secrets.tls.privateKey,secrets.ktvsky?.telno,secrets.ktvsky?.password,secrets.backup?.encryptionKey,secrets.backup?.signingKey].filter(Boolean)};
 }

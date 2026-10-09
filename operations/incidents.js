@@ -1,9 +1,9 @@
 import {randomUUID} from 'node:crypto';
 import {EVENTS,operationalEvent,safeContext,hash} from './contract.js';
 export function createIncidentLifecycle({store,logger,scope,now=Date.now,secrets=[],maxHistory=500,retentionMs=30*86400000,maxActive=512}){
- const fingerprint=(type,context)=>hash(JSON.stringify([scope,type,safeContext(context,secrets)]));
+ const fingerprint=(type,context)=>hash(JSON.stringify([scope,type,Object.fromEntries(Object.entries(safeContext(context,secrets)).filter(([key])=>['component','category','workflowId','roomId'].includes(key)))]));
  async function condition(type,active,context={},severity){
-  if(!EVENTS[type])throw Error('OPERATIONAL_EVENT_INVALID');
+  if(!EVENTS[type]||severity&&!['INFO','WARN','ERROR','CRITICAL'].includes(severity))throw Error('OPERATIONAL_EVENT_INVALID');
   let event;
   const result=await store.update(state=>{
    const key=fingerprint(type,context),current=state.incidents.find(i=>i.fingerprint===key&&i.state==='OPEN'),time=now();
@@ -20,7 +20,8 @@ export function createIncidentLifecycle({store,logger,scope,now=Date.now,secrets
     state.incidents.push(incident);queue(state,incident,'OPEN',time);event={...clean,severity:incident.severity,incidentId:incident.incidentId};return incident;
    }
    current.state='RESOLVED';current.resolvedAt=new Date(time).toISOString();queue(state,current,'RESOLVED',time);
-   event={...operationalEvent(type,context,time,secrets),severity:'INFO',incidentId:current.incidentId,incidentState:'RESOLVED'};return current;
+   const restored=({DATABASE_UNAVAILABLE:'DATABASE_RESTORED',READINESS_LOST:'READINESS_RESTORED',RECOVERY_IN_PROGRESS:'RECOVERY_RESUMED',RECOVERY_READY_FOR_RESUME:'RECOVERY_RESUMED',PROVIDER_AUTH_FAILURE:'PROVIDER_RESTORED'})[type]??type;
+   event={...operationalEvent(restored,context,time,secrets),severity:'INFO',incidentId:current.incidentId,incidentState:'RESOLVED'};return current;
   });
   if(event)logger.log(event);return result;
  }
@@ -35,7 +36,9 @@ export function createIncidentLifecycle({store,logger,scope,now=Date.now,secrets
    const pendingIds=new Set(state.outbox.filter(e=>e.state==='PENDING').map(e=>e.incidentId));
    state.incidents=state.incidents.filter(i=>i.state==='OPEN'||pendingIds.has(i.incidentId)||resolved.includes(i));
    const ids=new Set(state.incidents.map(i=>i.incidentId));
-   state.outbox=state.outbox.filter(e=>ids.has(e.incidentId)&&(e.state==='PENDING'||e.nextAttemptAt>=cutoff)).slice(-2048);
+   const pending=state.outbox.filter(e=>e.state==='PENDING');
+   const completed=state.outbox.filter(e=>e.state!=='PENDING'&&ids.has(e.incidentId)&&e.nextAttemptAt>=cutoff).slice(-1024);
+   state.outbox=[...pending,...completed];
   });}
  };
 }

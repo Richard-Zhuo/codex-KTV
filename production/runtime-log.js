@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-const allowed=new Set(['requestId','event','code','status','elapsedMs','appVersion','schemaVersion','configFingerprint','blockers','signal']);
+const allowed=new Set(['requestId','event','code','status','elapsedMs','appVersion','schemaVersion','configFingerprint','blockers','signal','severity','eventType','incidentId','incidentState','principalId','operationKey','workflowId','roomId','component','category','message','action','runbook']);
 export function createSafeLogger({write=line=>process.stdout.write(line),secrets=[]}={}){
  const scrub=value=>{
   let s=String(value);
@@ -16,5 +16,5 @@ export function createSafeLogger({write=line=>process.stdout.write(line),secrets
   }
   write(JSON.stringify(output)+'\n');
  };
- return Object.freeze({info:entry=>emit('info',entry),error:entry=>emit('error',entry),log:entry=>emit('info',entry),newRequestId:randomUUID});
+ return Object.freeze({info:entry=>emit('info',entry),error:entry=>emit('error',entry),log:entry=>emit(['ERROR','CRITICAL'].includes(entry?.severity)?'error':entry?.severity==='WARN'?'warn':'info',entry),newRequestId:randomUUID});
 }

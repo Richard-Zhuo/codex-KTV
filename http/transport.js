@@ -1,4 +1,4 @@
-import { createHmac, randomUUID, timingSafeEqual } from 'node:crypto';
+import { createHash, createHmac, randomUUID, timingSafeEqual } from 'node:crypto';
 import { digestSessionToken } from '../auth/session-token.js';
 
 const COOKIE = 'jbhh_session';
@@ -84,7 +84,7 @@ function csrfToken(token) {
 }
 
 export function createHttpAuthBoundary({
-  authService, origin, environment = 'production', allowInsecureCookie = false, logger = console, loginGate
+  authService, origin, environment = 'production', allowInsecureCookie = false, logger = console, loginGate, onLoginOutcome
 }) {
   if (typeof authService?.login !== 'function' ||
       typeof authService?.authenticateSession !== 'function' ||
@@ -142,11 +142,13 @@ export function createHttpAuthBoundary({
           Buffer.byteLength(body.password, 'utf8') > 1024) {
         throw new HttpBoundaryError('invalid_input');
       }
-      if(loginGate&&!loginGate(req,body.loginIdentifier))throw new HttpBoundaryError('rate_limited');
+      const observe=outcome=>{try{void Promise.resolve(onLoginOutcome?.({accountHash:createHash('sha256').update(origin+':account:'+body.loginIdentifier).digest('hex'),sourceHash:createHash('sha256').update(origin+':source:'+(req.socket?.remoteAddress??'unknown')).digest('hex'),outcome})).catch(()=>{});}catch{}};
+      if(loginGate&&!loginGate(req,body.loginIdentifier)){observe('rate_limited');throw new HttpBoundaryError('rate_limited');}
       const result = await authService.login(body);
-      if (!result.ok) throw new HttpBoundaryError('unauthenticated');
+      if (!result.ok){observe('failed');throw new HttpBoundaryError('unauthenticated');}
       const session = await authService.authenticateSession(result.token);
       if (!session) throw new HttpBoundaryError('unauthenticated');
+      observe('success');
       sendJson(res, 200, { session: { principalId: session.id,
         permissionIds: session.permissionIds }, csrfToken: csrfToken(result.token) },
       { 'Set-Cookie': sessionCookie(result.token), 'X-Request-Id': requestId });

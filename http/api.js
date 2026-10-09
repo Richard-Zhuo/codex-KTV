@@ -74,6 +74,7 @@ export function createHttpApi(options) {
           const projected = await sessionReader.withContext(session.credential,
             async (context, connection) => projectAdminSnapshot(
               await (options.deviceSnapshot ? options.deviceSnapshot(connection, await store.readInTransaction(connection)) : store.readInTransaction(connection)), context));
+          if(options.operationalSnapshot)projected.view.operations=options.operationalSnapshot();
           sendJson(res, 200, projected, { 'X-Request-Id': requestId });
           return true;
         }

@@ -105,7 +105,12 @@ function dashboard(model, { flowStatus, lastError } = {}) {
     simpleRows('目录维护', view.catalog.products, item =>
       `<article class="panel"><b>${escapeAdminText(item.name)}</b>${line('商品标识', item.id)}${line('状态', item.active === false ? '已停用' : '启用')}</article>`) : '';
   return `<main id="main"><div class="connection"><span class="online-dot"></span>${stale ?
-    '后台状态待重新确认' : '已连接正式后台'}<span>服务器版本 ${escapeAdminText(snapshot.revision)}</span></div>${notice}${commandNotice(flowStatus, lastError)}<section class="panel"><p class="eyebrow">正式系统后台</p><h1>经营概览</h1><p class="muted">当前账号 ${escapeAdminText(session.principalId)}</p><div class="split"><p>房间 ${escapeAdminText(counts.roomCount)} · 营业中 ${escapeAdminText(counts.occupiedRooms)} · 异常 ${escapeAdminText(counts.issueRooms)}</p><p>待审批 ${escapeAdminText(counts.pendingReviews)}</p></div>${counts.orderCount === undefined ? '' : line('可见订单', counts.orderCount)}</section><button class="quiet" type="button" data-action="adminRefresh">重新读取服务器状态</button>${reviews}${rooms}${orders}${expenses}${procurements}${incidents}${catalog}</main>`;
+    '后台状态待重新确认' : '已连接正式后台'}<span>服务器版本 ${escapeAdminText(snapshot.revision)}</span></div>${notice}${commandNotice(flowStatus, lastError)}<section class="panel"><p class="eyebrow">正式系统后台</p><h1>经营概览</h1><p class="muted">当前账号 ${escapeAdminText(session.principalId)}</p><div class="split"><p>房间 ${escapeAdminText(counts.roomCount)} · 营业中 ${escapeAdminText(counts.occupiedRooms)} · 异常 ${escapeAdminText(counts.issueRooms)}</p><p>待审批 ${escapeAdminText(counts.pendingReviews)}</p></div>${counts.orderCount === undefined ? '' : line('可见订单', counts.orderCount)}</section><button class="quiet" type="button" data-action="adminRefresh">重新读取服务器状态</button>${reviews}${rooms}${orders}${expenses}${procurements}${incidents}${catalog}${operationalSummary(view.operations)}</main>`;
+}
+
+function operationalSummary(value){
+ if(!value)return '';
+ return '<section class="admin-section" aria-label="运维状态"><h2>运维状态</h2>'+line('服务',value.runtime)+line('数据库',value.database)+line('恢复模式',value.recoveryMode)+line('设备 worker',value.worker)+line('真实告警渠道',value.alerting)+line('最后成功备份',value.backup?.lastSuccessAt??'尚无已验证记录')+line('备份结果',value.backup?.lastResult)+line('证书剩余天数',value.tls?.daysRemaining)+line('未解决严重故障',value.criticalIncidents)+simpleRows('运维故障记录',value.incidents,item=>'<article class="panel" data-operational-incident="'+escapeAdminText(item.incidentId)+'"><b>'+escapeAdminText(item.code)+' · '+escapeAdminText(item.state)+'</b>'+line('级别',item.severity)+line('提示',item.message)+line('下一步',item.action)+line('手册编号',item.runbook)+'</article>')+'</section>';
 }
 
 function photoPreview(value, label) {

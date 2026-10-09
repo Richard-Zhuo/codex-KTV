@@ -5,8 +5,8 @@ import { createHttpApiFromEnv } from '../http/bootstrap.js';
 import { createSafeLogger } from './runtime-log.js';
 import {secureRequest,SECURITY_HEADERS,configureHttpServer,createTransportLoginLimiter} from './http-security.js';
 export const SHUTDOWN_MS=15000;
-export function createProductionRuntime(loaded,{logger=createSafeLogger({secrets:loaded.redactionSecrets}),services}={}){
- services??=createHttpApiFromEnv(loaded.apiEnv,logger,{managed:true,mysqlSsl:loaded.mysqlSsl,loginGate:createTransportLoginLimiter()});
+export function createProductionRuntime(loaded,{logger=createSafeLogger({secrets:loaded.redactionSecrets}),services,operations}={}){
+ services??=createHttpApiFromEnv(loaded.apiEnv,logger,{managed:true,mysqlSsl:loaded.mysqlSsl,loginGate:createTransportLoginLimiter(),operationalSnapshot:()=>operations?.snapshot(),onLoginOutcome:value=>operations?.login(value)});
  let phase='STARTING',lastReady=null,checking=null,stopping=null;
  const active=new Set(),sockets=new Set();
  const version={appVersion:loaded.config.applicationCommit,schemaVersion:'001-011',configFingerprint:loaded.configFingerprint};
@@ -16,8 +16,10 @@ export function createProductionRuntime(loaded,{logger=createSafeLogger({secrets
   const blockers=[...(report.blockers??[]).map(b=>b.code)];
   if(!loaded.config.backupPolicyConfigured)blockers.push('PRODUCTION_BACKUP_POLICY_REQUIRED');
   if(phase==='DRAINING'||phase==='STOPPED')blockers.push('RUNTIME_DRAINING');
+  blockers.push(...(operations?.readyBlockers()??[]));
   const ready=report.ready&&blockers.length===0;
   if(ready!==lastReady){logger.info({event:'readiness_changed',code:ready?'READY':'NOT_READY',blockers,...version});lastReady=ready;}
+  await operations?.observeReadiness({ready,blockers});
   return {ready,blockers,...version};
  })().finally(()=>{checking=null;}));
  const handler=createKtvRequestHandler({api:{async handle(req,res){
@@ -41,11 +43,11 @@ export function createProductionRuntime(loaded,{logger=createSafeLogger({secrets
  configureHttpServer(server);
  server.on('connection',socket=>{sockets.add(socket);socket.once('close',()=>sockets.delete(socket));});
  return Object.freeze({server,readiness,
-  async start(){await readiness();await new Promise((resolve,reject)=>{server.once('error',reject);server.listen(loaded.config.port,loaded.config.listenHost,()=>{server.removeListener('error',reject);resolve();});});phase='RUNNING';logger.info({event:'runtime_started',...version});},
+  async start(){await readiness();await new Promise((resolve,reject)=>{server.once('error',reject);server.listen(loaded.config.port,loaded.config.listenHost,()=>{server.removeListener('error',reject);resolve();});});phase='RUNNING';await operations?.start(services);await services.startWorker?.();logger.info({event:'runtime_started',...version});},
   shutdown(reason='STOP'){return stopping??(stopping=(async()=>{
    phase='DRAINING';logger.info({event:'runtime_draining',code:reason,...version});
    const closeHttp=new Promise(resolve=>server.close(resolve));server.closeIdleConnections();
-   const drain=(async()=>{await services.stopWorker();await Promise.all([...active]);await closeHttp;await services.close();phase='STOPPED';logger.info({event:'runtime_stopped',...version});return true;})();
+   const drain=(async()=>{await services.stopWorker();await Promise.all([...active]);await closeHttp;await operations?.stop({clean:!['FATAL','LOG_IO_FAILED'].includes(reason)});await services.close();phase='STOPPED';logger.info({event:'runtime_stopped',...version});return true;})();
    let timer;try{await Promise.race([drain,new Promise((_,reject)=>{timer=setTimeout(()=>reject(Error('timeout')),SHUTDOWN_MS);})]);}
    catch{for(const socket of sockets)socket.destroy();logger.error({event:'shutdown_timeout',code:'SHUTDOWN_TIMEOUT'});throw Error('SHUTDOWN_TIMEOUT');}finally{clearTimeout(timer);}
   })());}

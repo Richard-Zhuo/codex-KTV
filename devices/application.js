@@ -31,7 +31,7 @@ export function createRoomControlApplication({store,gateway,mappings,allowTestGa
     const abort=new AbortController();let timer;
     const work=async()=>{
       const session=await gateway.ensureSession({provider:input.provider,signal:abort.signal});
-      if(abort.signal.aborted || session?.ready!==true)return {kind:'UNKNOWN'};
+      if(abort.signal.aborted || session?.ready!==true)return {...input,signal:undefined,kind:'UNKNOWN',diagnosticCode:session?.code==='AUTH_REQUIRED'?'AUTH_REQUIRED':'DEVICE_UNKNOWN'};
       if(queryOnly)return gateway.queryRoomState({...input,signal:abort.signal});
       const status=await gateway.getRoomStatus({...input,signal:abort.signal});
       if(abort.signal.aborted || !scopeMatches(input,status))return {kind:'UNKNOWN'};
@@ -162,6 +162,7 @@ export function createRoomControlApplication({store,gateway,mappings,allowTestGa
         }
         if(claim.observingMutation && !scoped){status='DEVICE_VERIFYING';uncertain=false;outcome='mutation-awaiting-valid-state';}
         const safeEvidence=scoped?{kind:['STATE','APPLIED','ACKNOWLEDGED','PRECONDITION_SATISFIED','FAILED','OFFLINE','UNKNOWN'].includes(evidence.kind)?evidence.kind:'UNKNOWN',
+          diagnosticCode:evidence.diagnosticCode==='AUTH_REQUIRED'?'AUTH_REQUIRED':null,
           stepResult:['APPLIED','NOT_APPLIED'].includes(evidence.stepResult)?evidence.stepResult:'UNKNOWN',settled:evidence.settled===true,
           online:evidence.room?.online===true,open:evidence.room?.open===true,
           targetMatched:evidence.room?.countdownTargetEndAt===record.businessSession.targetEndAt}:null;

@@ -21,14 +21,15 @@ export async function directorySummary(directory){
  const path=join(directory,'monitor-probe-'+randomUUID()+'.tmp');let file;
  try{file=await open(path,'wx',0o600);await file.close();file=null;return {writable:true,freeBytes:Number(freeBytes>BigInt(Number.MAX_SAFE_INTEGER)?BigInt(Number.MAX_SAFE_INTEGER):freeBytes)};}finally{await file?.close();await unlink(path).catch(e=>{if(e.code!=='ENOENT')throw e;});}
 }
-export async function observeWorkflow(lifecycle,record,c,{now=Date.now()}={}){
+export async function observeWorkflow(lifecycle,record,c,{now=Date.now}={}){
  const context={workflowId:record.id,roomId:record.internalRoomId,component:'device'},time=now();
- const age=time-Date.parse(record.offlineSince??record.updatedAt??record.createdAt);
- const offline=record.status==='WAITING_DEVICE_ONLINE'||record.status==='DEVICE_OFFLINE'||record.roomReadiness==='WAITING_DEVICE';
+ const events=record.events??[];let enteredAt=record.createdAt;
+ for(const e of events){if(e.status!==record.status)enteredAt=null;else if(!enteredAt)enteredAt=e.at;}
+ const age=time-Date.parse(record.offlineSince??enteredAt??record.updatedAt??record.createdAt);
+ const offline=record.status==='DEVICE_OFFLINE_WAIT'||record.status==='WAITING_DEVICE_ONLINE'||record.status==='DEVICE_OFFLINE'||record.roomReadiness==='WAITING_DEVICE';
  await lifecycle.condition('DEVICE_OFFLINE',offline&&age>=c.offlineMs,context);
  await lifecycle.condition('DEVICE_UNKNOWN',record.uncertain===true||record.status==='DEVICE_UNKNOWN',context);
  await lifecycle.condition('DEVICE_VERIFYING',record.status==='DEVICE_VERIFYING'&&age>=c.verificationMs,context);
  await lifecycle.condition('DEVICE_FAILED',record.status==='DEVICE_FAILED'||record.roomReadiness==='FAILED',context);
- const auth=record.events?.some(e=>e.code==='PROVIDER_AUTH_FAILED'||e.errorCode==='KTVSKY_AUTH_FAILED');
- if(auth)await lifecycle.condition('PROVIDER_AUTH_FAILURE',true,{component:'provider'});
+ // Provider-wide auth state is projected from the latest explicit evidence in runtime.
 }
