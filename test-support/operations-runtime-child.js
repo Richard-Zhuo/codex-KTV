@@ -10,8 +10,8 @@ if(db.host!=='127.0.0.1'||db.port!==33313||!/^jbhh_ktv_restore_stage5c_[a-z0-9]+
 const marker=join(loaded.logDirectory,'synthetic-server-confirmed.json');
 try{const stat=await lstat(marker);if(!stat.isFile()||stat.isSymbolicLink()||stat.size>1024||JSON.parse(await readFile(marker,'utf8')).database!==db.name)throw Error('SYNTHETIC_DRILL_MARKER_INVALID');}
 catch(e){if(e.code!=='ENOENT')throw e;const guard=await mysql.createConnection({host:db.host,port:db.port,user:db.user,password:db.password,database:db.name});
- const [[identity]]=await guard.query('SELECT @@port AS port,@@datadir AS datadir');await guard.end();
- if(Number(identity.port)!==33313||!identity.datadir.includes('ktv-stage4b-mysql-ExY9Do'))throw Error('SYNTHETIC_DRILL_SERVER_REQUIRED');
+ try{if(process.env.STAGE5E_FIXTURE_ID){const {assertRegressionFixture}=await import('../rehearsal/regression-guard.js');await assertRegressionFixture(guard,process.env,{database:db.name});}
+ else{const [[identity]]=await guard.query('SELECT @@port AS port,@@datadir AS datadir');if(Number(identity.port)!==33313||!identity.datadir.includes('ktv-stage4b-mysql-ExY9Do'))throw Error('SYNTHETIC_DRILL_SERVER_REQUIRED');}}finally{await guard.end();}
  await writeFile(marker,JSON.stringify({database:db.name}),{flag:'wx',mode:0o600});}
 const logger=createSafeLogger({secrets:loaded.redactionSecrets,write:line=>process.stdout.write(line)});
 const transport=new FakeAlertTransport(),send=transport.send.bind(transport);

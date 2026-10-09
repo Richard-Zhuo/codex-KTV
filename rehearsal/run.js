@@ -1,4 +1,5 @@
 import {fileURLToPath} from 'node:url';import {writeFile} from 'node:fs/promises';import {createInterface} from 'node:readline';import mysql from 'mysql2/promise';
+import {readBrowserEvidence} from './browser-evidence.js';
 import {prepare} from './prepare.js';import {scenarios} from './scenarios.js';
 import {createAuthService} from '../auth/service.js';import {createMySqlAuthStore} from '../auth/mysql-store.js';import {createMemoryLoginRateLimiter} from '../auth/rate-limit.js';
 const repository=fileURLToPath(new URL('../',import.meta.url));let f,evidence;
@@ -10,7 +11,7 @@ try{
   const changed=await auth.changeOwnPassword({loginIdentifier:p.loginIdentifier,currentPassword:f.source.password,newPassword:'Stage5E-Synthetic-Only!'});if(!changed.ok)throw Error('REHEARSAL_BROWSER_SETUP_FAILED');
   const caFile=f.dirs.secrets+'/public-test-ca.pem';await writeFile(caFile,f.tls.ca);
   process.stdout.write(JSON.stringify({event:'browser_ready',origin:f.app.config.publicOrigin,loginIdentifier:p.loginIdentifier,root:f.root,id:f.names.id,caFile,caThumbprint:f.tls.thumbprint})+'\n');
-  const input=createInterface({input:process.stdin});await new Promise(resolve=>{input.once('line',line=>{if(line.trim()){const data=JSON.parse(line);if(!data||Object.keys(data).some(k=>k!=='browser'))throw Error('REHEARSAL_BROWSER_EVIDENCE_INVALID');evidence.browser=data.browser;}resolve();});input.once('close',resolve);});input.close();
+  const input=createInterface({input:process.stdin});try{const browser=await readBrowserEvidence(input);if(browser)evidence.browser=browser;}finally{input.close();}
   const h=await f.readHead();evidence.afterBrowser={revision:h.revision,orders:h.state.orders.length,payments:h.state.orders.reduce((n,o)=>n+o.payments.length,0)};
  }
  process.stdout.write(JSON.stringify({evidence})+'\n');

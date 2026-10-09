@@ -46,6 +46,8 @@ test('regression fixture requires opt-in, owned root, exact port, datadir, UUID 
   const row={port:33313,datadir:join(root,'data'),uuid:'owned-server',databaseName:'jbhh_ktv_test'};
   const connection=value=>({query:async()=>[[value]]});
   await assertRegressionFixture(connection(row),env);
+  await assertRegressionFixture(connection({...row,databaseName:'jbhh_ktv_restore_stage5c_test1'}),env,{database:'jbhh_ktv_restore_stage5c_test1'});
+  await assert.rejects(assertRegressionFixture(connection({...row,databaseName:'production'}),env,{database:'production'}),/SCOPE_REQUIRED/);
   await assert.rejects(assertRegressionFixture(connection(row),{...env,STAGE5E_RUN:''}),/SCOPE_REQUIRED/);
   for(const change of [{port:3306},{datadir:join(tmpdir(),'other')},{uuid:'other'},{databaseName:'production'}])
    await assert.rejects(assertRegressionFixture(connection({...row,...change}),env),/SERVER_MISMATCH/);
