@@ -28,7 +28,7 @@ const drink = value => pick(value, ['id', 'product', 'productId', 'productNameSn
   'categorySnapshot', 'categoryLabelSnapshot', 'baseUnitSnapshot',
   'baseQuantity', 'count', 'totalBaseQuantity']);
 const sale = value => ({
-  ...pick(value, ['id', 'product', 'productId', 'productNameSnapshot',
+  ...pick(value, ['id', 'batch', 'product', 'productId', 'productNameSnapshot',
     'categorySnapshot', 'categoryLabelSnapshot', 'saleOptionId',
     'saleOptionNameSnapshot', 'spec', 'count', 'saleQuantity', 'bottles',
     'pricePerSaleUnitCents', 'baseQuantityPerSaleUnit', 'pricePlanId', 'priceCategorySnapshot', 'businessSession', 'amount', 'amountCents', 'person', 'recordedBy', 'employeeId', 'time']),
@@ -81,7 +81,7 @@ const order = (value, context, grants) => ({
   extras: rows(value.extras, item => pick(item, ['product', 'productId',
     'productNameSnapshot', 'count', 'served'])),
   sales: rows(value.sales, sale),
-  otherCharges: rows(value.otherCharges, item => pick(item, ['id', 'category',
+  otherCharges: rows(value.otherCharges, item => pick(item, ['id', 'batch', 'category',
     'item', 'amount', 'amountCents', 'person', 'time'])),
   bonusGifts: rows(value.bonusGifts, item => ({
     ...pick(item, ['id', 'product', 'productId', 'productNameSnapshot',

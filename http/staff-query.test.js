@@ -146,3 +146,14 @@ test('Stage 4A server view projects DAY retail plan and migrates v1 categories w
  assert.deepEqual(source.catalog,old.catalog);
  assert.equal(projectEmployeeWorkspace(source,context(['room.clean']),{businessTimeZone:'Asia/Shanghai'}).retailBusinessSession,undefined);
 });
+
+test('staff snapshot preserves charge batches for grouped sales and other charges, including prior payment allocation',async()=>{
+ const {nextCollectCharge,collectableCharges}=await import('../sales.js');
+ const source=state(),o=source.orders[0];o.status='营业中';o.credit=null;
+ o.sales=[{id:11,batch:10,product:'bw',count:1,amount:1000},{id:12,batch:10,product:'bw',count:2,amount:2000}];
+ o.otherCharges=[{id:21,batch:20,category:'其他',item:'REHEARSAL',amount:500}];o.payments=[{chargeId:'other:20',amount:500,method:'现金'}];
+ const view=projectEmployeeWorkspace(source,context(['payment.collect']));
+ assert.equal(nextCollectCharge(view.orders[0]).id,'sale:10');
+ assert.deepEqual(collectableCharges(view.orders[0]),collectableCharges(o));
+ assert.equal(nextCollectCharge(view.orders[0]).remaining,3000);
+});

@@ -55,7 +55,7 @@ function saleDialog(id, staffMode=false) {
   if (!sellableProducts(ctx.state.catalog).length) throw Error('当前没有可销售商品');
   const activeOrders=ctx.state.orders.filter(order=>order.kind!=='retail'&&order.status==='营业中'&&(!ctx.formal||!isDevicePending(order)));
   ctx.salePricePlanId = ctx.state.orders.find(order => order.id === (id || activeOrders[0]?.id))?.businessSession?.pricePlanId;
-  const orderField=staffMode?`<label>归属账单<select name="order" required>${options(activeOrders.map(order=>[order.id,`${order.room} · ${money(total(order))} · ${order.openedBy || order.person || '未记录'}`]),id)}</select></label><label>归属员工<select name="employee" required>${employeeOptions()}</select></label>`:'';
+  const orderField=staffMode?`<label>归属账单<select name="order" required>${options(activeOrders.map(order=>[order.id,`${order.room} · ${money(total(order))} · ${order.openedBy || order.person || '未记录'}`]),id)}</select></label><label>归属员工<select name="employee" required>${employeeOptions()}</select></label>`:ctx.formalEnabled?`<label>归属员工<select name="creditedEmployeeId" required><option value="">请选择归属员工</option>${employeeOptions()}</select></label>`:'';
   openDialog(staffMode?'为员工登记增购商品':'加商品',`${orderField}<p class="notice">一单可以添加多种商品，按“添加一种商品”继续录入。</p><div id="sale-items">${saleItemRow()}</div>${btn('＋ 添加一种商品','addSaleItem','','secondary full')}<div id="sale-total" class="quote compact"></div>`, '确认加单','sale',staffMode?{}:{order:id});
   bindSaleForm();
 }
