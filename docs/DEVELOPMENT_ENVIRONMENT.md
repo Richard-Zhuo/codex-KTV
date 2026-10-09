@@ -1,5 +1,7 @@
 ## Stage 5D
 
+Audit focused additionally includes operations/audit.test.js operations/audit.integration.test.js production/runtime.test.js. [Current audit evidence](STAGE5D_HIGH_RISK_AUDIT.md).
+
 Focused: node --test --test-isolation=none --test-reporter=tap operations/lifecycle.test.js operations/runtime.test.js operations/drills.integration.test.js production/runtime.integration.test.js recovery/cli.test.js
 
 Full: node --test --test-isolation=none --test-reporter=tap

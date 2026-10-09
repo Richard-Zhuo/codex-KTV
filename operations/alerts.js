@@ -21,9 +21,14 @@ export function createAlertDispatcher({store,transport,logger,now=Date.now,secre
    const current=store.read();if(!current.outbox.some(e=>e.deliveryId===entry.deliveryId&&e.state==='PENDING'))continue;
    const incident=current.incidents.find(i=>i.incidentId===entry.incidentId);if(!incident)continue;
    if(!transport)break; // Unconfigured does not pretend delivery succeeded.
+   const reserved=await store.update(s=>{const item=s.outbox.find(e=>e.deliveryId===entry.deliveryId);if(!item||item.state!=='PENDING')return false;
+    if(item.attempts>=maxAttempts){item.state='EXHAUSTED';return false;}
+    item.attempts++;item.nextAttemptAt=now()+backoffMs*2**(item.attempts-1);if(item.attempts>=maxAttempts)item.state='EXHAUSTED';return true;
+   });
+   if(!reserved||store.read().outbox.find(e=>e.deliveryId===entry.deliveryId)?.state==='SUPERSEDED')continue;
    let ok=false,timeout=false;
    try{const result=await boundedProbe(()=>transport.send(alertPayload(incident,entry,secrets)),timeoutMs);ok=result?.accepted===true;}catch(e){timeout=e.message==='MONITOR_PROBE_TIMEOUT';}
-   await store.update(s=>{const item=s.outbox.find(e=>e.deliveryId===entry.deliveryId);if(!item||item.state!=='PENDING')return;item.attempts++;item.nextAttemptAt=now()+backoffMs*2**(item.attempts-1);item.state=ok?'DELIVERED':item.attempts>=maxAttempts?'EXHAUSTED':'PENDING';});
+   await store.update(s=>{const item=s.outbox.find(e=>e.deliveryId===entry.deliveryId);if(!item||!['PENDING','EXHAUSTED'].includes(item.state))return;item.state=ok?'DELIVERED':item.attempts>=maxAttempts?'EXHAUSTED':'PENDING';});
    if(timeout)uncertain.add(entry.deliveryId);
    if(!ok)logger.log({event:'alert_delivery',code:'ALERT_DELIVERY_FAILED',severity:'ERROR',incidentId:incident.incidentId});
   }

@@ -6,11 +6,16 @@ export async function createOperationalStore(directory,scope){
  const root=await realpath(directory),path=join(root,'operational-state.json');
  const check=async()=>{try{const s=await lstat(path);if(!s.isFile()||s.isSymbolicLink()||s.size>8*1024*1024)throw Error('OPERATIONAL_STATE_INVALID');}catch(e){if(e.code!=='ENOENT')throw e;}};
  const empty=()=>({version:1,scope,incidents:[],outbox:[],observations:{},auth:{},process:{running:false,crashes:[]}});
- await check();let state;
- try{const envelope=JSON.parse(await readFile(path,'utf8'));if(typeof envelope.data!=='string'||envelope.checksum!==checksum(envelope.data))throw Error('OPERATIONAL_STATE_INVALID');state=JSON.parse(envelope.data);if(state.version!==1||state.scope!==scope||!Array.isArray(state.incidents)||!Array.isArray(state.outbox)||!state.observations||!state.auth||!state.process)throw Error('OPERATIONAL_STATE_INVALID');}
- catch(e){if(e.code!=='ENOENT')throw Error('OPERATIONAL_STATE_INVALID');state=empty();}
- let serial=Promise.resolve();
- return {read:()=>structuredClone(state),update(work){
+ async function load(){
+  await check();
+  try{const envelope=JSON.parse(await readFile(path,'utf8'));if(typeof envelope.data!=='string'||envelope.checksum!==checksum(envelope.data))throw Error('OPERATIONAL_STATE_INVALID');
+   const value=JSON.parse(envelope.data);if(value.version!==1||value.scope!==scope||!Array.isArray(value.incidents)||!Array.isArray(value.outbox)||!value.observations||!value.auth||!value.process)throw Error('OPERATIONAL_STATE_INVALID');return value;
+  }catch(e){if(e.code!=='ENOENT')throw Error('OPERATIONAL_STATE_INVALID');return empty();}
+ }
+ let state=await load(),serial=Promise.resolve();
+ return {read:()=>structuredClone(state),reload(){
+  const result=serial.then(async()=>{state=await load();});serial=result.catch(()=>{});return result;
+ },update(work){
   const result=serial.then(async()=>{
    const next=structuredClone(state),value=await work(next),data=JSON.stringify(next);
    if(data===JSON.stringify(state))return value;

@@ -1,3 +1,7 @@
+## Stage 5D audit fix
+
+[High-risk audit and current acceptance evidence](STAGE5D_HIGH_RISK_AUDIT.md): local audit-fix candidate awaiting human re-acceptance; no merge/push.
+
 ## Stage 5D monitoring candidate
 
 Stable base is human-accepted Stage5C at e57af99dd49a46771ff20dd495f71f22d9db97ff. Stage5D is local, unmerged/unpushed. [Monitoring contract and gap analysis](STAGE5D_MONITORING_RUNBOOK.md); [employee / owner / technical runbook](OPERATIONS_RUNBOOK.md); [current verification evidence](STAGE5D_VERIFICATION.md). Earlier stage headings below are historical.

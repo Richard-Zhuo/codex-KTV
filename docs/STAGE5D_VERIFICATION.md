@@ -1,4 +1,6 @@
-# Stage 5D verification evidence — 2026-10-09
+# Historical Stage 5D implementation evidence — 2026-10-09
+
+Superseded for acceptance by [high-risk audit and minimal fixes](STAGE5D_HIGH_RISK_AUDIT.md). Results below apply to the original implementation candidate.
 
 ## Candidate and scope
 

@@ -42,7 +42,7 @@ test('dedicated operational writer prevents competing runtimes; stale crash lock
 }));
 test('runtime monitors TLS thresholds, backup failures, recovery, auth buckets and safe admin projection',()=>fixture(async dir=>{
  const tls=await syntheticTls();let time=Date.now();const secrets=['synthetic-password','synthetic-token','synthetic-cookie','synthetic-xsrf'];
- const loaded={logDirectory:dir,redactionSecrets:secrets,tls:{cert:tls.certificate},config:{storeId:'synthetic',ledgerId:'synthetic',publicOrigin:'https://ktv-smoke.127.0.0.1.sslip.io:8443',backupPolicyConfigured:true,monitoring:{intervalMs:1000,minFreeBytes:1,authFailures:2}}};
+ const loaded={logDirectory:dir,redactionSecrets:secrets,tls:{cert:tls.certificate},config:{storeId:'synthetic',ledgerId:'synthetic',publicOrigin:'https://ktv-smoke.127.0.0.1.sslip.io:8443',backupPolicyConfigured:true,monitoring:{intervalMs:1000,minFreeBytes:1,authFailures:2,backupDirectory:dir}}};
  const logs=[],transport=new FakeAlertTransport(),ops=await createOperationalRuntime({loaded,logger:{log:e=>logs.push(e)},transport,now:()=>time});
  let down=false,mode='NORMAL';const services={readiness:async()=>{if(down)throw Error(secrets[0]);return {ready:mode==='NORMAL',blockers:mode==='NORMAL'?[]:[{code:'RECOVERY_PAUSED'}]};},operationalFacts:async()=>({recoveryMode:mode,worker:'DISABLED',workflows:[]})};
  await ops.start(services);

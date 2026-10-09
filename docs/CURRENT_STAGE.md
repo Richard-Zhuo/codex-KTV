@@ -1,3 +1,11 @@
+## Stage 5D high-risk audit fix — human re-acceptance required (2026-10-09)
+
+Candidate a8ad51a had six P1 findings across independent Standards/Spec review: stale successor state, contradictory readiness, raw logging messages, crash-unsafe send budget, missing-policy overdue and partial-mailbox probe starvation. Minimal fixes and regressions are complete; no remaining P0/P1 in independent source recheck. [Current audit evidence](STAGE5D_HIGH_RISK_AUDIT.md).
+
+Focused32/32 passed with actual process-kill send budgets, real isolated MySQL retail order/payment/inventory isolation and native-host outage/restart drills. Full2157/2157,fail0,skip0,exit0. Actual Edge154 HTTPS narrow incident lifecycle/projection re-acceptance passed; capture df638e7590ab2 and scope/console/cleanup evidence are recorded in the audit report. One local audit-fix commit; no merge/push. Earlier candidate evidence below is historical.
+
+EXTERNAL HEARTBEAT=NOT_CONFIGURED; same-host total outage detection NOT_SOLVED. Real channel/deployment/initialization/provider control remain excluded. PRODUCTION READY=NO;14-DAY OFFSITE MVP READY=NO. Stage5E not started.
+
 ## Stage 5D candidate — 2026-10-09
 
 Stable main/origin/main is accepted Stage5C e57af99dd49a46771ff20dd495f71f22d9db97ff. Stage5D on codex/p0-1-stage5d-monitoring-runbook is implemented locally, awaiting human acceptance; not merged/pushed. Persistent incident/outbox lifecycle, bounded Fake/local alerting, admin status, rotation and tiered runbook are implemented. [Contract](STAGE5D_MONITORING_RUNBOOK.md), [runbook](OPERATIONS_RUNBOOK.md), [current evidence](STAGE5D_VERIFICATION.md).

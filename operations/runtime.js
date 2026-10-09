@@ -11,12 +11,13 @@ export async function createOperationalRuntime({loaded,logger,transport,now=Date
  const store=await createOperationalStore(loaded.logDirectory,scope),lifecycle=createIncidentLifecycle({store,logger,scope,now,secrets:loaded.redactionSecrets,maxHistory:c.maxHistory,retentionMs:c.retentionDays*86400000});
  transport??=c.alertTransport==='local'?localAlertTransport(logger):null;
  const dispatcher=createAlertDispatcher({store,transport,logger,now,secrets:loaded.redactionSecrets,timeoutMs:c.probeTimeoutMs});
- let timer=null,running=null,started=false,failed=false,services,stopping=false,releaseWriter,activeLogins=0;
- const safely=async work=>{try{return await work();}catch(error){failed=true;if(error?.code==='LEDGER_SNAPSHOT_INVALID')await lifecycle.condition('DATA_INVARIANT_FAILURE',true,{component:'device'}).catch(()=>{});logger.log({event:'monitoring_failure',code:'MONITORING_FAILURE',severity:'ERROR'});return null;}};
- const readyBlockers=()=>[...(!loaded.config.monitoring?['MONITORING_CONFIG_REQUIRED']:[]),...(!c.backupDirectory?['BACKUP_DIRECTORY_REQUIRED']:[]),...(c.alertingRequired&&!transport?.configured?['ALERT_CHANNEL_REQUIRED']:[]),...(failed?['MONITORING_UNAVAILABLE']:[]),...(c.alertingRequired&&transport?.configured&&store.read().outbox.some(e=>e.state==='EXHAUSTED'||e.state==='PENDING'&&e.attempts>0)?['ALERT_DELIVERY_UNAVAILABLE']:[])];
+ let timer=null,running=null,started=false,failed=false,services,stopping=false,releaseWriter,activeLogins=0,failureEpoch=0;
+ const safely=async work=>{try{return await work();}catch(error){failed=true;failureEpoch++;if(error?.code==='LEDGER_SNAPSHOT_INVALID')await lifecycle.condition('DATA_INVARIANT_FAILURE',true,{component:'device'}).catch(()=>{});logger.log({event:'monitoring_failure',code:'MONITORING_FAILURE',severity:'ERROR'});return null;}};
+ const readyBlockers=()=>[...(!loaded.config.monitoring?['MONITORING_CONFIG_REQUIRED']:[]),...(!c.backupDirectory?['BACKUP_DIRECTORY_REQUIRED']:[]),...(!loaded.config.backupPolicyConfigured?['PRODUCTION_BACKUP_POLICY_REQUIRED']:[]),...(c.alertingRequired&&!transport?.configured?['ALERT_CHANNEL_REQUIRED']:[]),...(failed?['MONITORING_UNAVAILABLE']:[]),...(c.alertingRequired&&transport?.configured&&store.read().outbox.some(e=>e.state==='EXHAUSTED'||e.state==='PENDING'&&e.attempts>0)?['ALERT_DELIVERY_UNAVAILABLE']:[])];
  async function observeReadiness(report){
   if(!started||stopping)return;
-  const codes=report.blockers??[],databaseDown=codes.includes('DATABASE_OR_SCHEMA_UNAVAILABLE');
+  const codes=[...new Set([...(report.blockers??[]).map(b=>typeof b==='string'?b:b.code),...readyBlockers()])],databaseDown=codes.includes('DATABASE_OR_SCHEMA_UNAVAILABLE');
+  report={...report,ready:report.ready===true&&codes.length===0};
   const previous=store.read().observations;
   const invariant=codes.includes('DATA_INVARIANT_FAILURE')||codes.includes('INVENTORY_INVALID');
   await lifecycle.condition('DATA_INVARIANT_FAILURE',invariant,{component:'ledger'});
@@ -70,45 +71,48 @@ export async function createOperationalRuntime({loaded,logger,transport,now=Date
  }
  async function poll(){
   if(stopping)return;
+  const epoch=failureEpoch;let report;
+  // A malformed report or unavailable probe must not starve unrelated sources.
+  await safely(()=>consumeBackupReports(loaded.logDirectory,backup));
+  await safely(()=>consumeInvariants(loaded.logDirectory,r=>lifecycle.condition(r.code,r.active,{component:'recovery',category:'invariant'})));
   await safely(async()=>{
-   await consumeBackupReports(loaded.logDirectory,backup);
-   await consumeInvariants(loaded.logDirectory,r=>lifecycle.condition(r.code,r.active,{component:'recovery',category:'invariant'}));
    const backupState=store.read().observations.backup;
-   await lifecycle.condition('BACKUP_OVERDUE',!backupState?.lastSuccessAt||now()-backupState.lastSuccessAt>c.backupMaxAgeMs,{component:'backup'});
-   await lifecycle.condition('ALERT_CHANNEL_MISSING',!transport?.configured,{component:'alerts'});
-   await checkTls(tlsSummary(loaded.tls.cert,new URL(loaded.config.publicOrigin).hostname,now()));
-   for(const [component,directory]of [['logs',loaded.logDirectory],['backup',c.backupDirectory]]){
-    if(!directory)continue;
-    try{const result=await boundedProbe(()=>directorySummary(directory),c.probeTimeoutMs);await lifecycle.condition('DIRECTORY_UNWRITABLE',false,{component});await lifecycle.condition('DISK_CAPACITY_LOW',result.freeBytes<c.minFreeBytes,{component});}
-    catch{await lifecycle.condition('DIRECTORY_UNWRITABLE',true,{component});}
-   }
-   if(services){
-    let report;try{report=await boundedProbe(()=>services.readiness(),c.probeTimeoutMs);}catch(error){report=readinessFailure(error);}
-    await observeReadiness({...report,blockers:(report.blockers??[]).map(b=>typeof b==='string'?b:b.code)});
-    if(store.read().observations.database?.available&&services.operationalFacts){
-     const facts=await boundedProbe(()=>services.operationalFacts(),c.probeTimeoutMs);
-     const mode=facts.recoveryMode;
-     await lifecycle.condition('RECOVERY_IN_PROGRESS',mode!=='NORMAL'&&mode!=='READY_FOR_RESUME',{component:'recovery'});
-     await lifecycle.condition('RECOVERY_READY_FOR_RESUME',mode==='READY_FOR_RESUME',{component:'recovery'});
-     for(const record of facts.workflows??[])await observeWorkflow(lifecycle,record,c,{now});
-     const provider=(facts.workflows??[]).filter(r=>r.lastEvidence?.diagnosticCode==='AUTH_REQUIRED'||['STATE','APPLIED','ACKNOWLEDGED'].includes(r.lastEvidence?.kind)).sort((a,b)=>Date.parse(b.updatedAt)-Date.parse(a.updatedAt))[0];
-     if(provider)await lifecycle.condition('PROVIDER_AUTH_FAILURE',provider.lastEvidence.diagnosticCode==='AUTH_REQUIRED',{component:'provider'});
-     await store.update(s=>{s.observations.recoveryMode=mode;s.observations.worker=facts.worker;});
-    }
-   }
-   await authConditions();await dispatcher.remind();await lifecycle.prune();
-   // A healthy, completed probe cycle can resolve a crash/restart incident.
-   if(store.read().observations.readiness?.ready){for(const code of ['PROCESS_FAILURE','UNCAUGHT_EXCEPTION','UNHANDLED_REJECTION','LOG_WRITE_FAILURE'])await lifecycle.condition(code,false,{component:'runtime'});}
-   const recent=store.read().process.crashes.filter(t=>t>=now()-600000);
-   await lifecycle.condition('PROCESS_CRASH_LOOP',recent.length>=3,{component:'runtime'});
-   failed=false;
+   await lifecycle.condition('BACKUP_POLICY_MISSING',!loaded.config.backupPolicyConfigured,{component:'backup'});
+   await lifecycle.condition('BACKUP_OVERDUE',loaded.config.backupPolicyConfigured===true&&(!backupState?.lastSuccessAt||now()-backupState.lastSuccessAt>c.backupMaxAgeMs),{component:'backup'});
   });
+  await safely(()=>lifecycle.condition('ALERT_CHANNEL_MISSING',!transport?.configured,{component:'alerts'}));
+  await safely(()=>checkTls(tlsSummary(loaded.tls.cert,new URL(loaded.config.publicOrigin).hostname,now())));
+  for(const [component,directory]of [['logs',loaded.logDirectory],['backup',c.backupDirectory]]){
+   if(!directory)continue;
+   await safely(async()=>{try{const result=await boundedProbe(()=>directorySummary(directory),c.probeTimeoutMs);await lifecycle.condition('DIRECTORY_UNWRITABLE',false,{component});await lifecycle.condition('DISK_CAPACITY_LOW',result.freeBytes<c.minFreeBytes,{component});}
+   catch{await lifecycle.condition('DIRECTORY_UNWRITABLE',true,{component});}});
+  }
+  if(services){
+   try{report=await boundedProbe(()=>services.readiness(),c.probeTimeoutMs);}catch(error){report=readinessFailure(error);}
+   await safely(()=>observeReadiness(report));
+   if(store.read().observations.database?.available&&services.operationalFacts)await safely(async()=>{
+    const facts=await boundedProbe(()=>services.operationalFacts(),c.probeTimeoutMs),mode=facts.recoveryMode;
+    await lifecycle.condition('RECOVERY_IN_PROGRESS',mode!=='NORMAL'&&mode!=='READY_FOR_RESUME',{component:'recovery'});
+    await lifecycle.condition('RECOVERY_READY_FOR_RESUME',mode==='READY_FOR_RESUME',{component:'recovery'});
+    for(const record of facts.workflows??[])await observeWorkflow(lifecycle,record,c,{now});
+    const provider=(facts.workflows??[]).filter(r=>r.lastEvidence?.diagnosticCode==='AUTH_REQUIRED'||['STATE','APPLIED','ACKNOWLEDGED'].includes(r.lastEvidence?.kind)).sort((a,b)=>Date.parse(b.updatedAt)-Date.parse(a.updatedAt))[0];
+    if(provider)await lifecycle.condition('PROVIDER_AUTH_FAILURE',provider.lastEvidence.diagnosticCode==='AUTH_REQUIRED',{component:'provider'});
+    await store.update(s=>{s.observations.recoveryMode=mode;s.observations.worker=facts.worker;});
+   });
+  }
+  await safely(authConditions);await safely(()=>dispatcher.remind());await safely(()=>lifecycle.prune());
+  await safely(()=>lifecycle.condition('PROCESS_CRASH_LOOP',store.read().process.crashes.filter(t=>t>=now()-600000).length>=3,{component:'runtime'}));
+  failed=failureEpoch!==epoch;
   await safely(()=>dispatcher.tick());
+  if(report)await safely(()=>observeReadiness(report));
+  if(!failed&&store.read().observations.readiness?.ready)await safely(async()=>{for(const code of ['PROCESS_FAILURE','UNCAUGHT_EXCEPTION','UNHANDLED_REJECTION','LOG_WRITE_FAILURE'])await lifecycle.condition(code,false,{component:'runtime'});});
  }
  function tick(){return running??(running=poll().finally(()=>{running=null;}));}
  return {store,lifecycle,dispatcher,config:c,readyBlockers,
   async start(source){
-   releaseWriter=await acquireOperationalWriter(loaded.logDirectory,scope);services=source;started=true;
+   releaseWriter=await acquireOperationalWriter(loaded.logDirectory,scope);
+   try{await store.reload();}catch(error){await releaseWriter();releaseWriter=null;throw error;}
+   services=source;started=true;
    const previous=store.read().process;
    await store.update(s=>{s.process={running:true,startedAt:now(),crashes:[...previous.crashes.filter(t=>t>=now()-600000),...(previous.running?[now()]:[])]};});
    if(previous.running)await lifecycle.condition('PROCESS_FAILURE',true,{component:'runtime'});
@@ -123,7 +127,7 @@ export async function createOperationalRuntime({loaded,logger,transport,now=Date
   },
   snapshot(){
    const s=store.read(),visible=[...s.incidents.filter(i=>i.state==='OPEN'),...s.incidents.filter(i=>i.state==='RESOLVED').slice(-c.maxHistory)],incidents=visible.map(i=>({incidentId:i.incidentId,code:i.type,severity:i.severity,state:i.state,openedAt:i.openedAt,resolvedAt:i.resolvedAt,...safeContext(i.context,loaded.redactionSecrets),message:EVENTS[i.type]?.message,action:EVENTS[i.type]?.action,runbook:i.type}));
-   return {runtime:stopping?'STOPPING':started?'RUNNING':'STARTING',ready:s.observations.readiness?.ready===true,database:s.observations.database?.available===true?'AVAILABLE':'UNAVAILABLE',recoveryMode:s.observations.recoveryMode??'UNKNOWN',worker:s.observations.worker??'DISABLED',backup:{lastSuccessAt:s.observations.backup?.lastSuccessAt?new Date(s.observations.backup.lastSuccessAt).toISOString():null,lastResult:s.observations.backup?.lastResult??'NOT_OBSERVED',lastFailureAt:s.observations.backup?.lastFailureAt?new Date(s.observations.backup.lastFailureAt).toISOString():null,ageMs:s.observations.backup?.lastSuccessAt?Math.max(0,now()-s.observations.backup.lastSuccessAt):null,overdue:!s.observations.backup?.lastSuccessAt||now()-s.observations.backup.lastSuccessAt>c.backupMaxAgeMs},tls:s.observations.tls??null,criticalIncidents:s.incidents.filter(i=>i.state==='OPEN'&&i.severity==='CRITICAL').length,alerting:transport?.configured?'CONFIGURED':'NOT_CONFIGURED',monitoring:failed?'DEGRADED':'AVAILABLE',alertDelivery:store.read().outbox.some(e=>e.state==='EXHAUSTED'||e.state==='PENDING'&&e.attempts>0)?'DEGRADED':'AVAILABLE',incidents};
+   return {runtime:stopping?'STOPPING':started?'RUNNING':'STARTING',ready:s.observations.readiness?.ready===true&&readyBlockers().length===0,database:s.observations.database?.available===true?'AVAILABLE':'UNAVAILABLE',recoveryMode:s.observations.recoveryMode??'UNKNOWN',worker:s.observations.worker??'DISABLED',backup:{lastSuccessAt:s.observations.backup?.lastSuccessAt?new Date(s.observations.backup.lastSuccessAt).toISOString():null,lastResult:s.observations.backup?.lastResult??'NOT_OBSERVED',lastFailureAt:s.observations.backup?.lastFailureAt?new Date(s.observations.backup.lastFailureAt).toISOString():null,ageMs:s.observations.backup?.lastSuccessAt?Math.max(0,now()-s.observations.backup.lastSuccessAt):null,policy:loaded.config.backupPolicyConfigured?'CONFIGURED':'NOT_CONFIGURED',overdue:loaded.config.backupPolicyConfigured?(!s.observations.backup?.lastSuccessAt||now()-s.observations.backup.lastSuccessAt>c.backupMaxAgeMs):null},tls:s.observations.tls??null,criticalIncidents:s.incidents.filter(i=>i.state==='OPEN'&&i.severity==='CRITICAL').length,alerting:transport?.configured?'CONFIGURED':'NOT_CONFIGURED',monitoring:failed?'DEGRADED':'AVAILABLE',alertDelivery:store.read().outbox.some(e=>e.state==='EXHAUSTED'||e.state==='PENDING'&&e.attempts>0)?'DEGRADED':'AVAILABLE',incidents};
   }
  };
 }
