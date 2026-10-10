@@ -1,4 +1,5 @@
 import {createOperationalRuntime} from '../operations/runtime.js';
+import {createWeComAlertTransport} from '../operations/wecom.js';
 import { fileURLToPath } from 'node:url';
 import { resolve } from 'node:path';
 import {createRotatingLog} from './rotating-log.js';
@@ -14,7 +15,8 @@ export async function startProduction(argv=process.argv.slice(2),env=process.env
  let logFailure=()=>{};
  const stream=createRotatingLog(loaded.logDirectory,{maxBytes:monitoring.logMaxBytes,maxFiles:monitoring.logMaxFiles,onFailure:()=>logFailure()});
  const logger=createSafeLogger({secrets:loaded.redactionSecrets,write:line=>stream.write(line)});
- const operations=await createOperationalRuntime({loaded,logger});
+ const transport=loaded.alertTransportConfig?createWeComAlertTransport(loaded.alertTransportConfig):undefined;
+ const operations=await createOperationalRuntime({loaded,logger,transport});
  const runtime=createProductionRuntime(loaded,{logger,operations});
  let exiting=false;
  const stop=async(reason,exit=0)=>{

@@ -42,3 +42,29 @@ test('Stage5C real native service-host / HTTPS / MySQL production-like smoke',{s
  for(const value of [f.runtimeSecrets.database.password,f.runtimeSecrets.tls.privateKey,f.secretPath,cookie,csrf])assert.equal(logText.includes(value),false);
  assert.ok(logText.includes('runtime_started'));assert.ok(logText.includes('runtime_draining'));assert.ok(logText.includes('runtime_stopped'));assert.ok(logText.includes('readiness_changed'));
 }));
+
+test('S2 protected WeCom configuration gates preflight without sending a message',
+  {skip:!process.env.LEDGER_MYSQL_TEST_URL,timeout:120000},()=>withProductionRuntimeFixture(async f=>{
+  const {loadRuntimeConfig}=await import('./runtime-config.js');
+  const configured={...f.config,monitoring:{...f.config.monitoring,
+    alertingRequired:true,alertTransport:'wecom-app'}};
+  await writeFile(f.configPath,JSON.stringify(configured));
+  await protectSyntheticFile(f.configPath,f.tls.sid);
+  const missing=await preflight(f.configPath,production);
+  assert.equal(missing.ready,false);
+  assert.ok(missing.blockers.includes('RUNTIME_CONFIG_INVALID'));
+  const protectedSecrets={...f.runtimeSecrets,alerting:{wecom:{
+    corpId:'synthetic-corp',agentId:123,secret:'synthetic-wecom-secret',
+    storeLabel:'Synthetic KTV',criticalRecipients:['boss'],warnRecipients:['boss']
+  }}};
+  await writeFile(f.secretPath,JSON.stringify(protectedSecrets));
+  await protectSyntheticFile(f.secretPath,f.tls.sid);
+  const loaded=await loadRuntimeConfig(f.configPath,production);
+  assert.equal(loaded.alertTransportConfig.corpId,'synthetic-corp');
+  assert.ok(loaded.redactionSecrets.includes('synthetic-wecom-secret'));
+  const checked=await preflight(f.configPath,production);
+  assert.equal(checked.ready,true);
+  assert.deepEqual(checked.degraded,[]);
+  assert.ok(!checked.blockers.includes('ALERT_CHANNEL_REQUIRED'));
+  assert.equal(f.child,undefined);
+}));

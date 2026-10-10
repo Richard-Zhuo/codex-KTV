@@ -94,3 +94,83 @@ test('device offline age follows continuous status entry despite fresh polling u
  const record={id:'synthetic',internalRoomId:'V01',status:'DEVICE_OFFLINE_WAIT',roomReadiness:'WAITING_DEVICE',createdAt:new Date(time-20000).toISOString(),updatedAt:new Date(time).toISOString(),events:[{at:new Date(time-20000).toISOString(),status:'DEVICE_PENDING'},{at:new Date(time-10000).toISOString(),status:'DEVICE_OFFLINE_WAIT'},{at:new Date(time).toISOString(),status:'DEVICE_OFFLINE_WAIT'}]};
  await observeWorkflow(life,record,monitoringConfig({offlineMs:5000}));assert.ok(store.read().incidents.some(i=>i.type==='DEVICE_OFFLINE'&&i.state==='OPEN'));
 }));
+
+test('recovery keeps recipients accepted for this incident after routing changes',()=>fixture(async dir=>{
+  const store=await createOperationalStore(dir,'synthetic');
+  const life=createIncidentLifecycle({store,scope:'synthetic',logger:silent});
+  let critical=['boss','wife'];
+  const sent=[];
+  const transport={configured:true,
+    targetsFor(incident,delivery){return delivery.transition==='RESOLVED'
+      ? incident.notifiedRecipients??[] : delivery.severity==='WARN'?['boss']:critical;},
+    async send(payload,recipients){sent.push({payload,recipients});
+      return {accepted:true,acceptedRecipients:recipients,invalidRecipients:[]};}
+  };
+  const dispatcher=createAlertDispatcher({store,transport,logger:silent});
+  const incident=await life.condition('TLS_EXPIRING',true,{component:'tls'},'WARN');
+  await dispatcher.tick();
+  await life.condition('TLS_EXPIRING',true,{component:'tls'},'ERROR');
+  await dispatcher.tick();
+  critical=['replacement'];
+  await life.condition('TLS_EXPIRING',false,{component:'tls'});
+  await dispatcher.tick();
+  assert.deepEqual(sent.map(item=>item.recipients),[['boss'],['boss','wife'],['boss','wife']]);
+  assert.equal(sent[2].payload.incidentId,incident.incidentId);
+  assert.equal(sent[2].payload.sequence,3);
+  assert.deepEqual(store.read().incidents[0].notifiedRecipients,['boss','wife']);
+}));
+
+test('partial provider acceptance retains known recipients and leaves delivery visibly failed',()=>fixture(async dir=>{
+  const store=await createOperationalStore(dir,'synthetic');
+  const life=createIncidentLifecycle({store,scope:'synthetic',logger:silent});
+  const transport={configured:true,targetsFor(){return ['boss','wife'];},
+    async send(){return {accepted:false,acceptedRecipients:['boss'],invalidRecipients:['wife']};}};
+  const dispatcher=createAlertDispatcher({store,transport,logger:silent});
+  await life.condition('DEVICE_UNKNOWN',true,{component:'device'});
+  await dispatcher.tick();
+  assert.deepEqual(store.read().incidents[0].notifiedRecipients,['boss']);
+  assert.equal(store.read().outbox[0].state,'EXHAUSTED');
+}));
+
+test('WeCom delivery identity, recipients and text survive retry after process restart',()=>fixture(async dir=>{
+ let time=Date.now();const store=await createOperationalStore(dir,'synthetic');
+ const life=createIncidentLifecycle({store,scope:'synthetic',logger:silent,now:()=>time});
+ await life.condition('DATABASE_UNAVAILABLE',true,{component:'database'});
+ const sent=[];
+ const first={configured:true,targetsFor:()=>['boss'],messageFor:()=> 'stable body',
+   async send(payload,recipients,content){sent.push({payload,recipients,content});throw Object.assign(Error('WECOM_RATE_LIMIT'),{code:'WECOM_RATE_LIMIT'});}};
+ await createAlertDispatcher({store,transport:first,logger:silent,now:()=>time,backoffMs:10}).tick();
+ const before=store.read().outbox[0];
+ assert.equal(before.attempts,1);assert.equal(before.content,'stable body');
+ const restarted=await createOperationalStore(dir,'synthetic');
+ const changed={configured:true,targetsFor:()=>['new-boss'],messageFor:()=> 'changed body',
+   async send(payload,recipients,content){sent.push({payload,recipients,content});
+     return {accepted:true,acceptedRecipients:recipients,invalidRecipients:[]};}};
+ time+=20;await createAlertDispatcher({store:restarted,transport:changed,logger:silent,now:()=>time}).tick();
+ assert.equal(sent.length,2);
+ assert.deepEqual(sent.map(s=>s.payload.deliveryId),[before.deliveryId,before.deliveryId]);
+ assert.deepEqual(sent.map(s=>s.payload.sequence),[before.sequence,before.sequence]);
+ assert.deepEqual(sent.map(s=>s.recipients),[['boss'],['boss']]);
+ assert.deepEqual(sent.map(s=>s.content),['stable body','stable body']);
+ assert.equal(restarted.read().outbox[0].state,'DELIVERED');
+}));
+
+test('unknown WeCom timeout records possible recipient for same-incident recovery',()=>fixture(async dir=>{
+ let time=Date.now();const store=await createOperationalStore(dir,'synthetic');
+ const life=createIncidentLifecycle({store,scope:'synthetic',logger:silent,now:()=>time});
+ await life.condition('DATABASE_UNAVAILABLE',true,{component:'database'});
+ const seen=[];let fail=true;
+ const transport={configured:true,targetsFor:(incident,entry)=>entry.transition==='RESOLVED'
+   ?incident.possiblyNotifiedRecipients:['boss'],messageFor:()=> 'safe body',
+   async send(payload,recipients){seen.push({payload,recipients});if(fail)throw Object.assign(Error('WECOM_TIMEOUT'),{code:'WECOM_TIMEOUT'});
+     return {accepted:true,acceptedRecipients:recipients,invalidRecipients:[]};}};
+ const dispatcher=createAlertDispatcher({store,transport,logger:silent,now:()=>time,backoffMs:10});
+ await dispatcher.tick();
+ assert.deepEqual(store.read().incidents[0].possiblyNotifiedRecipients,['boss']);
+ await life.condition('DATABASE_UNAVAILABLE',false,{component:'database'});
+ fail=false;time+=20;await dispatcher.tick();
+ assert.equal(seen.length,2);
+ assert.equal(seen[1].payload.transition,'RESOLVED');
+ assert.equal(seen[1].payload.incidentId,seen[0].payload.incidentId);
+ assert.deepEqual(seen[1].recipients,['boss']);
+}));

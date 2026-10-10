@@ -1,4 +1,5 @@
 import {monitoringConfig} from '../operations/monitors.js';
+import {validateWeComConfig} from '../operations/wecom.js';
 import { realpath } from 'node:fs/promises';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
@@ -44,7 +45,13 @@ export async function loadRuntimeConfig(path,env=process.env){
  const config=validateRuntimeConfig(await readExternalSecret(path),env);
  const configPath=await realpath(path);validateFileAcl(await windowsFileAcl(configPath),config.serviceAccountSid);
  const secrets=await readExternalSecret(config.secretsFile),secretPath=await realpath(config.secretsFile);validateFileAcl(await windowsFileAcl(secretPath),config.serviceAccountSid);
- fields(secrets,['database','tls'],['ktvsky','backup']);
+ fields(secrets,['database','tls'],['ktvsky','backup','alerting']);
+ let alertTransportConfig;
+ if(secrets.alerting){fields(secrets.alerting,['wecom']);fields(secrets.alerting.wecom,['corpId','agentId','secret','storeLabel','criticalRecipients','warnRecipients'],['recoveryRecipients']);}
+ if(config.monitoring?.alertTransport==='wecom-app'){
+  if(!secrets.alerting?.wecom)fail();
+  try{alertTransportConfig=validateWeComConfig(secrets.alerting.wecom);}catch{fail();}
+ }
  fields(secrets.database,['host','port','name','user','password'],['ca']);
  const db=secrets.database;
  if(!privateHost(db.host)||!Number.isInteger(db.port)||db.port<1||db.port>65535||typeof db.user!=='string'||!db.user||typeof db.password!=='string'||db.password.length<16||(!['localhost','127.0.0.1','::1'].includes(db.host)&&typeof db.ca!=='string'))fail();
@@ -65,5 +72,5 @@ export async function loadRuntimeConfig(path,env=process.env){
  if(config.monitoring?.backupDirectory)await externalDirectory(config.monitoring.backupDirectory);
  const publicFacts={configVersion:config.configVersion,backupPolicyConfigured:config.backupPolicyConfigured,directoryAclReviewed:config.directoryAclReviewed,businessDateCutoff:config.businessDateCutoff,sessionRuleVersion:config.sessionRuleVersion,liveControlEnabled:config.liveControlEnabled,applicationCommit:config.applicationCommit,publicOrigin:config.publicOrigin,listenHost:config.listenHost,port:config.port,storeId:config.storeId,ledgerId:config.ledgerId,timeZone:config.timeZone,deviceControlMode:config.deviceControlMode,networkModel:config.networkModel,monitoring:config.monitoring??null};
  const configFingerprint=createHash('sha256').update(JSON.stringify(publicFacts)).digest('hex');
- return {config,productionConfig,apiEnv,logDirectory,configFingerprint,tls:{cert:secrets.tls.certificate,key:secrets.tls.privateKey,minVersion:'TLSv1.2'},mysqlSsl:db.ca?{ca:db.ca,rejectUnauthorized:true}:undefined,redactionSecrets:[db.password,url.href,secrets.tls.privateKey,secrets.ktvsky?.telno,secrets.ktvsky?.password,secrets.backup?.encryptionKey,secrets.backup?.signingKey].filter(Boolean)};
+ return {config,productionConfig,apiEnv,logDirectory,configFingerprint,alertTransportConfig,tls:{cert:secrets.tls.certificate,key:secrets.tls.privateKey,minVersion:'TLSv1.2'},mysqlSsl:db.ca?{ca:db.ca,rejectUnauthorized:true}:undefined,redactionSecrets:[db.password,url.href,secrets.tls.privateKey,secrets.ktvsky?.telno,secrets.ktvsky?.password,secrets.backup?.encryptionKey,secrets.backup?.signingKey,secrets.alerting?.wecom?.secret].filter(Boolean)};
 }

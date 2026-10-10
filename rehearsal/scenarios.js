@@ -110,7 +110,7 @@ export async function scenarios(f,record){
   await app.controls({openUnknown:true,queryUnknown:true});const unknown=await open('666',operator,false);
   await eventually(workflows,ws=>ws.find(w=>w.orderId===unknown.id)?.status==='DEVICE_UNKNOWN','unknown ambiguity held for crash');
   const w=(await workflows()).find(w=>w.orderId===unknown.id),events=w.events??[];assert.ok(events.some(e=>e.status==='DEVICE_UNKNOWN'||e.reason?.includes('unknown')));
-  await eventually(async()=>{const r=await app.call(owner,'/api/v1/admin/snapshot');return r.json().view.operations;},p=>p.incidents.some(i=>i.code==='DEVICE_UNKNOWN'),'UNKNOWN incident projected');const logs=await calls(),opens=logs.filter(c=>c.workflowId===w.id&&c.method==='openRoom');assert.equal(opens.length,1);await sleep(1400);
+  await eventually(async()=>{const r=await app.call(owner,'/api/v1/admin/snapshot');return r.status===200?r.json().view.operations:{status:r.status,incidents:[]};},p=>p.incidents.some(i=>i.code==='DEVICE_UNKNOWN'),'UNKNOWN incident projected');const logs=await calls(),opens=logs.filter(c=>c.workflowId===w.id&&c.method==='openRoom');assert.equal(opens.length,1);await sleep(1400);
   return {offlineSameOrder:o.id,unknownSameOrder:unknown.id,unknownOpenAttempts:1,mutationRetries:0,queryRecovery:'held UNKNOWN until crash, then query only'};
  });
  await step('runtimeCrashAndHostLoss',async()=>{

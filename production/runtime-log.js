@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import {EVENTS} from '../operations/contract.js';
-const allowed=new Set(['requestId','event','code','status','elapsedMs','appVersion','schemaVersion','configFingerprint','blockers','signal','severity','eventType','incidentId','incidentState','principalId','operationKey','workflowId','roomId','component','category','message','action','runbook']);
+const allowed=new Set(['requestId','event','code','status','elapsedMs','appVersion','schemaVersion','configFingerprint','blockers','signal','severity','eventType','incidentId','incidentState','principalId','operationKey','workflowId','roomId','component','category','message','action','runbook','provider','operation','providerCode','deliveryId','attempt']);
 export function createSafeLogger({write=line=>process.stdout.write(line),secrets=[]}={}){
  const scrub=value=>{
   let s=String(value);
@@ -13,7 +13,7 @@ export function createSafeLogger({write=line=>process.stdout.write(line),secrets
    if(!allowed.has(key))continue;
    if(['message','action','runbook'].includes(key)){const definition=EVENTS[entry.eventType??entry.code];if(definition&&value===definition[key])output[key]=scrub(value);continue;}
    if(key==='blockers'&&Array.isArray(value))output[key]=value.filter(v=>typeof v==='string'&&/^[A-Z0-9_]{1,80}$/.test(v)).map(scrub);
-   else if(['status','elapsedMs'].includes(key)&&Number.isFinite(value))output[key]=value;
+   else if(['status','elapsedMs','providerCode','attempt'].includes(key)&&Number.isFinite(value))output[key]=value;
    else if(typeof value==='string'&&value.length<=128)output[key]=scrub(value);
   }
   write(JSON.stringify(output)+'\n');

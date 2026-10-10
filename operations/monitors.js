@@ -7,7 +7,7 @@ export function monitoringConfig(input={}){
  if(!input||typeof input!=='object'||Array.isArray(input)||Object.keys(input).some(k=>!Object.hasOwn(MONITOR_DEFAULTS,k)&&k!=='backupDirectory'))throw Error('MONITORING_CONFIG_INVALID');
  const c={...MONITOR_DEFAULTS,...input};
  for(const key of Object.keys(MONITOR_DEFAULTS).filter(k=>!['alertingRequired','alertTransport'].includes(k)))if(!Number.isSafeInteger(c[key])||c[key]<1||c[key]>365*86400000)throw Error('MONITORING_CONFIG_INVALID');
- if(c.intervalMs<1000||c.intervalMs>60000||c.probeTimeoutMs>10000||c.maxHistory>5000||c.logMaxFiles>100||c.logMaxBytes<1024||c.tlsWarnDays<c.tlsErrorDays||c.tlsErrorDays<c.tlsCriticalDays||typeof c.alertingRequired!=='boolean'||!['none','local'].includes(c.alertTransport)||c.backupDirectory!==undefined&&typeof c.backupDirectory!=='string')throw Error('MONITORING_CONFIG_INVALID');
+ if(c.intervalMs<1000||c.intervalMs>60000||c.probeTimeoutMs>10000||c.maxHistory>5000||c.logMaxFiles>100||c.logMaxBytes<1024||c.tlsWarnDays<c.tlsErrorDays||c.tlsErrorDays<c.tlsCriticalDays||typeof c.alertingRequired!=='boolean'||!['none','local','wecom-app'].includes(c.alertTransport)||c.backupDirectory!==undefined&&typeof c.backupDirectory!=='string')throw Error('MONITORING_CONFIG_INVALID');
  return Object.freeze(c);
 }
 export function readinessFailure(error){return {ready:false,blockers:[{code:['LEDGER_SNAPSHOT_INVALID','BOOTSTRAP_SCHEMA_MISMATCH','PRODUCTION_STORE_MISMATCH'].includes(error?.code)?'DATA_INVARIANT_FAILURE':'DATABASE_OR_SCHEMA_UNAVAILABLE'}]};}
