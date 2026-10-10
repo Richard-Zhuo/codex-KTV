@@ -32,6 +32,13 @@ test('Stage5E post-crash query recovery: live lease fences new process and expir
   const before=await head(),beforeCalls=await calls();
   const mutations=rows=>rows.filter(x=>['openRoom','closeRoom'].includes(x.method));
   assert.equal(beforeCalls.filter(x=>x.method==='openRoom').length,1);
+  const alertOutbox=async()=>{
+   const envelope=JSON.parse(await readFile(join(app.logs,'operational-state.json'),'utf8'));
+   return JSON.parse(envelope.data).outbox;
+  };
+  await eventually(alertOutbox,rows=>rows.length>0&&rows.every(row=>row.state==='DELIVERED'),
+   'pre-crash synthetic alert delivery');
+  note('alerts-drained');
   await assert.rejects(expireCrashedQueryLeases(f,app,oldChild,[claim]),/REHEARSAL_CRASH_NOT_CONFIRMED/);
   await app.crash();note('crash-awaited',{pid:oldChild.pid,exitCode:oldChild.exitCode,signal:oldChild.signalCode});
   const crashed=await workflows();assert.deepEqual(crashed,[claim]);
