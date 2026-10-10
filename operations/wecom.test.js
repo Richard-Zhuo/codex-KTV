@@ -91,13 +91,35 @@ test('provider rejection and partial invalid recipients are not accepted as full
   assert.equal(rejected.calls.length,2);
 });
 
-test('protected recovery recipient approval allows old owner but rejects unknown IDs',async()=>{
+test('persisted incident recovery targets old owner after routing change but never stranger',async()=>{
   const f=fake();
   const transport=createWeComAlertTransport({...config,criticalRecipients:['new-boss'],
-    warnRecipients:['new-boss'],recoveryRecipients:['boss'],fetchImpl:f.fetchImpl});
-  assert.deepEqual(transport.targetsFor({notifiedRecipients:['boss']},{transition:'RESOLVED'}),['boss']);
-  assert.equal((await transport.send(incidentPayload,['boss'])).accepted,true);
-  await assert.rejects(transport.send(incidentPayload,['stranger']),{code:'WECOM_RECIPIENT_INVALID'});
+    warnRecipients:['new-boss'],fetchImpl:f.fetchImpl});
+  const incident={incidentId:'i-1',state:'RESOLVED',notifiedRecipients:['boss']};
+  const entry={deliveryId:'d-1',incidentId:'i-1',transition:'RESOLVED',state:'PENDING'};
+  const payload={...incidentPayload,transition:'RESOLVED',severity:'INFO',code:'DATABASE_RESTORED',
+    resolvedAt:'2026-10-11T00:00:01.000Z'};
+  const recipients=transport.targetsFor(incident,entry);
+  assert.deepEqual(recipients,['boss']);
+  assert.equal((await transport.send(payload,recipients,undefined,{incident,entry})).accepted,true);
+  await assert.rejects(transport.send(payload,['stranger'],undefined,{incident,entry}),
+    {code:'WECOM_RECIPIENT_INVALID'});
+  await assert.rejects(transport.send(payload,['new-boss'],undefined,{incident,entry}),
+    {code:'WECOM_RECIPIENT_INVALID'});
+  await assert.rejects(transport.send(payload,['boss']),{code:'WECOM_RECIPIENT_INVALID'});
+  await assert.rejects(transport.send(payload,'boss'),{code:'WECOM_RECIPIENT_INVALID'});
+  assert.equal(f.calls.filter(call=>call.url.includes('/message/send')).length,1);
+});
+
+test('previously persisted OPEN recipients remain valid for retry after routing change',async()=>{
+  const f=fake();
+  const transport=createWeComAlertTransport({...config,criticalRecipients:['new-boss'],
+    warnRecipients:['new-boss'],fetchImpl:f.fetchImpl});
+  const incident={incidentId:'i-1',state:'OPEN'};
+  const entry={deliveryId:'d-1',incidentId:'i-1',transition:'OPEN',recipients:['boss']};
+  assert.equal((await transport.send(incidentPayload,['boss'],undefined,{incident,entry})).accepted,true);
+  await assert.rejects(transport.send(incidentPayload,['stranger'],undefined,{incident,entry}),
+    {code:'WECOM_RECIPIENT_INVALID'});
 });
 
 test('WeCom rejects HTTP, redirects, malformed and oversized responses safely',async()=>{
@@ -132,6 +154,10 @@ test('WeCom fixed safe payload ignores arbitrary supplied message and bounds con
   for(const value of ['synthetic-secret','synthetic-token','password=','raw request body','private customer name'])
     assert.equal(content.includes(value),false);
   assert.ok(Buffer.byteLength(content,'utf8')<=1900);
+  assert.deepEqual(transport.targetsFor({severity:'UNKNOWN'},{transition:'OPEN'}),[]);
+  await assert.rejects(transport.send({...incidentPayload,severity:'UNKNOWN'},['boss'],'stored text'),
+    {code:'WECOM_PAYLOAD_INVALID'});
+  assert.equal(f.calls.length,2);
 });
 
 test('synthetic incident OPEN and RESOLVED reach the same WeCom recipient with ordered identity',async()=>{

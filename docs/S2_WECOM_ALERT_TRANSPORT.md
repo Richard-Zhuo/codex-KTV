@@ -23,14 +23,13 @@ The Git-external runtime config retains monitoring.alertingRequired as the only 
       "secret": "REPLACE_IN_PROTECTED_FILE_ONLY",
       "storeLabel": "Jin Bi Hui Huang KTV",
       "criticalRecipients": ["REPLACE_WITH_OWNER_USER_ID"],
-      "warnRecipients": ["REPLACE_WITH_OWNER_USER_ID"],
-      "recoveryRecipients": []
+      "warnRecipients": ["REPLACE_WITH_OWNER_USER_ID"]
     }
   }
 }
 ~~~
 
-recoveryRecipients is optional and is only an explicit allowlist for previously notified people who were removed from new-alert routing. Keep a retired recipient there until every incident that notified them has resolved and its recovery delivery has completed. A missing approved historical recipient causes visible delivery failure; the system never reroutes a recovery notice to a new person.
+The protected incident and outbox snapshots authorize the same incident's historical recipients for a pending retry or recovery, even if new-alert routing changes after a restart. The transport validates the persisted delivery and recipient union; it never substitutes a new recipient. If the WeCom account is deleted or cannot receive the message, the delivery fails visibly and readiness degrades.
 
 Initial routing uses the owner's one existing User ID in both lists. Add the owner's wife to criticalRecipients only after her account and intended alert duty are approved. Do not add all staff. The label is display-only and never becomes the store identity. The live secret, Corp ID, Agent ID, recipient IDs, and access token must not enter Git or chat. The existing Stage 5C file realpath and Windows ACL checks apply; the secret is also included in logger redaction.
 
@@ -40,7 +39,7 @@ Configuration syntax, secret presence, file ACL and transport construction are c
 
 Only fixed operational event definitions and allowlisted safe context enter the text. The content includes store label, severity/state, event code/component, fixed summary/action/runbook, optional safe room/workflow reference, incident ID, sequence, delivery ID, and event time. Supplied raw message/action/body text is ignored. A recovery message uses the same incident ID and a later sequence.
 
-CRITICAL/ERROR target criticalRecipients; WARN targets warnRecipients. An outbox delivery persists its selected recipients and complete safe text before the network request. Retry and process restart reuse both. The incident persists recipients accepted by the provider. Partial invalid/unlicensed recipients leave the delivery visibly failed while preserving the accepted subset. The outbox marks a targeted delivery uncertain before the network request. If the process crashes after provider acceptance but before local success persistence, resolution carries the persisted recipient snapshot into the possibly notified set. A timeout or connection reset also records possibly notified recipients; recovery targets the union of accepted and possibly notified recipients. This is conservative because provider acceptance is unknown. Historical recovery targets must remain explicitly allowed by current routing or recoveryRecipients.
+CRITICAL/ERROR target criticalRecipients; WARN targets warnRecipients. An outbox delivery persists its selected recipients and complete safe text before the network request. Retry and process restart reuse both. The incident persists recipients accepted by the provider. Partial invalid/unlicensed recipients leave the delivery visibly failed while preserving the accepted subset. The outbox marks a targeted delivery uncertain before the network request. If the process crashes after provider acceptance but before local success persistence, resolution carries the persisted recipient snapshot into the possibly notified set. A timeout or connection reset also records possibly notified recipients; recovery targets the union of accepted and possibly notified recipients. This is conservative because provider acceptance is unknown. Historical recovery recipients come only from the same persisted incident's accepted or possibly notified union, with the outbox snapshot stable across retry.
 
 HTTP 200 alone is insufficient: errcode must be zero, and partial-recipient fields are checked. Logs use fixed error codes, bounded provider numeric codes, incident/delivery ID and attempt; no provider errmsg, raw response, token-bearing URL, body, stack, Cookie, password, or customer details are logged. The response is size bounded, JSON parsed safely, redirects refused, and requests have a fixed HTTPS origin and deadline.
 

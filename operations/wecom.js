@@ -11,17 +11,17 @@ const clipped=(value,max=300)=>{let result='';for(const char of clean(value)){if
 
 export function validateWeComConfig(input){
   if(!input||typeof input!=='object'||Array.isArray(input))throw safeError('WECOM_CONFIG_INVALID');
-  const {corpId,agentId,secret,storeLabel,criticalRecipients,warnRecipients,recoveryRecipients=[]}=input;
+  const {corpId,agentId,secret,storeLabel,criticalRecipients,warnRecipients}=input;
   if(typeof corpId!=='string'||!ID.test(corpId)||!Number.isSafeInteger(agentId)||agentId<=0||
     typeof secret!=='string'||secret.length<8||typeof storeLabel!=='string'||
     !storeLabel.trim()||storeLabel.length>80||/[\u0000-\u001f\u007f]/.test(storeLabel))throw safeError('WECOM_CONFIG_INVALID');
-  for(const list of [criticalRecipients,warnRecipients,recoveryRecipients]){
-    if(!Array.isArray(list)||(list!==recoveryRecipients&&!list.length)||list.length>20||
+  for(const list of [criticalRecipients,warnRecipients]){
+    if(!Array.isArray(list)||!list.length||list.length>20||
       list.some(id=>typeof id!=='string'||!ID.test(id))||new Set(list.map(id=>id.toLowerCase())).size!==list.length)
       throw safeError('WECOM_CONFIG_INVALID');
   }
   return Object.freeze({corpId,agentId,secret,storeLabel:storeLabel.trim(),
-    criticalRecipients:Object.freeze([...criticalRecipients]),warnRecipients:Object.freeze([...warnRecipients]),recoveryRecipients:Object.freeze([...recoveryRecipients])});
+    criticalRecipients:Object.freeze([...criticalRecipients]),warnRecipients:Object.freeze([...warnRecipients])});
 }
 
 async function readJson(response){
@@ -49,11 +49,17 @@ async function readJson(response){
   }catch{throw safeError('WECOM_RESPONSE_INVALID');}
 }
 
-function contentFor(payload,storeLabel){
-  if(!payload||!EVENTS[payload.code]||!ID.test(payload.incidentId??'')||
-    !ID.test(payload.deliveryId??'')||!Number.isSafeInteger(payload.sequence)||
-    payload.sequence<1||!['OPEN','ESCALATED','REMINDER','RESOLVED'].includes(payload.transition))
+function validatePayload(payload){
+  const resolved=payload?.transition==='RESOLVED';
+  if(!payload||!Object.hasOwn(EVENTS,payload.code)||typeof payload.incidentId!=='string'||
+    !ID.test(payload.incidentId)||typeof payload.deliveryId!=='string'||!ID.test(payload.deliveryId)||
+    !Number.isSafeInteger(payload.sequence)||payload.sequence<1||
+    !['OPEN','ESCALATED','REMINDER','RESOLVED'].includes(payload.transition)||
+    (resolved?payload.severity!=='INFO':!['WARN','ERROR','CRITICAL'].includes(payload.severity)))
     throw safeError('WECOM_PAYLOAD_INVALID');
+}
+function contentFor(payload,storeLabel){
+  validatePayload(payload);
   const definition=EVENTS[payload.code];
   const resolved=payload.transition==='RESOLVED';
   const fields=[
@@ -91,7 +97,7 @@ export function createWeComAlertTransport(options){
   const timeoutMs=options.timeoutMs??2000;
   if(typeof fetchImpl!=='function'||typeof now!=='function'||!Number.isSafeInteger(timeoutMs)||
     timeoutMs<100||timeoutMs>10000)throw safeError('WECOM_CONFIG_INVALID');
-  const allowed=new Set([...config.criticalRecipients,...config.warnRecipients,...config.recoveryRecipients].map(id=>id.toLowerCase()));
+  const allowed=new Set([...config.criticalRecipients,...config.warnRecipients].map(id=>id.toLowerCase()));
   let cached=null,expiresAt=0,refreshing=null;
   async function request(path,{method='GET',body}={}){
     const url=new URL(path,ORIGIN);
@@ -124,14 +130,31 @@ export function createWeComAlertTransport(options){
   }
   const targetsFor=(incident,entry)=>{
     if(entry.transition==='RESOLVED')return [...new Set([...(incident.notifiedRecipients??[]),...(incident.possiblyNotifiedRecipients??[])])];
+    const severity=entry.severity??incident.severity;
+    if(!['WARN','ERROR','CRITICAL'].includes(severity))return [];
     if(entry.transition==='REMINDER'&&incident.notifiedRecipients?.length)
       return [...incident.notifiedRecipients];
-    return [...(['CRITICAL','ERROR'].includes(entry.severity??incident.severity)
+    return [...(['CRITICAL','ERROR'].includes(severity)
       ?config.criticalRecipients:config.warnRecipients)];
   };
-  async function send(payload,recipients,contentOverride){
-    if(!Array.isArray(recipients)||!recipients.length||recipients.some(id=>!allowed.has(id.toLowerCase())))
+  async function send(payload,recipients,contentOverride,proof){
+    validatePayload(payload);
+    if(!Array.isArray(recipients)||!recipients.length||recipients.length>100||
+      recipients.some(id=>typeof id!=='string'||!ID.test(id))||
+      new Set(recipients.map(id=>id.toLowerCase())).size!==recipients.length)
       throw safeError('WECOM_RECIPIENT_INVALID');
+    const entry=proof?.entry,incident=proof?.incident;
+    const sameDelivery=entry?.deliveryId===payload?.deliveryId&&entry?.incidentId===payload?.incidentId&&
+      entry?.transition===payload?.transition&&incident?.incidentId===payload?.incidentId;
+    const persistedRecipients=sameDelivery&&Array.isArray(entry.recipients)&&
+      entry.recipients.length===recipients?.length&&entry.recipients.every((id,index)=>id===recipients[index]);
+    const previous=sameDelivery?[...new Set([...(incident.notifiedRecipients??[]),...(incident.possiblyNotifiedRecipients??[])])]:[];
+    const recoveryAuthorized=sameDelivery&&payload.transition==='RESOLVED'&&incident.state==='RESOLVED'&&
+      (persistedRecipients?recipients.every(id=>previous.includes(id)):
+        recipients?.length===previous.length&&recipients.every((id,index)=>id===previous[index]));
+    const routeAuthorized=payload?.transition==='RESOLVED'?recoveryAuthorized:
+      recipients?.every(id=>allowed.has(id.toLowerCase()))||persistedRecipients;
+    if(!routeAuthorized)throw safeError('WECOM_RECIPIENT_INVALID');
     const content=contentOverride??contentFor(payload,config.storeLabel);
     if(typeof content!=='string'||Buffer.byteLength(content,'utf8')>MAX_MESSAGE_BYTES)throw safeError('WECOM_MESSAGE_TOO_LONG');
     const message={touser:recipients.join('|'),msgtype:'text',agentid:config.agentId,

@@ -47,7 +47,7 @@ export async function loadRuntimeConfig(path,env=process.env){
  const secrets=await readExternalSecret(config.secretsFile),secretPath=await realpath(config.secretsFile);validateFileAcl(await windowsFileAcl(secretPath),config.serviceAccountSid);
  fields(secrets,['database','tls'],['ktvsky','backup','alerting']);
  let alertTransportConfig;
- if(secrets.alerting){fields(secrets.alerting,['wecom']);fields(secrets.alerting.wecom,['corpId','agentId','secret','storeLabel','criticalRecipients','warnRecipients'],['recoveryRecipients']);}
+ if(secrets.alerting){fields(secrets.alerting,['wecom']);fields(secrets.alerting.wecom,['corpId','agentId','secret','storeLabel','criticalRecipients','warnRecipients']);}
  if(config.monitoring?.alertTransport==='wecom-app'){
   if(!secrets.alerting?.wecom)fail();
   try{alertTransportConfig=validateWeComConfig(secrets.alerting.wecom);}catch{fail();}

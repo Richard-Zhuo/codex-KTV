@@ -41,7 +41,7 @@ export function createAlertDispatcher({store,transport,logger,now=Date.now,secre
    });
    if(!reserved||store.read().outbox.find(e=>e.deliveryId===entry.deliveryId)?.state==='SUPERSEDED')continue;
    let result=null,timeout=false,failure=null;
-   try{result=await boundedProbe(()=>transport.send(payload,recipients,content),timeoutMs);}
+   try{result=await boundedProbe(()=>transport.send(payload,recipients,content,{incident,entry}),timeoutMs);}
    catch(e){failure=e;timeout=e.message==='MONITOR_PROBE_TIMEOUT'||['WECOM_TIMEOUT','WECOM_NETWORK_UNKNOWN'].includes(e.code);}
    const accepted=result?.accepted===true;
    const acceptedRecipients=recipients&&Array.isArray(result?.acceptedRecipients)
