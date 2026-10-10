@@ -1,3 +1,4 @@
+import {expireCrashedQueryLeases} from './crash-recovery.js';
 import assert from 'node:assert/strict';
 import {readFile,writeFile} from 'node:fs/promises';import {join} from 'node:path';import mysql from 'mysql2/promise';
 import {launcher,sleep,productionEnv} from './launcher.js';
@@ -114,10 +115,12 @@ export async function scenarios(f,record){
  });
  await step('runtimeCrashAndHostLoss',async()=>{
   const before=await head(),ws=await workflows();const monitor=new FakeExternalHeartbeatMonitor(app.request);assert.equal((await monitor.probe()).ready,true);
-  await app.crash();assert.equal((await monitor.probe()).live,false);
+  const crashedChild=app.child;await app.crash();assert.equal((await monitor.probe()).live,false);
+  const crashedWorkflows=await workflows();
   app.start();await app.wait();assert.equal((await head()).revision,before.revision);assert.equal((await app.call(operator,'/api/v1/auth/session')).status,200);
-  await app.controls({queryUnknown:false});await eventually(workflows,rows=>rows.every(w=>w.status==='ACTIVE'),'post-crash query recovery');const after=await workflows();assert.equal(after.length,ws.length);const target=ws.find(w=>w.status==='DEVICE_UNKNOWN');assert.ok(target);assert.equal((await calls()).filter(c=>c.workflowId===target.id&&c.method==='openRoom').length,1);assert.ok((await calls()).some(c=>c.workflowId===target.id&&c.method==='queryRoomState'));
-  return {activeOrderPreserved:true,unknownWorkflowSurvived:true,queryOnlyAfterCrash:true,revision:before.revision,sessionsPreserved:true,newProcess:true,externalLossDetected:true,realHeartbeatConfigured:false};
+  await app.controls({queryUnknown:false});const leaseRecovery=await expireCrashedQueryLeases(f,app,crashedChild,crashedWorkflows);
+  await eventually(workflows,rows=>rows.every(w=>w.status==='ACTIVE'),'post-crash query recovery');const after=await workflows();assert.equal(after.length,ws.length);const target=ws.find(w=>w.status==='DEVICE_UNKNOWN');assert.ok(target);assert.equal((await calls()).filter(c=>c.workflowId===target.id&&c.method==='openRoom').length,1);assert.ok((await calls()).some(c=>c.workflowId===target.id&&c.method==='queryRoomState'));
+  return {leaseRecovery,activeOrderPreserved:true,unknownWorkflowSurvived:true,queryOnlyAfterCrash:true,revision:before.revision,sessionsPreserved:true,newProcess:true,externalLossDetected:true,realHeartbeatConfigured:false};
  });
  await step('databaseOutage',async()=>{
   const before=await head();await f.serverGuard();await f.setup.query('ALTER USER ?@? ACCOUNT LOCK',[app.user,'127.0.0.1']);

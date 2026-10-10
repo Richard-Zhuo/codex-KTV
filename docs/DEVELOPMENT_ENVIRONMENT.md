@@ -1,5 +1,7 @@
 ## Stage 5E isolated rehearsal
 
+Stage 5E focused crash recovery: set STAGE5E_RUN=synthetic-only, then run node --test --test-isolation=none --test-reporter=tap rehearsal/crash-recovery.integration.test.js. The isolated fixture owns MySQL 8.4.11/InnoDB on 33315; repeat serially, never in parallel. Its injected clock crosses the persisted crashed-owner lease; the normal 20000 ms recovery wait remains unchanged. No certificate is installed by automated runs. [Evidence](verification/STAGE5E_CRASH_RECOVERY_FIX.md).
+
 Windows / Node24.19.0 / MySQL8.4.11，显式 STAGE5E_RUN=synthetic-only；三个 environment selector 只允许未设置、test 或 development。rehearsal/fresh-environment.js 创建带唯一 ID 的新 temp datadir/server（33315），不读取生产 DB URL；完整旧 fixtures 使用另一个 owned33313实例。端口占用即拒绝，不接管现有实例。
 
 - Focused: node --test --test-isolation=none --test-reporter=tap rehearsal/gates.test.js rehearsal/tooling.test.js rehearsal/browser-evidence.test.js ui/sale-attribution.test.js http/staff-query.test.js

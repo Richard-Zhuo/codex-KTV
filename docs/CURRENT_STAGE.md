@@ -1,3 +1,7 @@
+## Stage 5E crash-recovery audit fix — 2026-10-10
+
+Human-accepted browser payment/settlement/clean PASS is retained (record d17e2cc406c94). The subsequent full regression exposed a rehearsal timing race: a 20-second expectation could expire before a persisted 30-second query lease. Deterministic reproduction confirmed correct product fencing and recovery at expiry. The local audit fix changes only rehearsal timing/barrier code and adds a real process-crash MySQL regression; no business/UI/production workflow change. Current tests and cleanup: [audit-fix evidence](verification/STAGE5E_CRASH_RECOVERY_FIX.md). FIXED, NEEDS HUMAN RE-ACCEPTANCE; no merge/push/new stage. Older Stage5E candidate evidence below is historical.
+
 ## Stage 5E candidate — 2026-10-10
 
 人工接受的稳定基线为 main=origin/main=c1502c0fb0713ef040b210e5ea35f6c31079b7ee（Stage5D 已接受并收尾）；以下旧候选标题仅为历史证据。本轮在 codex/p0-1-stage5e-cutover-rehearsal 实施隔离生产切换演练，不 merge/push。

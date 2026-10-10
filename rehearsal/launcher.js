@@ -17,17 +17,19 @@ export async function launcher(f,{database=f.active.database,label='fake',formal
  const application=previous?f.packages.previous.app:f.packages.current.app,controlPath=join(f.dirs.secrets,label+'-control.json');
  await writeFile(controlPath,JSON.stringify({id:f.names.id,root:f.root,application,database,configPath,serverUuid:f.identity.server_uuid}));
  try{await readFile(join(f.root,'controls.json'));}catch{await writeFile(join(f.root,'controls.json'),JSON.stringify({online:true,clock:'2026-10-10T07:00:00.000Z',clockSetAt:Date.now()}));}
- let child,output='';
+ let child,output='',startupComplete=false;
  const request=(path,{method='GET',headers={},body,loseResponse=false}={})=>new Promise((resolve,reject)=>{
   const req=https.request({host:'127.0.0.1',port,servername:domain,ca:tls.ca,agent:false,path,method,headers:{Host:new URL(config.publicOrigin).host,...headers}},res=>{let text='';res.on('data',v=>text+=v);res.on('end',()=>{if(loseResponse)return reject(Error('SYNTHETIC_RESPONSE_LOST'));resolve({status:res.statusCode,headers:res.headers,text,json:()=>JSON.parse(text)});});});req.on('error',reject);req.end(body===undefined?undefined:JSON.stringify(body));
  });
  const start=()=>{
   if(child&&child.exitCode===null&&child.signalCode===null)throw Error('REHEARSAL_CHILD_RUNNING');
+  output='';startupComplete=formal;
   const env={SystemRoot:process.env.SystemRoot,PATH:process.env.PATH,TEMP:process.env.TEMP,TMP:process.env.TMP,USERPROFILE:process.env.USERPROFILE,...(formal?productionEnv:{NODE_ENV:'test',KTV_HTTP_ENV:'test',KTV_DEPLOYMENT_ENV:'test'})};
   child=spawn(process.execPath,formal?[join(application,'production/start.js'),'--config-file',configPath]:[fileURLToPath(new URL('./runtime-child.js',import.meta.url)),controlPath],{cwd:f.root,windowsHide:true,stdio:['pipe','pipe','pipe'],env});f.children.add(child);
-  child.stdout.on('data',d=>output=(output+d).slice(-100000));child.stderr.on('data',d=>output=(output+d).slice(-100000));return child;
+  const launched=child;const capture=d=>{if(child!==launched)return;output=(output+d).slice(-100000);startupComplete ||= output.split(/\r?\n/).some(line=>{try{return JSON.parse(line).event==='runtime_started';}catch{return false;}});};
+  child.stdout.on('data',capture);child.stderr.on('data',capture);return child;
  };
- const wait=async()=>{for(let n=0;n<180;n++){if(child.exitCode!==null||child.signalCode!==null)throw Error('REHEARSAL_CHILD_EXIT '+output);try{const r=await request('/health/ready');if(r.status===200)return r;}catch{}await sleep(100);}throw Error('REHEARSAL_READY_TIMEOUT '+output);};
+ const wait=async()=>{for(let n=0;n<180;n++){if(child.exitCode!==null||child.signalCode!==null)throw Error('REHEARSAL_CHILD_EXIT '+output);try{if(startupComplete){const r=await request('/health/ready');if(r.status===200)return r;}}catch{}await sleep(100);}throw Error('REHEARSAL_READY_TIMEOUT '+output);};
  const stop=async()=>{if(child&&child.exitCode===null&&child.signalCode===null){const exit=once(child,'exit');child.stdin.end('STOP\n');const [code]=await exit;assert.equal(code,0,'runtime stop');}};
  const crash=async()=>{const exit=once(child,'exit');child.kill('SIGKILL');await exit;};
  const controls=async patch=>{const path=join(f.root,'controls.json'),old=JSON.parse(await readFile(path,'utf8'));await writeFile(path,JSON.stringify({...old,...patch,...(patch.clock?{clockSetAt:Date.now()}:{})}));};

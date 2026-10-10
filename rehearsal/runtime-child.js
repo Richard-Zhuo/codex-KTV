@@ -34,6 +34,10 @@ gateway.invoke=async(method,input,normal)=>{
  const result=method==='queryRoomState'&&s.queryUnknown?gateway.evidence(input,{kind:'UNKNOWN',room:{online:true,open:null,countdownTargetEndAt:null},stepResult:'UNKNOWN',settled:false}):await invoke(method,input,normal);
  await writeFile(join(root,'fake-device.json'),JSON.stringify({room:gateway.room,steps:[...gateway.steps]}));
  await appendFile(join(root,'fake-device-calls.jsonl'),JSON.stringify({method,workflowId:input.workflowId,stepId:input.stepId,targetEndAt:input.targetEndAt,countdownSeconds:input.countdownSeconds})+'\n');
+ if(method==='queryRoomState'&&s.holdQuery){
+  await writeFile(join(root,'query-held.json'),JSON.stringify({workflowId:input.workflowId,stepId:input.stepId}));
+  if(!input.signal.aborted)await new Promise(resolve=>input.signal.addEventListener('abort',resolve,{once:true}));
+ }
  if(method==='openRoom'&&s.openUnknown){await writeFile(join(root,'controls.json'),JSON.stringify({...s,openUnknown:false}));throw Error('SYNTHETIC_RESPONSE_LOST');}return result;
 };
 const devices=createRoomControlRuntime({pool,database:db.name,ledgerId:names.ledgerId,authStore,gateway,testOnly:true,recoveryGuard:true,intervalMs:300});

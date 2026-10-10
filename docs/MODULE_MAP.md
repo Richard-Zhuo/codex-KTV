@@ -1,5 +1,7 @@
 ## Stage 5E
 
+Stage 5E crash recovery: rehearsal/crash-recovery.js crosses the owned synthetic clock boundary only after a confirmed child crash; runtime-child.js provides an explicit FakeGateway query barrier. rehearsal/crash-recovery.integration.test.js verifies persisted lease fencing and query-only restart safety on isolated MySQL. See [audit-fix evidence](verification/STAGE5E_CRASH_RECOVERY_FIX.md).
+
 rehearsal/gates.js 只报告十二类 cutover 与首笔业务写入后的回退门禁；artifact.js 固定接受 commit/锁依赖/校验包；scope.js 与 fresh-environment.js 保护独占临时 MySQL/目录/清理；migration.js 只执行官方版本 SQL。prepare.js 复用正式身份初始化、库存审核和首份备份；mapping.js 仅记录 rehearsal-confirmed Fake 映射且排除 V06；restored-backup.js 是严格限 owned TEST restore 库的只读格式1导出辅助，不是生产 restore 扩权。launcher.js/runtime-child.js 是独立 Fake 测试 composition，production/start.js 不导入它。scenarios.js / integration.test.js 验证真实 MySQL 完整演练；regression.js 在另一个临时服务器运行全套原命令；secrets.js 扫描 raw/JSON/base64 秘密标记。browser-evidence.js 将异步输入错误送回 cleanup，限制为固定状态字段；regression-guard.js 为旧 fixture/child 验证精确 owned server/root/UUID。
 
 必要 P1 修复仅 ui/dialogs/orders.js 正式直接加单员工选择及 http/staff-query.js sale/otherCharge batch 投影；对应 ui/sale-attribution.test.js / http/staff-query.test.js 验证。没有新认证、权限、业务规则或 schema。[计划](PRODUCTION_CUTOVER_PLAN.md)。
