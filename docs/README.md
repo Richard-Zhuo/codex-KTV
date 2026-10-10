@@ -1,3 +1,7 @@
+## S1 production blocker closure
+
+[Formal first-install ledger and opening inventory](S1_FIRST_INSTALL.md) describes the dedicated server-side initialization path and its synthetic evidence. S1 is a local candidate pending human acceptance; production GO is still blocked. Older stage notes below are historical snapshots.
+
 ## Stage 5E
 
 [Production cutover plan](PRODUCTION_CUTOVER_PLAN.md) · [Readiness checklist](PRODUCTION_READINESS_CHECKLIST.md) · [Synthetic rehearsal evidence](verification/STAGE5E_CUTOVER_REHEARSAL.md)。Stage5D 稳定基线 c1502c0 已接受；Stage5E 为本地候选，真实生产仍未就绪。

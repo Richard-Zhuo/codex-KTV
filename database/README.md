@@ -1,3 +1,7 @@
+## S1 first-install data boundary
+
+S1 adds no migration or production dependency. Official MySQL migrations 001–011 remain schema authority. The formal CLI writes the initial `ledger_heads` row and a `production_bootstrap_events` first-install audit atomically only after an approved identity bootstrap and an empty business target check. Existing `ledger_operations`/`ledger_success_audit` and the domain snapshot record all authenticated opening inventory and approvals. Legacy PostgreSQL `schema.sql`/`seed.sql` are not used for this flow. See [S1 contract](../docs/S1_FIRST_INSTALL.md).
+
 ## Stage 5B
 
 Schema authority: versioned MySQL migrations001-011. Migration011 adds recovery_control/recovery_events only. Twenty InnoDB tables; no identity, mapping or inventory seeds. production/schema-manifest.json remains a derived verification digest, not another authority.

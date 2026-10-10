@@ -1,3 +1,7 @@
+## S1：正式首装账本与期初库存（2026-10-10）
+
+本轮只关闭 S1 软件 blocker，不进入 Stage 5F 或新增营业功能。已迁移的空 MySQL 目标及已批准的正式身份 bootstrap 后，须由受控服务端 CLI 显式建立唯一初始账本，并使用现有 trusted stock／consumableStock／approveInventory 完成真实期初盘点。账本创建须绑定门店、账本、实际数据库 server UUID、schema／应用版本、revision 0、时间与 bootstrap 操作人说明；同计划重放不重建，不同计划、已有业务数据及错误目标拒绝。库存 null 仍表示未初始化，申请不等于批准。部分完成保留已批准事实，正常营业及设备控制继续被 readiness 阻断。dry-run 零写入，apply 须绑定目标和计划的明确确认串；密码与 session 不进入输出。只允许 synthetic 验证，真人和生产写入须另行批准。具体行为与停止点见 [S1 首装契约](S1_FIRST_INSTALL.md)。
+
 ## Stage 5E
 
 在完全隔离 synthetic 环境演练干净部署、十二类 GO/NO-GO、营业与故障恢复、首笔业务前/后不同回退边界；不自动 GO。仅复用已接受的 auth/trusted application/MySQL migrations001–011/backup/recovery，Fake provider/alert/heartbeat 不升级为生产能力。真实切换、部署、初始化、真实 provider 均禁止。演练暴露的 P1：正式房间加单必须显式选择 employee UUID；员工 snapshot 必须保留 sale/otherCharge batch，保证现有收款标识一致。没有修改领域价格、权限或支付规则。[切换与回退计划](PRODUCTION_CUTOVER_PLAN.md)。

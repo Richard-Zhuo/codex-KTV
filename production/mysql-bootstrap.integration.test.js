@@ -197,6 +197,8 @@ test('production bootstrap against fresh migrated isolated MySQL', {skip:!raw},a
       assert.equal((await auth.login({loginIdentifier:p.loginIdentifier,password:secret})).ok,false);
     });
 
+    assertFixtureEnvironment();
+    await pool.execute("DELETE FROM ledger_heads WHERE ledger_id IN ('bootstrap-rotation','bootstrap-disable')");
     const mappingPlan={configVersion:'synthetic-mappings-v1',environment:'test',database:'jbhh_ktv_test',storeId:plan.storeId,ledgerId:plan.ledgerId,approved:true,mappings:[{internalRoomId:'V06',provider:'ktvsky',externalDeviceId:'synthetic-device-674B',enabled:false,source:'human-confirmed',confirmedAt:'2026-10-08T00:00:00Z',confirmedBy:'synthetic-operator'}]};
     const mappingArgs={...args,plan:mappingPlan};
     const readyConfig={environment:'test',database:plan.database,storeId:plan.storeId,ledgerId:plan.ledgerId,deviceControlMode:'disabled'};
@@ -234,7 +236,7 @@ test('production bootstrap against fresh migrated isolated MySQL', {skip:!raw},a
       const state=initialState();for(const stock of [...Object.values(state.inventory),...Object.values(state.consumables)])stock.count=0;
       const encoded=encodeLedgerSnapshot(state);
       await pool.execute('UPDATE ledger_heads SET state_json=?,state_checksum=? WHERE ledger_id=?',[encoded.json,encoded.checksum,plan.ledgerId]);
-      const report=await readProductionReadiness({pool,config:readyConfig});assert.equal(report.ready,true);assert.equal(report.catalog.blockers.length,0);
+      const report=await readProductionReadiness({pool,config:readyConfig});assert.equal(report.ready,false);assert.equal(report.catalog.blockers.length,0);assert.ok(report.blockers.some(b=>b.code==='LEDGER_NOT_INITIALIZED'));
       await assert.rejects(readProductionReadiness({pool,config:{...readyConfig,storeId:'wrong'}}),{code:'PRODUCTION_STORE_MISMATCH'});
     });
   }finally{try{if(pool)await pool.end();}finally{try{for(const name of created.reverse()){assertFixtureEnvironment(); await setup.query('DROP TABLE '+name);}}finally{await setup.end();}}}

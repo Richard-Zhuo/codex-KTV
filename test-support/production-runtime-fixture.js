@@ -42,6 +42,7 @@ export async function withProductionRuntimeFixture(work){
   };
   try{
    await connection.query("UPDATE production_bootstrap_events SET environment='production'");
+   await connection.query("UPDATE recovery_control SET environment='production' WHERE control_id=1 AND mode='NORMAL'");
    await f.setup.query('CREATE USER ?@? IDENTIFIED BY ?',[user,'127.0.0.1',dbPassword]);userCreated=true;
    await f.setup.query('GRANT SELECT,INSERT,UPDATE,DELETE ON '+database+'.* TO ?@?',[user,'127.0.0.1']);
    await writeFile(configPath,JSON.stringify(config));await writeFile(secretPath,JSON.stringify(secret));

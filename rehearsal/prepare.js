@@ -3,28 +3,25 @@ import {randomBytes,randomUUID} from 'node:crypto';
 import {freshEnvironment,migrateDatabase,uniquePerson,ACCEPTED} from './fresh-environment.js';
 import {migrateFresh} from './migration.js';
 import {initialState} from '../rules.js';
-import {encodeLedgerSnapshot} from '../ledger/mysql-snapshot.js';
 import {PERMISSION_IDS} from '../shared/identity.js';
 import {POLICY_ATTRIBUTE_IDS} from '../ledger/command-policy.js';
 import {bootstrapIdentities} from '../production/bootstrap.js';
+import {inspectFirstInstall,applyInitialLedger,applyOpeningInventory,firstInstallConfirmation} from '../production/first-install.js';
 import {bootstrapRehearsalMappings} from './mapping.js';
 import {readProductionReadiness} from '../production/readiness.js';
 import {validateSchema} from '../production/schema.js';
 import {createMySqlAuthStore} from '../auth/mysql-store.js';
 import {createAuthService} from '../auth/service.js';
 import {createMemoryLoginRateLimiter} from '../auth/rate-limit.js';
-import {digestSessionToken} from '../auth/session-token.js';
 import {createMySqlEmployeeStore} from '../employees/mysql-store.js';
 import {createMySqlLedgerStore} from '../ledger/mysql-store.js';
-import {createTrustedLedgerApplication} from '../ledger/application.js';
 import {backupDatabase,restoreDatabase,connect} from '../backup/mysql-backup.js';
 import {verifyRecovery,resumeRecovery} from '../recovery/operator.js';
 import {join} from 'node:path';
 export async function initialize(f,database,environment='test',onCheckpoint){
  const {pool,migration}=await migrateDatabase(f,database);
- const state=initialState(),encoded=encodeLedgerSnapshot(state);
- await pool.execute('INSERT INTO ledger_heads(ledger_id,revision,state_schema_version,state_json,state_checksum) VALUES(?,0,?,?,?)',[f.names.ledgerId,state.version,encoded.json,encoded.checksum]);
- const config={environment,database,storeId:f.names.storeId,ledgerId:f.names.ledgerId,deviceControlMode:'disabled'};
+ const state=initialState();
+ const config={environment,database,storeId:f.names.storeId,ledgerId:f.names.ledgerId,applicationCommit:ACCEPTED,timeZone:'Asia/Shanghai',deviceControlMode:'disabled'};
  const checkpoints=[],check=async step=>{const r=await readProductionReadiness({pool,config});checkpoints.push({step,ready:r.ready,revision:r.revision,blockers:r.blockers.map(b=>b.code)});await onCheckpoint?.(step);return r;};
  process.stdout.write(JSON.stringify({event:'initializing',database,environment})+'\n');
  const before=await check('after migration');assert.equal(before.ready,false);assert.ok(before.blockers.some(b=>b.code==='OPENING_INVENTORY_REQUIRED'));
@@ -32,20 +29,30 @@ export async function initialize(f,database,environment='test',onCheckpoint){
  const password=randomBytes(32).toString('base64url'),passwords=Object.fromEntries(people.map(p=>[p.principalId,password]));
  f.secretMarkers.add(password);
  const plan={configVersion:'rehearsal-'+f.names.id,environment,database,storeId:f.names.storeId,ledgerId:f.names.ledgerId,approved:true,people};
- const databaseUrl=f.dbUrl(database),env=environment==='test'?{LEDGER_MYSQL_TEST_URL:databaseUrl}:{},confirmation=database+'/'+f.names.storeId+'/'+f.names.ledgerId;
+ const databaseUrl=f.dbUrl(database),env=environment==='test'?{LEDGER_MYSQL_TEST_URL:databaseUrl}:{NODE_ENV:'production',KTV_HTTP_ENV:'production',KTV_DEPLOYMENT_ENV:'production'},confirmation=database+'/'+f.names.storeId+'/'+f.names.ledgerId;
  const args={pool,plan,databaseUrl,confirmation,initiatedBy:'REHEARSAL-OPERATOR-'+f.names.id,env,passwords};
  assert.equal((await bootstrapIdentities(args)).status,'planned');
  assert.equal((await bootstrapIdentities({...args,dryRun:false})).accountsCreated,6);
  assert.equal((await bootstrapIdentities({...args,dryRun:false,passwords:{}})).status,'already_satisfied');
  await check('after bootstrap');
+ const ledgerPlan={version:1,environment,database,serverUuid:f.identity.server_uuid,storeId:f.names.storeId,ledgerId:f.names.ledgerId,applicationCommit:ACCEPTED,kind:'ledger'};
+ const install={pool,plan:ledgerPlan,databaseUrl,config,env};
+ assert.equal((await inspectFirstInstall(install)).ledgerInitialized,false);
+ assert.equal((await applyInitialLedger({...install,confirmation:firstInstallConfirmation(ledgerPlan),initiatedBy:'REHEARSAL-OPERATOR-'+f.names.id})).status,'initialized');
+ assert.equal((await applyInitialLedger({...install,confirmation:firstInstallConfirmation(ledgerPlan),initiatedBy:'REHEARSAL-OPERATOR-'+f.names.id})).status,'already_initialized');
+ await check('after ledger');
  const authStore=createMySqlAuthStore({pool,database}),auth=createAuthService({store:authStore,rateLimiter:createMemoryLoginRateLimiter()}),employees=createMySqlEmployeeStore({pool,database});
  const store=createMySqlLedgerStore({pool,database,ledgerId:f.names.ledgerId,bindSessionRevalidation:authStore.bindSessionRevalidation,bindEmployeeResolver:employees.bindEmployeeResolver});
- const app=createTrustedLedgerApplication({store,businessTimeZone:'Asia/Shanghai'}),login=await auth.login({loginIdentifier:people[0].loginIdentifier,password});assert.equal(login.ok,true);
- const credential={tokenDigest:digestSessionToken(login.token)};
- const execute=async(action,payload)=>{const head=await store.read(),r=await app.execute({operationKey:randomUUID(),expectedRevision:head.revision,action,payload},credential);assert.equal(r.status,'committed',action);return store.read();};
- for(const [kind,stocks]of [['stock',state.inventory],['consumableStock',state.consumables]])for(const product of Object.keys(stocks)){
-  const head=await execute(kind,{product,count:1000,reason:'REHEARSAL opening count',...(kind==='consumableStock'?{opened:0}:{})});
-  await execute('approveInventory',{request:head.state.inventoryReviews.at(-1).id,decisionNote:'REHEARSAL counted and reviewed'});
+ for(const [stockKind,stocks] of [['drink',state.inventory],['consumable',state.consumables]])for(const productId of Object.keys(stocks)){
+  const before=await store.read(),common={version:1,environment,database,serverUuid:f.identity.server_uuid,storeId:f.names.storeId,ledgerId:f.names.ledgerId,applicationCommit:ACCEPTED};
+  const stockPlan={...common,kind:'stock',operationKey:randomUUID(),expectedRevision:before.revision,actorPrincipalId:people[0].principalId,
+    stockKind,productId,count:1000,reason:'REHEARSAL opening count',...(stockKind==='consumable'?{opened:0}:{})};
+  const credential={loginIdentifier:people[0].loginIdentifier,password};
+  assert.equal((await applyOpeningInventory({pool,plan:stockPlan,databaseUrl,config,env,confirmation:firstInstallConfirmation(stockPlan),credential})).status,'committed');
+  const next=await store.read(),request=next.state.inventoryReviews.at(-1);
+  const approvalPlan={...common,kind:'approve',operationKey:randomUUID(),expectedRevision:next.revision,actorPrincipalId:people[0].principalId,
+    requestId:request.id,decisionNote:'REHEARSAL counted and reviewed'};
+  assert.equal((await applyOpeningInventory({pool,plan:approvalPlan,databaseUrl,config,env,confirmation:firstInstallConfirmation(approvalPlan),credential})).status,'committed');
  }
  const stocked=await check('after inventory');assert.equal(stocked.ready,true);
  // The accepted mapping API requires human-confirmed metadata. Keep it intact;

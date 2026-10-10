@@ -1,3 +1,7 @@
+## S1 first-install boundary
+
+The S1 CLI is a separate server-side initialization capability. It validates production configuration and the actual MySQL server UUID/database/schema, reads the approved identity bootstrap receipts, then creates one ledger head and its first-install audit in a single InnoDB transaction under a database-scoped lock. It never edits a ledger snapshot to set stock. Subsequent opening counts and approvals use authenticated `createTrustedLedgerApplication` with existing `stock`/`consumableStock`/`approveInventory`, current grants, operationKey, expectedRevision and the ledger's operation/audit transaction. `production/readiness.js` reports missing ledger and null inventory separately; `productionApiGate` blocks all normal API and worker startup until ready. Details: [S1 first install](S1_FIRST_INSTALL.md).
+
 ## Stage 5D operational boundary
 
 Existing safe logger → bounded rotating file/stderr. Runtime reads confirmed sources → independent atomic incident/outbox file → asynchronous bounded transport → permission-filtered admin summary. Business/auth transactions never await alert sends. Incident state is protected Git-external operational telemetry, not a second ledger or MySQL schema authority. One writer per dedicated directory, recovery-first UNKNOWN behavior unchanged, no automatic remediation. [Contract](STAGE5D_MONITORING_RUNBOOK.md).

@@ -49,12 +49,12 @@
 - ROLLBACK：停止应用；无自动 DOWN 或 wipe。按实际兼容矩阵选择独立恢复或 forward fix。
 - OWNER：数据库操作员＋技术负责人。
 
-### STEP 4 — identity / inventory
-- PRECONDITION：OWNER CONFIRMATION REQUIRED；每个真实 employee/principal UUID、binding、权限/policy、期初盘点均签字；岗位名称不授予能力。
-- ACTION：production/bootstrap-cli.js dry-run 后明确 apply；库存沿正式盘点与审核命令初始化。
-- VALIDATION：正式 auth/employee audit；repeat already_satisfied；权限负向测试；全部需售商品 count 明确，null 不能转 0。
-- GO / NO-GO：backend.view、审批、review.self、policy 未决定，或盘点缺失即 NO-GO。
-- ROLLBACK：停止初始化；不自动重绑、扩权或覆盖已完成计划。
+### STEP 4 — identity / formal first-install ledger / inventory
+- PRECONDITION：OWNER CONFIRMATION REQUIRED；逐一签字确认真实 employee/principal UUID、binding、权限/policy、目标 MySQL server UUID、DB、store/ledger、应用提交及期初实盘数量；岗位名称不授予能力。
+- ACTION：先用 production/bootstrap-cli.js 完成正式身份 dry-run 和明确 apply；再按 [S1 正式首装合同](S1_FIRST_INSTALL.md) 依次执行 production/first-install-cli.js 的 ledger、stock、approve 计划。每个计划先 dry-run，人工核对其目标和确认串，再 apply；库存只通过正式可信命令写入。
+- VALIDATION：正式 auth/employee/S1 ledger audit；原计划重放为 already_initialized 或原 operationKey 结果；库存调整与审核 audit、revision、全部受管商品实盘数量明确，null 不自动转 0；readiness 不再有 LEDGER_NOT_INITIALIZED / INVENTORY_NOT_INITIALIZED。
+- GO / NO-GO：目标、身份、backend.view、审核、review.self、policy 或任一商品盘点缺失即 NO-GO；S1 blocker 消失也不替代其他生产门槛或人工 GO。
+- ROLLBACK：停止初始化；不自动重绑、扩权、覆盖已完成盘点或换 operationKey；提交结果不明时先用原计划核对/重放。
 - OWNER：店主＋盘点/账号操作员。
 
 ### STEP 5 — mapping / provider

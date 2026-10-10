@@ -1,3 +1,13 @@
+## S1 first-install entry and tests
+
+- `production/first-install-cli.js`: production-only CLI, external configuration and secrets, dry-run/apply argument boundary.
+- `production/first-install.js`: target/schema/identity/business-data guards, atomic head plus audit, and orchestration of the existing authenticated trusted inventory commands.
+- `production/readiness.js`: distinct ledger and inventory initialization blockers; normal API and worker gate.
+- `rehearsal/prepare.js`: Stage 5E synthetic rehearsal now calls the formal S1 initializer and trusted inventory path.
+- `production/first-install.integration.test.js`: isolated MySQL 8.4.11, two-process CLI concurrency, negative and crash tests. `production/mysql-bootstrap.integration.test.js` confirms legacy direct head insertion does not satisfy formal readiness.
+- `test-support/backup-fixture.js` and `test-support/production-runtime-fixture.js`: synthetic backup and runtime fixtures retain formal S1 receipt and verified-restore provenance for compatibility tests.
+- Operator contract: [S1 first install](S1_FIRST_INSTALL.md).
+
 ## Stage 5E
 
 Stage 5E crash recovery: rehearsal/crash-recovery.js crosses the owned synthetic clock boundary only after a confirmed child crash; runtime-child.js provides an explicit FakeGateway query barrier. rehearsal/crash-recovery.integration.test.js verifies persisted lease fencing and query-only restart safety on isolated MySQL. See [audit-fix evidence](verification/STAGE5E_CRASH_RECOVERY_FIX.md).
