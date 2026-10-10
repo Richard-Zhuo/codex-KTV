@@ -1,3 +1,5 @@
+S2 status: ALERTING remains BLOCKED for real production until the human-approved WeCom OPEN/RESOLVED phone smoke succeeds. Configured transport and synthetic tests do not establish mobile arrival. See [S2 WeCom alert transport](S2_WECOM_ALERT_TRANSPORT.md).
+
 # Production readiness checklist
 状态只使用 PASS / BLOCKED / NOT_APPLICABLE；十二类均必需，NOT_APPLICABLE 不能消除门禁。以下是 Stage5E synthetic 证据与真实门店状态的分离记录，当前不是生产 GO。
 | Category | Synthetic rehearsal | Real production | 证据 / 剩余条件 |

@@ -1,3 +1,11 @@
+## S2 real alert transport entry and tests
+
+- operations/wecom.js: fixed-origin WeCom token/message client, safe text and recipient policy.
+- operations/alerts.js and operations/incidents.js: durable outbox recipient/text snapshots and incident recipient history.
+- production/runtime-config.js, production/start.js, production/preflight.js: Stage 5C protected secret validation, formal runtime wiring and preflight gate.
+- operations/wecom.test.js, operations/runtime.test.js, production/runtime.integration.test.js: synthetic client/outbox and protected preflight verification.
+- Operator boundary: [S2 WeCom alert transport](S2_WECOM_ALERT_TRANSPORT.md).
+
 ## S1 first-install entry and tests
 
 - `production/first-install-cli.js`: production-only CLI, external configuration and secrets, dry-run/apply argument boundary.

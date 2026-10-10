@@ -1,3 +1,7 @@
+## S2 real alert transport candidate
+
+S1 is accepted and merged. The local S2 WeCom self-built app candidate, protected configuration, recipient policy and future phone smoke are described in [S2 WeCom alert transport](S2_WECOM_ALERT_TRANSPORT.md). Current evidence and acceptance status remain in [Current stage](CURRENT_STAGE.md).
+
 ## S1 production blocker closure
 
 [Formal first-install ledger and opening inventory](S1_FIRST_INSTALL.md) describes the dedicated server-side initialization path and its synthetic evidence. S1 is a local candidate pending human acceptance; production GO is still blocked. Older stage notes below are historical snapshots.

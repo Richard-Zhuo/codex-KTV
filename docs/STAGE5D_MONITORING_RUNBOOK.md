@@ -1,3 +1,5 @@
+S2 addendum: the historical Stage 5D statement below that no real channel is selected describes its original delivery. The current opt-in WeCom candidate and its protected configuration, recipient persistence and failure limits are documented in [S2 WeCom alert transport](S2_WECOM_ALERT_TRANSPORT.md). Stage 5D incident/outbox/readiness semantics remain frozen.
+
 # Stage 5D Monitoring / Alerting / Runbook
 
 Base: human-accepted main/origin/main e57af99dd49a46771ff20dd495f71f22d9db97ff. Delivery branch: codex/p0-1-stage5d-monitoring-runbook. Local review candidate only; no merge, push, deployment, real initialization, alerts or KTVSky operation. Formal employee/owner/technical instructions: [OPERATIONS_RUNBOOK](OPERATIONS_RUNBOOK.md).

@@ -1,3 +1,5 @@
+S2 addendum: the historical Stage 5C scope below predates the opt-in WeCom alert candidate. Its existing Git-external secret file and Windows ACL checks now also protect the optional alerting.wecom block. See [S2 WeCom alert transport](S2_WECOM_ALERT_TRANSPORT.md) for the placeholder schema, rotation and future human-approved phone smoke.
+
 # Stage 5C production runtime contract
 
 ## Target and scope

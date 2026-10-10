@@ -1,3 +1,7 @@
+## S2 production alert requirement
+
+The owner selected WeCom self-built application messages as the first real critical alert channel. CRITICAL/ERROR and WARN use approved recipient lists; RESOLVED follows the same incident's accepted or possibly notified recipients. External delivery remains outside business commits. This local candidate needs human acceptance and a separate real-phone smoke. The detailed transport and security contract is [S2 WeCom alert transport](S2_WECOM_ALERT_TRANSPORT.md).
+
 ## S1：正式首装账本与期初库存（2026-10-10）
 
 本轮只关闭 S1 软件 blocker，不进入 Stage 5F 或新增营业功能。已迁移的空 MySQL 目标及已批准的正式身份 bootstrap 后，须由受控服务端 CLI 显式建立唯一初始账本，并使用现有 trusted stock／consumableStock／approveInventory 完成真实期初盘点。账本创建须绑定门店、账本、实际数据库 server UUID、schema／应用版本、revision 0、时间与 bootstrap 操作人说明；同计划重放不重建，不同计划、已有业务数据及错误目标拒绝。库存 null 仍表示未初始化，申请不等于批准。部分完成保留已批准事实，正常营业及设备控制继续被 readiness 阻断。dry-run 零写入，apply 须绑定目标和计划的明确确认串；密码与 session 不进入输出。只允许 synthetic 验证，真人和生产写入须另行批准。具体行为与停止点见 [S1 首装契约](S1_FIRST_INSTALL.md)。

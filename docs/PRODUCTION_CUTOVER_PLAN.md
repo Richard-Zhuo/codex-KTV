@@ -1,3 +1,5 @@
+S2 gate note: the WeCom adapter candidate has only synthetic evidence until the owner approves and observes a real OPEN/RESOLVED phone smoke. Do not mark the alerting cutover gate PASS from config validation or provider acceptance alone. See [S2 WeCom alert transport](S2_WECOM_ALERT_TRANSPORT.md).
+
 # Production cutover plan — Stage 5E
 本计划是未来操作手册，**不是生产执行授权**。当前只允许隔离 synthetic rehearsal；正式切换、真人初始化、真实库存、真实 mapping 和 KTVSky live control 均未执行。
 当前验收依据见 [演练记录](verification/STAGE5E_CUTOVER_REHEARSAL.md)；逐项门禁见 [Readiness checklist](PRODUCTION_READINESS_CHECKLIST.md)。
