@@ -35,7 +35,20 @@ export async function launcher(f,{database=f.active.database,label='fake',formal
  const controls=async patch=>{const path=join(f.root,'controls.json'),old=JSON.parse(await readFile(path,'utf8'));await writeFile(path,JSON.stringify({...old,...patch,...(patch.clock?{clockSetAt:Date.now()}:{})}));};
  const login=async(person=f.source.people[0])=>{const r=await request('/api/v1/auth/login',{method:'POST',headers:{Origin:config.publicOrigin,'Content-Type':'application/json'},body:{loginIdentifier:person.loginIdentifier,password:f.source.password}});assert.equal(r.status,200,'login '+r.text);const cookie=r.headers['set-cookie'][0].split(';')[0];f.secretMarkers.add(cookie.split('=')[1]);f.secretMarkers.add(r.json().csrfToken);return {cookie,csrf:r.json().csrfToken,person};};
  const call=async(session,path,options={})=>request(path,{...options,headers:{Cookie:session.cookie,Origin:config.publicOrigin,'X-CSRF-Token':session.csrf,'Content-Type':'application/json',...options.headers}});
- const snapshot=async(session)=>{const r=await call(session,'/api/v1/store/snapshot');assert.equal(r.status,200);return r.json();};
+ const snapshot=async(session)=>{
+  let last;const until=Date.now()+20000;
+  while(Date.now()<until){
+   const ready=await request('/health/ready');
+   if(ready.status===200){
+    const r=await call(session,'/api/v1/store/snapshot');
+    if(r.status===200)return r.json();
+    assert.equal(r.status,503,'unexpected snapshot status');
+    last={ready:ready.status,snapshot:r.status,code:r.json().error?.code};
+   }else last={ready:ready.status,blockers:ready.json().blockers};
+   await sleep(100);
+  }
+  throw Error('REHEARSAL_SNAPSHOT_NOT_READY '+JSON.stringify(last));
+ };
  const command=async(session,action,payload,body)=>{body??={operationKey:randomUUID(),expectedRevision:(await snapshot(session)).revision,payload};const r=await call(session,'/api/v1/commands/'+action,{method:'POST',body});return {...r,body};};
  return {config,configPath,secretPath,secret,tls,port,user,password,logs,request,start,wait,stop,crash,controls,login,call,snapshot,command,get child(){return child;},get output(){return output;}};
 }

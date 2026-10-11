@@ -22,7 +22,13 @@ const pool={async getConnection(){const c=await rawPool.getConnection();try{cons
  async query(...args){const c=await this.getConnection();try{return await c.query(...args);}finally{c.release();}},
  async execute(...args){const c=await this.getConnection();try{return await c.execute(...args);}finally{c.release();}}};
 const logger=createSafeLogger({secrets:loaded.redactionSecrets,write:line=>process.stdout.write(line)}),transport=new FakeAlertTransport();
-const originalSend=transport.send.bind(transport);transport.send=async payload=>{const s=await settings();if(['timeout','fail'].includes(s.alert))await appendFile(join(loaded.logDirectory,'fake-alert-attempts.jsonl'),JSON.stringify({outcome:s.alert,incidentId:payload.incidentId,code:payload.code})+'\n');if(s.alert==='timeout')return new Promise(()=>{});if(s.alert==='fail')throw Error('SYNTHETIC_ALERT_FAILED');const r=await originalSend(payload);await appendFile(join(loaded.logDirectory,'fake-alerts.jsonl'),JSON.stringify(payload)+'\n');return r;};
+const originalSend=transport.send.bind(transport);transport.send=async payload=>{const s=await settings();
+ if(s.holdRecoveryAlert&&payload.code==='DATABASE_RESTORED'){
+  await writeFile(join(root,'alert-held.json'),JSON.stringify({code:payload.code,deliveryId:payload.deliveryId}));
+  for(let n=0;n<400&&(await settings()).holdRecoveryAlert;n++)await new Promise(resolve=>setTimeout(resolve,25));
+  if((await settings()).holdRecoveryAlert)throw Error('SYNTHETIC_ALERT_HOLD_TIMEOUT');
+ }
+ if(['timeout','fail'].includes(s.alert))await appendFile(join(loaded.logDirectory,'fake-alert-attempts.jsonl'),JSON.stringify({outcome:s.alert,incidentId:payload.incidentId,code:payload.code})+'\n');if(s.alert==='timeout')return new Promise(()=>{});if(s.alert==='fail')throw Error('SYNTHETIC_ALERT_FAILED');const r=await originalSend(payload);await appendFile(join(loaded.logDirectory,'fake-alerts.jsonl'),JSON.stringify(payload)+'\n');return r;};
 const operations=await createOperationalRuntime({loaded,logger,transport});
 const authStore=createMySqlAuthStore({pool,database:db.name,bindRecoveryGuard:bindRecoveryWriteGuard}),auth=createAuthService({store:authStore,rateLimiter:createMemoryLoginRateLimiter()}),employeeStore=createMySqlEmployeeStore({pool,database:db.name,bindRecoveryGuard:bindRecoveryWriteGuard});
 const store=createMySqlLedgerStore({pool,database:db.name,ledgerId:names.ledgerId,deviceControlMode:'required',bindRecoveryGuard:bindRecoveryWriteGuard,bindSessionRevalidation:authStore.bindSessionRevalidation,bindEmployeeResolver:employeeStore.bindEmployeeResolver});

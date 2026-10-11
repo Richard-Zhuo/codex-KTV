@@ -14,7 +14,7 @@ export function alertPayload(incident,delivery,secrets=[]){
 // Dispatch remains outside business transactions. A timed-out send is not retried
 // in this process; restart reuses the same deliveryId and recipient snapshot.
 export function createAlertDispatcher({store,transport,logger,now=Date.now,secrets=[],timeoutMs=2000,maxAttempts=3,backoffMs=30000,batchSize=4}){
- const uncertain=new Set();let running=null;
+ const uncertain=new Set(),inFlight=new Set();let running=null;
  async function dispatch(){
   const due=store.read().outbox.filter(e=>e.state==='PENDING'&&e.nextAttemptAt<=now()&&!uncertain.has(e.deliveryId)).slice(0,batchSize);
   for(const entry of due){
@@ -32,6 +32,7 @@ export function createAlertDispatcher({store,transport,logger,now=Date.now,secre
     await store.update(s=>{const item=s.outbox.find(e=>e.deliveryId===entry.deliveryId);if(item?.state==='PENDING')item.state='EXHAUSTED';});
     logger.log({event:'alert_delivery',code:'ALERT_DELIVERY_FAILED',severity:'ERROR',incidentId:incident.incidentId});continue;
    }
+   inFlight.add(entry.deliveryId);try{
    const reserved=await store.update(s=>{const item=s.outbox.find(e=>e.deliveryId===entry.deliveryId);if(!item||item.state!=='PENDING')return false;
     if(item.attempts>=maxAttempts){item.state='EXHAUSTED';return false;}
     if(recipients&&!item.recipients)item.recipients=[...recipients];
@@ -60,9 +61,10 @@ export function createAlertDispatcher({store,transport,logger,now=Date.now,secre
    });
    if(timeout)uncertain.add(entry.deliveryId);
    if(!accepted)logger.log({event:'alert_delivery',code:failure?.code?.startsWith('WECOM_')?failure.code:'ALERT_DELIVERY_FAILED',severity:'ERROR',incidentId:incident.incidentId,deliveryId:entry.deliveryId,attempt:store.read().outbox.find(e=>e.deliveryId===entry.deliveryId)?.attempts,provider:transport.messageFor?'wecom':undefined,operation:transport.messageFor?'send-message':undefined,providerCode:failure?.providerCode});
+   }finally{inFlight.delete(entry.deliveryId);}
   }
  }
- return {tick(){return running??(running=dispatch().finally(()=>{running=null;}));},async remind(intervalMs=3600000){
+ return {isInFlight:id=>inFlight.has(id),tick(){return running??(running=dispatch().finally(()=>{running=null;}));},async remind(intervalMs=3600000){
   await store.update(s=>{for(const i of s.incidents.filter(i=>i.state==='OPEN')){
    if(i.reminders>=3||s.outbox.some(e=>e.incidentId===i.incidentId&&e.state==='PENDING')||now()-(i.lastReminderAt??Date.parse(i.openedAt))<intervalMs)continue;
    if(s.outbox.filter(e=>e.state==='PENDING').length>=1024)break;

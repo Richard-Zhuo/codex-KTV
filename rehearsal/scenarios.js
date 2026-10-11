@@ -123,14 +123,27 @@ export async function scenarios(f,record){
   return {leaseRecovery,activeOrderPreserved:true,unknownWorkflowSurvived:true,queryOnlyAfterCrash:true,revision:before.revision,sessionsPreserved:true,newProcess:true,externalLossDetected:true,realHeartbeatConfigured:false};
  });
  await step('databaseOutage',async()=>{
-  const before=await head();await f.serverGuard();await f.setup.query('ALTER USER ?@? ACCOUNT LOCK',[app.user,'127.0.0.1']);
+  const before=await head();await app.controls({holdRecoveryAlert:true});await f.serverGuard();await f.setup.query('ALTER USER ?@? ACCOUNT LOCK',[app.user,'127.0.0.1']);
   const [connections]=await f.setup.query('SELECT ID FROM information_schema.PROCESSLIST WHERE USER=?',[app.user]);
   for(const c of connections)await f.setup.query('KILL '+Number(c.ID));
   const r=await app.call(operator,'/api/v1/commands/clean',{method:'POST',body:{operationKey:'db-outage-'+f.names.id,expectedRevision:before.revision,payload:{room:'999'}}});assert.notEqual(r.status,200);
   await eventually(()=>app.request('/health/ready'),r=>r.status===503,'database readiness');
   await sleep(1200);
-  await f.setup.query('ALTER USER ?@? ACCOUNT UNLOCK',[app.user,'127.0.0.1']);await app.wait();assert.equal((await head()).revision,before.revision);
-  const admin=await app.call(owner,'/api/v1/admin/snapshot');assert.equal(admin.status,200);const incident=admin.json().view.operations.incidents.find(i=>i.code==='DATABASE_UNAVAILABLE');assert.ok(incident);await eventually(async()=>{const r=await app.call(owner,'/api/v1/admin/snapshot');return r.json().view.operations.incidents.find(i=>i.incidentId===incident.incidentId);},i=>i?.state==='RESOLVED','same DB incident resolves');
+  await f.setup.query('ALTER USER ?@? ACCOUNT UNLOCK',[app.user,'127.0.0.1']);
+  const held=await eventually(async()=>{try{return JSON.parse(await readFile(join(f.root,'alert-held.json'),'utf8'));}catch(error){if(error.code==='ENOENT')return null;throw error;}},Boolean,'recovery alert in flight');
+  const duringDelivery=await app.request('/health/ready');
+  assert.equal(duringDelivery.status,503);assert.ok(duringDelivery.json().blockers.includes('ALERT_DELIVERY_UNAVAILABLE'));
+  await app.controls({holdRecoveryAlert:false});
+  await eventually(async()=>{try{return (await readFile(join(app.logs,'fake-alerts.jsonl'),'utf8')).trim().split('\n').filter(Boolean).map(JSON.parse);}catch(error){if(error.code==='ENOENT')return [];throw error;}},rows=>rows.some(row=>row.deliveryId===held.deliveryId),'recovery alert accepted');
+  await app.wait();assert.equal((await head()).revision,before.revision);
+  let admin;await eventually(async()=>{
+   const ready=await app.request('/health/ready');
+   if(ready.status!==200)return {ready:ready.status,blockers:ready.json().blockers};
+   const response=await app.call(owner,'/api/v1/admin/snapshot');
+   if(response.status===200)admin=response;
+   return {ready:ready.status,admin:response.status,code:response.status===503?response.json().error?.code:undefined};
+  },value=>value.admin===200,'database recovery admin read');
+  const incident=admin.json().view.operations.incidents.find(i=>i.code==='DATABASE_UNAVAILABLE');assert.ok(incident);await eventually(async()=>{const r=await app.call(owner,'/api/v1/admin/snapshot');return r.status===200?r.json().view.operations.incidents.find(i=>i.incidentId===incident.incidentId):null;},i=>i?.state==='RESOLVED','same DB incident resolves');
   const delivered=(await readFile(join(app.logs,'fake-alerts.jsonl'),'utf8')).trim().split('\n').map(JSON.parse);assert.ok(delivered.some(a=>a.incidentId===incident.incidentId&&a.code==='DATABASE_UNAVAILABLE'));return {writesStopped:true,committedRevisionPreserved:true,incidentId:incident.incidentId,sameIncidentResolved:true,fakeAlertDelivered:true};
  });
  await step('backupAndAlertFailure',async()=>{

@@ -82,7 +82,27 @@ test('required alerting refuses unconfigured or failed delivery, while optional 
  const failing=await createOperationalRuntime({loaded,logger:silent,transport:new FakeAlertTransport({failures:99})});
  await failing.lifecycle.condition('DEVICE_UNKNOWN',true,{workflowId:'synthetic'});await failing.dispatcher.tick();assert.ok(failing.readyBlockers().includes('ALERT_DELIVERY_UNAVAILABLE'));assert.equal(failing.store.read().incidents[0].state,'OPEN');
 }));
-test('log failure uses safe fallback and fires one failure signal without exposing raw exception',()=>fixture(async dir=>{
+test('first alert send in flight keeps readiness, failed and retrying delivery degrades until accepted',()=>fixture(async dir=>{
+ let time=Date.now(),calls=0,release;
+ const loaded={logDirectory:dir,redactionSecrets:[],tls:{cert:''},config:{storeId:'synthetic',ledgerId:'synthetic',backupPolicyConfigured:true,monitoring:{alertingRequired:true,backupDirectory:dir}}};
+ const transport={configured:true,send(){calls++;return new Promise(resolve=>{release=resolve;});}};
+ const ops=await createOperationalRuntime({loaded,logger:silent,transport,now:()=>time});
+ await ops.lifecycle.condition('DEVICE_UNKNOWN',true,{component:'device',workflowId:'synthetic'});
+ const first=ops.dispatcher.tick();for(let n=0;n<1000&&calls<1;n++)await new Promise(resolve=>setTimeout(resolve,1));
+ assert.equal(calls,1);assert.equal(ops.store.read().outbox[0].attempts,1);
+ assert.equal(ops.readyBlockers().includes('ALERT_DELIVERY_UNAVAILABLE'),false);
+ assert.equal(ops.snapshot().alertDelivery,'AVAILABLE');
+ release({accepted:false});await first;
+ assert.ok(ops.readyBlockers().includes('ALERT_DELIVERY_UNAVAILABLE'));
+ assert.equal(ops.snapshot().alertDelivery,'DEGRADED');
+ const restarted=await createOperationalRuntime({loaded,logger:silent,transport:new FakeAlertTransport(),now:()=>time});
+ assert.ok(restarted.readyBlockers().includes('ALERT_DELIVERY_UNAVAILABLE'));
+ time+=30001;const retry=ops.dispatcher.tick();for(let n=0;n<1000&&calls<2;n++)await new Promise(resolve=>setTimeout(resolve,1));
+ assert.equal(calls,2);assert.ok(ops.readyBlockers().includes('ALERT_DELIVERY_UNAVAILABLE'));
+ release({accepted:true});await retry;
+ assert.equal(ops.readyBlockers().includes('ALERT_DELIVERY_UNAVAILABLE'),false);
+ assert.equal(ops.snapshot().alertDelivery,'AVAILABLE');
+}));test('log failure uses safe fallback and fires one failure signal without exposing raw exception',()=>fixture(async dir=>{
  const fallback=[];let failures=0;const sink=createRotatingLog(dir,{fallback:s=>fallback.push(s),onFailure:()=>failures++}),log=createSafeLogger({write:s=>sink.write(s),secrets:['synthetic-secret']});
  sink.close();log.error({code:'SAFE',password:'synthetic-secret',stack:'C:/private'});log.error({code:'SAFE'});await new Promise(r=>queueMicrotask(r));assert.equal(failures,1);assert.ok(fallback.join('').includes('LOG_WRITE_FAILURE'));assert.equal(fallback.join('').includes('synthetic-secret'),false);assert.equal(fallback.join('').includes('C:/private'),false);
 }));
