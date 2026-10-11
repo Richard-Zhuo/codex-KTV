@@ -8,7 +8,7 @@ import {windowsDirectoryAcl,validateSmokeAcl,hardenSmokeTemporary} from '../prod
 import {externalDirectory,verifyArtifact,canonical,digest} from '../backup/format.js';
 
 const fail=code=>Object.assign(Error(code),{code});
-const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 const HASH=/^[0-9a-f]{64}$/;
 const ACTIVE='active-plan.json',CLAIM='active-plan.claim';
 const aclBackupDirectory=async path=>validateSmokeAcl(await windowsDirectoryAcl(path));
@@ -33,7 +33,8 @@ const planKeys=['formatVersion','recoveryOperationId','status','createdAt','oper
   'currentRevision','lossWindow','planDigest'];
 function validatePlan(plan){
  if(!exactKeys(plan,planKeys)||plan.formatVersion!==1||plan.status!=='PREPARED'||
-   !UUID.test(plan.recoveryOperationId)||!HASH.test(plan.backupSha256)||
+   typeof plan.recoveryOperationId!=='string'||!UUID.test(plan.recoveryOperationId)||
+   typeof plan.backupId!=='string'||!UUID.test(plan.backupId)||!HASH.test(plan.backupSha256)||
    !HASH.test(plan.schemaDigest)||!HASH.test(plan.planDigest)||
    plan.targetDatabase!==candidateName(plan.recoveryOperationId)||
    plan.targetDatabase===plan.currentDatabase||
@@ -92,9 +93,9 @@ async function dbConnection(url,ssl){
  return mysql.createConnection({uri:url,ssl,dateStrings:true,jsonStrings:true,
    supportBigNumbers:true,bigNumberStrings:true});
 }
-export async function inspectProductionRestore({runtimeConfigFile,artifactDirectory,expectedChecksum,
-  recoveryOperationId=randomUUID(),now=new Date(),load=loadRuntimeConfig,connect=dbConnection,
-  artifactVerifier=verifyArtifact,pathCheck=checkedPaths,operatorLoad=loadOperatorDatabase}){
+async function inspectForOperation({runtimeConfigFile,artifactDirectory,expectedChecksum,
+  now=new Date(),load=loadRuntimeConfig,connect=dbConnection,
+  artifactVerifier=verifyArtifact,pathCheck=checkedPaths,operatorLoad=loadOperatorDatabase},recoveryOperationId){
  if(!UUID.test(recoveryOperationId)||!HASH.test(expectedChecksum??''))
    throw fail('PRODUCTION_RESTORE_ARGUMENTS_INVALID');
  const loaded=await load(runtimeConfigFile);
@@ -168,10 +169,19 @@ export async function inspectProductionRestore({runtimeConfigFile,artifactDirect
   return Object.freeze({...body,planDigest:digest(canonical(body))});
  }finally{await source?.end();await admin?.end();}
 }
+export async function inspectProductionRestore(args){
+ if(Object.hasOwn(args,'recoveryOperationId'))throw fail('PRODUCTION_RESTORE_ARGUMENTS_INVALID');
+ return inspectForOperation(args,randomUUID());
+}
 export async function createProductionRestorePlan(args,{
- inspect=inspectProductionRestore,pathCheck=checkedPaths,harden=hardenSmokeTemporary,
- fileAcl=aclFile,load=loadRuntimeConfig}={}){
- const plan=validatePlan(await inspect(args));
+ inspect=inspectForOperation,pathCheck=checkedPaths,harden=hardenSmokeTemporary,
+ fileAcl=aclFile,load=loadRuntimeConfig,generateOperationId=randomUUID}={}){
+ if(Object.hasOwn(args,'recoveryOperationId'))throw fail('PRODUCTION_RESTORE_ARGUMENTS_INVALID');
+ const operationId=generateOperationId();
+ if(typeof operationId!=='string'||!UUID.test(operationId))throw fail('PRODUCTION_RESTORE_ARGUMENTS_INVALID');
+ const inspectionArgs={...args,now:args.now??new Date()};
+ const plan=validatePlan(await inspect(inspectionArgs,operationId));
+ if(plan.recoveryOperationId!==operationId)throw fail('PRODUCTION_RESTORE_PLAN_INVALID');
  const loaded=await load(args.runtimeConfigFile),{journal}=await pathCheck(loaded,args.artifactDirectory);
  const currentUrl=new URL(loaded.apiEnv.KTV_MYSQL_URL);
  if(loaded.config.storeId!==plan.storeId||loaded.config.ledgerId!==plan.ledgerId||
@@ -190,6 +200,11 @@ export async function createProductionRestorePlan(args,{
  try{
   await harden(claim);await reservation.sync();await reservation.close();reservation=null;
   // A crash leaves the claim in place. It blocks further plans for manual review.
+  let finalPlan;
+  try{finalPlan=validatePlan(await inspect(inspectionArgs,operationId));}
+  catch{throw fail('PRODUCTION_RESTORE_PLAN_PRECONDITION_CHANGED');}
+  if(finalPlan.planDigest!==plan.planDigest)
+   throw fail('PRODUCTION_RESTORE_PLAN_PRECONDITION_CHANGED');
   const handle=await open(temp,'wx',0o600);
   try{await harden(temp);await handle.writeFile(canonical(plan));await handle.sync();}
   finally{await handle.close();}

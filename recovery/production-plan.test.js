@@ -4,6 +4,8 @@ import {mkdtemp,mkdir,writeFile,readFile,readdir,rm} from 'node:fs/promises';
 import {join} from 'node:path';
 import {tmpdir} from 'node:os';
 import {randomUUID} from 'node:crypto';
+import {fork} from 'node:child_process';
+import {once} from 'node:events';
 import {schemaSpec,canonical,digest} from '../backup/format.js';
 import {restoreDatabase} from '../backup/mysql-backup.js';
 import {inspectProductionRestore,createProductionRestorePlan,
@@ -12,6 +14,7 @@ import {runProductionRestoreCli} from './production-restore-cli.js';
 
 const SHA='a'.repeat(64),COMMIT='b'.repeat(40),SERVER='synthetic-server-uuid';
 const OP='12345678-1234-4234-8234-123456789abc';
+const UUID_V4=/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 const loaded=(root,db='jbhh_ktv_prod')=>({
  config:{storeId:'synthetic-store',ledgerId:'synthetic-ledger',applicationCommit:COMMIT,
   serviceAccountSid:'S-1-5-21-1-2-3-1001',
@@ -58,21 +61,28 @@ function fakeDb({server=SERVER,targetExists=false,sourceReadable=true,mode='NORM
     if(sql.startsWith('SELECT mode'))return [[{mode}]];
     throw Error('unexpected SQL');
    },execute:async sql=>{statements.push(sql);if(!admin||!sql.startsWith('SELECT SCHEMA_NAME'))
-    throw Error('unexpected SQL');return [targetExists?[{SCHEMA_NAME:'occupied'}]:[]];},
+    throw Error('unexpected SQL');return [(typeof targetExists==='function'?targetExists():targetExists)?[{SCHEMA_NAME:'occupied'}]:[]];},
    end:async()=>{}};
  };
  return {connect,statements};
 }
 const args=(f,db=fakeDb(),extra={})=>({
  runtimeConfigFile:'synthetic-protected-config',
- artifactDirectory:f.artifact,expectedChecksum:f.checksum,recoveryOperationId:OP,
+ artifactDirectory:f.artifact,expectedChecksum:f.checksum,
  now:new Date('2026-10-12T00:00:00Z'),load:async()=>loaded(f.root),
  pathCheck:async()=>({artifact:f.artifact,journal:f.root}),connect:db.connect,
  operatorLoad:async()=> 'mysql://synthetic:synthetic-password@127.0.0.1:33313/',...extra});
+const syntheticInspect=(f,db=fakeDb(),extra={})=>async(input,id)=>{
+ const preflight=await inspectProductionRestore({...args(f,db,extra),...input});
+ const {planDigest,...body}=preflight;
+ body.recoveryOperationId=id;body.targetDatabase=candidateName(id);
+ return {...body,planDigest:digest(canonical(body))};
+};
 
 test('S3-A eligible production backup is read only and binds same server, schema and exact commit',async()=>fixture(async f=>{
  const db=fakeDb(),plan=await inspectProductionRestore(args(f,db));
- assert.equal(plan.status,'PREPARED');assert.equal(plan.targetDatabase,candidateName(OP));
+ assert.equal(plan.status,'PREPARED');assert.match(plan.recoveryOperationId,UUID_V4);
+ assert.equal(plan.targetDatabase,candidateName(plan.recoveryOperationId));
  assert.equal(plan.lossWindow.revisionGap,2);assert.equal(plan.backupAgeSeconds,172800);
  assert.equal(plan.sourceServerUuid,plan.targetServerUuid);
  assert.equal(plan.applicationCommit,COMMIT);
@@ -115,12 +125,18 @@ test('S3-A backup eligibility rejects test source, store, ledger, schema, format
  f.manifest.applicationCommit='c'.repeat(40);f.checksum=await f.persist();
  await reject('PRODUCTION_RESTORE_APPLICATION_INCOMPATIBLE');
 }));
-test('S3-A rejects invalid operation id and active database as target',async()=>fixture(async f=>{
- await assert.rejects(inspectProductionRestore(args(f,fakeDb(),{recoveryOperationId:'../evil'})),
+test('S3-A rejects operator-supplied operation ID and active target in a plan',async()=>fixture(async f=>{
+ await assert.rejects(inspectProductionRestore({...args(f),recoveryOperationId:OP}),
   {code:'PRODUCTION_RESTORE_ARGUMENTS_INVALID'});
- const active=candidateName(OP);
- await assert.rejects(inspectProductionRestore(args(f,fakeDb(),{
-  load:async()=>loaded(f.root,active)})),{code:'PRODUCTION_RESTORE_TARGET_INVALID'});
+ await assert.rejects(createProductionRestorePlan({recoveryOperationId:OP}),
+  {code:'PRODUCTION_RESTORE_ARGUMENTS_INVALID'});
+ const active=candidateName(OP),prior=await inspectProductionRestore(args(f));
+ const {planDigest,...body}=prior;
+ body.recoveryOperationId=OP;body.targetDatabase=active;body.currentDatabase=active;
+ const forged={...body,planDigest:digest(canonical(body))};
+ await assert.rejects(createProductionRestorePlan({},
+  {inspect:async()=>forged,generateOperationId:()=>OP}),
+  {code:'PRODUCTION_RESTORE_PLAN_INVALID'});
 }));
 test('S3-A path policy rejects arbitrary backup location and ACL failure',async()=>fixture(async f=>{
  const other=join(f.root,'nested');await mkdir(other);
@@ -133,7 +149,7 @@ test('S3-A path policy rejects arbitrary backup location and ACL failure',async(
  }),/unsafe ACL/);
 }));
 test('S3-A one active plan, concurrent creators, no secrets and read-only inspect-plan',async()=>fixture(async f=>{
- const options={inspect:()=>inspectProductionRestore(args(f)),load:async()=>loaded(f.root),
+ const options={inspect:syntheticInspect(f),generateOperationId:()=>OP,load:async()=>loaded(f.root),
   pathCheck:async()=>({journal:f.root}),harden:async()=>{},fileAcl:async()=>{}};
  const results=await Promise.allSettled([createProductionRestorePlan({},options),
   createProductionRestorePlan({},options)]);
@@ -149,7 +165,7 @@ test('S3-A one active plan, concurrent creators, no secrets and read-only inspec
  assert.deepEqual(await readdir(f.root),before);
 }));
 test('S3-A failed ACL hardening leaves a blocking claim and no active plan',async()=>fixture(async f=>{
- const options={inspect:()=>inspectProductionRestore(args(f)),load:async()=>loaded(f.root),
+ const options={inspect:syntheticInspect(f),generateOperationId:()=>OP,load:async()=>loaded(f.root),
   pathCheck:async()=>({journal:f.root}),harden:async()=>{throw Error('ACL failure');},fileAcl:async()=>{}};
  await assert.rejects(createProductionRestorePlan({},options),/ACL failure/);
  assert.ok((await readdir(f.root)).includes('active-plan.claim'));
@@ -160,11 +176,17 @@ test('S3-A failed ACL hardening leaves a blocking claim and no active plan',asyn
 test('S3-A CLI has no restore action and inspect emits no writes',async()=>fixture(async f=>{
  let output='',error='';
  const code=await runProductionRestoreCli(['inspect','--config-file','synthetic',
-  '--artifact-dir',f.artifact,'--checksum',f.checksum,'--operation-id',OP],{
+  '--artifact-dir',f.artifact,'--checksum',f.checksum],{
   inspect:()=>inspectProductionRestore(args(f)),stdout:{write:s=>{output+=s;}},
   stderr:{write:s=>{error+=s;}}});
  assert.equal(code,0);assert.equal(error,'');
  assert.equal(JSON.parse(output).JOURNAL_WRITES,'NO');
+ assert.equal(Object.hasOwn(JSON.parse(output),'recoveryOperationId'),false);
+ let deprecated='';
+ assert.equal(await runProductionRestoreCli(['inspect','--config-file','synthetic',
+  '--artifact-dir',f.artifact,'--checksum',f.checksum,'--operation-id',OP],{
+  stdout:{write(){}},stderr:{write:s=>{deprecated+=s;}}}),1);
+ assert.equal(JSON.parse(deprecated).code,'PRODUCTION_RESTORE_OPERATION_ID_OPERATOR_FORBIDDEN');
  assert.equal(await runProductionRestoreCli(['restore'],{stdout:{write(){}},stderr:{write(){}}}),1);
 }));
 test('S3-A existing restore still rejects production execution before database connection',async()=>fixture(async f=>{
@@ -230,8 +252,112 @@ test('S3-A plan inspection rejects nested extra fields even with a recomputed di
 test('S3-A create-plan refuses protected config drift before writing a claim',async()=>fixture(async f=>{
  const changed=loaded(f.root,'another_database');
  await assert.rejects(createProductionRestorePlan({artifactDirectory:f.artifact},{
-  inspect:()=>inspectProductionRestore(args(f)),
+  inspect:syntheticInspect(f),generateOperationId:()=>OP,
   load:async()=>changed,pathCheck:async()=>({journal:f.root}),
   harden:async()=>{},fileAcl:async()=>{}}),{code:'PRODUCTION_RESTORE_CONFIG_CHANGED'});
  assert.equal((await readdir(f.root)).includes('active-plan.claim'),false);
 }));
+
+test('S3-A backup format requires a canonical UUIDv4 backupId',async()=>fixture(async f=>{
+ await inspectProductionRestore(args(f));
+ for(const value of [undefined,{},[],42,'','not-a-uuid',randomUUID().toUpperCase()]){
+  if(value===undefined)delete f.manifest.backupId;else f.manifest.backupId=value;
+  f.checksum=await f.persist();
+  await assert.rejects(inspectProductionRestore(args(f)),{code:'BACKUP_INVALID_MANIFEST'});
+ }
+}));
+
+test('S3-A create-plan generates its own UUIDv4 and derives a safe target',async()=>fixture(async f=>{
+ const result=await createProductionRestorePlan({runtimeConfigFile:'synthetic',
+  artifactDirectory:f.artifact},{
+  inspect:syntheticInspect(f),load:async()=>loaded(f.root),
+  pathCheck:async()=>({journal:f.root}),harden:async()=>{},fileAcl:async()=>{}});
+ assert.match(result.recoveryOperationId,UUID_V4);
+ assert.equal(result.targetDatabase,candidateName(result.recoveryOperationId));
+ assert.match(result.targetDatabase,/^[a-z][a-z0-9_]{0,63}$/);
+ assert.equal(JSON.parse(await readFile(join(f.root,'active-plan.json'),'utf8')).recoveryOperationId,
+  result.recoveryOperationId);
+}));
+
+test('S3-A final binding refuses changed backup before PREPARED journal write',async()=>fixture(async f=>{
+ let changed=false;
+ await assert.rejects(createProductionRestorePlan({runtimeConfigFile:'synthetic',
+  artifactDirectory:f.artifact},{
+  inspect:syntheticInspect(f),load:async()=>loaded(f.root),
+  pathCheck:async()=>({journal:f.root}),fileAcl:async()=>{},
+  harden:async path=>{if(path.endsWith('active-plan.claim')){
+   f.manifest.backupId=randomUUID();await f.persist();changed=true;
+  }}
+ }),{code:'PRODUCTION_RESTORE_PLAN_PRECONDITION_CHANGED'});
+ assert.equal(changed,true);
+ const files=await readdir(f.root);
+ assert.ok(files.includes('active-plan.claim'));
+ assert.equal(files.includes('active-plan.json'),false);
+ assert.equal(files.some(name=>name.endsWith('.tmp')),false);
+}));
+
+test('S3-A final binding rechecks target existence and protected path',async()=>{
+ await fixture(async f=>{
+  let occupied=false;
+  const db=fakeDb({targetExists:()=>occupied});
+  await assert.rejects(createProductionRestorePlan({runtimeConfigFile:'synthetic',
+   artifactDirectory:f.artifact},{
+   inspect:syntheticInspect(f,db),load:async()=>loaded(f.root),
+   pathCheck:async()=>({journal:f.root}),fileAcl:async()=>{},
+   harden:async path=>{if(path.endsWith('active-plan.claim'))occupied=true;}
+  }),{code:'PRODUCTION_RESTORE_PLAN_PRECONDITION_CHANGED'});
+  assert.equal((await readdir(f.root)).includes('active-plan.json'),false);
+ });
+ await fixture(async f=>{
+  let checks=0;
+  const check=async()=>{if(++checks===2)throw Error('synthetic protected path changed');
+   return {artifact:f.artifact,journal:f.root};};
+  await assert.rejects(createProductionRestorePlan({runtimeConfigFile:'synthetic',
+   artifactDirectory:f.artifact},{
+   inspect:syntheticInspect(f,fakeDb(),{pathCheck:check}),load:async()=>loaded(f.root),
+   pathCheck:async()=>({journal:f.root}),fileAcl:async()=>{},harden:async()=>{}
+  }),{code:'PRODUCTION_RESTORE_PLAN_PRECONDITION_CHANGED'});
+  assert.equal(checks,2);
+  assert.equal((await readdir(f.root)).includes('active-plan.json'),false);
+ });
+});
+
+test('S3-A independent processes compete for one persistent active plan',{timeout:20000},
+ async()=>fixture(async f=>{
+  await writeFile(join(f.root,'synthetic-plan-template.json'),
+   canonical(await inspectProductionRestore(args(f))));
+  const launch=()=>{
+   const child=fork(new URL('../test-support/s3a-plan-process.js',import.meta.url),
+    [f.root],{stdio:['ignore','ignore','ignore','ipc'],execArgv:[],
+     env:Object.fromEntries(Object.entries({PATH:process.env.PATH,
+      SystemRoot:process.env.SystemRoot,NODE_ENV:'test',
+      KTV_DEPLOYMENT_ENV:'test'}).filter(([,value])=>value!==undefined))});
+   const queue=[],waiting=[];
+   child.on('message',message=>{
+    const next=waiting.shift();if(next)next(message);else queue.push(message);
+   });
+   return {child,exited:once(child,'exit'),
+    next:()=>queue.length?Promise.resolve(queue.shift()):
+     new Promise((resolve,reject)=>{
+      const timer=setTimeout(()=>reject(Error('synthetic child timeout')),10000);
+      waiting.push(message=>{clearTimeout(timer);resolve(message);});
+     })};
+  };
+  const workers=[launch(),launch()];
+  try{
+   const ready=await Promise.all(workers.map(worker=>worker.next()));
+   assert.deepEqual(ready.map(message=>message.type),['ready','ready']);
+   workers.forEach(worker=>worker.child.send('go'));
+   const results=await Promise.all(workers.map(worker=>worker.next()));
+   assert.equal(results.filter(result=>result.status==='success').length,1);
+   assert.equal(results.filter(result=>result.code==='PRODUCTION_RESTORE_ACTIVE_RECOVERY_EXISTS').length,1);
+   const active=JSON.parse(await readFile(join(f.root,'active-plan.json'),'utf8'));
+   assert.equal(active.status,'PREPARED');
+   assert.equal(active.recoveryOperationId,
+    results.find(result=>result.status==='success').operationId);
+   assert.equal((await readdir(f.root)).filter(name=>name==='active-plan.json').length,1);
+  }finally{
+   for(const worker of workers)if(worker.child.exitCode===null)worker.child.kill();
+   await Promise.all(workers.map(worker=>worker.exited));
+  }
+ }));

@@ -3,6 +3,7 @@ import { readFile,realpath,stat,mkdir,open } from 'node:fs/promises';
 import { dirname,join,isAbsolute,basename } from 'node:path';
 import { encodeLedgerJson } from '../ledger/mysql-snapshot.js';
 export const FORMAT_VERSION=1;
+const BACKUP_ID=/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 export const fail=code=>Object.assign(Error(code),{code});
 export const digest=bytes=>createHash('sha256').update(bytes).digest('hex');
 export const canonical=value=>encodeLedgerJson(value)+'\n';
@@ -51,7 +52,7 @@ export async function verifyArtifact(directory,{expectedChecksum,storeId,ledgerI
     const manifest=JSON.parse(manifestBytes),spec=await schemaSpec();
     if(manifest.backupFormatVersion!==FORMAT_VERSION||canonical(manifest.schema)!==canonical(spec.manifest))throw fail('BACKUP_SCHEMA_UNSUPPORTED');
     if(manifest.migrationVersion!==Object.keys(spec.manifest.migrations).at(-1))throw fail('BACKUP_SCHEMA_UNSUPPORTED');
-    if(!Array.isArray(manifest.ledgerHeads)||!manifest.ledgerHeads.length||new Set(manifest.ledgerHeads.map(h=>h.ledgerId)).size!==manifest.ledgerHeads.length||manifest.ledgerHeads.some(h=>typeof h.ledgerId!=='string'||!h.ledgerId||h.ledgerId.length>64||!Number.isSafeInteger(h.revision)||h.revision<0||!/^[a-f0-9]{64}$/.test(h.checksum))||!Number.isFinite(Date.parse(manifest.createdAt))||!/^[a-f0-9]{40}$/.test(manifest.applicationCommit))throw fail('BACKUP_INVALID_MANIFEST');
+    if(typeof manifest.backupId!=='string'||!BACKUP_ID.test(manifest.backupId)||!Array.isArray(manifest.ledgerHeads)||!manifest.ledgerHeads.length||new Set(manifest.ledgerHeads.map(h=>h.ledgerId)).size!==manifest.ledgerHeads.length||manifest.ledgerHeads.some(h=>typeof h.ledgerId!=='string'||!h.ledgerId||h.ledgerId.length>64||!Number.isSafeInteger(h.revision)||h.revision<0||!/^[a-f0-9]{64}$/.test(h.checksum))||!Number.isFinite(Date.parse(manifest.createdAt))||!/^[a-f0-9]{40}$/.test(manifest.applicationCommit))throw fail('BACKUP_INVALID_MANIFEST');
     if(manifest.storeId!==storeId||manifest.ledgerId!==ledgerId)throw fail('BACKUP_STORE_MISMATCH');
     if(manifest.engine!=='InnoDB'||!/^8\.4\./.test(manifest.mysqlVersion)||!['production','test'].includes(manifest.source?.environment)||!manifest.source.serverUuid||!manifest.source.database)throw fail('BACKUP_INVALID_MANIFEST');
     const bytes=await readFile(join(root,'data.json'));

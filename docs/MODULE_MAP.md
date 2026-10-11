@@ -1,4 +1,4 @@
-S3-A: recovery/production-plan.js owns production backup and same-server target eligibility, protected path checks, read-only MySQL metadata checks, and the external PREPARED journal. recovery/production-restore-cli.js exposes only inspect/create-plan/inspect-plan; recovery/production-plan.test.js holds synthetic safety tests. [Contract](S3_PRODUCTION_RESTORE.md). Stage 5B restore execution remains TEST-only.
+S3-A: recovery/production-plan.js owns production backup and same-server target eligibility, protected path checks, read-only MySQL metadata checks, and the external PREPARED journal. recovery/production-restore-cli.js exposes only inspect/create-plan/inspect-plan; recovery/production-plan.test.js holds synthetic safety tests, including a two-process claim race through test-support/s3a-plan-process.js. [Contract](S3_PRODUCTION_RESTORE.md). Stage 5B restore execution remains TEST-only.
 
 ## Pre-production S2 phone smoke
 
