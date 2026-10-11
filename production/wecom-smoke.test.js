@@ -17,7 +17,7 @@ test('smoke configuration allows exactly one identical user in each route and no
 test('smoke ACL accepts only protected operator, SYSTEM and Administrators access',()=>{
  const operator='S-1-5-21-1-2-3-1001';
  const valid={protected:true,current:operator,owner:'S-1-5-32-544',rules:[
-  {sid:operator,type:'Allow',rights:3,inheritance:'ObjectInherit, ContainerInherit'},{sid:'S-1-5-18',type:'Allow',rights:1},
+  {sid:operator,type:'Allow',rights:197055,inheritance:'ObjectInherit, ContainerInherit'},{sid:'S-1-5-18',type:'Allow',rights:1},
   {sid:'S-1-5-32-544',type:'Allow',rights:1}]};
  assert.doesNotThrow(()=>validateSmokeAcl(valid,{directory:true}));
  for(const acl of [
@@ -25,7 +25,8 @@ test('smoke ACL accepts only protected operator, SYSTEM and Administrators acces
   {...valid,rules:[...valid.rules,{sid:'S-1-1-0',type:'Allow',rights:1}]},
   {...valid,rules:[...valid.rules,{sid:'S-1-5-11',type:'Allow',rights:1}]},
   {...valid,rules:valid.rules.filter(r=>r.sid!==operator)},
-  {...valid,rules:[{sid:operator,type:'Allow',rights:1}]}
+  {...valid,rules:[{sid:operator,type:'Allow',rights:1}]},
+  {...valid,rules:[{sid:operator,type:'Allow',rights:3,inheritance:'ObjectInherit'}]}
  ])assert.throws(()=>validateSmokeAcl(acl,{directory:true}),{code:/SMOKE_ACL_DENIED/});
 });
 import {mkdtemp,mkdir,writeFile,readFile,rm} from 'node:fs/promises';
@@ -35,7 +36,7 @@ import {runWeComSmoke,parseSmokeArgs} from './wecom-smoke-cli.js';
 import {loadSmokeConfig,validateSmokeStateDirectory,validateSmokeStateFile} from './wecom-smoke-config.js';
 
 const acl={protected:true,current:'S-1-5-21-1-2-3-1001',owner:'S-1-5-32-544',
-  rules:[{sid:'S-1-5-21-1-2-3-1001',type:'Allow',rights:3,inheritance:'ObjectInherit, ContainerInherit'},
+  rules:[{sid:'S-1-5-21-1-2-3-1001',type:'Allow',rights:197055,inheritance:'ObjectInherit, ContainerInherit'},
     {sid:'S-1-5-18',type:'Allow',rights:1},{sid:'S-1-5-32-544',type:'Allow',rights:1}]};
 test('CLI requires explicit mode and confirmation for RESOLVED',()=>{
   assert.deepEqual(parseSmokeArgs(['--config-file','C:\\private\\wecom-smoke.json','--send-resolved',
@@ -86,7 +87,7 @@ test('synthetic OPEN stops; confirmed RESOLVED reuses incident and recipient wit
         ?{errcode:0,access_token:'synthetic-token',expires_in:7200}
         :{errcode:0}),{status:200});
     };
-    const deps={loadConfig:async()=>base,checkDirectory:async()=>dir,fetchImpl,checkStateFile:async()=>{}};
+    const deps={loadConfig:async()=>base,checkDirectory:async()=>dir,fetchImpl,checkStateFile:async()=>{},hardenTemp:async()=>{}};
     const run=mode=>runWeComSmoke({configFile:file,mode},deps);
     await assert.rejects(run('--send-resolved'),{code:'SMOKE_RESOLVE_REQUIRES_CONFIRMED_OPEN'});
     const open=await run('--send-open');
@@ -118,15 +119,15 @@ test('failed OPEN and recovery retry with stable delivery IDs and no extra incid
     const fetchImpl=async url=>new Response(JSON.stringify(String(url).includes('/gettoken')
       ?{errcode:0,access_token:'synthetic-token',expires_in:7200}
       :{errcode:++messages===1||messages===3?45009:0}),{status:200});
-    const deps={loadConfig:async()=>base,checkDirectory:async()=>dir,fetchImpl,now:()=>clock,checkStateFile:async()=>{}};
+    const deps={loadConfig:async()=>base,checkDirectory:async()=>dir,fetchImpl,now:()=>clock,checkStateFile:async()=>{},hardenTemp:async()=>{}};
     const run=mode=>runWeComSmoke({configFile:file,mode},deps);
-    await assert.rejects(run('--send-open'),{code:'SMOKE_OPEN_NOT_ACCEPTED'});
+    assert.equal((await run('--send-open')).OPEN_PROVIDER_RESULT,'REJECTED');
     const first=JSON.parse(JSON.parse(await readFile(join(dir,'operational-state.json'),'utf8')).data);
     const firstId=first.outbox[0].deliveryId;
     clock+=31000;
     const opened=await run('--send-open');
     assert.equal(opened.deliveryId,firstId);
-    await assert.rejects(run('--send-resolved'),{code:'SMOKE_RECOVERY_NOT_ACCEPTED'});
+    assert.equal((await run('--send-resolved')).RESOLVED_PROVIDER_RESULT,'REJECTED');
     const second=JSON.parse(JSON.parse(await readFile(join(dir,'operational-state.json'),'utf8')).data);
     const recoveryId=second.outbox.find(e=>e.transition==='RESOLVED').deliveryId;
     clock+=31000;
@@ -163,7 +164,169 @@ test('ACL denial happens before reading a protected secret or calling WeCom',asy
     await assert.rejects(runWeComSmoke({configFile:file,mode:'--send-open'},
       {loadConfig:async()=>base,checkDirectory:async()=>dir,
         checkStateFile:async()=>{throw Object.assign(Error('denied'),{code:'SMOKE_ACL_DENIED'});},
-        fetchImpl:async()=>{requests++;throw Error('network forbidden');}}),{code:'SMOKE_ACL_DENIED'});
+        fetchImpl:async()=>{requests++;throw Error('network forbidden');},
+        hardenTemp:async()=>{}}),{code:'SMOKE_ACL_DENIED'});
     assert.equal(requests,0);
   }finally{await rm(root,{recursive:true,force:true});}
 });
+
+import {execFile} from 'node:child_process';
+import {promisify} from 'node:util';
+import {lstat,readdir,stat} from 'node:fs/promises';
+import {createOperationalStore} from '../operations/store.js';
+import {hardenSmokeTemporary,cleanupSmokeTemps} from './wecom-smoke-config.js';
+import {main} from './wecom-smoke-cli.js';
+const exec=promisify(execFile);
+
+// This tests the actual Windows ACL APIs and atomic writer, without any provider credentials.
+test('Windows smoke state is protected before rename and reloads after a failed write',
+  {skip:process.platform!=='win32'},async()=>{
+  const root=await mkdtemp(join(tmpdir(),'wecom-smoke-acl-'));
+  try{
+    const dir=join(root,'wecom-smoke-state');await mkdir(dir);
+    const encoded=Buffer.from(dir,'utf8').toString('base64');
+    const script="$ErrorActionPreference='Stop';$p=[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('"+encoded+"'));$a=[IO.Directory]::GetAccessControl($p);$a.SetAccessRuleProtection($true,$false);$me=[Security.Principal.WindowsIdentity]::GetCurrent().User;$a.SetOwner($me);$flags=[Security.AccessControl.InheritanceFlags]'ObjectInherit, ContainerInherit';$prop=[Security.AccessControl.PropagationFlags]::None;$allow=[Security.AccessControl.AccessControlType]::Allow;$a.AddAccessRule([Security.AccessControl.FileSystemAccessRule]::new($me,[Security.AccessControl.FileSystemRights]::Modify,$flags,$prop,$allow));foreach($sid in @('S-1-5-18','S-1-5-32-544')){$who=[Security.Principal.SecurityIdentifier]::new($sid);$a.AddAccessRule([Security.AccessControl.FileSystemAccessRule]::new($who,[Security.AccessControl.FileSystemRights]::FullControl,$flags,$prop,$allow))};[IO.Directory]::SetAccessControl($p,$a)";
+    await exec('powershell.exe',['-NoProfile','-NonInteractive','-EncodedCommand',
+      Buffer.from(script,'utf16le').toString('base64')],{windowsHide:true,timeout:5000});
+    assert.equal(await validateSmokeStateDirectory(dir),dir);
+    const options={prepareTemporary:async path=>{await hardenSmokeTemporary(path);
+      assert.equal((await stat(path)).size,0);},
+      verifyState:()=>validateSmokeStateFile(dir,{required:true})};
+    const store=await createOperationalStore(dir,'wecom-smoke-v1',options);
+    await store.update(s=>{s.observations.synthetic={sequence:1};});
+    await validateSmokeStateFile(dir,{required:true});
+    await store.update(s=>{s.observations.synthetic={sequence:2};});
+    await validateSmokeStateFile(dir,{required:true});
+    const final=join(dir,'operational-state.json');
+    const realAcl=await import('./runtime-config.js').then(m=>m.windowsFileAcl(final));
+    assert.equal(realAcl.protected,true);
+    assert.ok(realAcl.rules.every(r=>r.type!=='Allow'||
+      [realAcl.current,'S-1-5-18','S-1-5-32-544'].includes(r.sid)));
+    assert.deepEqual((await createOperationalStore(dir,'wecom-smoke-v1')).read().observations.synthetic,
+      {sequence:2});
+    const interrupted=await createOperationalStore(dir,'wecom-smoke-v1',{
+      prepareTemporary:async path=>{await hardenSmokeTemporary(path);throw Error('synthetic interruption');}});
+    await assert.rejects(interrupted.update(s=>{s.observations.synthetic={sequence:3};}),
+      /synthetic interruption/);
+    assert.deepEqual((await createOperationalStore(dir,'wecom-smoke-v1')).read().observations.synthetic,
+      {sequence:2});
+    const orphan=join(dir,'operational-11111111-1111-4111-8111-111111111111.tmp');
+    await writeFile(orphan,'synthetic interrupted data');
+    await cleanupSmokeTemps(dir);
+    await assert.rejects(lstat(orphan),{code:'ENOENT'});
+    assert.deepEqual((await readdir(dir)).filter(n=>n.endsWith('.tmp')),[]);
+    const file=join(root,'wecom-smoke.json');
+    const fetchImpl=async url=>new Response(JSON.stringify(String(url).includes('/gettoken')
+      ?{errcode:0,access_token:'synthetic-token',expires_in:7200}:{errcode:0}),{status:200});
+    const deps={loadConfig:async()=>base,fetchImpl};
+    const opened=await runWeComSmoke({configFile:file,mode:'--send-open'},deps);
+    assert.equal(opened.OPEN_PROVIDER_RESULT,'ACCEPTED');
+    await validateSmokeStateFile(dir,{required:true});
+    const resolved=await runWeComSmoke({configFile:file,mode:'--send-resolved'},deps);
+    assert.equal(resolved.RESOLVED_PROVIDER_RESULT,'ACCEPTED');
+    assert.equal(resolved.incidentId,opened.incidentId);
+    assert.ok(resolved.sequence>opened.sequence);
+    await validateSmokeStateFile(dir,{required:true});
+    assert.deepEqual((await readdir(dir)).filter(n=>n.endsWith('.tmp')),[]);
+  }finally{await rm(root,{recursive:true,force:true});}
+});
+
+for(const transition of ['OPEN','RESOLVED'])for(const failure of ['timeout','disconnect'])
+  test('smoke '+transition+' '+failure+' remains UNKNOWN across restart without another delivery',async()=>{
+    const root=await mkdtemp(join(tmpdir(),'wecom-smoke-unknown-'));
+    try{
+      const file=join(root,'wecom-smoke.json'),dir=join(root,'wecom-smoke-state');
+      await mkdir(dir);
+      let sends=0;
+      const fetchImpl=async(url,options)=>{
+        if(String(url).includes('/gettoken'))return new Response(JSON.stringify({errcode:0,
+          access_token:'synthetic-token',expires_in:7200}),{status:200});
+        sends++;
+        if(transition==='RESOLVED'&&sends===1)
+          return new Response(JSON.stringify({errcode:0}),{status:200});
+        if(failure==='disconnect')throw Error('synthetic-secret synthetic-token URL');
+        return new Promise((_,reject)=>options.signal.addEventListener('abort',
+          ()=>reject(Error('synthetic-secret synthetic-token URL')),{once:true}));
+      };
+      const deps={loadConfig:async()=>base,checkDirectory:async()=>dir,
+        checkStateFile:async()=>{},hardenTemp:async()=>{},fetchImpl};
+      const run=mode=>runWeComSmoke({configFile:file,mode},deps);
+      if(transition==='RESOLVED')assert.equal((await run('--send-open')).OPEN_PROVIDER_RESULT,'ACCEPTED');
+      const mode=transition==='OPEN'?'--send-open':'--send-resolved';
+      const first=await run(mode);
+      assert.equal(first.SMOKE,'INCONCLUSIVE');
+      assert.equal(first[transition+'_PROVIDER_RESULT'],'UNKNOWN');
+      assert.equal(first.PROVIDER_ACCEPTANCE_UNCERTAIN,'YES');
+      assert.equal(Object.hasOwn(first,transition+'_PROVIDER_ACCEPTED'),false);
+      assert.match(first.NEXT,new RegExp('DO NOT RESEND '+transition+' AUTOMATICALLY'));
+      const count=sends;
+      const beforeRestart=await readFile(join(dir,'operational-state.json'),'utf8');
+      const restart=await run(mode);
+      assert.equal(restart[transition+'_PROVIDER_RESULT'],'UNKNOWN');
+      assert.equal(restart.incidentId,first.incidentId);
+      assert.equal(restart.deliveryId,first.deliveryId);
+      assert.equal(restart.sequence,first.sequence);
+      assert.equal(sends,count);
+      const afterRestart=await readFile(join(dir,'operational-state.json'),'utf8');
+      assert.equal(afterRestart,beforeRestart);
+      const disk=JSON.parse(JSON.parse(afterRestart).data);
+      const delivery=disk.outbox.find(e=>e.deliveryId===first.deliveryId);
+      assert.equal(delivery.uncertain,true);
+      assert.deepEqual(delivery.recipients,['owner']);
+      assert.equal(disk.incidents.length,1);
+      assert.equal(disk.outbox.length,transition==='OPEN'?1:2);
+      if(transition==='OPEN'){
+        const attemptedRecovery=await run('--send-resolved');
+        assert.equal(attemptedRecovery.SMOKE,'INCONCLUSIVE');
+        assert.equal(sends,count);
+      }
+      let stderr='';const previous=process.stderr.write;
+      try{
+        process.stderr.write=function(chunk){stderr+=chunk;return true;};
+        assert.equal(await main(['--config-file',file,mode,...(mode==='--send-resolved'?['--open-phone-confirmed']:[])],async()=>first),2);
+      }finally{process.stderr.write=previous;}
+      assert.match(stderr,/"SMOKE":"INCONCLUSIVE"/);
+      assert.doesNotMatch(stderr,/synthetic-secret|synthetic-token|synthetic-corp|owner|qyapi|message\/send/);
+      assert.doesNotMatch(JSON.stringify(first),/synthetic-secret|synthetic-token|synthetic-corp|owner/);
+      assert.doesNotMatch(JSON.stringify(disk),/synthetic-secret|synthetic-token|synthetic-corp/);
+    }finally{await rm(root,{recursive:true,force:true});}
+  });
+
+
+for(const transition of ['OPEN','RESOLVED'])for(const failure of ['http500','malformed'])
+  test('smoke '+transition+' '+failure+' is UNKNOWN, not a claimed rejection',async()=>{
+    const root=await mkdtemp(join(tmpdir(),'wecom-smoke-response-'));
+    try{
+      const file=join(root,'wecom-smoke.json'),dir=join(root,'wecom-smoke-state');
+      await mkdir(dir);let sends=0;
+      const fetchImpl=async url=>{
+        if(String(url).includes('/gettoken'))return new Response(JSON.stringify({errcode:0,
+          access_token:'synthetic-token',expires_in:7200}),{status:200});
+        sends++;
+        if(transition==='RESOLVED'&&sends===1)
+          return new Response(JSON.stringify({errcode:0}),{status:200});
+        return failure==='http500'
+          ?new Response('synthetic-secret synthetic-token',{status:500})
+          :new Response('synthetic-secret synthetic-token',{status:200});
+      };
+      const deps={loadConfig:async()=>base,checkDirectory:async()=>dir,
+        checkStateFile:async()=>{},hardenTemp:async()=>{},fetchImpl};
+      const run=mode=>runWeComSmoke({configFile:file,mode},deps);
+      if(transition==='RESOLVED')assert.equal((await run('--send-open')).OPEN_PROVIDER_RESULT,'ACCEPTED');
+      const mode=transition==='OPEN'?'--send-open':'--send-resolved';
+      const first=await run(mode);
+      assert.equal(first.SMOKE,'INCONCLUSIVE');
+      assert.equal(first[transition+'_PROVIDER_RESULT'],'UNKNOWN');
+      assert.equal(Object.hasOwn(first,transition+'_PROVIDER_ACCEPTED'),false);
+      const before=await readFile(join(dir,'operational-state.json'),'utf8');
+      const count=sends;
+      const repeated=await run(mode);
+      assert.equal(repeated.deliveryId,first.deliveryId);
+      assert.equal(repeated.incidentId,first.incidentId);
+      assert.equal(sends,count);
+      assert.equal(await readFile(join(dir,'operational-state.json'),'utf8'),before);
+      const disk=JSON.parse(JSON.parse(before).data);
+      assert.equal(disk.outbox.find(e=>e.deliveryId===first.deliveryId).uncertain,true);
+      assert.doesNotMatch(JSON.stringify(first),/synthetic-secret|synthetic-token|owner|qyapi/);
+    }finally{await rm(root,{recursive:true,force:true});}
+  });

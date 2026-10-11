@@ -1,6 +1,6 @@
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { realpath,lstat } from 'node:fs/promises';
+import { realpath,lstat,readdir,unlink } from 'node:fs/promises';
 import { join } from 'node:path';
 import { readExternalSecret } from './secret-file.js';
 import { windowsFileAcl } from './runtime-config.js';
@@ -11,6 +11,7 @@ const exec=promisify(execFile);
 const fail=code=>Object.assign(Error(code),{code});
 const keys=['configVersion','storeLabel','corpId','agentId','secret','criticalRecipients','warnRecipients'];
 const SYSTEM='S-1-5-18',ADMIN='S-1-5-32-544';
+const WINDOWS_MODIFY=197055; // FileSystemRights.Modify: read, create/write, and delete.
 
 export function validateSmokeConfig(input){
   try{
@@ -31,7 +32,7 @@ export function validateSmokeAcl(acl,{directory=false}={}){
     trusted.size!==3||!acl.protected||!trusted.has(acl.owner)||
     !Array.isArray(acl.rules)||acl.rules.some(r=>r.type==='Allow'&&!trusted.has(r.sid))||
     !acl.rules.some(r=>r.type==='Allow'&&r.sid===operator&&(r.rights&1)&&
-      (!directory||(r.rights&2)&&String(r.inheritance??'').includes('ObjectInherit'))))throw fail('SMOKE_ACL_DENIED');
+      (!directory||((r.rights&WINDOWS_MODIFY)===WINDOWS_MODIFY&&String(r.inheritance??'').includes('ObjectInherit')))))throw fail('SMOKE_ACL_DENIED');
 }
 
 export async function windowsDirectoryAcl(path){
@@ -70,4 +71,28 @@ export async function validateSmokeStateDirectory(path,{directoryAcl=windowsDire
   validateSmokeAcl(await directoryAcl(directory),{directory:true});
   await validateSmokeStateFile(directory,{fileAcl});
   return directory;
+}
+
+// Protect the same-directory temporary file before any state bytes are written.
+export async function hardenSmokeTemporary(path,{fileAcl=windowsFileAcl,run=exec}={}){
+  const info=await lstat(path);
+  if(!info.isFile()||info.isSymbolicLink())throw fail('SMOKE_STATE_TEMP_UNVERIFIED');
+  if(process.platform!=='win32')throw fail('SMOKE_PLATFORM_UNSUPPORTED');
+  const encoded=Buffer.from(path,'utf8').toString('base64');
+  const script="$ErrorActionPreference='Stop';$p=[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('"+encoded+"'));$a=[IO.File]::GetAccessControl($p);$a.SetAccessRuleProtection($true,$true);[IO.File]::SetAccessControl($p,$a)";
+  try{await run('powershell.exe',['-NoProfile','-NonInteractive','-EncodedCommand',
+    Buffer.from(script,'utf16le').toString('base64')],{windowsHide:true,timeout:5000,maxBuffer:65536});}
+  catch{throw fail('SMOKE_STATE_TEMP_UNVERIFIED');}
+  validateSmokeAcl(await fileAcl(path));
+}
+
+// The writer lock is held when this is called. A crashed write is never loaded as state.
+export async function cleanupSmokeTemps(directory,{harden=hardenSmokeTemporary}={}){
+  for(const name of await readdir(directory)){
+    if(!/^operational-[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}\.tmp$/i.test(name))continue;
+    const path=join(directory,name),info=await lstat(path);
+    if(!info.isFile()||info.isSymbolicLink())throw fail('SMOKE_STATE_TEMP_UNVERIFIED');
+    await harden(path);
+    await unlink(path);
+  }
 }

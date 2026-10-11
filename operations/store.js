@@ -2,7 +2,7 @@ import {open,readFile,rename,unlink,lstat,realpath} from 'node:fs/promises';
 import {join,resolve} from 'node:path';
 import {createHash,randomUUID} from 'node:crypto';
 const checksum=text=>createHash('sha256').update(text).digest('hex');
-export async function createOperationalStore(directory,scope){
+export async function createOperationalStore(directory,scope,{prepareTemporary,verifyState}={}){
  const root=await realpath(directory),path=join(root,'operational-state.json');
  const check=async()=>{try{const s=await lstat(path);if(!s.isFile()||s.isSymbolicLink()||s.size>8*1024*1024)throw Error('OPERATIONAL_STATE_INVALID');}catch(e){if(e.code!=='ENOENT')throw e;}};
  const empty=()=>({version:1,scope,incidents:[],outbox:[],observations:{},auth:{},process:{running:false,crashes:[]}});
@@ -21,7 +21,7 @@ export async function createOperationalStore(directory,scope){
    if(data===JSON.stringify(state))return value;
    if(Buffer.byteLength(data)>7*1024*1024)throw Error('OPERATIONAL_STATE_CAPACITY');
    await check();const temporary=resolve(root,'operational-'+randomUUID()+'.tmp');
-   let handle;try{handle=await open(temporary,'wx',0o600);await handle.writeFile(JSON.stringify({checksum:checksum(data),data}));await handle.sync();await handle.close();handle=null;await rename(temporary,path);state=next;}
+   let handle;try{handle=await open(temporary,'wx',0o600);if(prepareTemporary)await prepareTemporary(temporary);await handle.writeFile(JSON.stringify({checksum:checksum(data),data}));await handle.sync();await handle.close();handle=null;await rename(temporary,path);if(verifyState)await verifyState(path);state=next;}
    finally{await handle?.close();await unlink(temporary).catch(e=>{if(e.code!=='ENOENT')throw e;});}
    return value;
   });serial=result.catch(()=>{});return result;
