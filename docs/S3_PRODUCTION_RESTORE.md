@@ -45,7 +45,14 @@ The generated plan binds recoveryOperationId, exact backup identity/hash, produc
 
 A persistent `active-plan.claim` is created exclusively before the plan is written. The plan is written to an empty same-directory temp file, ACL hardened before bytes, synced, atomically renamed to `active-plan.json`, then ACL checked. A crash or failed final binding check can leave a claim or temp file; either prevents a second plan until separate operator review. Do not delete an uncertain claim automatically. S3-B/C must add reviewed transitions and eventual archival; S3-A has only PREPARED.
 
-Before any future production restore execution, S3-B/C must re-hash the selected backup and require equality with the PREPARED plan SHA, revalidate its manifest identity, current MySQL server UUID, and target database allocation/state. The PREPARED plan is not a permanent authorization; no `--skip-hash`, `--force` or `--ignore-plan-drift` override is permitted. This is a future execution invariant, not an S3-A restore implementation.
+Before any future S3-B/S3-C production restore execution, **before any database mutation**, the executor must perform these checks in order:
+
+1. Read the PREPARED plan from the protected recovery journal and validate the journal and plan ACL against the existing protected-state contract.
+2. Recompute `planDigest` from the plan content using the current canonical plan serialization (excluding the persisted `planDigest` field). Require exact equality with the persisted `planDigest`. On mismatch, fail closed with `PLAN_DIGEST_MISMATCH` or an equivalent safe error; **DB MUTATION = NO**. Human confirmation cannot override a mismatch.
+3. Only after the digest passes, revalidate the backup protected path, backup SHA-256 against the PREPARED plan SHA, manifest and backup identity, `storeId`, `ledgerId`, application/schema compatibility, current MySQL `@@server_uuid`, target database allocation/state, and that the target database differs from the active production database.
+4. Only after every check passes may the future executor perform its first database mutation.
+
+A PREPARED plan is a previously validated recovery intent, **not permanent execution authorization**. Execution must revalidate plan integrity, backup binding, server identity and target state. `planDigest` detects plan-content drift or tampering relative to the persisted protected plan contract; it is neither cryptographic provenance proof nor a backup authenticity signature. It cannot replace ACL checks, backup SHA-256, manifest validation, server identity or target-state validation. No `--force`, `--skip-plan-digest`, `--ignore-plan-drift`, `--skip-hash` or `--ignore-target-change` bypass is permitted. This is a future execution invariant, not an S3-A restore implementation.
 
 The external journal is needed when a database is unavailable. Future `recovery_events` are additional evidence, not the sole authority. S3-B will add freeze/import, S3-C verification/cutover/resume, and a later review must exercise the same path on isolated production-like MySQL. The existing production readiness server-UUID check is unchanged.
 
