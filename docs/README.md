@@ -1,3 +1,7 @@
+## S3-A production restore contract candidate
+
+[Same-server restore identity, protected journal and read-only preflight](S3_PRODUCTION_RESTORE.md). Production restore remains disabled.
+
 ## S2 real alert transport candidate
 
 S1 is accepted and merged. The local S2 WeCom self-built app candidate, protected configuration, recipient policy and future phone smoke are described in [S2 WeCom alert transport](S2_WECOM_ALERT_TRANSPORT.md). Current evidence and acceptance status remain in [Current stage](CURRENT_STAGE.md).
