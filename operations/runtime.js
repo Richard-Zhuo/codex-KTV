@@ -10,7 +10,8 @@ export async function createOperationalRuntime({loaded,logger,transport,now=Date
  const c=monitoringConfig(loaded.config.monitoring??{}),scope=hash(loaded.config.storeId+':'+loaded.config.ledgerId);
  const store=await createOperationalStore(loaded.logDirectory,scope),lifecycle=createIncidentLifecycle({store,logger,scope,now,secrets:loaded.redactionSecrets,maxHistory:c.maxHistory,retentionMs:c.retentionDays*86400000});
  transport??=c.alertTransport==='local'?localAlertTransport(logger):null;
- const dispatcher=createAlertDispatcher({store,transport,logger,now,secrets:loaded.redactionSecrets,timeoutMs:c.probeTimeoutMs});
+ const dispatcher=createAlertDispatcher({store,transport,logger,now,secrets:loaded.redactionSecrets,
+  timeoutMs:Math.max(c.probeTimeoutMs,transport?.maxDeliveryMs??0)});
  const deliveryUnavailable=()=>store.read().outbox.some(e=>
   (e.state==='EXHAUSTED'||e.state==='PENDING'&&e.attempts>0)&&
   !(e.attempts===1&&dispatcher.isInFlight(e.deliveryId)));

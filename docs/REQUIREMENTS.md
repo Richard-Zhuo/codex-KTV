@@ -1,6 +1,6 @@
 ## S2 production alert requirement
 
-The owner selected WeCom self-built application messages as the first real critical alert channel. CRITICAL/ERROR and WARN use approved recipient lists; RESOLVED follows the same incident's accepted or possibly notified recipients. External delivery remains outside business commits. This local candidate needs human acceptance and a separate real-phone smoke. The detailed transport and security contract is [S2 WeCom alert transport](S2_WECOM_ALERT_TRANSPORT.md).
+The owner selected WeCom self-built application messages as the first real critical alert channel. A smoke OPEN rejected by the provider must preserve safe stage/code/class diagnosis and require an explicit, separately approved retry of the same logical delivery; a legacy rejection without persisted diagnosis must not be inferred or silently retried. CRITICAL/ERROR and WARN use approved recipient lists; RESOLVED follows the same incident's accepted or possibly notified recipients. External delivery remains outside business commits. This local candidate needs human acceptance and a separate real-phone smoke. The detailed transport and security contract is [S2 WeCom alert transport](S2_WECOM_ALERT_TRANSPORT.md).
 
 ## S1：正式首装账本与期初库存（2026-10-10）
 

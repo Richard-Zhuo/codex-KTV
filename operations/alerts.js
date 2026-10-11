@@ -37,14 +37,22 @@ export function createAlertDispatcher({store,transport,logger,now=Date.now,secre
     if(item.attempts>=maxAttempts){item.state='EXHAUSTED';return false;}
     if(recipients&&!item.recipients)item.recipients=[...recipients];
     if(recipients)item.uncertain=true;
+    if(transport.diagnoseOutcome){
+      item.failureStage=null;item.providerResult='UNKNOWN';item.providerErrcode=null;
+      item.providerErrorClass='NETWORK_UNKNOWN';
+    }
     if(content!==undefined&&!item.content)item.content=content;
     item.attempts++;item.nextAttemptAt=now()+backoffMs*2**(item.attempts-1);if(item.attempts>=maxAttempts)item.state='EXHAUSTED';return true;
    });
    if(!reserved||store.read().outbox.find(e=>e.deliveryId===entry.deliveryId)?.state==='SUPERSEDED')continue;
    let result=null,timeout=false,failure=null;
    try{result=await boundedProbe(()=>transport.send(payload,recipients,content,{incident,entry}),timeoutMs);}
-   catch(e){failure=e;timeout=e.message==='MONITOR_PROBE_TIMEOUT'||['WECOM_TIMEOUT','WECOM_NETWORK_UNKNOWN'].includes(e.code);}
+   catch(e){failure=e;}
    const accepted=result?.accepted===true;
+   const diagnosis=transport.diagnoseOutcome?.({accepted,result,failure});
+   timeout=failure?.message==='MONITOR_PROBE_TIMEOUT'||
+     (diagnosis?.providerResult==='UNKNOWN'&&diagnosis.failureStage!=='TOKEN')||
+     (!diagnosis&&['WECOM_TIMEOUT','WECOM_NETWORK_UNKNOWN'].includes(failure?.code));
    const acceptedRecipients=recipients&&Array.isArray(result?.acceptedRecipients)
      ?result.acceptedRecipients.filter(id=>recipients.includes(id)):[];
    const partial=recipients&&Array.isArray(result?.invalidRecipients)&&result.invalidRecipients.length>0;
@@ -57,10 +65,28 @@ export function createAlertDispatcher({store,transport,logger,now=Date.now,secre
       record.possiblyNotifiedRecipients=[...new Set([...(record.possiblyNotifiedRecipients??[]),...recipients])];
     if(!item||!['PENDING','EXHAUSTED'].includes(item.state))return;
     if(recipients)item.uncertain=timeout;
+    if(diagnosis&&['ACCEPTED','REJECTED','UNKNOWN'].includes(diagnosis.providerResult)&&
+      [null,'TOKEN','MESSAGE_SEND'].includes(diagnosis.failureStage)&&
+      [null,'TOKEN_REJECTED','RECIPIENT_REJECTED','PROVIDER_REJECTED_OTHER',
+        'NETWORK_UNKNOWN','PROVIDER_RESPONSE_INVALID','REQUEST_REJECTED'].includes(diagnosis.providerErrorClass)&&
+      (diagnosis.providerErrcode===null||Number.isSafeInteger(diagnosis.providerErrcode)&&
+        diagnosis.providerErrcode>=-999999&&diagnosis.providerErrcode<=999999)){
+      item.failureStage=diagnosis.failureStage;item.providerResult=diagnosis.providerResult;
+      item.providerErrcode=diagnosis.providerErrcode;item.providerErrorClass=diagnosis.providerErrorClass;
+    }
     item.state=accepted?'DELIVERED':partial?'EXHAUSTED':item.attempts>=maxAttempts?'EXHAUSTED':'PENDING';
    });
    if(timeout)uncertain.add(entry.deliveryId);
-   if(!accepted)logger.log({event:'alert_delivery',code:failure?.code?.startsWith('WECOM_')?failure.code:'ALERT_DELIVERY_FAILED',severity:'ERROR',incidentId:incident.incidentId,deliveryId:entry.deliveryId,attempt:store.read().outbox.find(e=>e.deliveryId===entry.deliveryId)?.attempts,provider:transport.messageFor?'wecom':undefined,operation:transport.messageFor?'send-message':undefined,providerCode:failure?.providerCode});
+   if(!accepted)logger.log({event:'alert_delivery',
+    code:['WECOM_TOKEN_REJECTED','WECOM_PROVIDER_REJECTED','WECOM_RECIPIENT_INVALID',
+      'WECOM_RATE_LIMIT','WECOM_TIMEOUT','WECOM_NETWORK_UNKNOWN','WECOM_RESPONSE_INVALID',
+      'WECOM_RESPONSE_TOO_LARGE','WECOM_HTTP_FAILURE','WECOM_SERVER_ERROR'].includes(failure?.code)
+      ?failure.code:'ALERT_DELIVERY_FAILED',severity:'ERROR',incidentId:incident.incidentId,
+    deliveryId:entry.deliveryId,attempt:store.read().outbox.find(e=>e.deliveryId===entry.deliveryId)?.attempts,
+    provider:transport.messageFor?'wecom':undefined,
+    operation:transport.messageFor?(diagnosis?.failureStage==='TOKEN'?'get-token':'send-message'):undefined,
+    providerCode:Number.isSafeInteger(failure?.providerCode)&&failure.providerCode>=-999999&&
+      failure.providerCode<=999999?failure.providerCode:undefined});
    }finally{inFlight.delete(entry.deliveryId);}
   }
  }

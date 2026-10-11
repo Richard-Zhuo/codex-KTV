@@ -125,7 +125,8 @@ test('failed OPEN and recovery retry with stable delivery IDs and no extra incid
     const first=JSON.parse(JSON.parse(await readFile(join(dir,'operational-state.json'),'utf8')).data);
     const firstId=first.outbox[0].deliveryId;
     clock+=31000;
-    const opened=await run('--send-open');
+    await assert.rejects(run('--send-open'),{code:'SMOKE_EXPLICIT_RETRY_REQUIRED'});
+    const opened=await run('--retry-rejected');
     assert.equal(opened.deliveryId,firstId);
     assert.equal((await run('--send-resolved')).RESOLVED_PROVIDER_RESULT,'REJECTED');
     const second=JSON.parse(JSON.parse(await readFile(join(dir,'operational-state.json'),'utf8')).data);

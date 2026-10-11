@@ -5,7 +5,11 @@ const MAX_RESPONSE_BYTES=32768;
 const MAX_MESSAGE_BYTES=1900;
 const TOKEN_INVALID=new Set([40014,42001]);
 const ID=/^[A-Za-z0-9_.-]{1,64}$/;
-const safeError=(code,providerCode)=>Object.assign(Error(code),{code,...(Number.isSafeInteger(providerCode)&&providerCode>=0&&providerCode<=999999?{providerCode}:{})});
+const SAFE_ERRORS=new Set(['WECOM_HTTP_FAILURE','WECOM_RATE_LIMIT','WECOM_SERVER_ERROR',
+  'WECOM_RESPONSE_INVALID','WECOM_RESPONSE_TOO_LARGE','WECOM_TIMEOUT','WECOM_NETWORK_UNKNOWN']);
+const safeError=(code,providerCode,failureStage)=>Object.assign(Error(code),{code,
+  ...(Number.isSafeInteger(providerCode)&&providerCode>=-999999&&providerCode<=999999?{providerCode}:{}),
+  ...(['TOKEN','MESSAGE_SEND'].includes(failureStage)?{failureStage}:{})});
 const clean=value=>String(value??'').replace(/[\u0000-\u001f\u007f]/g,' ').trim();
 const clipped=(value,max=300)=>{let result='';for(const char of clean(value)){if(Buffer.byteLength(result+char,'utf8')>max)break;result+=char;}return result;};
 
@@ -99,7 +103,7 @@ export function createWeComAlertTransport(options){
     timeoutMs<100||timeoutMs>10000)throw safeError('WECOM_CONFIG_INVALID');
   const allowed=new Set([...config.criticalRecipients,...config.warnRecipients].map(id=>id.toLowerCase()));
   let cached=null,expiresAt=0,refreshing=null;
-  async function request(path,{method='GET',body}={}){
+  async function request(path,{method='GET',body,failureStage}={}){
     const url=new URL(path,ORIGIN);
     const controller=new AbortController();
     const timer=setTimeout(()=>controller.abort(),timeoutMs);
@@ -108,8 +112,8 @@ export function createWeComAlertTransport(options){
         ...(body?{headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}:{})});
       return await readJson(response);
     }catch(error){
-      if(error?.code?.startsWith('WECOM_'))throw error;
-      throw safeError(controller.signal.aborted?'WECOM_TIMEOUT':'WECOM_NETWORK_UNKNOWN');
+      if(SAFE_ERRORS.has(error?.code))throw safeError(error.code,error.providerCode,failureStage);
+      throw safeError(controller.signal.aborted?'WECOM_TIMEOUT':'WECOM_NETWORK_UNKNOWN',undefined,failureStage);
     }finally{clearTimeout(timer);}
   }
   async function token(force=false){
@@ -117,11 +121,11 @@ export function createWeComAlertTransport(options){
     if(refreshing)return refreshing;
     refreshing=(async()=>{
       const query=new URLSearchParams({corpid:config.corpId,corpsecret:config.secret});
-      const reply=await request('/cgi-bin/gettoken?'+query);
-      if(reply.errcode!==0)throw safeError('WECOM_TOKEN_REJECTED',reply.errcode);
+      const reply=await request('/cgi-bin/gettoken?'+query,{failureStage:'TOKEN'});
+      if(reply.errcode!==0)throw safeError('WECOM_TOKEN_REJECTED',reply.errcode,'TOKEN');
       if(typeof reply.access_token!=='string'||!reply.access_token||
         !Number.isSafeInteger(reply.expires_in)||reply.expires_in<=0)
-        throw safeError('WECOM_RESPONSE_INVALID');
+        throw safeError('WECOM_RESPONSE_INVALID',undefined,'TOKEN');
       cached=reply.access_token;
       expiresAt=now()+Math.max(1000,reply.expires_in*1000-60000);
       return cached;
@@ -161,21 +165,39 @@ export function createWeComAlertTransport(options){
       text:{content},safe:0,enable_duplicate_check:1,duplicate_check_interval:1800};
     let access=await token();
     let reply=await request('/cgi-bin/message/send?'+new URLSearchParams({access_token:access}),
-      {method:'POST',body:message});
+      {method:'POST',body:message,failureStage:'MESSAGE_SEND'});
     if(TOKEN_INVALID.has(reply.errcode)){
       if(cached===access){cached=null;expiresAt=0;}
       access=await token(cached===null);
       reply=await request('/cgi-bin/message/send?'+new URLSearchParams({access_token:access}),
-        {method:'POST',body:message});
+        {method:'POST',body:message,failureStage:'MESSAGE_SEND'});
     }
     if(reply.errcode!==0)throw safeError(reply.errcode===81013?'WECOM_RECIPIENT_INVALID':
-      reply.errcode===45009?'WECOM_RATE_LIMIT':'WECOM_PROVIDER_REJECTED',reply.errcode);
-    const invalid=invalidUsers(reply);
-    if([...invalid].some(id=>!recipients.some(target=>target.toLowerCase()===id)))throw safeError('WECOM_RESPONSE_INVALID');
+      reply.errcode===45009?'WECOM_RATE_LIMIT':'WECOM_PROVIDER_REJECTED',reply.errcode,'MESSAGE_SEND');
+    let invalid;try{invalid=invalidUsers(reply);}catch{throw safeError('WECOM_RESPONSE_INVALID',undefined,'MESSAGE_SEND');}
+    if([...invalid].some(id=>!recipients.some(target=>target.toLowerCase()===id)))throw safeError('WECOM_RESPONSE_INVALID',undefined,'MESSAGE_SEND');
     const invalidRecipients=recipients.filter(id=>invalid.has(id.toLowerCase()));
     const acceptedRecipients=recipients.filter(id=>!invalid.has(id.toLowerCase()));
     return {accepted:invalidRecipients.length===0&&acceptedRecipients.length>0,
       acceptedRecipients,invalidRecipients};
   }
-  return Object.freeze({configured:true,targetsFor,messageFor:payload=>contentFor(payload,config.storeLabel),send});
+  return Object.freeze({configured:true,maxDeliveryMs:timeoutMs*3+1000,targetsFor,
+    messageFor:payload=>contentFor(payload,config.storeLabel),send,
+    diagnoseOutcome({accepted,result,failure}){
+      if(accepted)return {failureStage:'MESSAGE_SEND',providerResult:'ACCEPTED',providerErrcode:0,providerErrorClass:null};
+      if(result?.invalidRecipients?.length)return {failureStage:'MESSAGE_SEND',providerResult:'REJECTED',
+        providerErrcode:0,providerErrorClass:'RECIPIENT_REJECTED'};
+      const code=failure?.code,stage=failure?.failureStage;
+      const explicit=Number.isSafeInteger(failure?.providerCode)&&failure.providerCode>=-999999&&
+        failure.providerCode<=999999&&['WECOM_TOKEN_REJECTED','WECOM_PROVIDER_REJECTED',
+          'WECOM_RECIPIENT_INVALID','WECOM_RATE_LIMIT'].includes(code);
+      const errorClass=explicit?(code==='WECOM_TOKEN_REJECTED'?'TOKEN_REJECTED':
+        code==='WECOM_RECIPIENT_INVALID'?'RECIPIENT_REJECTED':'PROVIDER_REJECTED_OTHER'):
+        ['WECOM_RESPONSE_INVALID','WECOM_RESPONSE_TOO_LARGE'].includes(code)?'PROVIDER_RESPONSE_INVALID':
+        ['WECOM_TIMEOUT','WECOM_NETWORK_UNKNOWN','WECOM_SERVER_ERROR','WECOM_HTTP_FAILURE',
+          'WECOM_RATE_LIMIT'].includes(code)?'NETWORK_UNKNOWN':'REQUEST_REJECTED';
+      return {failureStage:['TOKEN','MESSAGE_SEND'].includes(stage)?stage:null,
+        providerResult:explicit?'REJECTED':'UNKNOWN',providerErrcode:explicit?failure.providerCode:null,
+        providerErrorClass:errorClass};
+    }});
 }
