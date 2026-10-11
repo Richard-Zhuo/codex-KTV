@@ -1,3 +1,7 @@
+## 2026-10-11: S2 standalone phone smoke tool candidate
+
+A separate pre-production smoke CLI has been added to the S2 candidate. It uses protected WeCom-only config and state, synthetic incident/outbox, the existing WeCom adapter, and a human checkpoint between OPEN and RESOLVED. No real WeCom token or send has occurred; full production config and readiness are unchanged. S2 still needs human configuration and phone acceptance. Final synthetic verification: S2 focused 40/40 PASS; isolated Stage 5E 1/1 PASS; full owned-fixture regression 2211/2211 PASS (0 fail, 0 skip, exit 0, all owned resources absent after cleanup). npm test was attempted but npm is unavailable on this host. Self-review found no remaining P0/P1. S3-S5 remain OPEN; PRODUCTION READY = NO; 14-DAY OFFSITE MVP READY = NO. See [S2 transport and smoke](S2_WECOM_ALERT_TRANSPORT.md).
+
 ## 2026-10-11: S2 WeCom alert transport candidate
 
 S1 = ACCEPTED AND MERGED; main = origin/main = 6b713f52accda8b3292959ed4fea8b2690c2b78f. S2 is implemented on codex/p0-1-prod-blocker-s2-wecom-alerts for synthetic verification and human acceptance. The existing incident/outbox architecture is preserved; the production runtime now has an opt-in protected WeCom self-built app transport. Real WeCom phone smoke, deployment, merge and push have not occurred. See [S2 WeCom alert transport](S2_WECOM_ALERT_TRANSPORT.md). S2 = NEEDS HUMAN ACCEPTANCE; S3-S5 = OPEN; PRODUCTION READY = NO; 14-DAY OFFSITE MVP READY = NO.

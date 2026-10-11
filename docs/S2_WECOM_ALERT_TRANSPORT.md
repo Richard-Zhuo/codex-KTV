@@ -1,5 +1,40 @@
 # S2 WeCom self-built application alert transport
 
+## Pre-production standalone phone smoke CLI
+
+This tool is separate from the formal production runtime and does not relax its DB, TLS, service account or readiness gates. It reuses the S2 WeCom client, safe formatter, incident and outbox. No business server, database, ledger, inventory, device worker or KTVSky is started.
+
+Protected JSON: C:\ProgramData\JbhhKtv\private\wecom-smoke.json. Pre-create a protected state directory at C:\ProgramData\JbhhKtv\private\wecom-smoke-state. Both locations must be outside Git. The JSON has exactly these fields:
+
+~~~json
+{
+  "configVersion": 1,
+  "storeLabel": "<DISPLAY_STORE_NAME>",
+  "corpId": "<ENTER_LOCALLY>",
+  "agentId": 0,
+  "secret": "<ENTER_LOCALLY>",
+  "criticalRecipients": ["<OWNER_USER_ID_ENTER_LOCALLY>"],
+  "warnRecipients": ["<SAME_OWNER_USER_ID_ENTER_LOCALLY>"]
+}
+~~~
+
+The shown 0 is an invalid placeholder; replace agentId with the actual positive integer before validation. The sole user ID must be the same in both arrays; all/broadcast/department, empty lists and multiple recipients are refused. Do not put access_token in the file. Edit the protected file locally without placing credentials in shell history, chat or Git. The token stays in process memory. The protected state holds the synthetic incident/outbox and recipient snapshot, never the Secret or token.
+
+The smoke ACL policy requires disabled inheritance on the config file and state directory; owner must be the current interactive operator, SYSTEM, or Administrators. Allow ACEs may grant only those three SIDs. The current operator must have file read and state directory read/write. Its state-directory Allow ACE must carry ObjectInherit so new state files inherit protection. Any existing operational-state.json must itself pass the same protected file ACL policy; newly created state is checked before a provider call. Users, Authenticated Users and Everyone Allow ACEs are rejected. The production Stage 5C policy still requires its formal service account SID and is unchanged. The smoke does not require NT SERVICE\JbhhKtv to exist.
+
+Commands from the app root, in a local operator PowerShell session:
+
+~~~powershell
+node production/wecom-smoke-cli.js --config-file "C:\ProgramData\JbhhKtv\private\wecom-smoke.json" --validate-only
+node production/wecom-smoke-cli.js --config-file "C:\ProgramData\JbhhKtv\private\wecom-smoke.json" --send-open
+# Only after the owner confirms the OPEN message on the intended phone:
+node production/wecom-smoke-cli.js --config-file "C:\ProgramData\JbhhKtv\private\wecom-smoke.json" --send-resolved --open-phone-confirmed
+~~~
+
+Validation checks the protected config and state directory, schema, ACL and recipient policy. It never obtains a token or calls the provider. OPEN sends one synthetic WARN, records its incident, delivery ID, sequence and recipient in protected outbox state, then stops. A failed attempt can be retried with the same command after the existing 30/60-second backoff; at most three attempts. Provider acceptance does not prove phone receipt. Only after human phone confirmation should the RESOLVED command run. RESOLVED uses the same incident and recipient with a later sequence; if delivery fails, the same RESOLVED command can retry the pending delivery. A completed step refuses replay. The two messages clearly identify themselves as channel tests, not business faults.
+
+The state directory is deliberately distinct from production operational state. Protect and inspect the file/directory ACLs locally before sending. Do not share console captures containing a live account identifier. CLI output contains fixed status, recipient count and synthetic incident/delivery IDs; it never prints the Corp ID, User ID, Secret, access token, raw provider response or request URL. Automated tests inject synthetic HTTP only and never contact WeCom.
+
 Status: local S2 candidate only. S1 is accepted and merged at 6b713f52accda8b3292959ed4fea8b2690c2b78f. S2 needs human acceptance and a separately approved real phone smoke. S3-S5 remain open. Production ready: NO. 14-day offsite MVP ready: NO.
 
 ## Boundary
@@ -19,7 +54,7 @@ The Git-external runtime config retains monitoring.alertingRequired as the only 
   "alerting": {
     "wecom": {
       "corpId": "REPLACE_WITH_CORP_ID",
-      "agentId": 123456,
+      "agentId": 0,
       "secret": "REPLACE_IN_PROTECTED_FILE_ONLY",
       "storeLabel": "Jin Bi Hui Huang KTV",
       "criticalRecipients": ["REPLACE_WITH_OWNER_USER_ID"],

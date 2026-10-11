@@ -28,6 +28,7 @@ const definitions={
  DATA_INVARIANT_FAILURE:['CRITICAL','业务数据校验不一致','暂停写入；保留证据，禁止自动修复'],
  MONITORING_FAILURE:['ERROR','监控持久化或采集异常','查看服务输出并联系技术'],
  ALERT_DELIVERY_FAILED:['ERROR','告警发送失败','查看本地 incident 并核对告警配置'],
+ WECOM_SMOKE_TEST:['WARN','这是系统告警通道测试，并非真实营业故障。','人工确认手机收到测试告警后，再执行测试恢复。'],
  ALERT_CHANNEL_MISSING:['ERROR','真实告警渠道尚未配置','由老板决定通知渠道与接收人']
 };
 export const EVENTS=Object.freeze(Object.fromEntries(Object.entries(definitions).map(([code,[severity,message,action]])=>[code,Object.freeze({severity,message,action,runbook:code})])));

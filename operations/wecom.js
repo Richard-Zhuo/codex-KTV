@@ -69,7 +69,7 @@ function contentFor(payload,storeLabel){
     '状态：'+(resolved?'已恢复':'告警'),
     '事件：'+payload.code,
     '组件：'+(ID.test(payload.component??'')?payload.component:'runtime'),
-    '说明：'+clipped(definition.message),
+    '说明：'+clipped(payload.code==='WECOM_SMOKE_TEST'&&resolved?'这是系统告警通道测试恢复通知，并非真实营业故障。':definition.message),
     ...(ID.test(payload.roomId??'')?['房间：'+payload.roomId]:[]),
     ...(ID.test(payload.workflowId??'')?['流程：'+payload.workflowId]:[]),
     '处理建议：'+clipped(definition.action),

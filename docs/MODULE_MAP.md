@@ -1,3 +1,10 @@
+## Pre-production S2 phone smoke
+
+- production/wecom-smoke-cli.js: separate validated CLI for synthetic OPEN and human-confirmed RESOLVED; existing incident/outbox and WeCom client.
+- production/wecom-smoke-config.js: narrow protected JSON and interactive-operator ACL checks; formal production loader is unchanged.
+- production/wecom-smoke.test.js: synthetic no-network validation and fake-provider lifecycle/retry tests.
+- Operator steps: [S2 WeCom alert transport](S2_WECOM_ALERT_TRANSPORT.md).
+
 ## S2 real alert transport entry and tests
 
 - operations/wecom.js: fixed-origin WeCom token/message client, safe text and recipient policy.
