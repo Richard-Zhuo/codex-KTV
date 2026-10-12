@@ -4,11 +4,14 @@ import { resolve } from 'node:path';import { fileURLToPath } from 'node:url';
 import { loadRuntimeConfig } from './runtime-config.js';
 import { createHttpApiFromEnv } from '../http/bootstrap.js';
 import { createSafeLogger } from './runtime-log.js';
+import { assertNormalStartupAllowed } from '../recovery/production-cutover-journal.js';
 export async function preflight(path,env=process.env){
  if(!path)return {ready:false,checks:{configuration:'BLOCKED'},blockers:['RUNTIME_CONFIG_REQUIRED'],liveControl:'OFF'};
  let services;
  try{
-  const loaded=await loadRuntimeConfig(path,env),logger=createSafeLogger({secrets:loaded.redactionSecrets,write:()=>{}});
+  const loaded=await loadRuntimeConfig(path,env);
+  await assertNormalStartupAllowed(loaded);
+  const logger=createSafeLogger({secrets:loaded.redactionSecrets,write:()=>{}});
   services=createHttpApiFromEnv(loaded.apiEnv,logger,{managed:true,mysqlSsl:loaded.mysqlSsl});
   let report;try{report=await services.readiness();}catch(error){report=readinessFailure(error);}
   const blockers=report.blockers.map(b=>b.code);if(!loaded.config.monitoring?.backupDirectory)blockers.push('BACKUP_DIRECTORY_REQUIRED');

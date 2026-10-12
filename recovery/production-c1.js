@@ -19,18 +19,18 @@ const control=async c=>{
  const [[row]]=await c.query('SELECT mode,store_id,ledger_id,environment,backup_digest,facts FROM recovery_control WHERE control_id=1');
  return row&&{...row,facts:parse(row.facts)};
 };
-function requireControl(row,plan,mode,reason){
+export function requireControl(row,plan,mode,reason){
  if(row?.mode!==mode||row.store_id!==plan.storeId||row.ledger_id!==plan.ledgerId||
     row.environment!=='production'||row.backup_digest!==plan.backupSha256||
     row.facts?.reason!==reason||!same(row.facts,plan))
   throw fail('PRODUCTION_RESTORE_C1_IDENTITY_MISMATCH');
 }
-async function server(c,database,plan){
+export async function server(c,database,plan){
  const [[r]]=await c.query('SELECT DATABASE() AS db,@@server_uuid AS uuid,@@port AS port');
  if(r.db!==database||r.uuid!==plan.targetServerUuid||Number(r.port)!==plan.targetPort)
   throw fail('PRODUCTION_RESTORE_C1_SERVER_MISMATCH');
 }
-async function alerts(loaded){
+export async function alerts(loaded){
  if(!loaded.logDirectory)return [];
  const scope=hash(loaded.config.storeId+':'+loaded.config.ledgerId);
  return (await createOperationalStore(loaded.logDirectory,scope)).read().outbox;
@@ -48,7 +48,7 @@ function alertFindings(outbox){
  return {blocking,manual,status:blocking.length?'BLOCKING_UNKNOWN':
   manual.length?'NON_BLOCKING_MANUAL_FOLLOWUP':'SAFE'};
 }
-async function snapshot(source,candidate,spec){
+export async function snapshot(source,candidate,spec){
  await source.query('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ');
  await source.query('START TRANSACTION WITH CONSISTENT SNAPSHOT, READ ONLY');
  await candidate.query('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ');
@@ -60,7 +60,7 @@ async function snapshot(source,candidate,spec){
    oldDigest:digest(canonical(oldTables)),candidateDigest:digest(canonical(candidateTables))};
  }finally{await candidate.rollback();await source.rollback();}
 }
-function artifactMatches(plan,artifact){
+export function artifactMatches(plan,artifact){
  const m=artifact.manifest;
  if(m.backupId!==plan.backupId||m.createdAt!==plan.backupCreatedAt||
     m.source.serverUuid!==plan.sourceServerUuid||m.source.database!==plan.sourceDatabase||

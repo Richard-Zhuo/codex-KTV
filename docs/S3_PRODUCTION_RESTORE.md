@@ -1,12 +1,22 @@
 # S3-A production restore contract and read-only preflight
 
-S3-A and S3-B are on the accepted main baseline. S3-C Phase C1 is a local owned-fixture-only candidate. Production restore execution remains disabled by the Stage 5B `restoreDatabase` guard and the S3-B production CLI guard. This document does not authorize a real production inspection, freeze, import, cutover or resume.
+S3-A and S3-B are on the accepted main baseline. S3-C Phases C1 and C2 are local owned-fixture-only candidates. Production restore execution remains disabled by the Stage 5B `restoreDatabase` guard and the S3-B production CLI guard. This document does not authorize a real production inspection, freeze, import, cutover or resume.
 
 ## S3-C Phase C1 internal candidate
 
 C1 is an owned isolated MySQL verification path, not a production restore command. It requires the immutable protected plan and execution journal, exact plan-bound FROZEN old database and VERIFYING candidate, same server identity and verified structured backup. It reads both databases and the operational alert state without dispatching business, voucher, device or alert work. It classifies critical unresolved provider outcomes as blockers and records noncritical manual followups separately. A protected `c1-verification.json` holds only operation/plan/backup binding, old and candidate data digests, alert-state digest, safe finding codes, classification and eligibility.
 
 A positive C1 result does not authorize cutover. Its validity depends on rechecking the protected plan, backup and live old/candidate/journal/alert facts before any future C2 action; changes invalidate the saved PASS. C1 leaves the old database FROZEN and candidate VERIFYING. Generic verify/resume remains barred for the plan-bound candidate, and the production CLI remains hard disabled. C2, service lifecycle, pointer switch, READY_FOR_RESUME and resume are outside C1.
+
+## S3-C Phase C2 internal candidate
+
+C2 remains an owned isolated fixture path. Before cutover it reopens the protected plan, backup and C1 evidence and rechecks the same operation, server, plan digest, old FROZEN and candidate VERIFYING control rows, official schema, old/candidate data digests and alert-state digest. A persisted C1 PASS alone is insufficient. The target is the plan-bound candidate; the operator cannot select a database or operation at switch time.
+
+The managed runtime must finish draining HTTP work, business/device workers and the operational loop, and close its database pool before any pointer mutation. C2 then durably records a protected `CUTOVER_INTENT` bound to the operation, plan digest, backup SHA, old and target databases and server UUID. Only then may its dedicated updater atomically replace the existing protected secrets file with a version differing solely in `database.name`. It requires the expected old value, validates the original and temporary file ACL before writing secret bytes, checks the final ACL and contents, and never prints protected fields. The journal advances to `CUTOVER_SWITCHED` only after reloading and revalidating the actual target pointer and recovery facts. Filesystem journal and secrets replacement are distinct operations, not one transaction.
+
+`CUTOVER_INTENT` with the old pointer does not count as a completed switch. The same operation may revalidate and finish it while the runtime stays stopped. If the pointer already names the same plan target while the journal remains `CUTOVER_INTENT`, C2 can reconcile to `CUTOVER_SWITCHED` only after the full same-operation recheck. A different operation, unrelated pointer or changed C1 fact fails closed. Normal production startup and preflight check both cutover and plan-bound execution journals before starting services, workers or the operational loop; the runtime also rechecks before listening. An orphan execution journal without its protected plan blocks startup. They remain blocked throughout this pre-resume window. Ordinary NORMAL startup without an active cutover remains available.
+
+C2 stops with old DB FROZEN, candidate DB VERIFYING, the protected pointer on the candidate, and zero managed normal writers. It does not change either recovery mode, restart runtime, allow employee traffic, dispatch providers, reach READY_FOR_RESUME, resume or implement a real production cutover. The public production restore CLI remains hard disabled; only the private owned-fixture capability reaches this core. Future C3 must explicitly establish the safe resume boundary.
 
 ## S3-B Phase 1 internal candidate
 
