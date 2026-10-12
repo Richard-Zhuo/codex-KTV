@@ -2,7 +2,9 @@ import mysql from 'mysql2/promise';
 import {resolve,join} from 'node:path';
 import {assertFixtureEnvironment} from '../test-support/destructive-safety.js';
 import {assertOwnedRoot} from '../rehearsal/scope.js';
-import {canonical,fail} from '../backup/format.js';
+import {canonical,digest,fail,verifyArtifact} from '../backup/format.js';
+import {readTables,createOfficialRestoreSchema,importStructuredBackupRows} from '../backup/mysql-backup.js';
+import {validateSchema} from '../production/schema.js';
 import {dispatchLock} from './gate.js';
 import {readProtectedRestorePlan,preflightPreparedRestore,planBinding} from './production-plan.js';
 import {readExecutionState,transitionExecutionState} from './production-journal.js';
@@ -130,5 +132,132 @@ export async function freezePreparedCandidate({runtimeConfigFile,capability,
   await freezeActive(c,plan);
   await transition(journal,plan,'FREEZE_INTENT','FROZEN');
   return {state:'FROZEN',replay:false};
+ });
+}
+
+async function targetExists(c,name){
+ const [rows]=await c.execute('SELECT SCHEMA_NAME FROM information_schema.SCHEMATA WHERE SCHEMA_NAME=?',[name]);
+ return rows.length!==0;
+}
+function verifiedArtifact(execution,artifact){
+ const {plan}=execution,{manifest}=artifact;
+ if(manifest.backupId!==plan.backupId||manifest.createdAt!==plan.backupCreatedAt||
+   manifest.source.serverUuid!==plan.sourceServerUuid||
+   manifest.source.database!==plan.sourceDatabase||
+   manifest.applicationCommit!==plan.applicationCommit||
+   manifest.migrationVersion!==plan.schemaMigration||
+   manifest.ledgerHeads.find(h=>h.ledgerId===plan.ledgerId)?.revision!==plan.backupRevision)
+  throw fail('PRODUCTION_RESTORE_PLAN_PRECONDITION_CHANGED');
+ return artifact;
+}
+async function verifyImportedStructure(c,plan,artifact){
+ await validateSchema(c,plan.targetDatabase);
+ const [[fk]]=await c.query('SELECT @@foreign_key_checks AS enabled');
+ if(Number(fk.enabled)!==1)throw fail('PRODUCTION_RESTORE_FK_CHECKS_DISABLED');
+ const imported=await readTables(c,artifact.spec.tables);
+ for(const name of artifact.spec.tables){
+  if(name==='recovery_control')continue;
+  const expected=artifact.data.tables[name],actual=imported[name];
+  if(actual.rows.length!==expected.rows.length||
+    JSON.stringify(actual.columns)!==JSON.stringify(expected.columns)||
+    digest(canonical(actual))!==digest(canonical(expected)))
+   throw fail('PRODUCTION_RESTORE_IMPORT_MISMATCH');
+ }
+ const [[control]]=await c.query('SELECT mode,store_id,ledger_id,environment,backup_digest,facts FROM recovery_control WHERE control_id=1');
+ let facts;try{facts=JSON.parse(control?.facts);}catch{}
+ if(control?.mode!=='RESTORING'||control.store_id!==plan.storeId||
+   control.ledger_id!==plan.ledgerId||control.environment!=='production'||
+   control.backup_digest!==plan.backupSha256||!sameBinding(facts,plan))
+  throw fail('PRODUCTION_RESTORE_CANDIDATE_IDENTITY_MISMATCH');
+}
+async function revokeRestoredSessions(c){
+ const [sessions]=await c.query('SELECT session_id,principal_id FROM auth_sessions WHERE revoked_at IS NULL FOR UPDATE');
+ await c.query('UPDATE auth_sessions SET revoked_at=UTC_TIMESTAMP(6) WHERE revoked_at IS NULL');
+ for(const session of sessions)await c.execute("INSERT INTO auth_events(principal_id,session_id,event_type,reason_code) VALUES(?,?,'session-revoked','recovery-candidate')",[session.principal_id,session.session_id]);
+ const [[left]]=await c.query('SELECT COUNT(*) AS n FROM auth_sessions WHERE revoked_at IS NULL');
+ if(Number(left.n)!==0)throw fail('PRODUCTION_RESTORE_SESSION_INVALIDATION_FAILED');
+ return sessions.length;
+}
+/**
+ * Only an owned, isolated fixture capability can enter this core. The ordinary
+ * production CLI has no route here. There is deliberately no target or artifact
+ * argument: both come exclusively from the protected PREPARED plan.
+ */
+export async function restorePreparedCandidate({runtimeConfigFile,capability,
+ preflight=preflightPreparedRestore,readPlan=readProtectedRestorePlan,
+ readState=readExecutionState,transition=transitionExecutionState,
+ verify=verifyArtifact,schema=createOfficialRestoreSchema,
+ importRows=importStructuredBackupRows,testHooks={},
+ ...dependencies}){
+ return withOwnedLock(capability,async c=>{
+  const initial=await readPlan({runtimeConfigFile,...dependencies});
+  checkPlanSource(initial.plan,capability);
+  const state=await readState(initial.journal,initial.plan);
+  if(!state||!['FROZEN','RESTORING'].includes(state.state))
+   throw fail('PRODUCTION_RESTORE_JOURNAL_CONFLICT');
+  const checked=async()=> {
+   const execution=verifiedExecution(initial,
+    await preflight({runtimeConfigFile,requiredMode:'FROZEN',...dependencies}));
+   checkPlanSource(execution.plan,capability);
+   return execution;
+  };
+  let execution;
+  try{execution=await checked();}
+  catch(error){
+   if(state.state==='RESTORING'&&await targetExists(c,initial.plan.targetDatabase))
+    await transition(initial.journal,initial.plan,'RESTORING','FAILED_AMBIGUOUS');
+   throw error;
+  }
+  const {plan,journal,artifactDirectory}=execution;
+  if(await targetExists(c,plan.targetDatabase)){
+   if(state.state==='RESTORING')await transition(journal,plan,'RESTORING','FAILED_AMBIGUOUS');
+   throw fail('PRODUCTION_RESTORE_TARGET_EXISTS');
+  }
+  if(state.state==='FROZEN')await transition(journal,plan,'FROZEN','RESTORING');
+  // Repeat the complete preflight immediately before CREATE. A persisted intent
+  // alone never licenses a database mutation.
+  execution=await checked();
+  const artifact=verifiedArtifact(execution,await verify(artifactDirectory,{
+   expectedChecksum:plan.backupSha256,storeId:plan.storeId,ledgerId:plan.ledgerId}));
+  let createAttempted=false,created=false,begun=false;
+  try{
+   if(await targetExists(c,plan.targetDatabase))throw fail('PRODUCTION_RESTORE_TARGET_EXISTS');
+   createAttempted=true;
+   await c.query('CREATE DATABASE '+plan.targetDatabase+' CHARACTER SET utf8mb4 COLLATE utf8mb4_bin');
+   created=true;
+   await testHooks.afterCreate?.();
+   await c.query('USE '+plan.targetDatabase);
+   await schema(c,artifact.spec,plan.targetDatabase,async()=>{
+    await c.execute('INSERT INTO recovery_control(control_id,mode,store_id,ledger_id,environment,backup_digest,initiated_by,facts) VALUES(1,?,?,?,?,?,?,?)',
+     ['RESTORING',plan.storeId,plan.ledgerId,'production',plan.backupSha256,plan.operatorSid,
+      canonical({reason:'plan-bound-candidate-restore',...planBinding(plan)})]);
+   });
+   await testHooks.afterSchema?.();
+   await c.beginTransaction();begun=true;
+   await importRows(c,artifact);
+   await testHooks.afterImport?.();
+   await verifyImportedStructure(c,plan,artifact);
+   const sessionsInvalidated=await revokeRestoredSessions(c);
+   await c.execute('INSERT INTO recovery_events(event_type,initiated_by,reason,facts) VALUES(?,?,?,?)',
+    ['restored',plan.operatorSid,'plan-bound-candidate-restore',
+     canonical({...planBinding(plan),sessionsInvalidated})]);
+   const [updated]=await c.execute("UPDATE recovery_control SET mode='VERIFYING',updated_at=UTC_TIMESTAMP(6) WHERE control_id=1 AND mode='RESTORING'");
+   if(updated.affectedRows!==1)throw fail('PRODUCTION_RESTORE_CANDIDATE_IDENTITY_MISMATCH');
+   await c.commit();begun=false;
+   await transition(journal,plan,'RESTORING','VERIFYING');
+   return {state:'VERIFYING',targetDatabase:plan.targetDatabase,
+    recoveryOperationId:plan.recoveryOperationId,planDigest:plan.planDigest,
+    sessionsInvalidated};
+  }catch(error){
+   if(begun)try{await c.rollback();}catch{}
+   if(createAttempted){
+    // Only proven absence permits the same operation to retry. If visibility
+    // is lost, preserve the ambiguous journal instead of assuming no DB exists.
+    let exists=true;
+    if(!created)try{exists=await targetExists(c,plan.targetDatabase);}catch{}
+    if(created||exists)try{await transition(journal,plan,'RESTORING','FAILED_AMBIGUOUS');}catch{}
+   }
+   throw error;
+  }
  });
 }

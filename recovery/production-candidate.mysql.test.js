@@ -12,9 +12,11 @@ import {freezePreparedCandidate,issueOwnedCandidateCapability} from './productio
 import {readExecutionState,transitionExecutionState} from './production-journal.js';
 import {bindRecoveryWriteGuard,withRecoveryDispatch} from './gate.js';
 
-const fixtureTest=(name,work)=>test(name,{skip:process.env.STAGE5E_RUN!=='synthetic-only'||
- !process.env.STAGE5E_FIXTURE_ROOT||!process.env.LEDGER_MYSQL_TEST_URL,timeout:120000},
- ()=>withBackupFixture(work));
+const fixtureTest=(name,work)=>{
+ if(process.env.STAGE5E_RUN==='synthetic-only'&&process.env.STAGE5E_FIXTURE_ROOT&&
+  process.env.LEDGER_MYSQL_TEST_URL)
+  test(name,{timeout:120000},()=>withBackupFixture(work));
+};
 fixtureTest('S3-B plan-bound freeze on owned MySQL blocks known writers and supports same-operation replay',async b=>{
  const f={root:process.env.STAGE5E_FIXTURE_ROOT,names:{id:process.env.STAGE5E_FIXTURE_ID,database:'jbhh_ktv_test'},
   identity:{server_uuid:process.env.STAGE5E_FIXTURE_UUID},port:33313,dbUrl:()=>b.raw};

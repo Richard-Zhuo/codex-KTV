@@ -9,6 +9,7 @@ import {inspectProductionRestore,preflightPreparedRestore,readProtectedRestorePl
  validatePlan,candidateName,planBinding} from './production-plan.js';
 import {readExecutionState,transitionExecutionState} from './production-journal.js';
 import {runProductionRestoreCli} from './production-restore-cli.js';
+import {restorePreparedCandidate} from './production-candidate.js';
 
 const SERVER='synthetic-s3b-server',COMMIT='a'.repeat(40),SHA='b'.repeat(64);
 async function fixture(work){
@@ -113,6 +114,11 @@ test('S3-B journal preserves same operation through FREEZE_INTENT and FROZEN',()
  await transitionExecutionState(f.root,f.plan,'FREEZE_INTENT','FROZEN',options);
  assert.equal((await readExecutionState(f.root,f.plan,options)).state,'FROZEN');
 }));
+
+test('S3-B candidate core refuses an unissued capability before database access',async()=>{
+ await assert.rejects(restorePreparedCandidate({runtimeConfigFile:'synthetic',capability:{}}),
+  {code:'RESTORE_PRODUCTION_DISABLED'});
+});
 
 test('real production CLI refuses S3-B execution actions',async()=>{
  for(const action of ['freeze-plan','restore-candidate']){

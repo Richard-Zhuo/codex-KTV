@@ -22,9 +22,9 @@ export async function freshEnvironment(repository,{port=33315,packages:buildPack
   result.runtimeProcesses='absent';
   for(const pool of pools)await pool.end().catch(()=>{});
   try{
-   if(setup&&identity){await serverGuard();for(const user of users)await setup.query('DROP USER IF EXISTS ?@?',[user,'127.0.0.1']);
+   if(setup&&identity){await serverGuard();const [candidates]=await setup.query("SELECT SCHEMA_NAME AS name FROM information_schema.SCHEMATA WHERE SCHEMA_NAME LIKE 'jbhh_ktv_recovery_%'");for(const row of candidates){if(!/^jbhh_ktv_recovery_[a-f0-9]{32}$/.test(row.name))throw Error('REHEARSAL_DATABASE_DENIED');registered.add(row.name);}for(const user of users)await setup.query('DROP USER IF EXISTS ?@?',[user,'127.0.0.1']);
     for(const name of registered){assertOwnedDatabase(name,names,registered);await setup.query('DROP DATABASE IF EXISTS '+name);}
-    const [left]=await setup.execute('SELECT SCHEMA_NAME FROM information_schema.schemata WHERE SCHEMA_NAME=? OR SCHEMA_NAME LIKE ?',[names.database,'%'+names.id]);if(left.length)throw Error('REHEARSAL_DATABASE_CLEANUP_FAILED');
+    const [left]=await setup.execute('SELECT SCHEMA_NAME FROM information_schema.schemata WHERE SCHEMA_NAME=? OR SCHEMA_NAME LIKE ? OR SCHEMA_NAME LIKE ?',[names.database,'%'+names.id,'jbhh_ktv_recovery_%']);if(left.length)throw Error('REHEARSAL_DATABASE_CLEANUP_FAILED');
     sqlCleanup=true;await setup.query('SHUTDOWN');
    }
   }catch(error){result.sqlCleanupFailure=error.code??'REHEARSAL_CLEANUP_SQL_UNAVAILABLE';}finally{

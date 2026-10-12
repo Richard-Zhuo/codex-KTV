@@ -8,4 +8,4 @@ export async function assertOwnedRoot(root,id){
  return path;
 }
 export async function removeOwnedRoot(root,id){const path=await assertOwnedRoot(root,id);for(const name of await readdir(path)){if(name==='rehearsal-owner.json')continue;await rm(resolve(path,name),{recursive:true,force:false,maxRetries:20,retryDelay:100});}await unlink(resolve(path,'rehearsal-owner.json'));await rmdir(path);}
-export function assertOwnedDatabase(name,names,registered){if(!registered.has(name)||!(name===names.database||name.startsWith('jbhh_ktv_restore_s5e_')&&name.endsWith('_'+names.id))||!/^[a-z][a-z0-9_]{0,63}$/.test(name))throw Error('REHEARSAL_DATABASE_DENIED');}
+export function assertOwnedDatabase(name,names,registered){if(!registered.has(name)||!(name===names.database||(name.startsWith('jbhh_ktv_restore_s5e_')&&name.endsWith('_'+names.id)||/^jbhh_ktv_recovery_[a-f0-9]{32}$/.test(name)))||!/^[a-z][a-z0-9_]{0,63}$/.test(name))throw Error('REHEARSAL_DATABASE_DENIED');}

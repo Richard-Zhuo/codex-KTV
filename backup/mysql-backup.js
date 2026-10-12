@@ -24,6 +24,24 @@ export async function readTables(c,names,{lock=false}={}) {
   return result;
 }
 export function rowsOf(data,name) {const t=data.tables[name];return t.rows.map(row=>Object.fromEntries(t.columns.map((c,i)=>[c,unpack(row[i])])));}
+// TEST restore and the owned S3-B rehearsal share the verified schema and FK order.
+export async function createOfficialRestoreSchema(c,spec,target,onControlCreated) {
+  const controlDdl=spec.statements.find(sql=>/^CREATE TABLE recovery_control\b/.test(sql));
+  if(!controlDdl)throw fail('RESTORE_SCHEMA_UNSUPPORTED');
+  await c.query(controlDdl);
+  await onControlCreated();
+  for(const sql of spec.statements)if(sql!==controlDdl)await c.query(sql);
+  await validateSchema(c,target);
+}
+export async function importStructuredBackupRows(c,{spec,data}) {
+  for(const name of spec.tables) {
+    if(name==='recovery_control')continue;
+    const table=data.tables[name];
+    const [columns]=await c.execute('SELECT COLUMN_NAME AS name FROM information_schema.columns WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME=? ORDER BY ORDINAL_POSITION',[name]);
+    if(JSON.stringify(columns.map(r=>r.name))!==JSON.stringify(table.columns))throw fail('RESTORE_COLUMN_MISMATCH');
+    for(const row of table.rows)await c.execute('INSERT INTO '+name+'('+table.columns.join(',')+') VALUES('+row.map(()=>'?').join(',')+')',row.map(unpack));
+  }
+}
 function storeCheck(data,storeId,ledgerId,environment) {
   const facts=rowsOf(data,'production_bootstrap_events');
   if(!facts.length||facts.some(r=>r.store_id!==storeId||r.ledger_id!==ledgerId||r.environment!==environment))throw fail('BACKUP_STORE_MISMATCH');
@@ -73,19 +91,11 @@ export async function restoreDatabase({directory,expectedChecksum,databaseUrl,se
     await c.query('CREATE DATABASE IF NOT EXISTS '+target+' CHARACTER SET utf8mb4 COLLATE utf8mb4_bin');await c.query('USE '+target);
     // Bootstrap the official operational guard before business DDL. A crash before
     // its row exists leaves an incomplete schema; after it exists the target stays paused.
-    const controlDdl=spec.statements.find(sql=>/^CREATE TABLE recovery_control\b/.test(sql));
-    if(!controlDdl)throw fail('RESTORE_SCHEMA_UNSUPPORTED');
-    await c.query(controlDdl);
-    await c.execute('INSERT INTO recovery_control(control_id,mode,store_id,ledger_id,environment,backup_digest,initiated_by,facts) VALUES(1,?,?,?,?,?,?,?)',['RESTORING',storeId,ledgerId,environment,expectedChecksum,initiatedBy,canonical({source:manifest.source,backupCreatedAt:manifest.createdAt,restoreStartedAt:new Date().toISOString()})]);controlCreated=true;
-    for(const sql of spec.statements)if(sql!==controlDdl)await c.query(sql);
-    await validateSchema(c,target);
+    await createOfficialRestoreSchema(c,spec,target,async()=>{
+      await c.execute('INSERT INTO recovery_control(control_id,mode,store_id,ledger_id,environment,backup_digest,initiated_by,facts) VALUES(1,?,?,?,?,?,?,?)',['RESTORING',storeId,ledgerId,environment,expectedChecksum,initiatedBy,canonical({source:manifest.source,backupCreatedAt:manifest.createdAt,restoreStartedAt:new Date().toISOString()})]);controlCreated=true;
+    });
     await c.beginTransaction();begun=true;
-    for(const name of spec.tables) {
-      if(name==='recovery_control')continue; // Restored operational mode must never become the source's NORMAL mode.
-      const table=data.tables[name];const [columns]=await c.execute('SELECT COLUMN_NAME AS name FROM information_schema.columns WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME=? ORDER BY ORDINAL_POSITION',[name]);
-      if(JSON.stringify(columns.map(r=>r.name))!==JSON.stringify(table.columns))throw fail('RESTORE_COLUMN_MISMATCH');
-      for(const row of table.rows)await c.execute('INSERT INTO '+name+'('+table.columns.join(',')+') VALUES('+row.map(()=>'?').join(',')+')',row.map(unpack));
-    }
+    await importStructuredBackupRows(c,{spec,data});
     await c.execute('INSERT INTO recovery_events(event_type,initiated_by,reason,facts) VALUES(?,?,?,?)',['restored',initiatedBy,'separate-db-restore',canonical({checksum:expectedChecksum,source:manifest.source})]);
     await c.execute("UPDATE recovery_control SET mode='VERIFYING',updated_at=UTC_TIMESTAMP(6) WHERE control_id=1");
     await c.commit();begun=false;
