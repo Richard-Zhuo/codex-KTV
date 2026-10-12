@@ -6,6 +6,8 @@ import {validateSmokeAcl,hardenSmokeTemporary} from '../production/wecom-smoke-c
 import {canonical,fail} from '../backup/format.js';
 import {validatePlan} from './production-plan.js';
 import {readExecutionState} from './production-journal.js';
+import {readC3State} from './production-c3-journal.js';
+import {assertCompletedC3Startup} from './production-c3-startup.js';
 
 const FILE='cutover-state.json';
 const STATES=new Set(['CUTOVER_INTENT','CUTOVER_SWITCHED']);
@@ -54,19 +56,20 @@ export async function transitionCutoverState(journal,plan,from,to,{
  await checkAcl(target);
  return to;
 }
-export async function assertNormalStartupAllowed(loaded,{read=readCutoverState,readExecution=readExecutionState}={}){
+export async function assertNormalStartupAllowed(loaded,{
+ read=readCutoverState,readExecution=readExecutionState,
+ readC3=readC3State,completionCheck=assertCompletedC3Startup}={}){
  const journal=loaded.config.recovery?.journalDirectory;
  if(!journal)return true;
- const state=await read(journal);
- if(state)throw fail('PRODUCTION_CUTOVER_STARTUP_BLOCKED');
- // A power loss between the pointer rename and journal rename cannot let a
- // VERIFYING candidate become a normal runtime merely because intent vanished.
+ const cutover=await read(journal);
  const file=join(journal,'active-plan.json');
  let info;try{info=await lstat(file);}catch(error){
   if(error.code!=='ENOENT')throw error;
-  // An execution journal without its plan is an ambiguous recovery state.
   try{await lstat(join(journal,'execution-state.json'));}
-  catch(stateError){if(stateError.code==='ENOENT')return true;throw stateError;}
+  catch(stateError){
+   if(stateError.code==='ENOENT'&&!cutover)return true;
+   if(stateError.code!=='ENOENT')throw stateError;
+  }
   throw fail('PRODUCTION_CUTOVER_STARTUP_BLOCKED');
  }
  if(!info.isFile()||info.isSymbolicLink()||info.size>65536||await realpath(file)!==file)
@@ -74,9 +77,14 @@ export async function assertNormalStartupAllowed(loaded,{read=readCutoverState,r
  await checkFile(file);
  let plan;try{plan=validatePlan(JSON.parse(await readFile(file,'utf8')));}
  catch{throw fail('PRODUCTION_CUTOVER_STARTUP_BLOCKED');}
- // Any plan-bound freeze/import/verification is a pre-resume state.
- if(await readExecution(journal,plan))throw fail('PRODUCTION_CUTOVER_STARTUP_BLOCKED');
+ const execution=await readExecution(journal,plan);
+ const progress=await readC3(journal,plan);
  const pointer=decodeURIComponent(new URL(loaded.apiEnv.KTV_MYSQL_URL).pathname.slice(1));
- if(pointer===plan.targetDatabase)throw fail('PRODUCTION_CUTOVER_STARTUP_BLOCKED');
+ if(progress?.state==='RESUMED'){
+  try{return await completionCheck(loaded,plan,journal,{cutover,execution});}
+  catch{throw fail('PRODUCTION_C3_STARTUP_BLOCKED');}
+ }
+ if(cutover||execution||progress||pointer===plan.targetDatabase)
+  throw fail('PRODUCTION_CUTOVER_STARTUP_BLOCKED');
  return true;
 }

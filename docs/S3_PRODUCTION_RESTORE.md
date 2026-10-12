@@ -1,6 +1,6 @@
 # S3-A production restore contract and read-only preflight
 
-S3-A and S3-B are on the accepted main baseline. S3-C Phases C1 and C2 are local owned-fixture-only candidates. Production restore execution remains disabled by the Stage 5B `restoreDatabase` guard and the S3-B production CLI guard. This document does not authorize a real production inspection, freeze, import, cutover or resume.
+S3-A and S3-B are on the accepted main baseline. S3-C Phases C1, C2 and C3 are local owned-fixture-only candidates. Production restore execution remains disabled by the Stage 5B `restoreDatabase` guard and the S3-B production CLI guard. This document does not authorize a real production inspection, freeze, import, cutover or resume.
 
 ## S3-C Phase C1 internal candidate
 
@@ -17,6 +17,14 @@ The managed runtime must finish draining HTTP work, business/device workers and 
 `CUTOVER_INTENT` with the old pointer does not count as a completed switch. The same operation may revalidate and finish it while the runtime stays stopped. If the pointer already names the same plan target while the journal remains `CUTOVER_INTENT`, C2 can reconcile to `CUTOVER_SWITCHED` only after the full same-operation recheck. A different operation, unrelated pointer or changed C1 fact fails closed. Normal production startup and preflight check both cutover and plan-bound execution journals before starting services, workers or the operational loop; the runtime also rechecks before listening. An orphan execution journal without its protected plan blocks startup. They remain blocked throughout this pre-resume window. Ordinary NORMAL startup without an active cutover remains available.
 
 C2 stops with old DB FROZEN, candidate DB VERIFYING, the protected pointer on the candidate, and zero managed normal writers. It does not change either recovery mode, restart runtime, allow employee traffic, dispatch providers, reach READY_FOR_RESUME, resume or implement a real production cutover. The public production restore CLI remains hard disabled; only the private owned-fixture capability reaches this core. Future C3 must explicitly establish the safe resume boundary.
+
+## S3-C Phase C3 internal candidate
+
+C3 remains reachable only through the private owned isolated MySQL fixture capability. Before the first candidate state mutation it reopens the protected plan, backup, C1 evidence and C2 cutover state, verifies the old plan-bound FROZEN database, the plan-bound VERIFYING candidate, the candidate pointer, unchanged business/alert evidence, invalidated restored sessions and a fully stopped managed runtime. It persists an identity-bound protected `READY_INTENT` before the dedicated candidate VERIFYING to READY_FOR_RESUME transaction. A saved C1 PASS is not permanent authorization. Generic Stage 5B verify/resume still rejects the plan-bound candidate.
+
+The READY transaction records the current operation's prepared data digest and old database identity in the candidate recovery facts. The normal runtime remains blocked. Dedicated resume repeats the protected plan, backup, pointer, old/candidate, C1 and alert checks, then persists `RESUME_INTENT` before its trusted candidate transaction changes READY_FOR_RESUME to NORMAL. Only after rereading the same-operation NORMAL state does the external journal become `RESUMED`. Filesystem and MySQL are not treated as one transaction. `RESUME_INTENT` with READY can retry after revalidation; NORMAL with intent can only complete the same-operation journal, without another database transition. Different operations conflict.
+
+The startup interlock opens only for the completed protected journal, exact candidate pointer, same MySQL identity, old FROZEN control, candidate NORMAL control bound to the operation, official schema and production readiness. It does not assume NORMAL alone proves recovery completion. The pre-resume data, alert and zero-session checks apply before resume; legitimate new business records, sessions and alerts after NORMAL do not invalidate later startup. The old database stays FROZEN. Once normal business writes reach the candidate, a simple pointer switch back to the old database is not a safe rollback and no rollback subsystem is included. The owned rehearsal shows one managed candidate writer and no old writer. Real production restore/cutover/resume remains hard disabled; no provider replay or real deployment is authorized by C3.
 
 ## S3-B Phase 1 internal candidate
 

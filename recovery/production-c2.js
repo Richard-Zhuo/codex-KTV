@@ -16,15 +16,11 @@ const stateIsStopped=state=>state?.phase==='STOPPED'&&state.workerStopped===true
 
 // No production entry calls this core. The private owned-fixture capability is verified
 // before any protected file or database access, and all DB sessions remain read-only.
-export async function switchOwnedCandidatePointer({runtimeConfigFile,capability,managedRuntime,
+export async function readC2CutoverFacts(source,capability,{runtimeConfigFile,
  readPlan=readProtectedRestorePlan,readState=readExecutionState,
- readCutover=readCutoverState,transition=transitionCutoverState,
- readEvidence=readC1Evidence,pathCheck=checkedPaths,verify=verifyArtifact,
- readAlerts=alerts,updatePointer=updateProtectedDatabasePointer,
- journalOptions={},evidenceOptions={},pointerOptions={},
- beforePointer,...dependencies}){
- return withOwnedCandidateRead(capability,async source=>{
-  const facts=async()=>{
+ readCutover=readCutoverState,readEvidence=readC1Evidence,
+ pathCheck=checkedPaths,verify=verifyArtifact,readAlerts=alerts,
+ journalOptions={},evidenceOptions={},...dependencies}){
    const {loaded,plan,journal}=await readPlan({runtimeConfigFile,pathCheck,...dependencies});
    if(plan.formatVersion!==2||plan.currentDatabase!==capability.database||
       plan.targetServerUuid!==capability.serverUuid||plan.targetPort!==capability.port||
@@ -66,10 +62,25 @@ export async function switchOwnedCandidatePointer({runtimeConfigFile,capability,
      alertDigest,journalState:'VERIFYING'},evidenceOptions);
     if(!evidence?.cutoverEligible)
      throw fail('PRODUCTION_CUTOVER_C1_EVIDENCE_STALE');
-    return {loaded,plan,journal,pointer,cutover,
-     oldDigest:snap.oldDigest,candidateDigest:snap.candidateDigest,alertDigest};
+    return {loaded,plan,journal,pointer,cutover,evidence,
+     oldDigest:snap.oldDigest,candidateDigest:snap.candidateDigest,
+     candidateBusinessDigest:digest(canonical(Object.fromEntries(
+      Object.entries(snap.candidateTables).filter(([name])=>
+       !['recovery_control','recovery_events'].includes(name))))),alertDigest};
    }finally{await candidate?.end();}
-  };
+}
+
+export async function switchOwnedCandidatePointer({runtimeConfigFile,capability,managedRuntime,
+ readPlan=readProtectedRestorePlan,readState=readExecutionState,
+ readCutover=readCutoverState,transition=transitionCutoverState,
+ readEvidence=readC1Evidence,pathCheck=checkedPaths,verify=verifyArtifact,
+ readAlerts=alerts,updatePointer=updateProtectedDatabasePointer,
+ journalOptions={},evidenceOptions={},pointerOptions={},
+ beforePointer,...dependencies}){
+ return withOwnedCandidateRead(capability,async source=>{
+  const facts=()=>readC2CutoverFacts(source,capability,{runtimeConfigFile,readPlan,
+   readState,readCutover,readEvidence,pathCheck,verify,readAlerts,
+   journalOptions,evidenceOptions,...dependencies});
   const first=await facts();
   if(first.cutover?.state==='CUTOVER_INTENT'&&
      ![first.plan.currentDatabase,first.plan.targetDatabase].includes(first.pointer))
