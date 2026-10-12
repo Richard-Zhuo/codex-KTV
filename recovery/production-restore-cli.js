@@ -5,6 +5,8 @@ import {inspectProductionRestore,createProductionRestorePlan,
 const fail=code=>Object.assign(Error(code),{code});
 export function parseProductionRestoreArgs(argv){
  const [action,...rest]=argv;
+ if(['freeze-plan','restore-candidate','inspect-candidate'].includes(action))
+  throw fail('RESTORE_PRODUCTION_DISABLED');
  if(!['inspect','create-plan','inspect-plan'].includes(action))
   throw fail('PRODUCTION_RESTORE_ARGUMENTS_INVALID');
  const values={};

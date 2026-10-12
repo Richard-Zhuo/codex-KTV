@@ -1,6 +1,6 @@
 import mysql from 'mysql2/promise';
 import {randomUUID} from 'node:crypto';
-import {dirname,join} from 'node:path';
+import {basename,dirname,join} from 'node:path';
 import {realpath,lstat,readFile,open,rename} from 'node:fs/promises';
 import {loadRuntimeConfig,windowsFileAcl,validateFileAcl} from '../production/runtime-config.js';
 import {readExternalSecret} from '../production/secret-file.js';
@@ -15,7 +15,7 @@ const aclBackupDirectory=async path=>validateSmokeAcl(await windowsDirectoryAcl(
 const aclJournalDirectory=async path=>validateSmokeAcl(await windowsDirectoryAcl(path),{directory:true});
 const aclFile=async path=>validateSmokeAcl(await windowsFileAcl(path));
 const candidateName=id=>'jbhh_ktv_recovery_'+id.replaceAll('-','').toLowerCase();
-const safeError=e=>/^(BACKUP|PRODUCTION_RESTORE|RUNTIME|SMOKE)_[A-Z_]+$/.test(e?.code??'')?e.code:'PRODUCTION_RESTORE_PREFLIGHT_FAILED';
+const safeError=e=>/^(BACKUP|PRODUCTION_RESTORE|RESTORE_PRODUCTION|RUNTIME|SMOKE)_[A-Z_]+$/.test(e?.code??'')?e.code:'PRODUCTION_RESTORE_PREFLIGHT_FAILED';
 const safePlan=p=>({eligible:'YES',recoveryOperationId:p.recoveryOperationId,status:p.status,
   backupId:p.backupId,backupCreatedAt:p.backupCreatedAt,backupAgeSeconds:p.backupAgeSeconds,
   backupRevision:p.backupRevision,currentRevision:p.currentRevision,lossWindow:p.lossWindow,
@@ -31,8 +31,11 @@ const planKeys=['formatVersion','recoveryOperationId','status','createdAt','oper
   'schemaMigration','schemaDigest','applicationCommit','targetServerUuid',
   'targetDatabase','targetHost','targetPort','currentDatabase','currentHost','currentPort',
   'currentRevision','lossWindow','planDigest'];
+const planKeysV2=[...planKeys,'backupLocator'];
 function validatePlan(plan){
- if(!exactKeys(plan,planKeys)||plan.formatVersion!==1||plan.status!=='PREPARED'||
+ if(!(plan?.formatVersion===1&&exactKeys(plan,planKeys)||
+   plan?.formatVersion===2&&exactKeys(plan,planKeysV2))||
+   plan.formatVersion===2&&(typeof plan.backupLocator!=='string'||! /^[A-Za-z0-9_-]+$/.test(plan.backupLocator))||plan.status!=='PREPARED'||
    typeof plan.recoveryOperationId!=='string'||!UUID.test(plan.recoveryOperationId)||
    typeof plan.backupId!=='string'||!UUID.test(plan.backupId)||!HASH.test(plan.backupSha256)||
    !HASH.test(plan.schemaDigest)||!HASH.test(plan.planDigest)||
@@ -94,7 +97,7 @@ async function dbConnection(url,ssl){
    supportBigNumbers:true,bigNumberStrings:true});
 }
 async function inspectForOperation({runtimeConfigFile,artifactDirectory,expectedChecksum,
-  now=new Date(),load=loadRuntimeConfig,connect=dbConnection,
+  now=new Date(),requiredMode='NORMAL',planBinding=null,load=loadRuntimeConfig,connect=dbConnection,
   artifactVerifier=verifyArtifact,pathCheck=checkedPaths,operatorLoad=loadOperatorDatabase},recoveryOperationId){
  if(!UUID.test(recoveryOperationId)||!HASH.test(expectedChecksum??''))
    throw fail('PRODUCTION_RESTORE_ARGUMENTS_INVALID');
@@ -130,7 +133,7 @@ async function inspectForOperation({runtimeConfigFile,artifactDirectory,expected
     throw fail('PRODUCTION_RESTORE_TARGET_SERVER_MISMATCH');
    [heads]=await source.query('SELECT ledger_id,revision,state_checksum FROM ledger_heads');
    [receipts]=await source.query('SELECT store_id,ledger_id,environment,facts FROM production_bootstrap_events');
-   [[control]]=await source.query('SELECT mode FROM recovery_control WHERE control_id=1');
+   [[control]]=await source.query('SELECT mode,store_id,ledger_id,environment,facts FROM recovery_control WHERE control_id=1');
   }catch(error){
    if(/^PRODUCTION_RESTORE_/.test(error?.code??''))throw error;
    const blocked=fail('PRODUCTION_RESTORE_CURRENT_DB_UNREADABLE');
@@ -145,14 +148,22 @@ async function inspectForOperation({runtimeConfigFile,artifactDirectory,expected
     !receipts.some(r=>{try{const f=JSON.parse(r.facts);return f.source==='first-install-ledger'&&
       f.serverUuid===server.server_uuid&&f.database===activeDb;}catch{return false;}}))
    throw fail('PRODUCTION_RESTORE_SOURCE_IDENTITY_MISMATCH');
-  if(control&&control.mode!=='NORMAL')throw fail('PRODUCTION_RESTORE_SOURCE_NOT_NORMAL');
+  if(requiredMode==='NORMAL'){
+   if(control&&control.mode!=='NORMAL')throw fail('PRODUCTION_RESTORE_SOURCE_NOT_NORMAL');
+  }else if(requiredMode==='FROZEN'){
+   let facts;try{facts=JSON.parse(control?.facts);}catch{throw fail('PRODUCTION_RESTORE_FREEZE_MISMATCH');}
+   if(control?.mode!=='FROZEN'||control.store_id!==loaded.config.storeId||
+     control.ledger_id!==loaded.config.ledgerId||control.environment!=='production'||
+     !planBinding||Object.entries(planBinding).some(([key,value])=>facts[key]!==value))
+    throw fail('PRODUCTION_RESTORE_FREEZE_MISMATCH');
+  }else throw fail('PRODUCTION_RESTORE_ARGUMENTS_INVALID');
   const age=Math.floor((new Date(now).getTime()-Date.parse(manifest.createdAt))/1000);
   if(!Number.isSafeInteger(age)||age<0)throw fail('PRODUCTION_RESTORE_BACKUP_TIME_INVALID');
   const backupHead=manifest.ledgerHeads.find(h=>h.ledgerId===loaded.config.ledgerId);
   const currentRevision=Number(heads[0].revision);
   if(!backupHead||!Number.isSafeInteger(currentRevision)||currentRevision<backupHead.revision)
    throw fail('PRODUCTION_RESTORE_REVISION_MISMATCH');
-  const body={formatVersion:1,recoveryOperationId,status:'PREPARED',
+  const body={formatVersion:2,recoveryOperationId,status:'PREPARED',backupLocator:basename(artifact),
    createdAt:new Date(now).toISOString(),operatorSid:loaded.config.serviceAccountSid,
    backupId:manifest.backupId,backupSha256:expectedChecksum,
    backupCreatedAt:manifest.createdAt,backupAgeSeconds:age,backupRevision:backupHead.revision,
@@ -215,13 +226,35 @@ export async function createProductionRestorePlan(args,{
   return safePlan(plan);
  }finally{await reservation?.close();}
 }
-export async function inspectProductionRestorePlan({runtimeConfigFile,load=loadRuntimeConfig,
+export async function readProtectedRestorePlan({runtimeConfigFile,load=loadRuntimeConfig,
  pathCheck=checkedPaths,fileAcl=aclFile}){
  const loaded=await load(runtimeConfigFile),{journal}=await pathCheck(loaded);
  const file=join(journal,ACTIVE),info=await lstat(file);
  if(!info.isFile()||info.isSymbolicLink()||info.size>65536||await realpath(file)!==file)
   throw fail('PRODUCTION_RESTORE_PLAN_INVALID');
  await fileAcl(file);
- return safePlan(validatePlan(JSON.parse(await readFile(file,'utf8'))));
+ return {loaded,journal,plan:validatePlan(JSON.parse(await readFile(file,'utf8')))};
+}
+export async function inspectProductionRestorePlan(args){
+ return safePlan((await readProtectedRestorePlan(args)).plan);
+}
+export const planBinding=plan=>({recoveryOperationId:plan.recoveryOperationId,
+ planDigest:plan.planDigest,backupSha256:plan.backupSha256,storeId:plan.storeId,
+ ledgerId:plan.ledgerId,targetDatabase:plan.targetDatabase});
+export async function preflightPreparedRestore({runtimeConfigFile,requiredMode='NORMAL',
+ readPlan=readProtectedRestorePlan,inspect=inspectForOperation,pathCheck=checkedPaths,
+ ...dependencies}){
+ const {loaded,plan,journal}=await readPlan({runtimeConfigFile,pathCheck,...dependencies});
+ if(plan.formatVersion!==2)throw fail('PRODUCTION_RESTORE_PLAN_VERSION_NOT_EXECUTABLE');
+ const {backup}=await pathCheck(loaded,null,dependencies);
+ const artifactDirectory=join(backup,plan.backupLocator);
+ let fresh;try{fresh=await inspect({runtimeConfigFile,artifactDirectory,
+  expectedChecksum:plan.backupSha256,now:new Date(plan.createdAt),requiredMode,
+  planBinding:planBinding(plan),pathCheck,...dependencies},plan.recoveryOperationId);}
+ catch(error){if(error?.code==='PRODUCTION_RESTORE_PLAN_INVALID')throw error;
+  throw fail('PRODUCTION_RESTORE_PLAN_PRECONDITION_CHANGED');}
+ if(fresh.planDigest!==plan.planDigest)throw fail('PRODUCTION_RESTORE_PLAN_PRECONDITION_CHANGED');
+ return Object.freeze({loaded,plan:Object.freeze({...plan,
+  lossWindow:Object.freeze({...plan.lossWindow})}),journal,artifactDirectory});
 }
 export {safeError,candidateName,validatePlan,checkedPaths};

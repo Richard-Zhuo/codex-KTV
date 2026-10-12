@@ -2,6 +2,14 @@
 
 Status at this candidate: S3-A contract/preflight implemented. Production restore execution remains disabled by the unchanged Stage 5B `restoreDatabase` guard. This document does not authorize a real production inspection, freeze, import, cutover or resume.
 
+## S3-B Phase 1 internal candidate
+
+The local S3-B Phase 1 candidate produces PREPARED plan format v2. Its `backupLocator` is the trusted direct-child name under the configured protected backup root and is included in `planDigest`; execution cannot supply a new artifact path or change the target identity. Format v1 remains valid for read-only inspection and is refused by the execution preflight. The backup artifact format is unchanged.
+
+Before any freeze mutation, the executor rereads the protected plan, rechecks its ACL and canonical digest, resolves the bound locator, and repeats backup, application/schema, active DB, target absence and same-server checks. The first plan read may select a journal phase but is not execution authority: the mutation uses only the immutable validated preflight result after exact comparison with that first read. Drift refuses the freeze without a DB mutation. The protected execution journal is separate from immutable PREPARED plan storage. A durable FREEZE_INTENT never proves the database is frozen; a same-operation FROZEN row with the matching operation ID, plan digest, backup SHA, store, ledger and target can be reconciled to journal FROZEN. Another operation cannot overwrite it. Phase 1 does not create a candidate database.
+
+S3-B's synthetic core requires a verified owned isolated MySQL fixture capability. The ordinary production CLI explicitly rejects S3-B freeze and restore actions with `RESTORE_PRODUCTION_DISABLED`. Phase 2 creation/import and all real production execution remain disabled at this checkpoint.
+
 ## V1 boundary
 
 V1 is same host, same port and same MySQL `@@server_uuid`, with an active production database and a **different, newly allocated database that does not yet exist**. The candidate name is generated as `jbhh_ktv_recovery_` plus the lowercase 32 hex digits of a UUIDv4. Operators cannot supply a recovery operation ID or target database identifier. `create-plan` generates a fresh canonical UUIDv4 in trusted application code; `inspect` has no persisted operation ID. In-place replacement, cross-server/new-machine recovery and recovery when the MySQL instance itself is unavailable are deferred. The current production database must be readable for S3-A to prove the formal bootstrap receipt, ledger identity, revision and NORMAL mode. If it is unreadable, report current head and data-loss window UNKNOWN and refuse plan creation.

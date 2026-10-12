@@ -1,3 +1,5 @@
+S3-B Phase 1 candidate: `recovery/production-plan.js` validates v2 PREPARED plan identity and backup locator; `recovery/production-journal.js` owns protected execution phase transitions; `recovery/production-candidate.js` owns the isolated-fixture-only plan-bound freeze core. `recovery/production-candidate.test.js` covers pure preflight/journal gates, and `recovery/production-candidate.mysql.test.js` covers the owned MySQL freeze, replay and recovery gates. The production restore CLI stays disabled for S3-B actions. [Contract](S3_PRODUCTION_RESTORE.md).
+
 S3-A: recovery/production-plan.js owns production backup and same-server target eligibility, protected path checks, read-only MySQL metadata checks, and the external PREPARED journal. recovery/production-restore-cli.js exposes only inspect/create-plan/inspect-plan; recovery/production-plan.test.js holds synthetic safety tests, including a two-process claim race through test-support/s3a-plan-process.js. [Contract](S3_PRODUCTION_RESTORE.md). Stage 5B restore execution remains TEST-only.
 
 ## Pre-production S2 phone smoke
