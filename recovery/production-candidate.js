@@ -261,3 +261,8 @@ export async function restorePreparedCandidate({runtimeConfigFile,capability,
   }
  });
 }
+
+// Reuses the private owned-fixture capability; ordinary production configuration cannot enter C1.
+export async function withOwnedCandidateRead(capability,work){
+ return withOwnedLock(capability,async c=>{await c.query('SET SESSION TRANSACTION READ ONLY');return work(c);});
+}

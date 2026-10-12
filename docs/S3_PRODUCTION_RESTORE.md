@@ -1,6 +1,12 @@
 # S3-A production restore contract and read-only preflight
 
-Status at this candidate: S3-A contract/preflight implemented. Production restore execution remains disabled by the unchanged Stage 5B `restoreDatabase` guard. This document does not authorize a real production inspection, freeze, import, cutover or resume.
+S3-A and S3-B are on the accepted main baseline. S3-C Phase C1 is a local owned-fixture-only candidate. Production restore execution remains disabled by the Stage 5B `restoreDatabase` guard and the S3-B production CLI guard. This document does not authorize a real production inspection, freeze, import, cutover or resume.
+
+## S3-C Phase C1 internal candidate
+
+C1 is an owned isolated MySQL verification path, not a production restore command. It requires the immutable protected plan and execution journal, exact plan-bound FROZEN old database and VERIFYING candidate, same server identity and verified structured backup. It reads both databases and the operational alert state without dispatching business, voucher, device or alert work. It classifies critical unresolved provider outcomes as blockers and records noncritical manual followups separately. A protected `c1-verification.json` holds only operation/plan/backup binding, old and candidate data digests, alert-state digest, safe finding codes, classification and eligibility.
+
+A positive C1 result does not authorize cutover. Its validity depends on rechecking the protected plan, backup and live old/candidate/journal/alert facts before any future C2 action; changes invalidate the saved PASS. C1 leaves the old database FROZEN and candidate VERIFYING. Generic verify/resume remains barred for the plan-bound candidate, and the production CLI remains hard disabled. C2, service lifecycle, pointer switch, READY_FOR_RESUME and resume are outside C1.
 
 ## S3-B Phase 1 internal candidate
 
