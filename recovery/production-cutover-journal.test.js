@@ -31,7 +31,8 @@ test('C2 journal rejects malformed persisted identity; normal no-journal startup
  const root=await mkdtemp(join(tmpdir(),'c2-journal-'));
  try{
   const loaded={config:{recovery:{journalDirectory:root}},apiEnv:{KTV_MYSQL_URL:'mysql://u:p@localhost/jbhh_ktv_test'}};
-  assert.equal(await assertNormalStartupAllowed(loaded,{read:dir=>readCutoverState(dir,null,options)}),true);
+  assert.equal(await assertNormalStartupAllowed(loaded,{read:dir=>readCutoverState(dir,null,options),
+   readControl:async()=>({mode:'NORMAL',facts:{reason:'ordinary'}})}),true);
   await writeFile(join(root,'cutover-state.json'),'{}');
   await assert.rejects(readCutoverState(root,null,options),{code:'PRODUCTION_CUTOVER_JOURNAL_INVALID'});
  }finally{await rm(root,{recursive:true,force:true});}
@@ -46,4 +47,13 @@ test('C2 startup refuses orphan execution progress without a protected plan',asy
   await assert.rejects(assertNormalStartupAllowed(loaded,{read:dir=>readCutoverState(dir,null,options)}),
    {code:'PRODUCTION_CUTOVER_STARTUP_BLOCKED'});
  }finally{await rm(root,{recursive:true,force:true});}
+});
+
+test('startup without recovery config checks trusted DB facts before allowing ordinary runtime',async()=>{
+ const loaded={config:{},apiEnv:{KTV_MYSQL_URL:'mysql://synthetic/owned'}};
+ await assert.rejects(assertNormalStartupAllowed(loaded,{readControl:async()=>({
+  mode:'NORMAL',facts:{reason:'plan-bound-candidate-restore'}})}),
+  {code:'PRODUCTION_C3_STARTUP_BLOCKED'});
+ assert.equal(await assertNormalStartupAllowed(loaded,{readControl:async()=>({
+  mode:'NORMAL',facts:{reason:'ordinary'}})}),true);
 });

@@ -1,5 +1,6 @@
 import test from 'node:test';import assert from 'node:assert/strict';
 import https from 'node:https';import http from 'node:http';import net from 'node:net';
+import mysql from 'mysql2/promise';
 import { secureRequest,createTransportLoginLimiter,HTTP_LIMITS,SECURITY_HEADERS } from './http-security.js';
 import { createProductionRuntime } from './runtime.js';
 import { syntheticTls } from '../test-support/runtime-tls.js';
@@ -17,7 +18,9 @@ test('bounded source/account login limiter is recoverable and ignores forwarded 
  now=15*60000+1;assert.equal(limit(req,'synthetic-account'),true);
  assert.equal(limit({socket:{remoteAddress:'other'}},'other'),true);assert.equal(limit({socket:{remoteAddress:'third'}},'third'),false);
 });
-test('real HTTPS runtime rejects plaintext, spoofed headers, oversized requests and drains bounded work',{timeout:30000},async()=>{
+test('real HTTPS runtime rejects plaintext, spoofed headers, oversized requests and drains bounded work',{timeout:30000},async t=>{
+ t.mock.method(mysql,'createConnection',async()=>({
+  query:async()=>[[]],end:async()=>{}}));
  const tls=await syntheticTls(),reservation=net.createServer();await new Promise(r=>reservation.listen(0,'127.0.0.1',r));const port=reservation.address().port;await new Promise(r=>reservation.close(r));
  const logs=[],logger=createSafeLogger({write:s=>logs.push(s)});let blocked=false,closed=false,release,entered;
  const began=new Promise(r=>{entered=r;});
@@ -25,7 +28,8 @@ test('real HTTPS runtime rejects plaintext, spoofed headers, oversized requests 
   if(req.url==='/api/inflight'){entered();await new Promise(r=>{release=r;});}
   res.writeHead(200,{'Content-Type':'application/json'});res.end('{"ok":true}');return true;
  }};
- const loaded={config:{applicationCommit:'a'.repeat(40),publicOrigin:'https://ktv-smoke.127.0.0.1.sslip.io:'+port,port,listenHost:'127.0.0.1',backupPolicyConfigured:true},configFingerprint:'b'.repeat(64),tls:{cert:tls.certificate,key:tls.privateKey},redactionSecrets:[]};
+ const loaded={config:{applicationCommit:'a'.repeat(40),publicOrigin:'https://ktv-smoke.127.0.0.1.sslip.io:'+port,port,listenHost:'127.0.0.1',backupPolicyConfigured:true},configFingerprint:'b'.repeat(64),tls:{cert:tls.certificate,key:tls.privateKey},
+  redactionSecrets:[],apiEnv:{KTV_MYSQL_URL:'mysql://synthetic@localhost/owned_http_test'}};
  const runtime=createProductionRuntime(loaded,{logger,services});await runtime.start();
  const get=(path,headers={},method='GET')=>new Promise((resolve,reject)=>{const req=https.request({host:'127.0.0.1',port,path,method,servername:'ktv-smoke.127.0.0.1.sslip.io',ca:tls.certificate,headers:{Host:new URL(loaded.config.publicOrigin).host,...headers}},res=>{let body='';res.on('data',c=>{body+=c;});res.on('end',()=>resolve({status:res.statusCode,headers:res.headers,body}));});req.on('error',error=>{error.message=path+': '+error.message;reject(error);});req.end();});
  try{

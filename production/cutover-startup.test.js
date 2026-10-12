@@ -34,14 +34,9 @@ test('C2 cutover journal blocks normal runtime before readiness, workers and ope
   assert.deepEqual(calls,[]);
   assert.equal(blocked.server.listening,false);
   await rm(journal);
-  const normal=createProductionRuntime(loaded,{logger,services,operations});
-  try{
-   await normal.start();
-   assert.deepEqual(calls,['readiness','operationsStart','startWorker']);
-   assert.equal(normal.status().phase,'RUNNING');
-  }finally{await normal.shutdown();}
-  assert.deepEqual(calls.slice(-3),['stopWorker','operationsStop','close']);
-  assert.deepEqual(normal.status(),{phase:'STOPPED',workerStopped:true,
-   operationalStopped:true,connectionsClosed:true,normalWriterCount:0});
+  const noJournal=createProductionRuntime(loaded,{logger,services,operations});
+  await assert.rejects(noJournal.start(),{code:'PRODUCTION_C3_STARTUP_BLOCKED'});
+  assert.deepEqual(calls,[]);
+  assert.equal(noJournal.server.listening,false);
  }finally{await rm(root,{recursive:true,force:true});}
 });

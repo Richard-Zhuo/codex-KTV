@@ -1,3 +1,4 @@
+import mysql from 'mysql2/promise';
 import {join} from 'node:path';
 import {randomUUID} from 'node:crypto';
 import {lstat,realpath,readFile,open,rename} from 'node:fs/promises';
@@ -56,18 +57,47 @@ export async function transitionCutoverState(journal,plan,from,to,{
  await checkAcl(target);
  return to;
 }
+async function readCurrentRecoveryControl(loaded){
+ const url=loaded.apiEnv?.KTV_MYSQL_URL;
+ if(!url)throw fail('PRODUCTION_C3_STARTUP_BLOCKED');
+ let connection;
+ try{
+  connection=await mysql.createConnection({uri:url,ssl:loaded.mysqlSsl,
+   dateStrings:true,jsonStrings:true,supportBigNumbers:true,bigNumberStrings:true});
+  await connection.query('SET SESSION TRANSACTION READ ONLY');
+  const [rows]=await connection.query(
+   'SELECT mode,facts FROM recovery_control WHERE control_id=1');
+  if(rows.length===0)return {facts:{}};
+  if(rows.length!==1)throw fail('PRODUCTION_C3_STARTUP_BLOCKED');
+  let facts=rows[0].facts;
+  if(facts===null)facts={};
+  if(typeof facts==='string')facts=JSON.parse(facts);
+  if(!facts||typeof facts!=='object'||Array.isArray(facts))
+   throw fail('PRODUCTION_C3_STARTUP_BLOCKED');
+  return {mode:rows[0].mode,facts};
+ }catch{throw fail('PRODUCTION_C3_STARTUP_BLOCKED');}
+ finally{await connection?.end();}
+}
+async function assertOrdinaryStartup(loaded,readControl){
+ const control=await readControl(loaded);
+ if(control?.facts?.reason==='plan-bound-candidate-restore')
+  throw fail('PRODUCTION_C3_STARTUP_BLOCKED');
+ return true;
+}
 export async function assertNormalStartupAllowed(loaded,{
  read=readCutoverState,readExecution=readExecutionState,
- readC3=readC3State,completionCheck=assertCompletedC3Startup}={}){
+ readC3=readC3State,completionCheck=assertCompletedC3Startup,
+ readControl=readCurrentRecoveryControl}={}){
  const journal=loaded.config.recovery?.journalDirectory;
- if(!journal)return true;
+ if(!journal)return assertOrdinaryStartup(loaded,readControl);
  const cutover=await read(journal);
  const file=join(journal,'active-plan.json');
  let info;try{info=await lstat(file);}catch(error){
   if(error.code!=='ENOENT')throw error;
   try{await lstat(join(journal,'execution-state.json'));}
   catch(stateError){
-   if(stateError.code==='ENOENT'&&!cutover)return true;
+   if(stateError.code==='ENOENT'&&!cutover)
+    return assertOrdinaryStartup(loaded,readControl);
    if(stateError.code!=='ENOENT')throw stateError;
   }
   throw fail('PRODUCTION_CUTOVER_STARTUP_BLOCKED');
@@ -86,5 +116,5 @@ export async function assertNormalStartupAllowed(loaded,{
  }
  if(cutover||execution||progress||pointer===plan.targetDatabase)
   throw fail('PRODUCTION_CUTOVER_STARTUP_BLOCKED');
- return true;
+ return assertOrdinaryStartup(loaded,readControl);
 }

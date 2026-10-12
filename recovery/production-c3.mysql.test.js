@@ -21,6 +21,7 @@ import {writeC1Evidence} from './c1-evidence.js';
 import {prepareOwnedCandidateResume,resumeOwnedCandidate} from './production-c3.js';
 import {readC3State,transitionC3State} from './production-c3-journal.js';
 import {assertCompletedC3Startup} from './production-c3-startup.js';
+import {createProductionRuntime} from '../production/runtime.js';
 import {verifyRecovery,resumeRecovery} from './operator.js';
 import {createMySqlAuthStore} from '../auth/mysql-store.js';
 import {createAuthService} from '../auth/service.js';
@@ -110,8 +111,31 @@ if(enabled)test('S3-C owned C1-C3 restore makes candidate the sole managed write
    const planPath=join(journal,'active-plan.json');
    await writeFile(planPath,canonical(plan));await protectSyntheticFile(planPath,tls.sid);
    const args={...deps,capability,readState,transition:transitionState};
+   const ordinary=await load();ordinary.config={...ordinary.config};
+   delete ordinary.config.recovery;
+   assert.equal(await assertNormalStartupAllowed(ordinary),true);
+   const ordinaryCalls=[];
+   const ordinaryRuntime=createProductionRuntime({...ordinary,
+    config:{...ordinary.config,publicOrigin:'https://ktv-smoke.127.0.0.1.sslip.io:8443',
+     port:0,listenHost:'127.0.0.1',backupPolicyConfigured:true},
+    tls:{cert:tls.certificate,key:tls.privateKey},redactionSecrets:[],
+    configFingerprint:'b'.repeat(64)},
+    {logger:{info:()=>{},error:()=>{}},services:{
+     readiness:async()=>{ordinaryCalls.push('readiness');return {ready:true,blockers:[]};},
+     startWorker:async()=>{ordinaryCalls.push('worker');},
+     close:async()=>{},stopWorker:async()=>{}},
+     operations:{readyBlockers:()=>[],observeReadiness:async()=>{},
+      start:async()=>{ordinaryCalls.push('operations');},stop:async()=>{}}});
+   try{await ordinaryRuntime.start();
+    assert.deepEqual(ordinaryCalls,['readiness','operations','worker']);}
+   finally{await ordinaryRuntime.shutdown();}
    await freezePreparedCandidate(args);
    assert.equal((await restorePreparedCandidate(args)).state,'VERIFYING');
+   const verifying=await load();verifying.config={...verifying.config};
+   const verifyingUrl=new URL(b.raw);verifyingUrl.pathname='/'+plan.targetDatabase;
+   verifying.apiEnv.KTV_MYSQL_URL=verifyingUrl.href;
+   delete verifying.config.recovery;
+   await blocked(()=>assertNormalStartupAllowed(verifying),'PRODUCTION_C3_STARTUP_BLOCKED');
    const c1=await verifyPreparedCandidate({...args,readAlerts:async()=>[],
     persist:(dir,p,report)=>writeC1Evidence(dir,p,report,journalOptions),
     testHooks:{onError:error=>{throw error;}}});
@@ -168,6 +192,10 @@ if(enabled)test('S3-C owned C1-C3 restore makes candidate the sole managed write
      assert.equal((await ready()).state,'READY_FOR_RESUME');
      assert.equal((await c3State()).state,'READY_FOR_RESUME');
      assert.deepEqual(await modes(),{old:'FROZEN',candidate:'READY_FOR_RESUME'});
+     const noRecovery=await load();noRecovery.config={...noRecovery.config};
+     delete noRecovery.config.recovery;
+     await blocked(()=>assertNormalStartupAllowed(noRecovery),
+      'PRODUCTION_C3_STARTUP_BLOCKED');
      await blocked(async()=>assertNormalStartupAllowed(await load()),
       'PRODUCTION_CUTOVER_STARTUP_BLOCKED');
     });
@@ -219,6 +247,29 @@ if(enabled)test('S3-C owned C1-C3 restore makes candidate the sole managed write
       throw Error('synthetic-crash-after-resume');}}}));
      assert.equal((await c3State()).state,'RESUME_INTENT');
      assert.deepEqual(await modes(),{old:'FROZEN',candidate:'NORMAL'});
+     const omitted=await load();omitted.config={...omitted.config};
+     delete omitted.config.recovery;
+     await blocked(()=>assertNormalStartupAllowed(omitted),
+      'PRODUCTION_C3_STARTUP_BLOCKED');
+     const missingJournal=await load();
+     missingJournal.config={...missingJournal.config,recovery:{
+      journalDirectory:join(f.root,'artifacts','missing-c3-journal')}};
+     await blocked(()=>assertNormalStartupAllowed(missingJournal),
+      'PRODUCTION_C3_STARTUP_BLOCKED');
+     const calls=[];
+     const runtime=createProductionRuntime({...omitted,
+      config:{...omitted.config,publicOrigin:'https://ktv-smoke.127.0.0.1.sslip.io:8443',
+       port:0,listenHost:'127.0.0.1',backupPolicyConfigured:true},
+      tls:{cert:tls.certificate,key:tls.privateKey},redactionSecrets:[],
+      configFingerprint:'b'.repeat(64)},
+      {logger:{info:()=>{},error:()=>{}},services:{
+       readiness:async()=>{calls.push('readiness');return {ready:true,blockers:[]};},
+       startWorker:async()=>{calls.push('worker');},close:async()=>{},stopWorker:async()=>{}},
+       operations:{readyBlockers:()=>[],observeReadiness:async()=>{},
+        start:async()=>{calls.push('operations');},stop:async()=>{}}});
+     await blocked(()=>runtime.start(),'PRODUCTION_C3_STARTUP_BLOCKED');
+     assert.deepEqual(calls,[]);
+     assert.equal(runtime.server.listening,false);
      await blocked(async()=>assertNormalStartupAllowed(await load()),
       'PRODUCTION_CUTOVER_STARTUP_BLOCKED');
      assert.deepEqual(await resume(),{state:'RESUMED',replay:true});
@@ -231,6 +282,18 @@ if(enabled)test('S3-C owned C1-C3 restore makes candidate the sole managed write
        readinessCheck:async()=>({ready:true,database:p.targetDatabase,
         storeId:p.storeId,ledgerId:p.ledgerId})});
      assert.equal(await assertNormalStartupAllowed(await load(),{completionCheck}),true);
+     const terminalPath=join(journal,'c3-resume.json');
+     const terminalSaved=await readFile(terminalPath,'utf8');
+     for(const patch of [{recoveryOperationId:'00000000-0000-4000-8000-000000000000'},
+      {planDigest:'5'.repeat(64)}]){
+      await writeFile(terminalPath,JSON.stringify({...JSON.parse(terminalSaved),...patch}));
+      await assert.rejects(async()=>assertNormalStartupAllowed(await load(),{completionCheck}));
+      await writeFile(terminalPath,terminalSaved);
+     }
+     const terminalOmitted=await load();terminalOmitted.config={...terminalOmitted.config};
+     delete terminalOmitted.config.recovery;
+     await blocked(()=>assertNormalStartupAllowed(terminalOmitted),
+      'PRODUCTION_C3_STARTUP_BLOCKED');
      const candidatePool=mysql.createPool({uri:target.href,connectionLimit:2});
      let candidateManaged;
      try{
