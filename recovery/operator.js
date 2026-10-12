@@ -7,6 +7,10 @@ import { changeWorkflow } from '../devices/domain.js';
 import { dispatchLock } from './gate.js';
 import { checkRecoveryInvariants } from './invariants.js';
 const preserved=spec=>spec.tables.filter(n=>!['recovery_control','recovery_events'].includes(n));
+const assertGenericRecoveryTarget=control=>{
+ if(control&&decodeLedgerJson(control.facts)?.reason==='plan-bound-candidate-restore')
+  throw fail('RECOVERY_PLAN_BOUND_CANDIDATE_BLOCKED');
+};
 const audit=(c,type,actor,reason,facts)=>c.execute('INSERT INTO recovery_events(event_type,initiated_by,reason,facts) VALUES(?,?,?,?)',[type,actor,reason,canonical(facts)]);
 async function checkedConnection(args,suffix='') {
  isProductionEnvironment(args.env??process.env);if(!['production','test'].includes(args.environment))throw fail('RECOVERY_ENVIRONMENT_INVALID');
@@ -42,6 +46,7 @@ export async function verifyRecovery(args) {
   const backup=await verifyArtifact(args.directory,{expectedChecksum:args.expectedChecksum,storeId:args.storeId,ledgerId:args.ledgerId});
   c=await checkedConnection(args,'/'+args.expectedChecksum);await c.query('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ');await c.beginTransaction();begun=true;
   const [[control]]=await c.query('SELECT * FROM recovery_control WHERE control_id=1 FOR UPDATE');
+  assertGenericRecoveryTarget(control);
   if(!control||control.mode!=='VERIFYING'||control.backup_digest!==args.expectedChecksum||control.store_id!==args.storeId||control.ledger_id!==args.ledgerId||control.environment!==args.environment)throw fail('RECOVERY_STATE_MISMATCH');
   const data={tables:await readTables(c,backup.spec.tables,{lock:true})};
   for(const name of preserved(backup.spec))if(digest(canonical(data.tables[name]))!==digest(canonical(backup.data.tables[name])))throw fail('RECOVERY_RESTORED_DATA_MISMATCH');
@@ -69,6 +74,7 @@ export async function resumeRecovery(args) {
  try{
   c=await checkedConnection(args,'/'+args.expectedChecksum+'/RESUME');await c.query('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ');await c.beginTransaction();
   const [[control]]=await c.query('SELECT * FROM recovery_control WHERE control_id=1 FOR UPDATE');
+  assertGenericRecoveryTarget(control);
   if(!control||!['READY_FOR_RESUME','NORMAL'].includes(control.mode)||control.backup_digest!==args.expectedChecksum||control.store_id!==args.storeId||control.ledger_id!==args.ledgerId||control.environment!==args.environment)throw fail('RECOVERY_NOT_VERIFIED');
   const facts=decodeLedgerJson(control.facts),spec=await schemaSpec();
   if(control.mode==='NORMAL'){

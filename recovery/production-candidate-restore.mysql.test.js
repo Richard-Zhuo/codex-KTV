@@ -5,7 +5,7 @@ import {join} from 'node:path';
 import {mkdir,writeFile,readFile} from 'node:fs/promises';
 import {randomUUID} from 'node:crypto';
 import {withBackupFixture} from '../test-support/backup-fixture.js';
-import {backupDatabase,readTables,createOfficialRestoreSchema,importStructuredBackupRows} from '../backup/mysql-backup.js';
+import {backupDatabase,restoreDatabase,readTables,createOfficialRestoreSchema,importStructuredBackupRows} from '../backup/mysql-backup.js';
 import {canonical,digest,schemaSpec} from '../backup/format.js';
 import {validateSchema} from '../production/schema.js';
 import {createAuthService} from '../auth/service.js';
@@ -15,7 +15,16 @@ import {inspectProductionRestore,planBinding} from './production-plan.js';
 import {freezePreparedCandidate,restorePreparedCandidate,issueOwnedCandidateCapability} from './production-candidate.js';
 import {readExecutionState,transitionExecutionState} from './production-journal.js';
 import {bindRecoveryWriteGuard,withRecoveryDispatch} from './gate.js';
+import {verifyRecovery,resumeRecovery} from './operator.js';
 
+function genericArgs(x,resume=false){
+ const base={directory:x.backup.directory,expectedChecksum:x.backup.checksum,
+  databaseUrl:x.targetUrl,serverUuid:x.b.identity.server_uuid,environment:'production',
+  storeId:x.b.storeId,ledgerId:x.b.ledgerId,initiatedBy:'synthetic-drill'};
+ const database=x.plan.targetDatabase;
+ return {...base,confirmation:base.serverUuid+'/'+database+'/'+base.storeId+'/'+base.ledgerId+
+  '/'+base.expectedChecksum+(resume?'/RESUME':'')};
+}
 const enabled=process.env.STAGE5E_RUN==='synthetic-only'&&
  process.env.STAGE5E_FIXTURE_ROOT&&process.env.LEDGER_MYSQL_TEST_URL;
 if(enabled)test('S3-B owned candidate restore reaches VERIFYING and fails closed on drift/partial candidates',
@@ -26,10 +35,11 @@ if(enabled)test('S3-B owned candidate restore reaches VERIFYING and fails closed
   dbUrl:()=>process.env.LEDGER_MYSQL_TEST_URL};
  const capability=await issueOwnedCandidateCapability(f);
  let index=0;
- async function scenario(label,work){
+ async function scenario(label,work,{beforeBackup}={}){
   await withBackupFixture(async b=>{
    const name='phase2_'+String(++index)+'_'+label;
    await b.setup.query("UPDATE production_bootstrap_events SET environment='production'");
+   await beforeBackup?.(b);
    const backup=await backupDatabase({...b.backupArgs,environment:'production',
     outputDirectory:join(f.root,'backups','s3b_'+name)});
    const journal=join(f.root,'artifacts',name);await mkdir(journal);
@@ -179,4 +189,66 @@ if(enabled)test('S3-B owned candidate restore reaches VERIFYING and fails closed
     assert.equal(row.mode,'RESTORING');}finally{await target.end();}
   });
  });
-});
+ await t.test('generic verify refuses S3-B candidate with zero active restored sessions before mutation',
+  ()=>scenario('generic_zero',async x=>{
+   await x.freeze();assert.equal((await x.restore()).state,'VERIFYING');
+   const c=await mysql.createConnection({uri:x.targetUrl,dateStrings:true,jsonStrings:true,
+    supportBigNumbers:true,bigNumberStrings:true});
+   try{
+    const [[active]]=await c.query('SELECT COUNT(*) AS n FROM auth_sessions WHERE revoked_at IS NULL');
+    assert.equal(Number(active.n),0);
+    const spec=await schemaSpec(),before=digest(canonical({tables:await readTables(c,spec.tables)}));
+    await assert.rejects(verifyRecovery(genericArgs(x)),
+     {code:'RECOVERY_PLAN_BOUND_CANDIDATE_BLOCKED'});
+    const [[control]]=await c.query('SELECT mode FROM recovery_control WHERE control_id=1');
+    assert.equal(control.mode,'VERIFYING');
+    assert.equal(digest(canonical({tables:await readTables(c,spec.tables)})),before);
+   }finally{await c.end();}
+  },{beforeBackup:async b=>{
+   await b.setup.query('UPDATE auth_sessions SET revoked_at=UTC_TIMESTAMP(6) WHERE revoked_at IS NULL');
+  }}));
+ await t.test('generic verify refuses S3-B candidate even if an active session is present',
+  ()=>scenario('generic_session',async x=>{
+   await x.freeze();assert.equal((await x.restore()).state,'VERIFYING');
+   const c=await mysql.createConnection({uri:x.targetUrl,dateStrings:true,jsonStrings:true,
+    supportBigNumbers:true,bigNumberStrings:true});
+   try{
+    await c.query('UPDATE auth_sessions SET revoked_at=NULL LIMIT 1');
+    const [[active]]=await c.query('SELECT COUNT(*) AS n FROM auth_sessions WHERE revoked_at IS NULL');
+    assert.equal(Number(active.n),1);
+    const spec=await schemaSpec(),before=digest(canonical({tables:await readTables(c,spec.tables)}));
+    await assert.rejects(verifyRecovery(genericArgs(x)),
+     {code:'RECOVERY_PLAN_BOUND_CANDIDATE_BLOCKED'});
+    const [[control]]=await c.query('SELECT mode FROM recovery_control WHERE control_id=1');
+    assert.equal(control.mode,'VERIFYING');
+    assert.equal(digest(canonical({tables:await readTables(c,spec.tables)})),before);
+   }finally{await c.end();}
+  }));
+ await t.test('generic resume refuses S3-B candidate even with READY_FOR_RESUME facts',
+  ()=>scenario('generic_resume',async x=>{
+   await x.freeze();assert.equal((await x.restore()).state,'VERIFYING');
+   const c=await mysql.createConnection({uri:x.targetUrl,dateStrings:true,jsonStrings:true,
+    supportBigNumbers:true,bigNumberStrings:true});
+   try{
+    const spec=await schemaSpec(),preserved=spec.tables.filter(n=>
+     !['recovery_control','recovery_events'].includes(n));
+    const preparedDigest=digest(canonical({tables:await readTables(c,preserved)}));
+    const [[original]]=await c.query('SELECT facts FROM recovery_control WHERE control_id=1');
+    await c.execute("UPDATE recovery_control SET mode='READY_FOR_RESUME',facts=? WHERE control_id=1",
+     [canonical({...JSON.parse(original.facts),preparedDigest,verifiedAt:new Date().toISOString()})]);
+    const before=digest(canonical({tables:await readTables(c,spec.tables)}));
+    await assert.rejects(resumeRecovery(genericArgs(x,true)),
+     {code:'RECOVERY_PLAN_BOUND_CANDIDATE_BLOCKED'});
+    const [[control]]=await c.query('SELECT mode FROM recovery_control WHERE control_id=1');
+    assert.equal(control.mode,'READY_FOR_RESUME');
+    assert.equal(digest(canonical({tables:await readTables(c,spec.tables)})),before);
+   }finally{await c.end();}
+  }));
+ await t.test('ordinary Stage5B recovery still verifies and resumes',()=>withBackupFixture(async b=>{
+  const backup=await backupDatabase({...b.backupArgs,
+   outputDirectory:join(b.dir,'generic-compatibility')});
+  const target=b.targetArgs(backup,'generic_compatibility');
+  assert.equal((await restoreDatabase(target)).mode,'VERIFYING');
+  assert.equal((await verifyRecovery(target)).mode,'READY_FOR_RESUME');
+  assert.equal((await resumeRecovery({...target,confirmation:target.confirmation+'/RESUME'})).mode,'NORMAL');
+ }));});
