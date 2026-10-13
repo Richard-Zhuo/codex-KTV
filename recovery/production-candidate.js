@@ -10,6 +10,7 @@ import {readProtectedRestorePlan,preflightPreparedRestore,planBinding} from './p
 import {readExecutionState,transitionExecutionState} from './production-journal.js';
 
 const capabilities=new WeakSet();
+const heldContexts=new WeakMap();
 const lockName='s3b-production-candidate-restore';
 const sameBinding=(facts,plan)=>Object.entries(planBinding(plan)).every(([key,value])=>facts?.[key]===value);
 const frozenFacts=plan=>({reason:'plan-bound-recovery-freeze',...planBinding(plan)});
@@ -264,5 +265,34 @@ export async function restorePreparedCandidate({runtimeConfigFile,capability,
 
 // Reuses the private owned-fixture capability; ordinary production configuration cannot enter C1.
 export async function withOwnedCandidateRead(capability,work){
- return withOwnedLock(capability,async c=>{await c.query('SET SESSION TRANSACTION READ ONLY');return work(c);});
+ return withOwnedLock(capability,async c=>{
+  await c.query('SET SESSION TRANSACTION READ ONLY');
+  const context=Object.freeze({}),entry={capability,connection:c,open:true,pending:new Set()};
+  heldContexts.set(context,entry);let completed=false;
+  try{const result=await work(c,context);completed=true;return result;}
+  finally{
+   entry.open=false;
+   // An admitted writer must settle before the outer owner releases its lock,
+   // even if a callback accidentally returns without awaiting the writer.
+   const results=await Promise.allSettled([...entry.pending]);heldContexts.delete(context);
+   if(completed){const failed=results.find(r=>r.status==='rejected');if(failed)throw failed.reason;}
+  }
+ });
+}
+export async function assertOwnedCandidateLockContext(capability,context){
+ const entry=heldContexts.get(context);
+ if(!entry||entry.capability!==capability)throw fail('RESTORE_OWNED_LOCK_REQUIRED');
+ const [[held]]=await entry.connection.execute(
+  'SELECT CONNECTION_ID() AS connectionId, IS_USED_LOCK(?) AS lockOwner',[lockName]);
+ if(held.lockOwner===null||Number(held.connectionId)!==Number(held.lockOwner))
+  throw fail('RESTORE_OWNED_LOCK_REQUIRED');
+}
+export function withOwnedCandidateLockContext(capability,context,work){
+ const entry=heldContexts.get(context);
+ if(!entry?.open||entry.capability!==capability)
+  return Promise.reject(fail('RESTORE_OWNED_LOCK_REQUIRED'));
+ const pending=(async()=>{await assertOwnedCandidateLockContext(capability,context);return work();})();
+ entry.pending.add(pending);
+ pending.then(()=>entry.pending.delete(pending),()=>entry.pending.delete(pending));
+ return pending;
 }

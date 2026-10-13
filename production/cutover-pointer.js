@@ -1,3 +1,10 @@
+import {canonicalProtectedPath} from '../recovery/production-authorization-context.js';
+import {validatePlan} from '../recovery/production-plan.js';
+import {assertOwnedDatabase} from '../rehearsal/scope.js';
+import {assertProductionPlanAuthority} from '../recovery/production-authorization.js';
+import {withOwnedCandidateRead,withOwnedCandidateLockContext,assertOwnedCandidateLockContext} from '../recovery/production-candidate.js';
+import {readRuntimeDeploymentForRecovery,checkRecoveryPointerStage,checkRecoveryRuntimeFile} from '../recovery/runtime-boundary.js';
+import {relative,isAbsolute} from 'node:path';
 import {randomUUID} from 'node:crypto';
 import {dirname,join} from 'node:path';
 import {lstat,realpath,open,rename,rm} from 'node:fs/promises';
@@ -25,16 +32,16 @@ export async function hardenCutoverTemp(temp,source){
   Buffer.from(script,'utf16le').toString('base64')],{windowsHide:true,timeout:5000,maxBuffer:65536});}
  catch{throw fail('PRODUCTION_CUTOVER_CONFIG_INVALID');}
 }
-export async function updateProtectedDatabasePointer(loaded,plan,{
+async function writePointer(loaded,plan,{
  read=readExternalSecret,fileAcl=windowsFileAcl,harden=hardenCutoverTemp,
- move=rename,beforeMove}={}){
+ move=rename,beforeMove,check}={}){
  const sid=loaded.config.serviceAccountSid,configured=loaded.config.secretsFile;
  if(!safeName(plan.currentDatabase)||!safeName(plan.targetDatabase)||
     plan.currentDatabase===plan.targetDatabase||!configured)
   throw fail('PRODUCTION_CUTOVER_CONFIG_INVALID');
  // A new target is never selected from the operator's command line.
- const path=await realpath(configured);
- await inspect(path,sid,fileAcl);
+ const path=await canonicalProtectedPath(configured);
+ await (check?check(path):inspect(path,sid,fileAcl));
  const prior=await read(path);
  if(prior?.database?.name!==plan.currentDatabase)
   throw fail('PRODUCTION_CUTOVER_POINTER_CONFLICT');
@@ -45,20 +52,55 @@ export async function updateProtectedDatabasePointer(loaded,plan,{
  let moved=false,created=false;
  try{
   const file=await open(temp,'wx',0o600);created=true;
-  try{await harden(temp,path);await inspect(temp,sid,fileAcl);
+  try{await harden(temp,path);await (check?check(temp):inspect(temp,sid,fileAcl));
    await file.writeFile(replacement);await file.sync();
   }finally{await file.close();}
-  await inspect(temp,sid,fileAcl);
+  await (check?check(temp):inspect(temp,sid,fileAcl));
   await beforeMove?.();
-  await inspect(path,sid,fileAcl);
+  await (check?check(path):inspect(path,sid,fileAcl));
   if(canonical(await read(path))!==original)
    throw fail('PRODUCTION_CUTOVER_POINTER_CONFLICT');
   await move(temp,path);moved=true;
-  await inspect(path,sid,fileAcl);
+  await (check?check(path):inspect(path,sid,fileAcl));
   const final=await read(path);
   if(canonical(final)!==replacement||final.database.name!==plan.targetDatabase)
    throw fail('PRODUCTION_CUTOVER_CONFIG_INVALID');
   return {before:plan.currentDatabase,after:plan.targetDatabase,atomic:true,
    aclPreserved:true,secretsPreserved:true};
  }finally{if(created&&!moved)await rm(temp,{force:true});}
+}
+
+// Production cannot substitute OS/authority checks through writer options.
+export async function updateProtectedDatabasePointer(loaded,plan,{authority,runtimeConfigFile}={}){
+ const admit=async()=>{
+  const grant=await assertProductionPlanAuthority(authority);
+  if(grant.recoveryOperationId!==plan.recoveryOperationId||grant.planDigest!==plan.planDigest)
+   throw fail('AUTHORIZATION_BINDING_MISMATCH');
+  const d=await readRuntimeDeploymentForRecovery(runtimeConfigFile);
+  if(d.config.secretsFile!==loaded.config.secretsFile||d.config.serviceAccountSid!==loaded.config.serviceAccountSid)
+   throw fail('AUTHORIZATION_DEPLOYMENT_MISMATCH');
+  const stage=await checkRecoveryPointerStage(runtimeConfigFile,plan);
+  if(stage.stage!=='CUTOVER_INTENT'||stage.side!=='SOURCE')throw fail('PRODUCTION_CUTOVER_POINTER_CONFLICT');
+  return d;
+ };
+ await assertProductionPlanAuthority(authority);
+ validatePlan(plan);
+ const d=await admit();
+ return writePointer(d,plan,{check:path=>checkRecoveryRuntimeFile(runtimeConfigFile,path),beforeMove:admit});
+}
+// Separate test authority: the existing owned MySQL capability, never a production token.
+export async function updateOwnedDatabasePointer(capability,loaded,plan,options={},heldContext){
+ if(heldContext===undefined)return withOwnedCandidateRead(capability,(_connection,held)=>
+  updateOwnedDatabasePointer(capability,loaded,plan,options,held));
+ return withOwnedCandidateLockContext(capability,heldContext,async()=>{
+  const actual=await canonicalProtectedPath(loaded.config.secretsFile);
+  const rel=relative(capability.root,actual);
+  assertOwnedDatabase(plan.currentDatabase,{id:capability.id,database:capability.database},new Set([plan.currentDatabase]));
+  if(!rel||rel.startsWith('..')||isAbsolute(rel))
+   throw fail('AUTHORIZATION_TEST_SCOPE_DENIED');
+  return writePointer(loaded,plan,{...options,beforeMove:async()=>{
+   await options.beforeMove?.();
+   await assertOwnedCandidateLockContext(capability,heldContext);
+  }});
+ });
 }

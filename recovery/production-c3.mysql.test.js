@@ -93,6 +93,19 @@ if(enabled)test('S3-C owned C1-C3 restore makes candidate the sole managed write
    };
    const recoveryRuntime=async()=>{
     const loaded=await load(),calls=[];
+    const started=Promise.withResolvers();
+    // The existing parent deadline bounds failure; only runtime_started proves completion.
+    const waitForStarted=async signal=>{
+     const incomplete=()=>Error('semantic completion not observed');
+     if(signal.aborted)throw incomplete();
+     let aborted;
+     try{
+      await Promise.race([started.promise,new Promise((_,reject)=>{
+       aborted=()=>reject(incomplete());
+       signal.addEventListener('abort',aborted,{once:true});
+      })]);
+     }finally{signal.removeEventListener('abort',aborted);}
+    };
     const runtime=createProductionRuntime({...loaded,
      productionConfig:{database:plan.targetDatabase,storeId:plan.storeId,
       ledgerId:plan.ledgerId,environment:'production',deviceControlMode:'disabled'},
@@ -101,12 +114,12 @@ if(enabled)test('S3-C owned C1-C3 restore makes candidate the sole managed write
       monitoring:{...loaded.config.monitoring,intervalMs:25}},
      tls:{cert:tls.certificate,key:tls.privateKey},redactionSecrets:[],
      configFingerprint:'b'.repeat(64)},
-     {logger:{info:()=>{},error:()=>{}},services:{
+     {logger:{info:entry=>{if(entry.event==='runtime_started')started.resolve();},error:()=>{}},services:{
       readiness:async()=>{calls.push('readiness');return {ready:true,blockers:[]};},
       startWorker:async()=>{calls.push('worker');},close:async()=>{},stopWorker:async()=>{}},
       operations:{readyBlockers:()=>[],observeReadiness:async()=>{},
        start:async()=>{calls.push('operations');},stop:async()=>{}}});
-    return {runtime,calls};
+    return {runtime,calls,waitForStarted};
    };
    const pathCheck=async(_loaded,artifact)=>({backup:config.config.monitoring.backupDirectory,
     journal,artifact});
@@ -333,14 +346,13 @@ if(enabled)test('S3-C owned C1-C3 restore makes candidate the sole managed write
        if(offline)throw Object.assign(Error('synthetic outage'),{code:'ECONNREFUSED'});
        return original(...args);
       });
-      const {runtime,calls}=await recoveryRuntime();
+      const {runtime,calls,waitForStarted}=await recoveryRuntime();
       try{
        await runtime.start();
        assert.equal(runtime.status().phase,'LIVENESS_ONLY');
        assert.deepEqual(calls,[]);
        offline=false;
-       for(let n=0;n<80&&runtime.status().phase!=='RUNNING';n++)
-        await new Promise(r=>setTimeout(r,25));
+       await waitForStarted(t.signal);
        assert.equal(runtime.status().phase,'RUNNING');
        assert.ok(probes>=2);
        assert.deepEqual(calls.slice(-3),['readiness','operations','worker']);

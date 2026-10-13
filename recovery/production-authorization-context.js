@@ -1,9 +1,11 @@
+import {canonical} from '../backup/format.js';
+import {loadRecoveryDeployment,checkRecoveryPointerStage,parseRecoveryDatabaseCredential} from './runtime-boundary.js';
 import {execFile} from 'node:child_process';
 import {promisify} from 'node:util';
 import {lstat,realpath} from 'node:fs/promises';
 import {resolve,join,dirname} from 'node:path';
 import {readExternalSecret} from '../production/secret-file.js';
-import {validateRuntimeConfig,materializeRuntimeContext,windowsFileAcl} from '../production/runtime-config.js';
+import {windowsFileAcl} from '../production/runtime-config.js';
 import {windowsDirectoryAcl} from '../production/wecom-smoke-config.js';
 import {externalDirectory,fail} from '../backup/format.js';
 import {checkedPaths,readProtectedRestorePlan,preflightPreparedRestore} from './production-plan.js';
@@ -63,38 +65,35 @@ export async function loadRecoveryContext(runtimeConfigFile){
  validateRecoveryAcl(await windowsDirectoryAcl(dirname(policyPath)),{identity,runtimeServiceSid:policy.runtimeServiceSid,shared:true,directory:true});
  if(await canonicalProtectedPath(runtimeConfigFile)!==await canonicalProtectedPath(policy.runtimeConfigFile))
   throw fail('AUTHORIZATION_DEPLOYMENT_MISMATCH');
- const config=validateRuntimeConfig(await readExternalSecret(runtimeConfigFile));
- if(config.serviceAccountSid!==policy.runtimeServiceSid||identity.sid===config.serviceAccountSid)
-  throw fail('AUTHORIZATION_OPERATOR_DENIED');
+ const loaded=await loadRecoveryDeployment(runtimeConfigFile),config=loaded.config;
  const access={identity,runtimeServiceSid:config.serviceAccountSid};
  const sharedFile=async path=>{await canonicalProtectedPath(path);validateRecoveryAcl(await windowsFileAcl(path),{...access,shared:true});};
  const sharedDir=async path=>{await canonicalProtectedPath(path,{directory:true});validateRecoveryAcl(await windowsDirectoryAcl(path),{...access,shared:true});};
- await sharedFile(runtimeConfigFile);await sharedFile(config.secretsFile);
- const loaded=await materializeRuntimeContext(config,await readExternalSecret(config.secretsFile));
  const authorizationDirectory=join(config.recovery?.journalDirectory??'','authorization');
  await canonicalProtectedPath(authorizationDirectory,{directory:true});
  validateRecoveryAcl(await windowsDirectoryAcl(authorizationDirectory),{...access,directory:true});
  const pathCheck=(l,a)=>checkedPaths(l,a,{backupAcl:sharedDir,journalAcl:sharedDir,fileAcl:sharedFile});
- const load=async()=>loaded;
- const operatorLoad=async()=>{
-  const path=await canonicalProtectedPath(config.recovery?.operatorDbSecretsFile);
-  validateRecoveryAcl(await windowsFileAcl(path),access);
-  const secret=await readExternalSecret(path);
-  if(!exact(secret,['databaseUrl']))throw fail('AUTHORIZATION_CREDENTIAL_INVALID');
-  let operator,active;try{operator=new URL(secret.databaseUrl);active=new URL(loaded.apiEnv.KTV_MYSQL_URL);}catch{throw fail('AUTHORIZATION_CREDENTIAL_INVALID');}
-  if(operator.protocol!=='mysql:'||!operator.username||!operator.password||operator.pathname!=='/'||operator.search||operator.hash||
-   operator.hostname!==active.hostname||Number(operator.port||3306)!==Number(active.port||3306))
-   throw fail('AUTHORIZATION_CREDENTIAL_INVALID');
-  return operator.href;
- };
+ let bindingPlan;
+ const load=async()=>{const value=await loadRecoveryDeployment(runtimeConfigFile);
+  if(bindingPlan)parseRecoveryDatabaseCredential({databaseUrl:value.operatorUrl},value.pointer,bindingPlan);
+  return value;};
+ const operatorLoad=async current=>current.operatorUrl;
  const readPlan=args=>readProtectedRestorePlan({...args,load,pathCheck,fileAcl:sharedFile});
  const current=await readPlan({runtimeConfigFile});
+ bindingPlan=current.plan;
  const stage=await readExecutionState(current.journal,current.plan,{checkAcl:sharedFile});
  // D1 has no production stage orchestration or stage-dependent reauthorization.
  if(stage)throw fail('AUTHORIZATION_D1_STAGE_UNAVAILABLE');
+ await checkRecoveryPointerStage(runtimeConfigFile,current.plan);
  const checked=await preflightPreparedRestore({runtimeConfigFile,readPlan,load,pathCheck,operatorLoad});
+ const last=await checkRecoveryPointerStage(runtimeConfigFile,checked.plan);
+ if(current.journal!==checked.journal||current.plan.planDigest!==checked.plan.planDigest||
+  canonical(loaded.config)!==canonical(checked.loaded.config)||
+  canonical(last.deployment.config)!==canonical(checked.loaded.config)||
+  canonical(loaded.pointer)!==canonical(checked.loaded.pointer)||
+  canonical(last.pointer)!==canonical(checked.loaded.pointer))throw fail('AUTHORIZATION_DEPLOYMENT_MISMATCH');
  return Object.freeze({plan:checked.plan,actorSid:identity.sid,runtimeServiceSid:config.serviceAccountSid,
-  deploymentConfigFingerprint:loaded.configFingerprint,environment:'production',authorizationDirectory,
+  deploymentConfigFingerprint:checked.loaded.configFingerprint,environment:'production',authorizationDirectory,
   checkDirectory:async path=>{await canonicalProtectedPath(path,{directory:true});
    validateRecoveryAcl(await windowsDirectoryAcl(path),{...access,directory:true});},
   checkFile:async path=>{await canonicalProtectedPath(path);validateRecoveryAcl(await windowsFileAcl(path),access);}});

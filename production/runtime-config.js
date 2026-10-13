@@ -38,15 +38,25 @@ export async function windowsFileAcl(path){
  const script="$ErrorActionPreference='Stop';$p=[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('"+encoded+"'));$a=[IO.File]::GetAccessControl($p);$rules=@($a.Access|ForEach-Object{@{sid=$_.IdentityReference.Translate([Security.Principal.SecurityIdentifier]).Value;type=$_.AccessControlType.ToString();rights=[int]$_.FileSystemRights}});@{protected=$a.AreAccessRulesProtected;owner=$a.GetOwner([Security.Principal.SecurityIdentifier]).Value;current=[Security.Principal.WindowsIdentity]::GetCurrent().User.Value;rules=$rules}|ConvertTo-Json -Compress -Depth 4";
  try{const {stdout}=await exec('powershell.exe',['-NoProfile','-NonInteractive','-EncodedCommand',Buffer.from(script,'utf16le').toString('base64')],{windowsHide:true,timeout:5000,maxBuffer:65536});return JSON.parse(stdout.trim());}catch{throw runtimeFailure('RUNTIME_ACL_UNVERIFIED');}
 }
-export function validateFileAcl(acl,serviceSid){
+export function validateRuntimeFileAclStructure(acl,serviceSid){
  const trusted=new Set([serviceSid,'S-1-5-18','S-1-5-32-544']);
- if(!acl?.protected||acl.current!==serviceSid||!trusted.has(acl.owner)||!Array.isArray(acl.rules)||acl.rules.some(r=>r.type==='Allow'&&!trusted.has(r.sid))||!acl.rules.some(r=>r.type==='Allow'&&r.sid===serviceSid&&(r.rights&1)))throw runtimeFailure('RUNTIME_ACL_DENIED');
+ if(!acl?.protected||!trusted.has(acl.owner)||!Array.isArray(acl.rules)||acl.rules.some(r=>r.type==='Allow'&&!trusted.has(r.sid))||!acl.rules.some(r=>r.type==='Allow'&&r.sid===serviceSid&&(r.rights&1)))throw runtimeFailure('RUNTIME_ACL_DENIED');
+}
+export function validateFileAcl(acl,serviceSid){
+ if(acl?.current!==serviceSid)throw runtimeFailure('RUNTIME_ACL_DENIED');
+ validateRuntimeFileAclStructure(acl,serviceSid);
 }
 export async function loadRuntimeConfig(path,env=process.env){
  const config=validateRuntimeConfig(await readExternalSecret(path),env);
  const configPath=await realpath(path);validateFileAcl(await windowsFileAcl(configPath),config.serviceAccountSid);
  const secrets=await readExternalSecret(config.secretsFile),secretPath=await realpath(config.secretsFile);validateFileAcl(await windowsFileAcl(secretPath),config.serviceAccountSid);
  return materializeRuntimeContext(config,secrets);
+}
+export function runtimePublicFacts(config){
+ return {configVersion:config.configVersion,backupPolicyConfigured:config.backupPolicyConfigured,directoryAclReviewed:config.directoryAclReviewed,businessDateCutoff:config.businessDateCutoff,sessionRuleVersion:config.sessionRuleVersion,liveControlEnabled:config.liveControlEnabled,applicationCommit:config.applicationCommit,publicOrigin:config.publicOrigin,listenHost:config.listenHost,port:config.port,storeId:config.storeId,ledgerId:config.ledgerId,timeZone:config.timeZone,deviceControlMode:config.deviceControlMode,networkModel:config.networkModel,monitoring:config.monitoring??null};
+}
+export function runtimeConfigFingerprint(config){
+ return createHash('sha256').update(JSON.stringify(runtimePublicFacts(config))).digest('hex');
 }
 // Shared materialization only; caller-specific OS/ACL authority is checked before this.
 export async function materializeRuntimeContext(config,secrets){
@@ -76,7 +86,6 @@ export async function materializeRuntimeContext(config,secrets){
  const logDirectory=await externalDirectory(config.logDirectory);
  if(config.monitoring?.backupDirectory)await externalDirectory(config.monitoring.backupDirectory);
  if(config.recovery?.journalDirectory)await externalDirectory(config.recovery.journalDirectory);
- const publicFacts={configVersion:config.configVersion,backupPolicyConfigured:config.backupPolicyConfigured,directoryAclReviewed:config.directoryAclReviewed,businessDateCutoff:config.businessDateCutoff,sessionRuleVersion:config.sessionRuleVersion,liveControlEnabled:config.liveControlEnabled,applicationCommit:config.applicationCommit,publicOrigin:config.publicOrigin,listenHost:config.listenHost,port:config.port,storeId:config.storeId,ledgerId:config.ledgerId,timeZone:config.timeZone,deviceControlMode:config.deviceControlMode,networkModel:config.networkModel,monitoring:config.monitoring??null};
- const configFingerprint=createHash('sha256').update(JSON.stringify(publicFacts)).digest('hex');
+ const configFingerprint=runtimeConfigFingerprint(config);
  return {config,productionConfig,apiEnv,logDirectory,configFingerprint,alertTransportConfig,tls:{cert:secrets.tls.certificate,key:secrets.tls.privateKey,minVersion:'TLSv1.2'},mysqlSsl:db.ca?{ca:db.ca,rejectUnauthorized:true}:undefined,redactionSecrets:[db.password,url.href,secrets.tls.privateKey,secrets.ktvsky?.telno,secrets.ktvsky?.password,secrets.backup?.encryptionKey,secrets.backup?.signingKey,secrets.alerting?.wecom?.secret].filter(Boolean)};
 }

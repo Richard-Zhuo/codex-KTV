@@ -8,7 +8,7 @@ import {readCutoverState,transitionCutoverState} from './production-cutover-jour
 import {readC1Evidence} from './c1-evidence.js';
 import {withOwnedCandidateRead} from './production-candidate.js';
 import {requireControl,server,alerts,snapshot,artifactMatches} from './production-c1.js';
-import {updateProtectedDatabasePointer} from '../production/cutover-pointer.js';
+import {updateOwnedDatabasePointer} from '../production/cutover-pointer.js';
 
 const targetUrl=(base,name)=>{const url=new URL(base);url.pathname='/'+name;return url.href;};
 const stateIsStopped=state=>state?.phase==='STOPPED'&&state.workerStopped===true&&
@@ -74,10 +74,12 @@ export async function switchOwnedCandidatePointer({runtimeConfigFile,capability,
  readPlan=readProtectedRestorePlan,readState=readExecutionState,
  readCutover=readCutoverState,transition=transitionCutoverState,
  readEvidence=readC1Evidence,pathCheck=checkedPaths,verify=verifyArtifact,
- readAlerts=alerts,updatePointer=updateProtectedDatabasePointer,
+ readAlerts=alerts,updatePointer,
  journalOptions={},evidenceOptions={},pointerOptions={},
  beforePointer,...dependencies}){
- return withOwnedCandidateRead(capability,async source=>{
+ return withOwnedCandidateRead(capability,async(source,heldContext)=>{
+  const pointerWriter=updatePointer??((loaded,plan,options)=>
+   updateOwnedDatabasePointer(capability,loaded,plan,options,heldContext));
   const facts=()=>readC2CutoverFacts(source,capability,{runtimeConfigFile,readPlan,
    readState,readCutover,readEvidence,pathCheck,verify,readAlerts,
    journalOptions,evidenceOptions,...dependencies});
@@ -120,7 +122,7 @@ export async function switchOwnedCandidatePointer({runtimeConfigFile,capability,
       checked.candidateDigest!==current.candidateDigest||
       checked.alertDigest!==current.alertDigest)
     throw fail('PRODUCTION_CUTOVER_PRECONDITION_CHANGED');
-   await updatePointer(checked.loaded,checked.plan,pointerOptions);
+   await pointerWriter(checked.loaded,checked.plan,pointerOptions);
   }
   const switched=await facts();
   if(switched.pointer!==current.plan.targetDatabase||
