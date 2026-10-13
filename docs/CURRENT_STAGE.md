@@ -1,3 +1,11 @@
+## 2026-10-13: S3-D D2 partial checkpoint — environment blocked
+
+D2 started from D1 `33471252d88e59e42e7e9a1d0c4891d53dbe3d3b`. A thin SCM/CIM recovery-service adapter now validates the fixed JbhhKtv service registration, account SID, host/Node argv, PID/creation identity and managed tree. STOPPED requires SCM Stopped, zero SCM PID and no managed process. It offers asynchronous status/stop/start, but is not wired to any production recovery entry. Injected SCM boundary tests passed 3/3 (0 fail/skip, exit 0). No real SCM query/stop/start was run.
+
+An owned disposable policy-file probe confirmed actual Windows token elevated=false; setting the required Administrators owner failed, so the unchanged D1 policy ACL validator could not accept it. The probe directory was removed. This blocks the required protected production-like rehearsal in the current session. Do not replace owner/ACL evidence, weaken validation or call a fixture core and label it production orchestration. The remaining D2 authority/core/CLI wiring and rehearsal have not been implemented; no full regression was run. npm test was attempted and npm remains unavailable. Resume after the owned fixture can create a real protected policy with the required owner under an appropriately privileged Windows process.
+
+D2 = BLOCKED / INCOMPLETE; production orchestration remains disabled. No production secrets, DB, backup, service or provider was accessed. Existing P2 items are unchanged. No merge/push. S3 SOFTWARE IMPLEMENTATION = STILL INCOMPLETE; REAL-WORLD PRODUCTION RESTORE ACCEPTANCE = PENDING; PRODUCTION READY = NO; 14-DAY OFFSITE MVP READY = NO.
+
 ## 2026-10-13: S3-D D1 local authorization candidate
 
 Accepted main/origin baseline is `fdb5ad1ed58d289a53624ef8d1e159e0d7172a63` (S3-A/B/C merged and accepted). D1 on `codex/p0-1-prod-blocker-s3d-production-authority` adds protected append-only plan authorization, fixed four-hour expiry, trusted elevated Windows operator policy, separate recovery loader, private production/owned authority isolation and non-destructive authorize/inspect/revoke CLI. [D1 contract](S3D_PRODUCTION_AUTHORIZATION.md). This entry supersedes older local-candidate descriptions below.

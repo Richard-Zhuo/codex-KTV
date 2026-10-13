@@ -1,3 +1,7 @@
+## S3-D D2 partial focused verification
+
+`node --test --test-isolation=none --test-reporter=tap production/recovery-service.test.js` uses only injected SCM snapshots; it never queries/stops/starts the installed service. The required complete production-like rehearsal is not yet available. The current non-elevated Windows session cannot set Administrators ownership on an owned temporary policy file, as required by the unchanged D1 validator. Obtain a suitably privileged Windows fixture process; do not fabricate ACL/owner metadata or weaken the policy check. No D2 full regression is authorized until focused and the required complete isolated rehearsal pass.
+
 ## S3-D D1 focused verification
 
 [D1 authorization commands and protected operator policy](S3D_PRODUCTION_AUTHORIZATION.md). Authorize/reauthorize/inspect-authorization/revoke-authorization accept only the existing --config-file selector; no SID/TTL/target/policy override is accepted. These command descriptions do not authorize real production use.
