@@ -91,6 +91,23 @@ if(enabled)test('S3-C owned C1-C3 restore makes candidate the sole managed write
     const url=new URL(b.raw);url.pathname='/'+current.database.name;
     return {...config,apiEnv:{KTV_MYSQL_URL:url.href}};
    };
+   const recoveryRuntime=async()=>{
+    const loaded=await load(),calls=[];
+    const runtime=createProductionRuntime({...loaded,
+     productionConfig:{database:plan.targetDatabase,storeId:plan.storeId,
+      ledgerId:plan.ledgerId,environment:'production',deviceControlMode:'disabled'},
+     config:{...loaded.config,publicOrigin:'https://ktv-smoke.127.0.0.1.sslip.io:8443',
+      port:0,listenHost:'127.0.0.1',backupPolicyConfigured:true,
+      monitoring:{...loaded.config.monitoring,intervalMs:25}},
+     tls:{cert:tls.certificate,key:tls.privateKey},redactionSecrets:[],
+     configFingerprint:'b'.repeat(64)},
+     {logger:{info:()=>{},error:()=>{}},services:{
+      readiness:async()=>{calls.push('readiness');return {ready:true,blockers:[]};},
+      startWorker:async()=>{calls.push('worker');},close:async()=>{},stopWorker:async()=>{}},
+      operations:{readyBlockers:()=>[],observeReadiness:async()=>{},
+       start:async()=>{calls.push('operations');},stop:async()=>{}}});
+    return {runtime,calls};
+   };
    const pathCheck=async(_loaded,artifact)=>({backup:config.config.monitoring.backupDirectory,
     journal,artifact});
    const connect=async url=>{
@@ -236,7 +253,7 @@ if(enabled)test('S3-C owned C1-C3 restore makes candidate the sole managed write
      assert.equal((await modes()).candidate,'READY_FOR_RESUME');
      assert.equal((await c3State()).state,'READY_FOR_RESUME');
     });
-    await t.test('RESUME_INTENT with READY retries, NORMAL before journal reconciles',async()=>{
+    await t.test('RESUME_INTENT with READY retries, NORMAL before journal reconciles',async parent=>{
      await assert.rejects(resume({testHooks:{afterResumeIntent:async()=>{
       throw Error('synthetic-crash-before-resume');}}}));
      assert.equal((await c3State()).state,'RESUME_INTENT');
@@ -272,16 +289,65 @@ if(enabled)test('S3-C owned C1-C3 restore makes candidate the sole managed write
      assert.equal(runtime.server.listening,false);
      await blocked(async()=>assertNormalStartupAllowed(await load()),
       'PRODUCTION_CUTOVER_STARTUP_BLOCKED');
+     await parent.test('DB outage then RESUME_INTENT remains liveness only',async sub=>{
+      const original=mysql.createConnection.bind(mysql);
+      let offline=true,probes=0;
+      sub.mock.method(mysql,'createConnection',async(...args)=>{
+       probes++;
+       if(offline)throw Object.assign(Error('synthetic outage'),{code:'ECONNREFUSED'});
+       return original(...args);
+      });
+      const {runtime,calls}=await recoveryRuntime();
+      try{
+       await runtime.start();
+       assert.equal(runtime.status().phase,'LIVENESS_ONLY');
+       assert.deepEqual(calls,[]);
+       offline=false;
+       for(let n=0;n<80&&probes<2;n++)await new Promise(r=>setTimeout(r,25));
+       assert.ok(probes>=2);
+       assert.equal(runtime.status().phase,'LIVENESS_ONLY');
+       assert.equal((await runtime.readiness()).ready,false);
+       assert.deepEqual(calls,[]);
+      }finally{await runtime.shutdown();}
+     });
      assert.deepEqual(await resume(),{state:'RESUMED',replay:true});
      assert.equal((await c3State()).state,'RESUMED');
      assert.deepEqual(await resume(),{state:'RESUMED',replay:true});
     });
-    await t.test('completion opens verified startup and candidate is sole managed writer',async()=>{
+    await t.test('completion opens verified startup and candidate is sole managed writer',async parent=>{
      const completionCheck=(loaded,p,dir,context)=>assertCompletedC3Startup(
       loaded,p,dir,{...context,readAlerts:async()=>[],
        readinessCheck:async()=>({ready:true,database:p.targetDatabase,
         storeId:p.storeId,ledgerId:p.ledgerId})});
      assert.equal(await assertNormalStartupAllowed(await load(),{completionCheck}),true);
+     await parent.test('DB outage then matching RESUMED activates with pool limit 1 only after trusted guard',async sub=>{
+      const original=mysql.createConnection.bind(mysql);
+      const createPool=mysql.createPool.bind(mysql),poolLimits=[];
+      sub.mock.method(mysql,'createPool',options=>{
+       poolLimits.push(options.connectionLimit);
+       return createPool(options);
+      });
+      let offline=true,probes=0;
+      sub.mock.method(mysql,'createConnection',async(...args)=>{
+       probes++;
+       if(offline)throw Object.assign(Error('synthetic outage'),{code:'ECONNREFUSED'});
+       return original(...args);
+      });
+      const {runtime,calls}=await recoveryRuntime();
+      try{
+       await runtime.start();
+       assert.equal(runtime.status().phase,'LIVENESS_ONLY');
+       assert.deepEqual(calls,[]);
+       offline=false;
+       for(let n=0;n<80&&runtime.status().phase!=='RUNNING';n++)
+        await new Promise(r=>setTimeout(r,25));
+       assert.equal(runtime.status().phase,'RUNNING');
+       assert.ok(probes>=2);
+       assert.deepEqual(calls.slice(-3),['readiness','operations','worker']);
+       assert.deepEqual(poolLimits,[1]);
+       assert.equal((await runtime.readiness()).ready,true);
+      }finally{await runtime.shutdown();}
+     });
      const terminalPath=join(journal,'c3-resume.json');
      const terminalSaved=await readFile(terminalPath,'utf8');
      for(const patch of [{recoveryOperationId:'00000000-0000-4000-8000-000000000000'},

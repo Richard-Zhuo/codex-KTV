@@ -52,7 +52,7 @@ export async function readProductionReadiness({pool,config,credentialFile}) {
     const schema=await validateSchema(connection,config.database);
     const [heads]=await connection.execute('SELECT ledger_id FROM ledger_heads');
     if(heads.length>1 || heads.some(h=>h.ledger_id!==config.ledgerId))throw refused('PRODUCTION_STORE_MISMATCH');
-    const head=heads.length ? await createMySqlLedgerStore({pool,database:config.database,ledgerId:config.ledgerId}).read() : null;
+    const head=heads.length ? await createMySqlLedgerStore({pool,database:config.database,ledgerId:config.ledgerId}).readOnConnection(connection) : null;
     const state=head?.state??initialState();
     const [identities]=await connection.query('SELECT a.principal_id,e.employee_id,e.enabled AS employee_enabled FROM auth_accounts a LEFT JOIN employees e ON e.principal_id=a.principal_id WHERE a.enabled=1');
     const [events]=await connection.execute('SELECT store_id,ledger_id,environment,plan_digest,facts FROM production_bootstrap_events');

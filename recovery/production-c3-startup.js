@@ -15,7 +15,7 @@ const control=async c=>{
 async function productionReadiness(loaded){
  const pool=mysql.createPool({uri:loaded.apiEnv.KTV_MYSQL_URL,ssl:loaded.mysqlSsl,
   connectionLimit:1,dateStrings:true,jsonStrings:true,supportBigNumbers:true,bigNumberStrings:true});
- try{return readProductionReadiness({pool,config:loaded.productionConfig});}
+ try{return await readProductionReadiness({pool,config:loaded.productionConfig});}
  finally{await pool.end();}
 }
 export async function assertCompletedC3Startup(loaded,plan,journal,{

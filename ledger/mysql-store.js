@@ -89,6 +89,7 @@ export function createMySqlLedgerStore({ pool, ledgerId, database, bindSessionRe
     return checkedOperation(rows[0], ledgerId, operationKey);
   };
 
+  // The caller retains ownership of its connection and any transaction/snapshot.
   const readOnConnection = async connection => {
     const [rows] = await connection.execute(headSql, [ledgerId]);
     return checkedHead(rows[0], ledgerId);
@@ -252,5 +253,5 @@ export function createMySqlLedgerStore({ pool, ledgerId, database, bindSessionRe
     }
   };
 
-  return { ledgerId, deviceControlMode, read, readInTransaction, runAtomic };
+  return { ledgerId, deviceControlMode, read, readOnConnection, readInTransaction, runAtomic };
 }

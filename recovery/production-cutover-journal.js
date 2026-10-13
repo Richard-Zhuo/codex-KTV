@@ -11,6 +11,8 @@ import {readC3State} from './production-c3-journal.js';
 import {assertCompletedC3Startup} from './production-c3-startup.js';
 
 const FILE='cutover-state.json';
+const DB_UNAVAILABLE_CODES=new Set(['ECONNREFUSED','ECONNRESET','ETIMEDOUT','EHOSTUNREACH',
+ 'ENOTFOUND','PROTOCOL_CONNECTION_LOST','ER_ACCESS_DENIED_ERROR','ER_ACCOUNT_HAS_BEEN_LOCKED']);
 const STATES=new Set(['CUTOVER_INTENT','CUTOVER_SWITCHED']);
 const checkFile=async path=>validateSmokeAcl(await windowsFileAcl(path));
 const binding=plan=>({version:1,recoveryOperationId:plan.recoveryOperationId,
@@ -57,13 +59,15 @@ export async function transitionCutoverState(journal,plan,from,to,{
  await checkAcl(target);
  return to;
 }
-async function readCurrentRecoveryControl(loaded){
+export async function readCurrentRecoveryControl(loaded){
  const url=loaded.apiEnv?.KTV_MYSQL_URL;
  if(!url)throw fail('PRODUCTION_C3_STARTUP_BLOCKED');
  let connection;
+ try{connection=await mysql.createConnection({uri:url,ssl:loaded.mysqlSsl,
+  dateStrings:true,jsonStrings:true,supportBigNumbers:true,bigNumberStrings:true});}
+ catch(error){throw fail(DB_UNAVAILABLE_CODES.has(error?.code)?
+  'PRODUCTION_STARTUP_DATABASE_UNAVAILABLE':'PRODUCTION_C3_STARTUP_BLOCKED');}
  try{
-  connection=await mysql.createConnection({uri:url,ssl:loaded.mysqlSsl,
-   dateStrings:true,jsonStrings:true,supportBigNumbers:true,bigNumberStrings:true});
   await connection.query('SET SESSION TRANSACTION READ ONLY');
   const [rows]=await connection.query(
    'SELECT mode,facts FROM recovery_control WHERE control_id=1');
@@ -75,8 +79,10 @@ async function readCurrentRecoveryControl(loaded){
   if(!facts||typeof facts!=='object'||Array.isArray(facts))
    throw fail('PRODUCTION_C3_STARTUP_BLOCKED');
   return {mode:rows[0].mode,facts};
- }catch{throw fail('PRODUCTION_C3_STARTUP_BLOCKED');}
- finally{await connection?.end();}
+ }catch(error){
+  if(DB_UNAVAILABLE_CODES.has(error?.code))throw fail('PRODUCTION_STARTUP_DATABASE_UNAVAILABLE');
+  throw fail('PRODUCTION_C3_STARTUP_BLOCKED');
+ }finally{await connection.end().catch(()=>{});}
 }
 async function assertOrdinaryStartup(loaded,readControl){
  const control=await readControl(loaded);
@@ -112,7 +118,8 @@ export async function assertNormalStartupAllowed(loaded,{
  const pointer=decodeURIComponent(new URL(loaded.apiEnv.KTV_MYSQL_URL).pathname.slice(1));
  if(progress?.state==='RESUMED'){
   try{return await completionCheck(loaded,plan,journal,{cutover,execution});}
-  catch{throw fail('PRODUCTION_C3_STARTUP_BLOCKED');}
+  catch(error){throw fail(DB_UNAVAILABLE_CODES.has(error?.code)?
+   'PRODUCTION_STARTUP_DATABASE_UNAVAILABLE':'PRODUCTION_C3_STARTUP_BLOCKED');}
  }
  if(cutover||execution||progress||pointer===plan.targetDatabase)
   throw fail('PRODUCTION_CUTOVER_STARTUP_BLOCKED');

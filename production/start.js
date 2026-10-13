@@ -8,11 +8,9 @@ import { createInterface } from 'node:readline';
 import { loadRuntimeConfig } from './runtime-config.js';
 import { createSafeLogger } from './runtime-log.js';
 import { createProductionRuntime } from './runtime.js';
-import { assertNormalStartupAllowed } from '../recovery/production-cutover-journal.js';
 export async function startProduction(argv=process.argv.slice(2),env=process.env){
  if(argv.length!==2||argv[0]!=='--config-file')throw Object.assign(Error('RUNTIME_ARGUMENTS_INVALID'),{code:'RUNTIME_ARGUMENTS_INVALID'});
  const loaded=await loadRuntimeConfig(argv[1],env);
- await assertNormalStartupAllowed(loaded); // Before creating the operational loop or business services.
  const monitoring=monitoringConfig(loaded.config.monitoring??{});
  let logFailure=()=>{};
  const stream=createRotatingLog(loaded.logDirectory,{maxBytes:monitoring.logMaxBytes,maxFiles:monitoring.logMaxFiles,onFailure:()=>logFailure()});
