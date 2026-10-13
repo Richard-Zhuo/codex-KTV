@@ -1,3 +1,11 @@
+## 2026-10-13: Windows protected fixture — waiting for manual elevated bootstrap
+
+The current slice only supplies a test-only owned filesystem bootstrap/cleanup and ordinary-process real ACL acceptance, described in [protected fixture steps](S3D_WINDOWS_PROTECTED_FIXTURE.md). Production ACL/operator validators and D2 product wiring are unchanged. Actual operator token is not elevated: Administrators is deny-only; SeRestorePrivilege/SeTakeOwnershipPrivilege are absent. Filesystem setup requires one manually approved elevated bootstrap under the same Windows account. Neither UAC nor execution policy is bypassed. Windows PowerShell 5.1 rejects script execution; the helper uses the installed PowerShell 7 with its unchanged RemoteSigned policy.
+
+Helper refusal focused tests: 6/6 PASS, 0 fail, 0 skip, exit 0. PowerShell syntax and the no-follow path-pin native type compile successfully. The positive Administrators-owner fixture, real negative ACL variants, ordinary-process acceptance and elevated cleanup have NOT run; they remain pending human bootstrap. A prepared random ID is provided in the task report, with no fixture root created yet. npm test was attempted and npm is unavailable. No full regression, DB, service or provider action occurred.
+
+D2 ENVIRONMENT PRECONDITION = WAITING FOR MANUAL ELEVATED FIXTURE BOOTSTRAP. This is not a product failure verdict. Filesystem ACL success will not override validateRecoveryPolicy's separate elevated-token identity requirement, which the ordinary-process suite must continue to reject. D2 PRODUCT IMPLEMENTATION = UNCHANGED; S3-D D2 = STILL INCOMPLETE; PRODUCTION RESTORE = STILL DISABLED. No merge/push.
+
 ## 2026-10-13: S3-D D2 partial checkpoint — environment blocked
 
 D2 started from D1 `33471252d88e59e42e7e9a1d0c4891d53dbe3d3b`. A thin SCM/CIM recovery-service adapter now validates the fixed JbhhKtv service registration, account SID, host/Node argv, PID/creation identity and managed tree. STOPPED requires SCM Stopped, zero SCM PID and no managed process. It offers asynchronous status/stop/start, but is not wired to any production recovery entry. Injected SCM boundary tests passed 3/3 (0 fail/skip, exit 0). No real SCM query/stop/start was run.

@@ -1,3 +1,7 @@
+## Windows protected fixture environment slice
+
+[Test-only owned bootstrap, ordinary-process ACL validation and cleanup](S3D_WINDOWS_PROTECTED_FIXTURE.md). Refusal tests: `node --test --test-isolation=none --test-reporter=tap test-support/protected-windows-fixture.test.js`. Prepare commands: `node test-support/protected-windows-fixture.js prepare`. The actual acceptance file is selected explicitly by `verify --fixture-id <prepared-id>` after manual elevated bootstrap; do not count a no-fixture run as acceptance. Use the installed PowerShell 7 under the same Windows account for Bootstrap/Cleanup and the original non-elevated Node process for Verify. No execution-policy modification, UAC bypass or product authority override is provided.
+
 ## S3-D D2 partial focused verification
 
 `node --test --test-isolation=none --test-reporter=tap production/recovery-service.test.js` uses only injected SCM snapshots; it never queries/stops/starts the installed service. The required complete production-like rehearsal is not yet available. The current non-elevated Windows session cannot set Administrators ownership on an owned temporary policy file, as required by the unchanged D1 validator. Obtain a suitably privileged Windows fixture process; do not fabricate ACL/owner metadata or weaken the policy check. No D2 full regression is authorized until focused and the required complete isolated rehearsal pass.

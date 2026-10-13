@@ -1,3 +1,11 @@
+## Windows protected fixture tooling (TEST/DEV ONLY)
+
+- `test-support/bootstrap-protected-windows-fixture.ps1`: ID-bound manual elevated filesystem creation/ACL and cleanup; no DB, service or product authorization.
+- `test-support/protected-windows-fixture.js`: random-ID preparation, actual OS profile/marker validation and explicit non-elevated acceptance launcher.
+- `test-support/protected-windows-fixture.test.js`: helper refusal tests; `protected-windows-fixture.acceptance.js`: manually bootstrapped actual Windows ACL tests through unchanged production validators.
+
+[Scope, manual steps and evidence limits](S3D_WINDOWS_PROTECTED_FIXTURE.md).
+
 ## S3-D D2 partial service adapter
 
 `production/recovery-service.js:createRecoveryServiceAdapter` is the thin asynchronous SCM/CIM system adapter; `production/recovery-service.test.js` tests registration/process identity and stopped-proof refusal through injected system snapshots. It is not yet connected to production authority or recovery CLI. Current D2 test-environment blocker and remaining work: [CURRENT_STAGE](CURRENT_STAGE.md).
