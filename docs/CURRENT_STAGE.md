@@ -1,3 +1,11 @@
+## 2026-10-14: S3-D Windows evidence harness — pre-UAC PASS, waiting for manual UAC
+
+The retained placeholder fixture is not Option A evidence. The accumulated harness shares the existing Option A reader core while the production wrapper keeps its fixed ProgramData policy. The FixtureId-only evidence runner uses actual Windows identity/ACL and no MySQL, restore lock, provider, service action or ProductionPlanAuthority issuance. Bootstrap now prepares synthetic production-shaped runtime artifacts with strict runtime ACLs and no operator-specific file ACE.
+
+The sole pre-UAC failure was an inspection bug: an in-memory FileSecurity has no PowerShell Access extension property. Test-support now reads GetAccessRules with SecurityIdentifier, rejects invalid/null rules or unknown principals, and passes the normalized descriptor to the unchanged production structure validator. Narrow descriptor case: 1/1 PASS. Same pre-UAC file group: 25/25 PASS, 0 fail, 0 skip, exit 0. The 45 production/recovery product files are byte-unchanged during this inspection fix. npm test was attempted; npm is unavailable.
+
+REAL WINDOWS EVIDENCE HARNESS = READY FOR MANUAL UAC, not actual elevated acceptance. No Bootstrap/Cleanup/elevated reader was run. Manual steps and evidence limits: [Windows fixture](S3D_WINDOWS_PROTECTED_FIXTURE.md). SAFE TO RESUME D2 = NO; S3-D D2 = STILL INCOMPLETE; PRODUCTION RESTORE = STILL DISABLED. No merge/push. Older entries below are historical.
+
 ## 2026-10-13: Windows protected fixture — waiting for manual elevated bootstrap
 
 The current slice only supplies a test-only owned filesystem bootstrap/cleanup and ordinary-process real ACL acceptance, described in [protected fixture steps](S3D_WINDOWS_PROTECTED_FIXTURE.md). Production ACL/operator validators and D2 product wiring are unchanged. Actual operator token is not elevated: Administrators is deny-only; SeRestorePrivilege/SeTakeOwnershipPrivilege are absent. Filesystem setup requires one manually approved elevated bootstrap under the same Windows account. Neither UAC nor execution policy is bypassed. Windows PowerShell 5.1 rejects script execution; the helper uses the installed PowerShell 7 with its unchanged RemoteSigned policy.

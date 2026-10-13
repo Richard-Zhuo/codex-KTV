@@ -1,3 +1,11 @@
+## S3-D Option A Windows evidence harness: pre-UAC and manual execution
+
+Narrow descriptor first: `node --test --test-isolation=none --test-reporter=tap test-support/s3d-windows-descriptor.case.js`.
+
+The same pre-UAC suite is `node --test --test-isolation=none --test-reporter=tap test-support/s3d-windows-evidence.test.js test-support/protected-windows-fixture.test.js production/recovery-acl.test.js recovery/runtime-boundary.test.js production/runtime.test.js recovery/production-authorization.test.js`. Run in the ordinary Windows process with the verified Node 24.19.x runtime and installed PowerShell 7 available as pwsh.exe. The evidence test imports the narrow case, retaining 25 total tests without filtered/skipped cases. These tests do not start MySQL or require real credentials.
+
+Only after pre-UAC PASS, `node test-support/protected-windows-fixture.js prepare` generates a fresh ID and commands without creating a fixture. Manually run Cleanup for the retained old ID, Bootstrap for the new ID, and `node test-support/run-s3d-windows-evidence.js --fixture-id <new-id>` in elevated PowerShell under the same Windows account. Stop at the first nonzero exit. [Fixture contract](S3D_WINDOWS_PROTECTED_FIXTURE.md) separates filesystem provisioning from actual reader evidence. No UAC automation, policy/path selector, production restore or D2 orchestration is provided.
+
 ## Windows protected fixture environment slice
 
 [Test-only owned bootstrap, ordinary-process ACL validation and cleanup](S3D_WINDOWS_PROTECTED_FIXTURE.md). Refusal tests: `node --test --test-isolation=none --test-reporter=tap test-support/protected-windows-fixture.test.js`. Prepare commands: `node test-support/protected-windows-fixture.js prepare`. The actual acceptance file is selected explicitly by `verify --fixture-id <prepared-id>` after manual elevated bootstrap; do not count a no-fixture run as acceptance. Use the installed PowerShell 7 under the same Windows account for Bootstrap/Cleanup and the original non-elevated Node process for Verify. No execution-policy modification, UAC bypass or product authority override is provided.

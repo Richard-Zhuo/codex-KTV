@@ -1,3 +1,23 @@
+# Current Option A evidence fixture
+
+This section supersedes the historical ACL-only scaffold below. Current Bootstrap creates `secrets/runtime.json` and `secrets/runtime-secrets.json` with synthetic production-shaped values. Both files have protected inheritance, Administrators ownership and Allow rules only for the Windows-calculated JbhhKtv service SID (Read), SYSTEM and Administrators. Neither file has an operator-specific ACE. The secrets parent gives the ordinary operator ReadAndExecute rather than Modify. No real deployment path or credential is accepted.
+
+Production and evidence wrappers share `recovery/runtime-reader-core.js`. Production retains its fixed ProgramData policy. The TEST-SUPPORT evidence command accepts only `--fixture-id`, derives the root from the actual operator's OS profile, validates its protected marker and fixed policy/config/secret paths, and uses real Windows token/ACL functions. It performs no MySQL connection, authority issuance, pointer write or service/provider action. Ordinary tokens must fail admission; an elevated human must still be rejected by the normal service loader.
+
+## Manual sequence after pre-UAC PASS
+
+1. Prepare a new random ID with `node test-support/protected-windows-fixture.js prepare`; this creates no files.
+2. Under the same account, manually open elevated PowerShell 7. Clean the retained old placeholder fixture using its exact ID and the helper's Cleanup action; stop on failure.
+3. Run the generated Bootstrap command for the new ID; stop on failure. Bootstrap only provisions filesystem artifacts and reports safe ACL readback facts. It does not run reader evidence.
+4. Run the generated ELEVATED_EVIDENCE_COMMAND. Expected safe result: EVIDENCE=PASS, SID_MATCH=YES, ELEVATED=YES, ADMINISTRATORS_ENABLED=YES, both runtime reads PASS, OPERATOR_SPECIFIC_ACE=NONE, normal service loader CALLER_IDENTITY_REJECTED, secret-return/leak fields NO, MYSQL=NOT_USED and AUTHORITY_ISSUED=NO.
+5. Stop and retain the fixture/result for subsequent review. Do not continue D2 orchestration. Any nonzero exit blocks acceptance.
+
+The descriptor test checks a real in-memory FileSecurity through GetAccessRules, not PowerShell's Get-Acl-specific Access extension. Unknown/null rules or principals fail; no ACE is silently filtered. Pre-UAC success cannot substitute for actual elevated evidence. Current evidence is recorded in [CURRENT_STAGE](CURRENT_STAGE.md).
+
+---
+
+## Historical ACL-only scaffold (old placeholder fixture)
+
 # S3-D Windows protected filesystem fixture
 
 This TEST/DEVELOPMENT ONLY fixture addresses the D2 ownership/ACL environment precondition. It neither wires production orchestration nor issues ProductionPlanAuthority. No database, installed service, real ProgramData file or provider is involved. The production validator is unchanged.

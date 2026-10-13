@@ -59,6 +59,7 @@ export async function protectedFixtureCommand(argv){
   return {FIXTURE_ID:id,ROOT:root,STATUS:'WAITING_FOR_MANUAL_ELEVATED_BOOTSTRAP',
    BOOTSTRAP_COMMAND:'pwsh.exe -NoProfile -File '+quote(helper)+' -Action Bootstrap -FixtureId '+quote(id),
    VERIFY_COMMAND:'node '+quote(fileURLToPath(import.meta.url))+' verify --fixture-id '+quote(id),
+   ELEVATED_EVIDENCE_COMMAND:'node '+quote(fileURLToPath(new URL('./run-s3d-windows-evidence.js',import.meta.url)))+' --fixture-id '+quote(id),
    CLEANUP_COMMAND:'pwsh.exe -NoProfile -File '+quote(helper)+' -Action Cleanup -FixtureId '+quote(id)};
  }
  if(action==='verify'&&args.length===2&&args[0]==='--fixture-id'){

@@ -17,7 +17,7 @@ test('actual protected Windows fixture is readable and checked by the non-elevat
    assert.equal(acl.owner,'S-1-5-32-544');assert.equal(acl.protected,true);
    validateRecoveryAcl(acl,{...options,policy});
   }
-  for(const name of ['policy','journal','journal/authorization','secrets']){
+  for(const name of ['policy','journal','journal/authorization']){
    const path=join(f.root,name);await canonicalProtectedPath(path,{directory:true});
    validateRecoveryAcl(await windowsDirectoryAcl(path),{...options,directory:true});
   }

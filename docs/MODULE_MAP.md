@@ -1,3 +1,9 @@
+## Option A Windows evidence harness
+
+- `recovery/runtime-reader-core.js`: the existing internal reader implementation shared by the fixed production wrapper and owned Windows evidence wrapper; strict ACL/schema/identity and pointer projection semantics remain unchanged.
+- `test-support/run-s3d-windows-evidence.js`: FixtureId-only, actual-token/ACL, read-only evidence with a protected marker and fixed artifact paths; no MySQL or recovery authority.
+- `test-support/s3d-windows-evidence.test.js` imports `s3d-windows-descriptor.case.js`; the latter can run alone for the descriptor inspection regression. Manual entry and evidence limits: [Windows fixture](S3D_WINDOWS_PROTECTED_FIXTURE.md).
+
 ## Windows protected fixture tooling (TEST/DEV ONLY)
 
 - `test-support/bootstrap-protected-windows-fixture.ps1`: ID-bound manual elevated filesystem creation/ACL and cleanup; no DB, service or product authorization.
