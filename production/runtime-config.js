@@ -46,6 +46,10 @@ export async function loadRuntimeConfig(path,env=process.env){
  const config=validateRuntimeConfig(await readExternalSecret(path),env);
  const configPath=await realpath(path);validateFileAcl(await windowsFileAcl(configPath),config.serviceAccountSid);
  const secrets=await readExternalSecret(config.secretsFile),secretPath=await realpath(config.secretsFile);validateFileAcl(await windowsFileAcl(secretPath),config.serviceAccountSid);
+ return materializeRuntimeContext(config,secrets);
+}
+// Shared materialization only; caller-specific OS/ACL authority is checked before this.
+export async function materializeRuntimeContext(config,secrets){
  fields(secrets,['database','tls'],['ktvsky','backup','alerting']);
  let alertTransportConfig;
  if(secrets.alerting){fields(secrets.alerting,['wecom']);fields(secrets.alerting.wecom,['corpId','agentId','secret','storeLabel','criticalRecipients','warnRecipients']);}

@@ -1,3 +1,13 @@
+## S3-D D1 authorization entry
+
+- `recovery/production-authorization-context.js`: fixed protected Windows operator policy, actual token SID, separate ACL/deployment loader and read-only PREPARED preflight.
+- `recovery/production-authorization.js`: append-only authorization history, fixed expiry, serialized lifecycle/replay and private separated authority registries; production execution remains blocked.
+- `recovery/production-restore-cli.js`: adds authorize/reauthorize/inspect-authorization/revoke-authorization; no destructive production entry.
+- `recovery/production-authorization.test.js` and `test-support/s3d-authorization-process.js`: verified owned-fixture lifecycle, independent-process races and private Windows ACL tests.
+- `production/runtime-config.js:materializeRuntimeContext`: shared secret/TLS materialization after caller-specific authority; normal service loader checks are unchanged.
+
+[D1 contract](S3D_PRODUCTION_AUTHORIZATION.md); existing S3-A/B/C cores and migrations are unchanged. Older entry summaries below describe their original slice boundaries.
+
 Startup correctness: production/runtime.js owns the liveness-only shell and guarded reconnect activation; production/startup-degraded.test.js covers outage, account lock and readiness-before-worker ordering. ledger/mysql-store.js:readOnConnection reads and validates a ledger using a caller-owned connection without acquiring or releasing another. production/readiness.js uses that read context; recovery/production-c3-startup.js awaits readiness before ending its single-connection pool. The owned C3 test covers incomplete RESUME_INTENT and completed RESUMED across an outage.
 
 S3-C C3 owned resume: `recovery/production-c3.js` performs protected C1/C2 freshness rechecks, dedicated READY and RESUME transitions; `recovery/production-c3-journal.js` persists identity-bound READY_INTENT/RESUME_INTENT and terminal RESUMED; `recovery/production-c3-startup.js` verifies the completed old/candidate/pointer contract before normal runtime. `recovery/production-c3.mysql.test.js` exercises the owned full C1-C3 path and crash windows. Ordinary production restore remains disabled.

@@ -1,3 +1,11 @@
+## 2026-10-13: S3-D D1 local authorization candidate
+
+Accepted main/origin baseline is `fdb5ad1ed58d289a53624ef8d1e159e0d7172a63` (S3-A/B/C merged and accepted). D1 on `codex/p0-1-prod-blocker-s3d-production-authority` adds protected append-only plan authorization, fixed four-hour expiry, trusted elevated Windows operator policy, separate recovery loader, private production/owned authority isolation and non-destructive authorize/inspect/revoke CLI. [D1 contract](S3D_PRODUCTION_AUTHORIZATION.md). This entry supersedes older local-candidate descriptions below.
+
+Final focused owned-fixture run: 59/59 PASS, 0 fail, 0 skip, exit 0, 39478.6286 ms. External evidence: `C:/Users/KAMABOKO/.codex/audit-logs/s3d-d1-focused-1791899570420.tap`. Windows SID and private ACL roundtrip, owned lifecycle/concurrency, S3-A/B/C capability gates and production runtime checks passed; fixture cleanup reported processes/databases/accounts/root absent and sqlCleanup=true. npm test was attempted and npm is unavailable. No whole-project full regression was run, as required for D1. These are software/owned-fixture results, not real protected deployment acceptance.
+
+D1 authorizes only PREPARED with no execution progress. IN_PROGRESS/CONSUMED admission is test-only; D2 must supply stage-specific orchestration. All S3-D production destructive commands remain RESTORE_PRODUCTION_DISABLED. No new migration/dependency, real production/provider operation, merge or push. D2 has not started. Existing three P2 items remain unchanged. S3 SOFTWARE IMPLEMENTATION = STILL INCOMPLETE; PRODUCTION RESTORE = STILL DISABLED; PRODUCTION READY = NO; 14-DAY OFFSITE MVP READY = NO.
+
 ## 2026-10-13: S3-C startup correctness fix (current local candidate)
 
 The startup shell opens liveness before database-dependent trust resolution. A database outage or temporarily locked account leaves readiness NOT_READY, all normal routes blocked, and business/device workers and the operational loop off. Reconnect repeats the trusted recovery startup gate and service readiness before activation. Missing recovery configuration, incomplete RESUME_INTENT and mismatched terminal operation/plan remain blocked. Matching terminal RESUMED can activate after the completed-recovery checks pass.

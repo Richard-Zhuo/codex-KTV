@@ -1,6 +1,6 @@
 # S3-A production restore contract and read-only preflight
 
-S3-A and S3-B are on the accepted main baseline. S3-C Phases C1, C2 and C3 are local owned-fixture-only candidates. Production restore execution remains disabled by the Stage 5B `restoreDatabase` guard and the S3-B production CLI guard. This document does not authorize a real production inspection, freeze, import, cutover or resume.
+S3-A/B/C are merged and accepted on main. Their execution cores remain owned-fixture-only. S3-D D1 adds a local authorization-only candidate; see [D1 protected authorization](S3D_PRODUCTION_AUTHORIZATION.md). Production restore execution remains disabled by the Stage 5B `restoreDatabase` guard and the S3-B production CLI guard. This document does not authorize a real production inspection, freeze, import, cutover or resume.
 
 ## S3-C Phase C1 internal candidate
 

@@ -1,3 +1,7 @@
+## S3-D D1 authorization requirement
+
+A production recovery grant must bind the immutable PREPARED plan, trusted deployment and actual approved Windows operator. Preserve history, fixed four-hour expiry, safe replay and revocation; fixture authority cannot become production authority. D1 adds no destructive production execution. [Authoritative D1 contract](S3D_PRODUCTION_AUTHORIZATION.md).
+
 ## S3 v1 production restore requirement
 
 S3 v1 production restore is scoped to the same MySQL host, port and server UUID, into a newly allocated side-by-side database. S3-A adds only read-only eligibility and an external PREPARED plan; it does not enable production execution. Backup IDs and generated recovery operation IDs are canonical UUIDv4 values; a plan requires a final pre-journal binding recheck. [S3 contract](S3_PRODUCTION_RESTORE.md).

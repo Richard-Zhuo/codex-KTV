@@ -1,3 +1,7 @@
+## S3-D D1 authorization boundary
+
+The separate protected Windows operator loader issues private plan authority from append-only authorization evidence. It shares runtime materialization while preserving the normal service SID contract. D1 does not admit production authority into S3-A/B/C execution; owned fixture authority remains separate. [Contract and trust boundary](S3D_PRODUCTION_AUTHORIZATION.md).
+
 ## S1 first-install boundary
 
 The S1 CLI is a separate server-side initialization capability. It validates production configuration and the actual MySQL server UUID/database/schema, reads the approved identity bootstrap receipts, then creates one ledger head and its first-install audit in a single InnoDB transaction under a database-scoped lock. It never edits a ledger snapshot to set stock. Subsequent opening counts and approvals use authenticated `createTrustedLedgerApplication` with existing `stock`/`consumableStock`/`approveInventory`, current grants, operationKey, expectedRevision and the ledger's operation/audit transaction. `production/readiness.js` reports missing ledger and null inventory separately; `productionApiGate` blocks all normal API and worker startup until ready. Details: [S1 first install](S1_FIRST_INSTALL.md).

@@ -1,3 +1,5 @@
+import {createInterface} from 'node:readline/promises';
+import {authorizeProductionRestore,inspectProductionAuthorization,revokeProductionAuthorization} from './production-authorization.js';
 import {resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {inspectProductionRestore,createProductionRestorePlan,
@@ -5,9 +7,9 @@ import {inspectProductionRestore,createProductionRestorePlan,
 const fail=code=>Object.assign(Error(code),{code});
 export function parseProductionRestoreArgs(argv){
  const [action,...rest]=argv;
- if(['freeze-plan','restore-candidate','inspect-candidate'].includes(action))
+ if(['freeze-plan','restore-candidate','inspect-candidate','verify-candidate','cutover','prepare-resume','resume'].includes(action))
   throw fail('RESTORE_PRODUCTION_DISABLED');
- if(!['inspect','create-plan','inspect-plan'].includes(action))
+ if(!['inspect','create-plan','inspect-plan','authorize','reauthorize','inspect-authorization','revoke-authorization'].includes(action))
   throw fail('PRODUCTION_RESTORE_ARGUMENTS_INVALID');
  const values={};
  for(let i=0;i<rest.length;i+=2){
@@ -18,18 +20,31 @@ export function parseProductionRestoreArgs(argv){
    throw fail('PRODUCTION_RESTORE_ARGUMENTS_INVALID');
   values[key]=value;
  }
- const expected=action==='inspect-plan'?['--config-file']:
+ const expected=['inspect-plan','authorize','reauthorize','inspect-authorization','revoke-authorization'].includes(action)?['--config-file']:
    ['--config-file','--artifact-dir','--checksum'];
  if(Object.keys(values).length!==expected.length||expected.some(k=>!Object.hasOwn(values,k)))
   throw fail('PRODUCTION_RESTORE_ARGUMENTS_INVALID');
  return {action,runtimeConfigFile:values['--config-file'],
   artifactDirectory:values['--artifact-dir'],expectedChecksum:values['--checksum']};
 }
+async function humanConfirmation({challenge,summary}){
+ if(!process.stdin.isTTY||!process.stdout.isTTY)throw fail('AUTHORIZATION_INTERACTIVE_CONFIRMATION_REQUIRED');
+ process.stdout.write(JSON.stringify({confirmation:challenge,...summary})+'\n');
+ const input=createInterface({input:process.stdin,output:process.stdout});
+ try{return (await input.question('Confirm current recovery plan: ')).trim();}
+ finally{input.close();}
+}
 export async function runProductionRestoreCli(argv=process.argv.slice(2),{
  inspect=inspectProductionRestore,createPlan=createProductionRestorePlan,
  inspectPlan=inspectProductionRestorePlan,stdout=process.stdout,stderr=process.stderr}={}){
  try{
   const {action,...args}=parseProductionRestoreArgs(argv);
+  if(['authorize','reauthorize','inspect-authorization','revoke-authorization'].includes(action)){
+   const result=action==='inspect-authorization'?await inspectProductionAuthorization(args.runtimeConfigFile):
+    action==='revoke-authorization'?await revokeProductionAuthorization(args.runtimeConfigFile):
+    await authorizeProductionRestore(args.runtimeConfigFile,{confirm:humanConfirmation,reauthorize:action==='reauthorize'});
+   stdout.write(JSON.stringify(result)+'\n');return 0;
+  }
   const result=action==='inspect'?await inspect(args):action==='create-plan'?
    await createPlan(args):await inspectPlan(args);
   stdout.write(JSON.stringify(action==='inspect'?{
@@ -42,7 +57,7 @@ export async function runProductionRestoreCli(argv=process.argv.slice(2),{
   }:result)+'\n');
   return 0;
  }catch(error){
-  stderr.write(JSON.stringify(error?.safe??{eligible:'NO',code:safeError(error)})+'\n');
+  stderr.write(JSON.stringify(error?.safe??{eligible:'NO',code:(/^AUTHORIZATION_[A-Z_]+$/.test(error?.code??'')?error.code:safeError(error))})+'\n');
   return 1;
  }
 }

@@ -1,3 +1,7 @@
+## S3-D D1 authorization candidate
+
+[Protected production plan authorization](S3D_PRODUCTION_AUTHORIZATION.md) adds authorization only. S3-A/B/C are merged; S3-D D1 is local and production restore remains disabled. See [current stage](CURRENT_STAGE.md) for evidence and remaining work. Older stage headings below are historical slice descriptions.
+
 ## S3-A production restore contract candidate
 
 [Same-server restore identity, protected journal and read-only preflight](S3_PRODUCTION_RESTORE.md). Production restore remains disabled.
