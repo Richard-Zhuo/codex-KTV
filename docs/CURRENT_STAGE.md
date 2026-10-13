@@ -1,3 +1,9 @@
+## 2026-10-14: Option A actual elevated Windows evidence — human acceptance PASS
+
+The owner reports manually running old-fixture Cleanup, new-fixture Bootstrap and the independent elevated evidence runner under the same approved Windows account. Cleanup PASS; Bootstrap CREATED with Administrators ownership, STRICT_DESCRIPTOR_READBACK_PASS, production-shaped synthetic runtime config/secret bundle and no operator-specific artifact ACE. The evidence runner reported PASS: SID match, actual elevation, enabled Administrators, strict runtime config/secret reads, pointer whitelist ca/host/name/port, and normal service loader CALLER_IDENTITY_REJECTED. Runtime user/password/private/provider material was not returned; SENTINEL_LEAK=NO. MYSQL=NOT_USED, AUTHORITY_ISSUED=NO and PRODUCTION_TOUCHED=NO.
+
+REAL ELEVATED WINDOWS OPTION A EVIDENCE = PASS (owner-supplied manual evidence, not rerun by Codex); OPTION A WINDOWS SEMANTICS = ACCEPTED. No further UAC or fixture bootstrap is required for this accepted evidence. It proves the Windows/config/pointer read semantics only; it is not a ProductionPlanAuthority issuance, orchestration rehearsal, restore or production-readiness result. S3-D D2 orchestration remains incomplete, real production restore remains disabled, and merge/push remain unauthorized. Earlier waiting-UAC entries below are historical.
+
 ## 2026-10-14: S3-D Windows evidence harness — pre-UAC PASS, waiting for manual UAC
 
 The retained placeholder fixture is not Option A evidence. The accumulated harness shares the existing Option A reader core while the production wrapper keeps its fixed ProgramData policy. The FixtureId-only evidence runner uses actual Windows identity/ACL and no MySQL, restore lock, provider, service action or ProductionPlanAuthority issuance. Bootstrap now prepares synthetic production-shaped runtime artifacts with strict runtime ACLs and no operator-specific file ACE.
