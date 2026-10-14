@@ -296,3 +296,10 @@ export function withOwnedCandidateLockContext(capability,context,work){
  pending.then(()=>entry.pending.delete(pending),()=>entry.pending.delete(pending));
  return pending;
 }
+
+// D2 observation never claims the restore lock and opens no write transaction.
+export async function observeOwnedCandidate(capability,work){
+ const c=await ownedConnection(capability);
+ try{await c.query('SET SESSION TRANSACTION READ ONLY');return await work(c);}
+ finally{await c.end();}
+}

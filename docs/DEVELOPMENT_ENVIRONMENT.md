@@ -1,3 +1,17 @@
+## S3-D D2 current owned verification
+
+The credential boundary MySQL test is self-provisioning inside the existing owned freshEnvironment fixture. Create its jbhh_ktv_test database on the disposable port-33313 instance (packages:false), pass the actual LEDGER_MYSQL_TEST_URL and STAGE5E_FIXTURE_ROOT/ID/UUID facts with STAGE5E_RUN=synthetic-only and test deployment environments, and spawn the verified Node 24.19.0 with:
+
+```text
+node --test --test-isolation=none --test-reporter=tap recovery/runtime-boundary.mysql.test.js
+```
+
+The test creates and finally removes its own scoped source DB, separate operator account and artifacts. Do not provision OPTION_A_OPERATOR_URL for it or count a bare no-fixture run as acceptance. Directly related follow-up: the same Node flags with production/recovery-acl.test.js, recovery/runtime-boundary.test.js and production/cutover-pointer.test.js. Keep the production parser, credential pathname=/ and strict ACL contracts unchanged.
+
+For complete D2 verification, test-support/d2-focused.js is a fixed-scope fresh owned launcher: rehearsal, stage, unit/ACL/digest, S3-B/C core and fixture/gate groups; it saves separate external TAP files and stops on failure/skip. It is not a production entry or a general URL selector. This final fixture-only closeout reuses its already-passed 175-test evidence rather than rerunning the standalone groups.
+
+Full regression remains the existing rehearsal/regression.js launcher with both S1_RUN=synthetic-only and STAGE5E_RUN=synthetic-only plus a fresh Git-external STAGE5E_TAP_LOG. It launches unchanged node --test --test-isolation=none --test-reporter=tap. Stop at any failure or historical Stage5E temp ENOENT; never rerun merely to obtain green. No real production config/DB/backup/provider, UAC or installed service action is part of these automated checks. Current results: [CURRENT_STAGE](CURRENT_STAGE.md).
+
 ## S3-D Option A Windows evidence harness: pre-UAC and manual execution
 
 Narrow descriptor first: `node --test --test-isolation=none --test-reporter=tap test-support/s3d-windows-descriptor.case.js`.

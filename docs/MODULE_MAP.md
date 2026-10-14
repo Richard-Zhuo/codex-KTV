@@ -1,3 +1,15 @@
+## S3-D D2 owned orchestration candidate
+
+- recovery/production-orchestration.js: private owned sessions, stage admission/revalidation, safe audit codes, existing S3 core calls, SCM checkpoints and terminal proof. The real production execution guard stays unconditionally closed; numeric safe domain codes are preserved without raw exception details.
+- recovery/orchestration-facts.js and recovery/production-status.js: read-only plan/journal/pointer/server/source/candidate/authorization observations; disagreement reports UNKNOWN.
+- recovery/production-restore-cli.js: shared handler for owned session stages and ordinary read-only status; ordinary destructive production commands remain RESTORE_PRODUCTION_DISABLED.
+- test-support/d2-orchestration-fixture.js and d2-acl-fixture.js: owned MySQL/OS/SCM composition and path-aware synthetic facts admitted by the unchanged production ACL validators. Unknown artifact paths fail closed.
+- test-support/owned-mysql-fixture.js: proves the disposable endpoint/root before connecting, then checks server identity; backup-fixture.js reuses it. filesystem-digest.js is test-only filesystem observation, not a production digest contract.
+- recovery/runtime-boundary.mysql.test.js: self-provisions an independent owned recovery credential/source DB, verifies runtime-secret separation and pointer behavior, and cleans its assets without an external operator URL.
+- recovery/production-orchestration.mysql.test.js and production-orchestration-errors.test.js: owned stage/replay/terminal/audit and safe public error regressions. test-support/d2-focused.js is the fixed owned regression launcher. [Commands](DEVELOPMENT_ENVIRONMENT.md), [current evidence](CURRENT_STAGE.md).
+
+Older module notes below describe earlier slices; they do not enable real production restore.
+
 ## Option A Windows evidence harness
 
 - `recovery/runtime-reader-core.js`: the existing internal reader implementation shared by the fixed production wrapper and owned Windows evidence wrapper; strict ACL/schema/identity and pointer projection semantics remain unchanged.

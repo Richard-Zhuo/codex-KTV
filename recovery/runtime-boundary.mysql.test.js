@@ -1,8 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {mkdir,readFile,writeFile} from 'node:fs/promises';
+import {mkdir,readFile,writeFile,realpath,rm} from 'node:fs/promises';
 import {join} from 'node:path';
-import {createHash} from 'node:crypto';
+import {createHash,randomBytes} from 'node:crypto';
 import mysql from 'mysql2/promise';
 import {withOwnedRecoveryReader,readRuntimeDeploymentForRecovery} from './runtime-boundary.js';
 import {issueOwnedCandidateCapability} from './production-candidate.js';
@@ -10,11 +10,27 @@ import {updateOwnedDatabasePointer,updateProtectedDatabasePointer} from '../prod
 import {materializeRuntimeContext,runtimeConfigFingerprint,validateFileAcl} from '../production/runtime-config.js';
 import {syntheticTls} from '../test-support/runtime-tls.js';
 import {canonical,digest} from '../backup/format.js';
+import {requireOwnedBackupFixture,connectOwnedBackupFixture} from '../test-support/owned-mysql-fixture.js';
+import {assertRegressionFixture} from '../rehearsal/regression-guard.js';
+import {assertOwnedRoot,assertOwnedDatabase,scopeNames} from '../rehearsal/scope.js';
 const enabled=process.env.STAGE5E_RUN==='synthetic-only'&&process.env.STAGE5E_FIXTURE_ROOT&&process.env.LEDGER_MYSQL_TEST_URL;
 const hash=x=>createHash('sha256').update(typeof x==='string'?x:canonical(x)).digest('hex');
 if(enabled)test('Option A owned consumer boundary, pointer and credential isolation',{timeout:120000},async t=>{
- const f={root:process.env.STAGE5E_FIXTURE_ROOT,names:{id:process.env.STAGE5E_FIXTURE_ID,database:'jbhh_ktv_test'},identity:{server_uuid:process.env.STAGE5E_FIXTURE_UUID},port:33313,dbUrl:()=>process.env.LEDGER_MYSQL_TEST_URL};
- const capability=await issueOwnedCandidateCapability(f),root=join(f.root,'artifacts','option-a');await mkdir(root);
+ const fixtureEnv=Object.freeze({...process.env}),raw=await requireOwnedBackupFixture(fixtureEnv);
+ const f={root:fixtureEnv.STAGE5E_FIXTURE_ROOT,names:{id:fixtureEnv.STAGE5E_FIXTURE_ID,database:'jbhh_ktv_test'},identity:{server_uuid:fixtureEnv.STAGE5E_FIXTURE_UUID},port:33313,dbUrl:()=>raw};
+ const capability=await issueOwnedCandidateCapability(f),root=join(capability.root,'artifacts','option-a');
+ const source='jbhh_ktv_restore_s5e_boundary_'+f.names.id,target='jbhh_ktv_recovery_12345678123441238123123456789abc';
+ const names=scopeNames(f.names.id),ownedDatabases=new Set([source]);assertOwnedDatabase(source,names,ownedDatabases);
+ const operatorUser='oab_'+f.names.id,operatorPassword=randomBytes(24).toString('hex'),operatorUrl=new URL(raw);
+ operatorUrl.username=operatorUser;operatorUrl.password=operatorPassword;operatorUrl.pathname='/';
+ let setup,databaseCreated=false,accountCreated=false,rootCreated=false;
+ try{
+  setup=await connectOwnedBackupFixture(fixtureEnv);
+  const [existing]=await setup.execute('SELECT SCHEMA_NAME FROM information_schema.SCHEMATA WHERE SCHEMA_NAME=?',[source]);assert.equal(existing.length,0);
+  await setup.query('CREATE DATABASE '+source+' CHARACTER SET utf8mb4 COLLATE utf8mb4_bin');databaseCreated=true;
+  await setup.query('CREATE USER ?@? IDENTIFIED BY ?',[operatorUser,'127.0.0.1',operatorPassword]);accountCreated=true;
+  await setup.query('GRANT SELECT ON '+source+'.* TO ?@?',[operatorUser,'127.0.0.1']);
+  await mkdir(root);rootCreated=true;
  for(const name of ['journal','logs','backups'])await mkdir(join(root,name));
  const configPath=join(root,'runtime.json'),secretPath=join(root,'runtime-secrets.json'),operatorPath=join(root,'operator.json'),policyPath=join(root,'policy.json');
  const operator='S-1-5-21-101-202-303-1001',service='S-1-5-80-1-2-3-4-5',ADMIN='S-1-5-32-544';
@@ -28,7 +44,6 @@ if(enabled)test('Option A owned consumer boundary, pointer and credential isolat
  storeId:'synthetic-store',ledgerId:'synthetic-ledger',timeZone:'Asia/Shanghai',businessDateCutoff:'12:00',sessionRuleVersion:'opening-hours-v1',deviceControlMode:'disabled',liveControlEnabled:false,
  secretsFile:secretPath,logDirectory:join(root,'logs'),serviceAccountSid:service,backupPolicyConfigured:false,directoryAclReviewed:true,networkModel:'private-vpn',
  monitoring:{backupDirectory:join(root,'backups')},recovery:{journalDirectory:join(root,'journal'),operatorDbSecretsFile:operatorPath}};
- const source='jbhh_ktv_restore_s5e_entry_'+f.names.id,target='jbhh_ktv_recovery_12345678123441238123123456789abc';
  const tls=await syntheticTls('ktv.example.invalid');
  const sentinels=['RUNTIME_PASSWORD_SENTINEL_DO_NOT_RETURN',tls.privateKey,'PROVIDER_SENTINEL_DO_NOT_RETURN'];
  let bundle={database:{host:'127.0.0.1',port:33313,name:source,user:'runtime_not_recovery',password:sentinels[0]},
@@ -36,7 +51,7 @@ if(enabled)test('Option A owned consumer boundary, pointer and credential isolat
  const save=()=>writeFile(secretPath,JSON.stringify(bundle));
  await writeFile(configPath,JSON.stringify(config));await save();
  await writeFile(policyPath,JSON.stringify({policyVersion:1,approvedOperatorSid:operator,runtimeServiceSid:service,runtimeConfigFile:configPath}));
- await writeFile(operatorPath,JSON.stringify({databaseUrl:process.env.OPTION_A_OPERATOR_URL}));
+ await writeFile(operatorPath,JSON.stringify({databaseUrl:operatorUrl.href}));
  const options={identity:async()=>actor,fileAcl:acl,directoryAcl,policyPath,env};
  await withOwnedRecoveryReader(capability,options,async r=>{
   await t.test('strict recovery projection shares exact fingerprint with normal materialization',async()=>{
@@ -51,7 +66,12 @@ if(enabled)test('Option A owned consumer boundary, pointer and credential isolat
    const p=await r.pointer(configPath);assert.deepEqual(Object.keys(p).sort(),['ca','host','name','port']);
    delete bundle.database.ca;await save();
    const loaded=await r.load(configPath),url=new URL(loaded.apiEnv.KTV_MYSQL_URL);
-   assert.equal(url.username,new URL(process.env.OPTION_A_OPERATOR_URL).username);
+   assert.equal(url.username===operatorUser,true,'recovery uses the owned operator identity');
+   assert.equal(url.password===operatorPassword,true,'recovery uses the owned operator credential');
+   assert.equal(operatorUser!==bundle.database.user,true,'operator and runtime identities differ');
+   assert.equal(operatorPassword!==bundle.database.password,true,'operator and runtime credentials differ');
+   assert.equal(operatorUrl.protocol,'mysql:');assert.equal(operatorUrl.hostname,bundle.database.host);assert.equal(Number(operatorUrl.port),bundle.database.port);
+   assert.equal(operatorUrl.pathname,'/');assert.equal(operatorUrl.search,'');assert.equal(operatorUrl.hash,'');
    assert.equal(url.pathname,'/'+source);
    const c=await mysql.createConnection({uri:url.href});
    try{const [[actual]]=await c.query('SELECT DATABASE() AS db, @@server_uuid AS uuid');assert.equal(actual.db,source);assert.equal(actual.uuid,f.identity.server_uuid);}finally{await c.end();}
@@ -113,4 +133,17 @@ if(enabled)test('Option A owned consumer boundary, pointer and credential isolat
  await t.test('production reader cannot take injected OS identity or alternate policy via extra arguments',async()=>{
   await assert.rejects(()=>readRuntimeDeploymentForRecovery(configPath,options),{code:'AUTHORIZATION_OPERATOR_DENIED'});
  });
+ }finally{
+  try{
+   if(setup){
+    // Reprove ownership before fixture-only deletion; never clean up an unverified server.
+    await assertRegressionFixture(setup,fixtureEnv);
+    try{if(accountCreated)await setup.query('DROP USER ?@?',[operatorUser,'127.0.0.1']);}
+    finally{if(databaseCreated){assertOwnedDatabase(source,names,ownedDatabases);await setup.query('DROP DATABASE '+source);}}
+   }
+  }finally{
+   await setup?.end();
+   if(rootCreated){await assertOwnedRoot(f.root,f.names.id);if(await realpath(root)!==join(capability.root,'artifacts','option-a'))throw Error('OPTION_A_CLEANUP_SCOPE_DENIED');await rm(root,{recursive:true});}
+  }
+ }
 });

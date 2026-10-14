@@ -12,6 +12,7 @@ const UUID=/^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}
 const HASH=/^[a-f0-9]{64}$/;
 const states=new Set(['AUTHORIZED','IN_PROGRESS','CONSUMED','REVOKED']);
 const tokens=new WeakMap();
+const ownedHarnesses=new WeakMap();
 const boundKeys=['recoveryOperationId','planDigest','backupSha256','storeId','ledgerId',
  'sourceDatabase','targetDatabase','serverHost','serverPort','serverUuid','environment',
  'applicationCommit','schemaMigration','schemaDigest','authorizedOperatorSid','runtimeServiceSid','deploymentConfigFingerprint'];
@@ -196,6 +197,12 @@ function service({facts,kind,clock=Date.now,harden=hardenSmokeTemporary}){
     return {...safeResult(record,revision,issuedAt),replay:false};
    });
   },
+  // Read-only D2 observation: no authorization lock, issuance, audit append or consume.
+  async peek(){
+   const f=await facts(),s=await read(f),now=time(s.last);
+   if(s.active)matches(s.active,f);
+   return {active:s.active?safeResult(s.active,s.revision,now):null,revision:s.revision};
+  },
   async inspect(){
    return locked(async(f,s)=>{
     let now;try{now=time(s.last);}catch(e){await observedError(f,s,e);throw e;}
@@ -239,7 +246,12 @@ function service({facts,kind,clock=Date.now,harden=hardenSmokeTemporary}){
     const now=time(s.last),record=valid(s,f,now);
     if(record.authorizationId!==id)throw fail('AUTHORIZATION_SUPERSEDED');
     await append(f,s,{...record,state:'IN_PROGRESS'},'STAGE_ADMITTED');
-    return work();
+    return work(async()=>{
+     const current=await facts(),latest=await read(current),now=time(latest.last),active=valid(latest,current,now);
+     if(active.authorizationId!==id)throw fail('AUTHORIZATION_SUPERSEDED');
+     if(canonical(binding(current))!==canonical(binding(f)))throw fail('AUTHORIZATION_BINDING_MISMATCH');
+     return safeResult(active,latest.revision,now);
+    });
    });
   },
   async testConsume(){
@@ -272,12 +284,22 @@ export async function createOwnedAuthorizationHarness({capability,facts,clock,ha
    return value;
   };
   const engine=service({facts:scopedFacts,kind:'owned-test',clock,harden});
-  return Object.freeze({
-   authorize:o=>engine.authorize(o),inspect:()=>engine.inspect(),revoke:()=>engine.revoke(),
+  const harness=Object.freeze({
+   authorize:o=>engine.authorize(o),inspect:()=>engine.inspect(),peek:()=>engine.peek(),revoke:()=>engine.revoke(),
    issue:()=>engine.issue(),
    check:async token=>{const entry=tokens.get(token);if(entry?.kind!=='owned-test'||entry.service!==engine)throw fail('AUTHORIZATION_AUTHORITY_FORGED');return engine.check(entry.id);},
    admit:async(token,work)=>{const e=tokens.get(token);if(e?.kind!=='owned-test'||e.service!==engine)throw fail('AUTHORIZATION_AUTHORITY_FORGED');return engine.testAdmission(e.id,work);},
    consume:()=>engine.testConsume()
   });
+  ownedHarnesses.set(harness,capability);return harness;
  });
 }
+
+export function requireOwnedAuthorizationHarness(harness,capability){
+ if(ownedHarnesses.get(harness)!==capability)throw fail('AUTHORIZATION_AUTHORITY_FORGED');
+ return harness;
+}
+export async function peekProductionAuthorization(config){return productionService(config).peek();}
+
+// D2 readonly observation only: this never exposes an engine or mints a token.
+export async function readAuthorizationObservation(context){return service({facts:async()=>context,kind:'observation-only'}).peek();}

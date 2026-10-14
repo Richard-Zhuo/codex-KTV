@@ -1,0 +1,7 @@
+import test from 'node:test';import assert from 'node:assert/strict';
+import {mkdtemp,mkdir,writeFile,rename,rm,realpath} from 'node:fs/promises';import {join,dirname} from 'node:path';import {tmpdir} from 'node:os';
+import {filesystemDigest} from './filesystem-digest.js';import {canonical} from '../backup/format.js';
+async function fixture(work){const root=await mkdtemp(join(tmpdir(),'ktv-filesystem-digest-'));try{const a=join(root,'a'),b=join(root,'b');await mkdir(a);await mkdir(b);await writeFile(join(a,'one.json'),'one');await writeFile(join(b,'two.json'),'two');await work({root,a,b});}finally{if(await realpath(root)!==root||dirname(root)!==await realpath(tmpdir()))throw Error('DIGEST_FIXTURE_SCOPE_DENIED');await rm(root,{recursive:true});}}
+test('filesystem summary has stable digest across reversed discovery order with object-only canonical',()=>fixture(async({a,b})=>{const roots=[a,b],before=[...roots];assert.equal(await filesystemDigest(roots),await filesystemDigest([b,a]));assert.deepEqual(roots,before);assert.throws(()=>canonical([]),TypeError);}));
+test('filesystem summary changes when file content changes',()=>fixture(async({a,b})=>{const before=await filesystemDigest([a,b]);await writeFile(join(a,'one.json'),'changed');assert.notEqual(await filesystemDigest([a,b]),before);}));
+test('filesystem summary changes when path set changes without changing bytes',()=>fixture(async({a,b})=>{const before=await filesystemDigest([a,b]);await rename(join(a,'one.json'),join(a,'renamed.json'));assert.notEqual(await filesystemDigest([a,b]),before);}));
