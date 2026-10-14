@@ -16,6 +16,13 @@ import {readExecutionState,transitionExecutionState} from '../recovery/productio
 import {transitionCutoverState} from '../recovery/production-cutover-journal.js';
 import {transitionC3State} from '../recovery/production-c3-journal.js';
 import {writeC1Evidence} from '../recovery/c1-evidence.js';
+import net from 'node:net';
+import {createRuntimeActivationProducer} from '../production/activation-producer.js';
+import {ownProcessIdentity,observeListener} from '../production/process-observation.js';
+import {observeActivation} from '../production/activation-observation.js';
+import {protectActivationPath} from '../production/activation-receipt.js';
+import {createRecoveryServiceAdapter} from '../production/recovery-service.js';
+import {createOwnedActivationVerifier} from '../recovery/runtime-activation.js';
 import {createProductionRuntime} from '../production/runtime.js';
 import {readProductionReadiness} from '../production/readiness.js';
 export async function withD2Fixture(work){
@@ -43,7 +50,9 @@ export async function withD2Fixture(work){
    const backup=await backupDatabase({...b.backupArgs,environment:'production',outputDirectory:join(root,'backups','d2_'+label)});
    const tls=await syntheticTls(),configPath=join(journal,'runtime.json'),secretPath=join(journal,'runtime-secrets.json'),policyPath=join(journal,'policy.json'),operatorPath=join(journal,'operator-db.json');
    const operator='S-1-5-21-101-202-303-1001',ADMIN='S-1-5-32-544';let actor={sid:operator,elevated:true},offset=0,outbox=[];
-   const config={configVersion:1,applicationCommit:b.backupArgs.applicationCommit,publicOrigin:'https://ktv-smoke.127.0.0.1.sslip.io:8443',listenHost:'127.0.0.1',port:8443,
+   await protectActivationPath(logs,tls.sid,true);
+   const reservation=net.createServer();await new Promise(r=>reservation.listen(0,'127.0.0.1',r));const runtimePort=reservation.address().port;await new Promise(r=>reservation.close(r));
+   const config={configVersion:1,applicationCommit:b.backupArgs.applicationCommit,publicOrigin:'https://ktv-smoke.127.0.0.1.sslip.io:'+runtimePort,listenHost:'127.0.0.1',port:runtimePort,
     storeId:b.storeId,ledgerId:b.ledgerId,timeZone:'Asia/Shanghai',businessDateCutoff:'12:00',sessionRuleVersion:'opening-hours-v1',deviceControlMode:'disabled',liveControlEnabled:false,
     secretsFile:secretPath,logDirectory:logs,serviceAccountSid:tls.sid,backupPolicyConfigured:true,directoryAclReviewed:true,networkModel:'private-vpn',monitoring:{intervalMs:1000,backupDirectory:join(root,'backups')},recovery:{journalDirectory:journal,operatorDbSecretsFile:operatorPath}};
    const runtimeSource=new URL(b.raw);
@@ -69,20 +78,24 @@ export async function withD2Fixture(work){
      const loaded=await reader.load(configPath),pointer=loaded.pointer.name,runtimeUrl=new URL(b.raw);runtimeUrl.username=runtimeUser;runtimeUrl.password=runtimePassword;runtimeUrl.pathname='/'+pointer;
      const serviceLoaded=startupReadContext({...loaded,apiEnv:{KTV_MYSQL_URL:runtimeUrl.href}},plan);serviceLoaded.productionConfig.database=pointer;
      const pool=mysql.createPool({uri:runtimeUrl.href,connectionLimit:1,dateStrings:true,jsonStrings:true,supportBigNumbers:true,bigNumberStrings:true});
-     runtime=createProductionRuntime({...serviceLoaded,config:{...loaded.config,port:0},tls:{cert:tls.certificate,key:tls.privateKey},redactionSecrets:[password,runtimeUrl.href,tls.privateKey]},
-      {logger:{info:entry=>safeLogs.push(entry.event),error:entry=>safeLogs.push(entry.code)},services:{readiness:()=>readProductionReadiness({pool,config:serviceLoaded.productionConfig}),startWorker:async()=>{counts.workersStarted++;},stopWorker:async()=>{counts.workersStopped++;},close:()=>pool.end()},operations:{readyBlockers:()=>[],observeReadiness:async()=>{},start:async()=>{},stop:async()=>{}}});
-     await runtime.start();if(runtime.status().phase!=='RUNNING')throw Error('D2_RUNTIME_STARTUP_INCOMPLETE');
+     const runtimeLoaded={...serviceLoaded,tls:{cert:tls.certificate,key:tls.privateKey},redactionSecrets:[password,runtimeUrl.href,tls.privateKey]};
+     runtime=createProductionRuntime(runtimeLoaded,
+      {activation:createRuntimeActivationProducer(runtimeLoaded),logger:{info:entry=>safeLogs.push(entry.event),error:entry=>safeLogs.push(entry.code)},services:{readiness:()=>readProductionReadiness({pool,config:serviceLoaded.productionConfig}),startWorker:async()=>{counts.workersStarted++;},stopWorker:async()=>{counts.workersStopped++;},close:()=>pool.end()},operations:{readyBlockers:()=>[],observeReadiness:async()=>{},start:async()=>{},stop:async()=>{}}});
+     await runtime.start();
     }
     await startRuntime();
     const serviceExpected={serviceName:'JbhhKtv',hostExecutable:join(journal,'service-host.exe'),nodeExecutable:process.execPath,entryFile:join(journal,'runtime-entry.js'),configFile:configPath,serviceSid:tls.sid};
     const hostArgs=[serviceExpected.hostExecutable,'--node',serviceExpected.nodeExecutable,'--entry',serviceExpected.entryFile,'--config',configPath];
+    const nodeIdentity=await ownProcessIdentity();
     let snapshotOverride=null;const hooks={pointerOptions:{harden:journalOptions.harden},verify:{onError:error=>safeLogs.push('c1_error:'+String(error.code??'UNKNOWN'))}};
     const system={snapshot:async()=>{
      if(snapshotOverride)return snapshotOverride;
      if(runtime.status().phase==='STOPPED')return {name:'JbhhKtv',state:'Stopped',pid:0,serviceSid:tls.sid,argv:hostArgs,processes:[]};
-     return {name:'JbhhKtv',state:'Running',pid:100,serviceSid:tls.sid,argv:hostArgs,processes:[{pid:100,ppid:4,createdAt:'2026-10-13T00:00:00.000Z',executable:serviceExpected.hostExecutable,argv:hostArgs,sid:tls.sid},{pid:101,ppid:100,createdAt:'2026-10-13T00:00:01.000Z',executable:process.execPath,argv:[process.execPath,serviceExpected.entryFile,'--config-file',configPath],sid:tls.sid}]};
+     return {name:'JbhhKtv',state:'Running',pid:100,serviceSid:tls.sid,argv:hostArgs,processes:[{pid:100,ppid:4,createdAt:nodeIdentity.createdAt,executable:serviceExpected.hostExecutable,argv:hostArgs,sid:tls.sid},{pid:nodeIdentity.pid,ppid:100,createdAt:nodeIdentity.createdAt,executable:process.execPath,argv:[process.execPath,serviceExpected.entryFile,'--config-file',configPath],sid:tls.sid}]};
     },command:async action=>{if(action==='stop')await runtime.shutdown();else if(action==='start')await startRuntime();else throw Error('D2_SCM_ACTION_INVALID');},pause:ms=>new Promise(r=>setTimeout(r,ms))};
-    const session=await createOwnedRestoreOrchestration({capability,authorization,deps,serviceExpected,system,hooks});
+    const activationService=createRecoveryServiceAdapter(serviceExpected,system);
+    const activation=await createOwnedActivationVerifier(capability,{loaded:await reader.load(configPath),scm:activationService.status,listener:pid=>observeListener(runtimePort,pid),observe:(socket,challenge)=>observeActivation(config,socket,challenge,{ca:tls.certificate})});
+    const session=await createOwnedRestoreOrchestration({capability,authorization,deps,serviceExpected,system,activation,hooks});
     const cli=async(action,options={})=>{let stdout='',stderr='';const exit=await runProductionRestoreCli([action,'--config-file',configPath],{orchestration:session,confirm:async({challenge})=>challenge,stdout:{write:value=>{stdout+=value;}},stderr:{write:value=>{stderr+=value;}},...options});return {exit,result:JSON.parse(stdout||stderr),stdout,stderr};};
     return await work({b,plan,config,bundle,backup,configPath,secretPath,planPath,journal,authDir,capability,authorization,deps,reader,session,hooks,system,serviceExpected,cli,counts,safeLogs,
      setActor:value=>{actor=value;},actor:()=>actor,advanceClock:ms=>{offset+=ms;},setOutbox:value=>{outbox=value;},overrideScm:value=>{snapshotOverride=value;},runtime:()=>runtime});

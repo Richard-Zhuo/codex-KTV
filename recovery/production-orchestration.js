@@ -5,6 +5,7 @@ import {switchOwnedCandidatePointer} from './production-c2.js';
 import {prepareOwnedCandidateResume,resumeOwnedCandidate} from './production-c3.js';
 import {assertNormalStartupAllowed} from './production-cutover-journal.js';
 import {readOwnedOrchestrationFacts,startupReadContext} from './orchestration-facts.js';
+import {requireOwnedActivationVerifier} from './runtime-activation.js';
 import {createRecoveryServiceAdapter} from '../production/recovery-service.js';
 import {canonical,digest,fail} from '../backup/format.js';
 import {canonicalProtectedPath} from './production-authorization-context.js';
@@ -26,9 +27,9 @@ export async function executeProductionRestoreStage(authority){
 export function requireOrchestrationSession(session){
  const value=sessions.get(session);if(!value)throw fail('AUTHORIZATION_AUTHORITY_FORGED');return value;
 }
-const stopped=s=>s?.phase==='STOPPED'&&s.workerStopped&&s.operationalStopped&&s.connectionsClosed&&s.normalWriterCount===0;
+const stopped=s=>s?.phase==='STOPPED';
 const scoped=async(cap,path,directory=false)=>{const p=await canonicalProtectedPath(path,{directory}),rel=relative(cap.root,p);if(!rel||rel.startsWith('..')||isAbsolute(rel))throw fail('AUTHORIZATION_TEST_SCOPE_DENIED');return p;};
-export async function createOwnedRestoreOrchestration({capability,authorization,deps,serviceExpected,system,hooks={}}){
+export async function createOwnedRestoreOrchestration({capability,authorization,deps,serviceExpected,system,activation,hooks={}}){
  // Validate ownership and private D1 harness provenance before invoking adapters/callbacks.
  await observeOwnedCandidate(capability,async()=>{});
  requireOwnedAuthorizationHarness(authorization,capability);
@@ -36,12 +37,13 @@ export async function createOwnedRestoreOrchestration({capability,authorization,
  await scoped(capability,deps.runtimeConfigFile);
  if(serviceExpected.configFile!==deps.runtimeConfigFile)throw fail('PRODUCTION_ORCHESTRATION_BINDING_MISMATCH');
  const service=createRecoveryServiceAdapter(serviceExpected,system);
+ const verifyActivation=requireOwnedActivationVerifier(activation,capability);
  const facts=()=>readOwnedOrchestrationFacts(capability,deps);
  const initial=await facts(),binding={operation:initial.plan.recoveryOperationId,digest:initial.plan.planDigest,fingerprint:initial.loaded.configFingerprint,journal:initial.journal};
  const auditDirectory=join(initial.journal,'orchestration');await scoped(capability,auditDirectory,true);
  let cache=null;
  const refresh=async()=>cache=await service.status();
- const bridge={status:()=>cache,shutdown:async()=>{const result=await service.shutdown();await refresh();return result;}};
+ const bridge={status:()=>stopped(cache)?{phase:'STOPPED',workerStopped:true,operationalStopped:true,connectionsClosed:true,normalWriterCount:0}:cache,shutdown:async()=>{const result=await service.shutdown();await refresh();return result;}};
  const fresh=async()=>{
   const f=await facts();
   if(f.plan.recoveryOperationId!==binding.operation||f.plan.planDigest!==binding.digest||f.loaded.configFingerprint!==binding.fingerprint||f.journal!==binding.journal)throw fail('PRODUCTION_ORCHESTRATION_BINDING_MISMATCH');
@@ -68,7 +70,7 @@ export async function createOwnedRestoreOrchestration({capability,authorization,
  async function terminal(f,serviceState){
   if(f.c3?.state!=='RESUMED'||f.cutover?.state!=='CUTOVER_SWITCHED'||f.sourceMode!=='FROZEN'||f.candidateMode!=='NORMAL'||f.pointer.name!==f.plan.targetDatabase||!f.c1?.cutoverEligible)throw fail('PRODUCTION_ORCHESTRATION_TERMINAL_INCOMPLETE');
   await assertNormalStartupAllowed(startupReadContext(f.loaded,f.plan));
-  if(serviceState.phase!=='RUNNING'||serviceState.normalWriterCount!==1)throw fail('PRODUCTION_ORCHESTRATION_TERMINAL_INCOMPLETE');
+  if(serviceState.phase!=='RUNNING'||await verifyActivation(f)!=='ACTIVE')throw fail('PRODUCTION_ORCHESTRATION_TERMINAL_INCOMPLETE');
   return {source:'FROZEN',candidate:'NORMAL',pointer:f.pointer.name,oldWriters:0,candidateWriters:1,totalWriters:1,startup:'PASS'};
  }
  async function inspect(){
@@ -140,7 +142,7 @@ export async function createOwnedRestoreOrchestration({capability,authorization,
     }
     return result;
    });
-   if(action==='resume')await authorization.consume();
+   if(action==='resume'){await authorization.admit(token,async revalidate=>{await revalidate();await terminal(await fresh(),await refresh());});await authorization.consume();}
    await audit(action,'PASS');await hooks.afterStage?.(action,result);
    return {...result,authorityRealm:'OWNED_REHEARSAL',realProductionTokenRun:'NOT_EXECUTED'};
   }catch(error){try{await audit(action,'BLOCKED',orchestrationError(error));}catch{error.auditUnavailable=true;}throw error;}

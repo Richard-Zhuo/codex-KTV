@@ -21,9 +21,9 @@ test('SCM stopped proof requires registered identity AND absence of managed proc
 test('SCM adapter stops only the validated host/tree and awaits asynchronous absence',async()=>{
  let snapshot={...stopped(),state:'Running',pid:100,processes:[host,node]},stops=0;
  const adapter=createRecoveryServiceAdapter(expected,{snapshot:async()=>snapshot,command:async action=>{assert.equal(action,'stop');stops++;snapshot=stopped();},pause:async()=>{}});
- assert.equal((await adapter.status()).normalWriterCount,1);
+ assert.equal((await adapter.status()).phase,'RUNNING');
  assert.equal(await adapter.shutdown(),true);assert.equal(stops,1);
- assert.equal((await adapter.status()).normalWriterCount,0);
+ assert.equal((await adapter.status()).phase,'STOPPED');
 });
 test('SCM proof rejects PID reuse, missing process identity and unexpected descendant',async()=>{
  let snapshot={...stopped(),state:'Running',pid:100,processes:[host,node]};
@@ -33,4 +33,12 @@ test('SCM proof rejects PID reuse, missing process identity and unexpected desce
   snapshot={...stopped(),state:'Running',pid:100,processes:bad.pid===100?[bad,node]:[host,bad]};
   await assert.rejects(()=>adapter.status());
  }
+});
+
+test('SCM process existence carries no application activation or writer assertion',async()=>{
+ const adapter=createRecoveryServiceAdapter(expected,{snapshot:async()=>({...stopped(),state:"Running",pid:100,processes:[host,node]}),command:async()=>{},pause:async()=>{}});
+ const state=await adapter.status();assert.equal(state.phase,'RUNNING');
+ assert.equal(Object.hasOwn(state,'normalWriterCount'),false);
+ assert.equal(Object.hasOwn(state,'workerStopped'),false);
+ assert.ok(state.nodeProcess?.pid);assert.ok(state.nodeProcess?.createdAt);
 });

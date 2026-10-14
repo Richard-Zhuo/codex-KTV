@@ -7,10 +7,12 @@ import { createSafeLogger } from './runtime-log.js';
 import {secureRequest,SECURITY_HEADERS,configureHttpServer,createTransportLoginLimiter} from './http-security.js';
 import {assertNormalStartupAllowed,readCurrentRecoveryControl} from '../recovery/production-cutover-journal.js';
 export const SHUTDOWN_MS=15000;
-export function createProductionRuntime(loaded,{logger=createSafeLogger({secrets:loaded.redactionSecrets}),services,operations}={}){
+export function createProductionRuntime(loaded,{logger=createSafeLogger({secrets:loaded.redactionSecrets}),services,operations,activation}={}){
  services??=createHttpApiFromEnv(loaded.apiEnv,logger,{managed:true,mysqlSsl:loaded.mysqlSsl,loginGate:createTransportLoginLimiter(),operationalSnapshot:()=>operations?.snapshot(),onLoginOutcome:value=>operations?.login(value)});
  let phase='STARTING',lastReady=null,checking=null,stopping=null,activating=null,retryTimer=null;
  let startupBlocker='PRODUCTION_STARTUP_GATE_PENDING',operationsStarted=false,workerStarted=false;
+ let activationPublished=false;
+ const invalidateActivation=async()=>{activationPublished=false;await activation?.invalidate();};
  let workerStopped=false,operationalStopped=false,connectionsClosed=false;
  const active=new Set(),sockets=new Set();
  const version={appVersion:loaded.config.applicationCommit,schemaVersion:'001-011',configFingerprint:loaded.configFingerprint};
@@ -26,8 +28,13 @@ export function createProductionRuntime(loaded,{logger=createSafeLogger({secrets
   if(phase==='DRAINING'||phase==='STOPPED')blockers.push('RUNTIME_DRAINING');
   blockers.push(...(operations?.readyBlockers()??[]));
   const ready=report.ready&&blockers.length===0;
+  if(!ready&&activationPublished)await invalidateActivation().catch(()=>{});
   if(ready!==lastReady){logger.info({event:'readiness_changed',code:ready?'READY':'NOT_READY',blockers,...version});lastReady=ready;}
   await operations?.observeReadiness({ready,blockers});
+  if(ready&&phase==='RUNNING'&&activation&&!activationPublished){
+   try{await assertNormalStartupAllowed(loaded);await activation.publish();activationPublished=true;}
+   catch{activationPublished=false;return {ready:false,blockers:['RUNTIME_ACTIVATION_NOT_PROVEN'],...version};}
+  }
   return {ready,blockers,...version};
  })().finally(()=>{checking=null;}));
  const retryDelay=loaded.config.monitoring?.intervalMs??1000;
@@ -36,6 +43,7 @@ export function createProductionRuntime(loaded,{logger=createSafeLogger({secrets
   retryTimer=setTimeout(()=>{retryTimer=null;void activate(false).then(scheduleRetry,()=>{
    startupBlocker='RUNTIME_ACTIVATION_FAILED';
    logger.error({event:'runtime_activation_failed',code:'RUNTIME_ACTIVATION_FAILED'});
+   if(phase==='DRAINING')void services.close().catch(()=>{}).finally(()=>{connectionsClosed=true;phase='STOPPED';server.close();});
   });},retryDelay);
   retryTimer.unref();
  }
@@ -70,6 +78,10 @@ export function createProductionRuntime(loaded,{logger=createSafeLogger({secrets
    }
    if(phase!=='LIVENESS_ONLY')return false;
    phase='RUNNING';startupBlocker=null;
+   try{await activation?.publish();activationPublished=Boolean(activation);}catch(error){
+    phase='DRAINING';activationPublished=false;await activation?.invalidate().catch(()=>{});
+    await services.stopWorker?.();workerStarted=false;await operations?.stop({clean:false});operationsStarted=false;throw error;
+   }
    logger.info({event:'runtime_started',...version});return true;
   })().finally(()=>{activating=null;});
   return activating;
@@ -88,7 +100,9 @@ export function createProductionRuntime(loaded,{logger=createSafeLogger({secrets
    if(phase==='DRAINING'||phase==='STOPPED'){unavailable(res,requestId);return;}
    const path=new URL(req.url,loaded.config.publicOrigin).pathname;
    if(path==='/health/live'){res.writeHead(200,{'Content-Type':'application/json','Cache-Control':'no-store'});res.end(JSON.stringify({status:'alive',requestId,...version}));return;}
-   if(path==='/health/ready'){const r=await readiness();res.writeHead(r.ready?200:503,{'Content-Type':'application/json','Cache-Control':'no-store'});res.end(JSON.stringify({status:r.ready?'ready':'not_ready',requestId,...r}));return;}
+   if(path==='/health/ready'){const r=await readiness();const challenge=new URL(req.url,loaded.config.publicOrigin).searchParams.get('activationChallenge');
+    let observation;if(challenge!==null){if(!/^[a-f0-9]{64}$/.test(challenge)){unavailable(res,requestId,'invalid_input',400);return;}observation=activation?.observation(challenge,{phase,ready:r.ready,workersActive:workerStarted&&activationPublished})??{challenge,state:'NOT_PROVEN'};}
+    res.writeHead(r.ready?200:503,{'Content-Type':'application/json','Cache-Control':'no-store'});res.end(JSON.stringify({status:r.ready?'ready':'not_ready',requestId,...r,...(observation?{activation:observation}:{})}));return;}
    if(phase==='LIVENESS_ONLY'){unavailable(res,requestId);return;}
    await handler(req,res);
   })().catch(()=>{logger.error({event:'http_error',requestId,code:'INTERNAL_ERROR'});if(!res.headersSent)unavailable(res,requestId,'internal_error',500);else res.destroy();});
@@ -99,15 +113,17 @@ export function createProductionRuntime(loaded,{logger=createSafeLogger({secrets
   status:()=>({phase,workerStopped,operationalStopped,connectionsClosed,
    normalWriterCount:phase==='RUNNING'?null:0}),
   async start(){
+   await activation?.initialize();
    phase='LIVENESS_ONLY';
    await new Promise((resolve,reject)=>{server.once('error',reject);server.listen(loaded.config.port,loaded.config.listenHost,()=>{server.removeListener('error',reject);resolve();});});
    try{await activate(true);}catch(error){
-    await new Promise(resolve=>server.close(resolve));phase='STOPPED';throw error;
+    await new Promise(resolve=>server.close(resolve));await services.close().catch(()=>{});connectionsClosed=true;phase='STOPPED';throw error;
    }
    scheduleRetry();
   },
   shutdown(reason='STOP'){return stopping??(stopping=(async()=>{
-   phase='DRAINING';clearTimeout(retryTimer);
+   phase='DRAINING';activationPublished=false;clearTimeout(retryTimer);
+   await activation?.invalidate().catch(()=>{});
    logger.info({event:'runtime_draining',code:reason,...version});
    const closeHttp=new Promise(resolve=>server.close(resolve));server.closeIdleConnections();
    const drain=(async()=>{await activating?.catch(()=>{});

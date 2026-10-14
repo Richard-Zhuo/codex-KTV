@@ -11,6 +11,8 @@ import {readC3State} from './production-c3-journal.js';
 import {assertCompletedC3Startup} from './production-c3-startup.js';
 
 const FILE='cutover-state.json';
+const validatedStartupBindings=new WeakMap();
+export const validatedStartupBinding=loaded=>validatedStartupBindings.get(loaded)??null;
 const DB_UNAVAILABLE_CODES=new Set(['ECONNREFUSED','ECONNRESET','ETIMEDOUT','EHOSTUNREACH',
  'ENOTFOUND','PROTOCOL_CONNECTION_LOST','ER_ACCESS_DENIED_ERROR','ER_ACCOUNT_HAS_BEEN_LOCKED']);
 const STATES=new Set(['CUTOVER_INTENT','CUTOVER_SWITCHED']);
@@ -94,6 +96,7 @@ export async function assertNormalStartupAllowed(loaded,{
  read=readCutoverState,readExecution=readExecutionState,
  readC3=readC3State,completionCheck=assertCompletedC3Startup,
  readControl=readCurrentRecoveryControl}={}){
+ validatedStartupBindings.delete(loaded);
  const journal=loaded.config.recovery?.journalDirectory;
  if(!journal)return assertOrdinaryStartup(loaded,readControl);
  const cutover=await read(journal);
@@ -117,7 +120,9 @@ export async function assertNormalStartupAllowed(loaded,{
  const progress=await readC3(journal,plan);
  const pointer=decodeURIComponent(new URL(loaded.apiEnv.KTV_MYSQL_URL).pathname.slice(1));
  if(progress?.state==='RESUMED'){
-  try{return await completionCheck(loaded,plan,journal,{cutover,execution});}
+  try{const result=await completionCheck(loaded,plan,journal,{cutover,execution});
+   if(result!==true)throw fail('PRODUCTION_C3_STARTUP_BLOCKED');
+   validatedStartupBindings.set(loaded,Object.freeze({recoveryOperationId:plan.recoveryOperationId,planDigest:plan.planDigest,databaseIdentity:Object.freeze({host:plan.targetHost,port:plan.targetPort,name:plan.targetDatabase,serverUuid:plan.targetServerUuid})}));return true;}
   catch(error){throw fail(DB_UNAVAILABLE_CODES.has(error?.code)?
    'PRODUCTION_STARTUP_DATABASE_UNAVAILABLE':'PRODUCTION_C3_STARTUP_BLOCKED');}
  }

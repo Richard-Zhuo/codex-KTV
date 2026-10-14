@@ -28,15 +28,25 @@ test('C2 cutover journal blocks normal runtime before readiness, workers and ope
    startWorker:async()=>{calls.push('startWorker');}};
   const operations={readyBlockers:()=>[],observeReadiness:async()=>{},
    start:async()=>{calls.push('operationsStart');},stop:async()=>{calls.push('operationsStop');}};
-  const logger={info:()=>{},error:()=>{}};
+  const events=[];
+  const logger={info:value=>events.push(value.event),error:()=>{}};
+  const assertBlockedCleanup=runtime=>{
+   // The composed services own a pool before activation; closing it is allowed.
+   // No readiness, operation start/stop or worker start/stop may precede the gate.
+   assert.deepEqual(calls,['close']);
+   assert.equal(runtime.status().phase,'STOPPED');
+   assert.equal(runtime.status().normalWriterCount,0);
+   assert.equal(runtime.status().connectionsClosed,true);
+   assert.equal(events.includes('runtime_started'),false);
+   assert.equal(runtime.server.listening,false);
+  };
   const blocked=createProductionRuntime(loaded,{logger,services,operations});
   await assert.rejects(blocked.start(),{code:'PRODUCTION_CUTOVER_STARTUP_BLOCKED'});
-  assert.deepEqual(calls,[]);
-  assert.equal(blocked.server.listening,false);
+  assertBlockedCleanup(blocked);
+  calls.length=0;
   await rm(journal);
   const noJournal=createProductionRuntime(loaded,{logger,services,operations});
   await assert.rejects(noJournal.start(),{code:'PRODUCTION_C3_STARTUP_BLOCKED'});
-  assert.deepEqual(calls,[]);
-  assert.equal(noJournal.server.listening,false);
+  assertBlockedCleanup(noJournal);
  }finally{await rm(root,{recursive:true,force:true});}
 });

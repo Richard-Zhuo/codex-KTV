@@ -1,3 +1,12 @@
+## S3-D runtime activation proof and Stage5C compatibility
+
+- production/activation-receipt.js owns the fixed logDirectory/runtime-activation/current.json path, protected ACL/owner checks and atomic receipt persistence; process-observation.js reads actual process creation/listener identity. activation-producer.js is wired by the fixed production start entry; receipt publication depends on trusted startup admission.
+- production/activation-observation.js and activation-verifier-core.js combine verified TLS/live challenge, receipt, current process and deployment/recovery binding into ACTIVE or NOT_PROVEN. recovery/runtime-activation.js supplies fixed production observations and separate capability-bound owned substitutions. SCM process existence carries no inferred writer assertion.
+- production/activation.test.js and activation-runtime.test.js cover proof rejection and runtime lifecycle; activation-windows.case.js covers actual Windows primitives. Existing orchestration tests cover writer/consumption/inspect boundaries.
+- test-support/runtime-log-acl.js provisions only fresh disposable Stage5B log directories through the unchanged production ACL primitive and validators; runtime-log-acl.test.js checks real Windows readback. runtime-log-reader.js/test.js collect regular root files and preserve activation directories while propagating read errors. production/runtime.integration.test.js keeps the original native-host smoke/security assertions.
+
+[Current evidence and audit boundary](CURRENT_STAGE.md). Real production restore remains disabled.
+
 ## S3-D D2 owned orchestration candidate
 
 - recovery/production-orchestration.js: private owned sessions, stage admission/revalidation, safe audit codes, existing S3 core calls, SCM checkpoints and terminal proof. The real production execution guard stays unconditionally closed; numeric safe domain codes are preserved without raw exception details.

@@ -7,6 +7,7 @@ import {monitoringConfig} from '../operations/monitors.js';
 import { createInterface } from 'node:readline';
 import { loadRuntimeConfig } from './runtime-config.js';
 import { createSafeLogger } from './runtime-log.js';
+import {createRuntimeActivationProducer} from './activation-producer.js';
 import { createProductionRuntime } from './runtime.js';
 export async function startProduction(argv=process.argv.slice(2),env=process.env){
  if(argv.length!==2||argv[0]!=='--config-file')throw Object.assign(Error('RUNTIME_ARGUMENTS_INVALID'),{code:'RUNTIME_ARGUMENTS_INVALID'});
@@ -17,7 +18,7 @@ export async function startProduction(argv=process.argv.slice(2),env=process.env
  const logger=createSafeLogger({secrets:loaded.redactionSecrets,write:line=>stream.write(line)});
  const transport=loaded.alertTransportConfig?createWeComAlertTransport(loaded.alertTransportConfig):undefined;
  const operations=await createOperationalRuntime({loaded,logger,transport});
- const runtime=createProductionRuntime(loaded,{logger,operations});
+ const runtime=createProductionRuntime(loaded,{logger,operations,activation:createRuntimeActivationProducer(loaded)});
  let exiting=false;
  const stop=async(reason,exit=0)=>{
   if(exiting)return;exiting=true;

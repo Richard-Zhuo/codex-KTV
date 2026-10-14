@@ -1,5 +1,6 @@
 import test from 'node:test';import assert from 'node:assert/strict';
 import mysql from 'mysql2/promise';import {readFile,writeFile,readdir,rename} from 'node:fs/promises';import {join} from 'node:path';import {randomUUID} from 'node:crypto';
+import {validateRuntimeConfig,runtimeConfigFingerprint} from '../production/runtime-config.js';
 import {withD2Fixture} from '../test-support/d2-orchestration-fixture.js';
 import {AUTHORIZATION_TTL_MS,assertProductionPlanAuthority} from './production-authorization.js';
 import {executeProductionRestoreStage} from './production-orchestration.js';
@@ -35,7 +36,7 @@ if(enabled)test('D2 owned CLI orchestration rehearsal preserves authority, stage
   await patch(f.planPath,p=>p.planDigest='0'.repeat(64),()=>blocked('freeze-plan','PRODUCTION_RESTORE_PLAN_INVALID'));
   await patch(f.planPath,p=>{p.sourceServerUuid=p.targetServerUuid='00000000-0000-4000-8000-000000000000';const {planDigest,...body}=p;p.planDigest=digest(canonical(body));},()=>blocked('freeze-plan','PRODUCTION_ORCHESTRATION_BINDING_MISMATCH'));
   const data=join(f.backup.directory,'data.json'),bytes=await readFile(data);try{await writeFile(data,Buffer.concat([bytes,Buffer.from(' ')]));await blocked('freeze-plan');}finally{await writeFile(data,bytes);}
-  await patch(f.configPath,c=>c.publicOrigin='https://changed.example.invalid:8443',()=>blocked('freeze-plan','PRODUCTION_ORCHESTRATION_BINDING_MISMATCH'));
+  await patch(f.configPath,c=>{const before=runtimeConfigFingerprint(c),origin=new URL(c.publicOrigin);origin.hostname='changed.example.invalid';c.publicOrigin=origin.origin;assert.equal(Number(origin.port||443),c.port);validateRuntimeConfig(c,{NODE_ENV:'production',KTV_HTTP_ENV:'production',KTV_DEPLOYMENT_ENV:'production'});assert.notEqual(runtimeConfigFingerprint(c),before);},()=>blocked('freeze-plan','PRODUCTION_ORCHESTRATION_BINDING_MISMATCH'));
   await patch(f.secretPath,c=>c.database.name=f.plan.targetDatabase,()=>blocked('freeze-plan','AUTHORIZATION_POINTER_MISMATCH'));
  });
  await testStep('untrusted service identity rejects before freeze',async()=>{

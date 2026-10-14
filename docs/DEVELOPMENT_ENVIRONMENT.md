@@ -1,3 +1,9 @@
+## S3-D activation fixture compatibility checks
+
+Run the narrow file/ACL checks with the verified Node 24.19.x runtime and PowerShell available: node --test --test-isolation=none --test-reporter=tap test-support/runtime-log-reader.test.js test-support/runtime-log-acl.test.js. Stage5C's original single smoke is production/runtime.integration.test.js with test-name-pattern matching Stage5C real native service-host / HTTPS / MySQL production-like smoke, using only the existing owned disposable MySQL fixture/environment. It must report 1 pass, 0 fail and 0 skip. The helper provisions/reads back the new fixture log-directory ACL before child startup; runtime initialization still validates it independently. The test collector reads regular root files without entering runtime-activation/ or suppressing read failures.
+
+Reuse accepted standalone D2 evidence when only test/fixture bytes change. Final full remains the unchanged owned rehearsal/regression.js launcher and exact Node test command with both synthetic-only selectors and a new external TAP. No real secrets, production assets, UAC or installed service are needed. Current evidence: [CURRENT_STAGE](CURRENT_STAGE.md).
+
 ## S3-D D2 current owned verification
 
 The credential boundary MySQL test is self-provisioning inside the existing owned freshEnvironment fixture. Create its jbhh_ktv_test database on the disposable port-33313 instance (packages:false), pass the actual LEDGER_MYSQL_TEST_URL and STAGE5E_FIXTURE_ROOT/ID/UUID facts with STAGE5E_RUN=synthetic-only and test deployment environments, and spawn the verified Node 24.19.0 with:

@@ -1,5 +1,6 @@
 import test from 'node:test';import assert from 'node:assert/strict';
-import { once } from 'node:events';import { readFile,readdir,writeFile } from 'node:fs/promises';import { join } from 'node:path';
+import { once } from 'node:events';import { writeFile } from 'node:fs/promises';
+import {readRuntimeLogFiles} from '../test-support/runtime-log-reader.js';
 import { withProductionRuntimeFixture } from '../test-support/production-runtime-fixture.js';
 import { protectSyntheticFile } from '../test-support/runtime-tls.js';
 import { preflight } from './preflight.js';
@@ -38,7 +39,7 @@ test('Stage5C real native service-host / HTTPS / MySQL production-like smoke',{s
  assert.equal(JSON.stringify((await f.connection.query('SELECT revision,state_checksum FROM ledger_heads'))[0]),before);
  const secret={...f.runtimeSecrets,database:{...f.runtimeSecrets.database,port:1}};await writeFile(f.secretPath,JSON.stringify(secret));await protectSyntheticFile(f.secretPath,f.tls.sid);
  f.start();await f.wait(false);assert.equal((await f.request('/health/live')).status,200);assert.equal((await f.request('/health/ready')).status,503);assert.equal((await f.request('/api/v1/auth/session')).status,503);await f.stop();
- const logText=(await Promise.all((await readdir(f.logs)).map(name=>readFile(join(f.logs,name),'utf8')))).join('');
+ const logText=await readRuntimeLogFiles(f.logs);
  for(const value of [f.runtimeSecrets.database.password,f.runtimeSecrets.tls.privateKey,f.secretPath,cookie,csrf])assert.equal(logText.includes(value),false);
  assert.ok(logText.includes('runtime_started'));assert.ok(logText.includes('runtime_draining'));assert.ok(logText.includes('runtime_stopped'));assert.ok(logText.includes('readiness_changed'));
 }));

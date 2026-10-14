@@ -1,4 +1,5 @@
-import { writeFile,mkdir } from 'node:fs/promises';
+import { writeFile } from 'node:fs/promises';
+import {provisionSyntheticRuntimeLogDirectory} from './runtime-log-acl.js';
 import { join } from 'node:path';import { fileURLToPath } from 'node:url';
 import { randomBytes } from 'node:crypto';import { execFileSync,spawn } from 'node:child_process';
 import { once } from 'node:events';import net from 'node:net';import https from 'node:https';
@@ -20,7 +21,7 @@ export async function withProductionRuntimeFixture(work){
   const connection=await connect(target.databaseUrl),database=new URL(target.databaseUrl).pathname.slice(1),user='stage5c_'+randomBytes(8).toString('hex'),dbPassword=randomBytes(32).toString('base64url');
   const tls=await syntheticTls(),domain='ktv-smoke.127.0.0.1.sslip.io';
   const listener=net.createServer();await new Promise(r=>listener.listen(0,'127.0.0.1',r));const port=listener.address().port;await new Promise(r=>listener.close(r));
-  const logs=join(f.dir,'logs');await mkdir(logs);
+  const logs=join(f.dir,'logs');await provisionSyntheticRuntimeLogDirectory(logs,tls.sid);
   const configPath=join(f.dir,'runtime.json'),secretPath=join(f.dir,'secrets.json'),hostExe=join(f.dir,'service-host.exe');
   let userCreated=false,child;
   const config={configVersion:1,applicationCommit:execFileSync('git',['rev-parse','HEAD'],{cwd:fileURLToPath(new URL('../',import.meta.url)),encoding:'utf8'}).trim(),publicOrigin:'https://'+domain+':'+port,listenHost:'127.0.0.1',port,storeId:f.storeId,ledgerId:f.ledgerId,timeZone:'Asia/Shanghai',businessDateCutoff:BUSINESS_DAY_POLICY.cutoff,sessionRuleVersion:SESSION_RULE_VERSION,deviceControlMode:'disabled',liveControlEnabled:false,secretsFile:secretPath,logDirectory:logs,serviceAccountSid:tls.sid,backupPolicyConfigured:true,directoryAclReviewed:true,networkModel:'private-vpn',monitoring:{intervalMs:1000,minFreeBytes:1,backupDirectory:join(f.dir,'runtime-backup')}};

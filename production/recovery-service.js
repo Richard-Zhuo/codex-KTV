@@ -1,5 +1,6 @@
 import {execFile} from 'node:child_process';
 import {promisify} from 'node:util';
+import {PROCESS_CREATED_AT} from './process-observation.js';
 import {canonical,digest,fail} from '../backup/format.js';
 const exec=promisify(execFile);
 const sleep=ms=>new Promise(r=>setTimeout(r,ms));
@@ -16,7 +17,7 @@ $args=[KtvArgv]::Parse($s.PathName);if($args.Length -ne 7){throw 'ARGS'}
 $all=@(Get-CimInstance Win32_Process);$ids=[Collections.Generic.HashSet[uint32]]::new()
 foreach($p in $all){if($p.ProcessId -eq $s.ProcessId -and $s.ProcessId -ne 0 -or $p.ExecutablePath -eq $args[0] -or $p.ExecutablePath -eq $args[2] -and $p.CommandLine -and $p.CommandLine.Contains($args[4])){[void]$ids.Add($p.ProcessId)}}
 do{$changed=$false;foreach($p in $all){if($ids.Contains($p.ParentProcessId) -and !$ids.Contains($p.ProcessId)){[void]$ids.Add($p.ProcessId);$changed=$true}}}while($changed)
-$ps=@(foreach($p in $all){if($ids.Contains($p.ProcessId)){$o=Invoke-CimMethod -InputObject $p -MethodName GetOwnerSid;if($o.ReturnValue -ne 0 -or !$p.ExecutablePath -or !$p.CommandLine -or !$p.CreationDate){throw 'PROCESS_UNVERIFIED'};@{pid=[int]$p.ProcessId;ppid=[int]$p.ParentProcessId;createdAt=$p.CreationDate.ToUniversalTime().ToString('o');executable=$p.ExecutablePath;argv=@([KtvArgv]::Parse($p.CommandLine));sid=$o.Sid}}})
+$ps=@(foreach($p in $all){if($ids.Contains($p.ProcessId)){$o=Invoke-CimMethod -InputObject $p -MethodName GetOwnerSid;if($o.ReturnValue -ne 0 -or !$p.ExecutablePath -or !$p.CommandLine -or !$p.CreationDate){throw 'PROCESS_UNVERIFIED'};@{pid=[int]$p.ProcessId;ppid=[int]$p.ParentProcessId;createdAt=${PROCESS_CREATED_AT};executable=$p.ExecutablePath;argv=@([KtvArgv]::Parse($p.CommandLine));sid=$o.Sid}}})
 @{name=$s.Name;state=$s.State;pid=[int]$s.ProcessId;serviceSid=$sid;argv=@($args);processes=$ps}|ConvertTo-Json -Compress -Depth 6`;
  try{const {stdout}=await exec('powershell.exe',['-NoProfile','-NonInteractive','-EncodedCommand',Buffer.from(script,'utf16le').toString('base64')],{windowsHide:true,timeout:15000,maxBuffer:131072});return JSON.parse(stdout);}
  catch{throw fail('RECOVERY_SERVICE_UNVERIFIED');}
@@ -45,8 +46,7 @@ export function createRecoveryServiceAdapter(expected,{snapshot=windowsSnapshot,
   }
   if(s.state==='Stopped'){
    if(s.pid!==0||s.processes.length)throw fail('RECOVERY_SERVICE_PROCESS_CONFLICT');
-   return {phase:'STOPPED',workerStopped:true,operationalStopped:true,connectionsClosed:true,
-    normalWriterCount:0,proofDigest:digest(canonical(s))};
+   return {phase:'STOPPED',proofDigest:digest(canonical(s))};
   }
   if(s.state!=='Running'||s.pid===0)throw fail('RECOVERY_SERVICE_NOT_STABLE');
   const host=s.processes.find(p=>p.pid===s.pid);
@@ -58,8 +58,7 @@ export function createRecoveryServiceAdapter(expected,{snapshot=windowsSnapshot,
   if(observedHost&&observedHost.pid===host.pid&&observedHost.createdAt!==host.createdAt)
    throw fail('RECOVERY_SERVICE_PROCESS_CONFLICT');
   observedHost={pid:host.pid,createdAt:host.createdAt};
-  return {phase:'RUNNING',workerStopped:false,operationalStopped:false,connectionsClosed:false,
-   normalWriterCount:1,hostPid:host.pid,hostCreatedAt:host.createdAt,proofDigest:digest(canonical(s))};
+  return {phase:'RUNNING',hostPid:host.pid,hostCreatedAt:host.createdAt,nodeProcess:{pid:nodes[0].pid,createdAt:nodes[0].createdAt},proofDigest:digest(canonical(s))};
  }
  async function wait(phase){
   for(let n=0;n<120;n++){
