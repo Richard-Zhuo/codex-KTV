@@ -1,6 +1,6 @@
 ## S4 Git-free backup identity
 
-Production backup must bind the existing controlled artifact applicationCommit, exact installed contents and protected runtime config before creating a backup; no runtime Git or alternative identity fallback is allowed. Preserve format1 and exact-version restore. [Narrow contract](S4_GIT_FREE_BACKUP_IDENTITY.md).
+Production backup must first bind fixed JbhhKtv SCM registration and administrator-owned read-only backup.json, then the existing controlled artifact applicationCommit, exact installed contents and protected runtime config before creating a backup; no runtime Git or alternative identity fallback is allowed. Preserve format1 and exact-version restore. [Narrow contract](S4_GIT_FREE_BACKUP_IDENTITY.md).
 
 ## S3-D D1 authorization requirement
 

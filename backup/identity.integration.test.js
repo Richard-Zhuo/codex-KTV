@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFile,writeFile,mkdir,readdir,access} from 'node:fs/promises';
 import {join,dirname} from 'node:path';
-import {fileURLToPath} from 'node:url';
+import {fileURLToPath,pathToFileURL} from 'node:url';
 import {execFile} from 'node:child_process';
 import {promisify} from 'node:util';
 import {randomBytes} from 'node:crypto';
@@ -10,14 +10,15 @@ import {withProductionRuntimeFixture} from '../test-support/production-runtime-f
 import {protectSyntheticFile} from '../test-support/runtime-tls.js';
 import {protectActivationPath} from '../production/activation-receipt.js';
 import {packageAccepted,unpackAccepted,runtimePath} from '../rehearsal/artifact.js';
-import {sha} from '../shared/release-artifact.js';
+import {sha,readAcceptedArtifact,verifyInstalledArtifact} from '../shared/release-artifact.js';
+import {readRuntimeConfig,windowsFileAcl,validateFileAcl} from '../production/runtime-config.js';
 import {verifyArtifact} from './format.js';
 import {inspectProductionRestore} from '../recovery/production-plan.js';
 const run=promisify(execFile),repository=fileURLToPath(new URL('../',import.meta.url));
 const production={NODE_ENV:'production',KTV_HTTP_ENV:'production',KTV_DEPLOYMENT_ENV:'production'};
 test('S4 actual Git-free packaged backup CLI, protected identity, and read-only restore preflight',
  {skip:!process.env.LEDGER_MYSQL_TEST_URL,timeout:240000},()=>withProductionRuntimeFixture(async f=>{
- const source=join(f.dir,'candidate-source'),installed=join(f.dir,'installed'),artifact=join(f.dir,'controlled-artifact.json'),backupConfig=join(f.dir,'backup-config.json');
+ const source=join(f.dir,'candidate-source'),installed=join(f.dir,'installed'),artifact=join(f.dir,'controlled-artifact.json'),backupConfig=join(f.dir,'backup.json');
  await mkdir(source);
  const listed=(await run('git',['ls-files','--cached','--others','--exclude-standard','-z'],{cwd:repository,windowsHide:true})).stdout.split('\0').filter(runtimePath);
  for(const path of listed){const dest=join(source,path);await mkdir(dirname(dest),{recursive:true});await writeFile(dest,await readFile(join(repository,path)));}
@@ -37,13 +38,21 @@ test('S4 actual Git-free packaged backup CLI, protected identity, and read-only 
   runtimeConfigFile:f.configPath,releaseArtifactFile:artifact,releaseArtifactChecksum:packaged.sha256};
  const save=async value=>{await writeFile(backupConfig,JSON.stringify(value));await protectSyntheticFile(backupConfig,f.tls.sid);};
  await save(operator);
+ // Independent OS boundary fixture; no production reader accepts a selector or injected authority.
+ const factsPath=join(process.env.STAGE5E_FIXTURE_ROOT,'secrets','s4-os-facts.json');
+ const osFacts={registration:{name:'JbhhKtv',startName:'NT SERVICE\\JbhhKtv',serviceSid:f.tls.sid,
+  argv:[f.hostExe,'--node',process.execPath,'--entry',join(installed,'production','start.js'),'--config',f.configPath]},
+  backupConfigFile:backupConfig,privateRoot:dirname(f.configPath),
+  anchorAcl:{protected:true,owner:'S-1-5-32-544',current:f.tls.sid,rules:[{sid:f.tls.sid,type:'Allow',rights:131241},{sid:'S-1-5-18',type:'Allow',rights:2032127},{sid:'S-1-5-32-544',type:'Allow',rights:2032127}]}};
+ const saveFacts=async value=>writeFile(factsPath,JSON.stringify(value));await saveFacts(osFacts);
+ const preload=pathToFileURL(join(repository,'test-support','s4-os-observation.fixture.js')).href;
  const noGitPath=[join(process.env.SystemRoot,'System32'),join(process.env.SystemRoot,'System32','WindowsPowerShell','v1.0')].join(';');
  const noGit={...process.env,...production,PATH:noGitPath};delete noGit.NODE_OPTIONS;delete noGit.NODE_TLS_REJECT_UNAUTHORIZED;
  await assert.rejects(run('git',['--version'],{env:noGit,windowsHide:true}),{code:'ENOENT'});
- const invoke=async(label,{env=noGit,cwd=f.dir}={})=>{
+ const invoke=async(label,{env=noGit,cwd=f.dir,configFile=backupConfig}={})=>{
   const output=join(backupRoot,label);
-  const argv=[join(installed,'backup/cli.js'),'backup','--config-file',backupConfig,'--output-dir',output,'--confirm',f.identity.server_uuid+'/'+f.database+'/'+f.storeId+'/'+f.ledgerId];
-  try{const r=await run(process.execPath,argv,{cwd,env,windowsHide:true,timeout:60000,maxBuffer:65536});return {exit:0,stdout:r.stdout,stderr:r.stderr,output};}
+  const argv=['--import',preload,join(installed,'backup/cli.js'),'backup','--config-file',configFile,'--output-dir',output,'--confirm',f.identity.server_uuid+'/'+f.database+'/'+f.storeId+'/'+f.ledgerId];
+  try{const r=await run(process.execPath,argv,{cwd,env:{...env,S4_OWNED_OS_FACTS:factsPath},windowsHide:true,timeout:60000,maxBuffer:65536});return {exit:0,stdout:r.stdout,stderr:r.stderr,output};}
   catch(e){return {exit:e.code,stdout:e.stdout??'',stderr:e.stderr??'',output};}
  };
  const success=await invoke('s4-positive');
@@ -57,12 +66,34 @@ test('S4 actual Git-free packaged backup CLI, protected identity, and read-only 
  await writeFile(f.configPath,JSON.stringify({...config,secretsFile:join(f.dir,'absent-secret-bundle.json')}));await protectSyntheticFile(f.configPath,f.tls.sid);
  assert.equal((await invoke('s4-no-runtime-secrets')).exit,0);
  await writeFile(f.configPath,JSON.stringify(config));await protectSyntheticFile(f.configPath,f.tls.sid);
- const reject=async(label)=>{
-  const r=await invoke(label);assert.equal(r.exit,1,r.stdout+r.stderr);
+ const reject=async(label,options)=>{
+  const r=await invoke(label,options);assert.equal(r.exit,1,r.stdout+r.stderr);
   assert.match(r.stderr,/BACKUP_RELEASE_IDENTITY_REJECTED/);
   await assert.rejects(access(r.output),{code:'ENOENT'});
   for(const secret of [f.runtimeSecrets.database.password,f.runtimeSecrets.tls.privateKey])assert.equal(r.stdout.includes(secret)||r.stderr.includes(secret),false);
  };
+ // Original P1 attack: internally valid caller-owned materials for exact installed bytes.
+ const falseCommit='d'.repeat(40),fakeRuntime=join(f.dir,'caller-runtime.json'),fakeArtifact=join(f.dir,'caller-artifact.json'),fakeConfig=join(f.dir,'caller-backup.json');
+ const fakeData=JSON.parse(await readFile(artifact,'utf8'));fakeData.applicationCommit=falseCommit;
+ const fakeBytes=JSON.stringify(fakeData),fakeDigest=sha(fakeBytes);
+ await writeFile(fakeRuntime,JSON.stringify({...config,applicationCommit:falseCommit}));await protectSyntheticFile(fakeRuntime,f.tls.sid);
+ await writeFile(fakeArtifact,fakeBytes);await protectSyntheticFile(fakeArtifact,f.tls.sid);
+ const fakeOperator={...operator,runtimeConfigFile:fakeRuntime,releaseArtifactFile:fakeArtifact,releaseArtifactChecksum:fakeDigest};
+ await writeFile(fakeConfig,JSON.stringify(fakeOperator));await protectSyntheticFile(fakeConfig,f.tls.sid);
+ assert.equal((await readRuntimeConfig(fakeRuntime,production)).serviceAccountSid,f.tls.sid);
+ validateFileAcl(await windowsFileAcl(fakeConfig),f.tls.sid);validateFileAcl(await windowsFileAcl(fakeArtifact),f.tls.sid);
+ assert.equal(await verifyInstalledArtifact(await readAcceptedArtifact({artifact:fakeArtifact,expectedChecksum:fakeDigest,commit:falseCommit}),installed),falseCommit);
+ await reject('s4-unapproved-self-consistent-deployment',{configFile:fakeConfig});
+ // Even the approved path cannot be a caller-owned/writeable anchor.
+ await saveFacts({...osFacts,anchorAcl:{...osFacts.anchorAcl,owner:f.tls.sid}});await reject('s4-anchor-caller-owned');
+ await saveFacts({...osFacts,anchorAcl:{...osFacts.anchorAcl,rules:[...osFacts.anchorAcl.rules,{sid:f.tls.sid,type:'Allow',rights:2}]}});await reject('s4-anchor-service-write');
+ await saveFacts({...osFacts,registration:{...osFacts.registration,serviceSid:'S-1-5-21-123-456-789-1'}});await reject('s4-service-sid-not-registration');
+ await saveFacts({...osFacts,registration:{...osFacts.registration,name:'CallerService'}});await reject('s4-wrong-service');
+ await saveFacts({...osFacts,registration:{...osFacts.registration,argv:osFacts.registration.argv.map((v,i)=>i===4?join(installed,'server.js'):v)}});await reject('s4-wrong-installed-entry');
+ await saveFacts(osFacts);
+ await save(fakeOperator);await reject('s4-approved-path-unapproved-runtime');await save(operator);
+ await writeFile(f.configPath,JSON.stringify({...config,serviceAccountSid:'S-1-5-21-123-456-789-1'}));await protectSyntheticFile(f.configPath,f.tls.sid);await reject('s4-runtime-self-declared-other-sid');
+ await writeFile(f.configPath,JSON.stringify(config));await protectSyntheticFile(f.configPath,f.tls.sid);
  await save({...operator,releaseArtifactFile:join(f.dir,'missing-artifact.json')});await reject('s4-missing');
  await save({...operator,releaseArtifactChecksum:'bad'});await reject('s4-invalid-digest');
  await save(operator);
@@ -95,6 +126,7 @@ test('S4 actual Git-free packaged backup CLI, protected identity, and read-only 
  assert.equal(noFallback.exit,1);assert.match(noFallback.stderr,/BACKUP_RELEASE_IDENTITY_REJECTED/);
  await assert.rejects(access(noFallback.output),{code:'ENOENT'});await save(operator);
  console.log(JSON.stringify({S4:{gitUnavailableBackup:true,gitPresentUnrelatedHeadIgnored:true,noGitFallback:true,
+  osRegistrationAndAdminAnchor:'synthetic OS observations; not real service deployment',unapprovedSelfConsistentDeploymentRejected:true,
   installedCommit:commit,backupCommit:verified.manifest.applicationCommit,format:verified.manifest.backupFormatVersion,
   missingMalformedInvalidMismatchPathAclContentRejected:true,runtimeSecretBundleNotRead:true}}));
  // Read-only production preflight on this fixture only. No create-plan or restore action.

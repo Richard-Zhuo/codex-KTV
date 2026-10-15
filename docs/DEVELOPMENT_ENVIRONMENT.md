@@ -3,12 +3,12 @@
 Contract and backup-only configuration extension: [S4](S4_GIT_FREE_BACKUP_IDENTITY.md). No full regression is implied by these commands.
 
 ```text
-node --test --test-isolation=none --test-reporter=tap shared/release-artifact.test.js rehearsal/tooling.test.js rehearsal/gates.test.js backup/format.test.js production/runtime.test.js production/startup-degraded.test.js
+node --test --test-isolation=none --test-reporter=tap production/backup-deployment.test.js shared/release-artifact.test.js rehearsal/tooling.test.js rehearsal/gates.test.js backup/format.test.js production/runtime.test.js production/startup-degraded.test.js
 ```
 
 For actual CLI/MySQL/ACL evidence, use freshEnvironment(repository,{port:33313,packages:false}) with STAGE5E_RUN=synthetic-only and test environment selectors. Create its owned jbhh_ktv_test and pass its actual root/id/server UUID plus LEDGER_MYSQL_TEST_URL to the test child, after assertRegressionFixture. Run backup/identity.integration.test.js first; stop on failure. Then run backup/mysql-backup.integration.test.js, production/runtime.integration.test.js and recovery/production-plan.test.js. Use the same Node test flags, external TAP logs and fixture cleanup. No existing production URL, service, UAC or provider is used. A bare skipped run is not acceptance.
 
-The S4 actual backup child alone has explicit production selectors and protected synthetic runtime config, while the parent retains test-only owned-fixture guards. Its no-Git PATH retains Windows system/ACL tools; Node is launched by absolute executable path. Existing TEST backup core fixtures remain unchanged. npm test with the explicit focused file list is the equivalent when npm is available; do not run unbounded npm test in this slice.
+The S4 actual backup child uses explicit --import test-support/s4-os-observation.fixture.js (a file URL on Windows) for independently supplied synthetic SCM/administrator-anchor observations, guarded by the actual owned MySQL fixture. Product code has no test authority selector. Native runtime/artifact ACL checks remain active. It has explicit production selectors and protected synthetic runtime config, while the parent retains test-only owned-fixture guards. Its no-Git PATH retains Windows system/ACL tools; Node is launched by absolute executable path. Existing TEST backup core fixtures remain unchanged. npm test with the explicit focused file list is the equivalent when npm is available; do not run unbounded npm test in this slice.
 
 ## S3-D activation fixture compatibility checks
 

@@ -1,6 +1,6 @@
 ## S4 installed release identity boundary
 
-The retained controlled artifact is compared with an independently pinned digest in protected backup configuration and the existing runtime applicationCommit. A shared read-only artifact validator also verifies exact installed files before backup admission. Runtime config-only reading preserves the existing service SID/ACL rules and avoids loading runtime secrets. No receipt or second version authority is added. [Trust boundary](S4_GIT_FREE_BACKUP_IDENTITY.md).
+Fixed JbhhKtv SCM registration determines the runtime path and service SID. Its adjacent administrator-owned, service-read-only backup.json pins the retained artifact path/digest; caller-selected configuration cannot select deployment authority. The retained artifact is compared with that digest and the existing runtime applicationCommit. A shared read-only artifact validator also verifies exact installed files before backup admission. Runtime config-only reading preserves the existing service SID/ACL rules and avoids loading runtime secrets. No receipt or second version authority is added. [Trust boundary](S4_GIT_FREE_BACKUP_IDENTITY.md).
 
 ## S3-D D1 authorization boundary
 

@@ -2,9 +2,10 @@
 
 - shared/release-artifact.js: existing artifact/path/checksum validator extracted for both rehearsal unpackAccepted and installed backup verification; verifies exact installed file inventory.
 - production/runtime-config.js: readRuntimeConfig shares existing config/current-service-SID ACL checks without secret loading; loadRuntimeConfig retains its original secret/materialization path.
+- production/backup-deployment.js: fixed read-only SCM registration, executing installation/path binding and administrator-owned read-only backup config anchor; no service commands or recovery proof.
 - production/backup-identity.js: protected artifact/config binding to the executing installed root, without Git or caller-supplied commit.
 - backup/cli.js: backup-only protected release configuration, admission before backup creation; restore action unchanged.
-- shared/release-artifact.test.js and backup/identity.integration.test.js: focused corruption/identity/content/path/actual Windows ACL and packaged CLI acceptance. [Contract](S4_GIT_FREE_BACKUP_IDENTITY.md).
+- production/backup-deployment.test.js, shared/release-artifact.test.js and backup/identity.integration.test.js: focused deployment/ACL/attack/content/path and packaged CLI checks. test-support/s4-os-observation.fixture.js replaces only SCM and administrator-anchor OS observations under owned-fixture guards; runtime/artifact ACL checks remain native. [Contract](S4_GIT_FREE_BACKUP_IDENTITY.md).
 
 ## S3-D runtime activation proof and Stage5C compatibility
 

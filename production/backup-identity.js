@@ -2,6 +2,7 @@ import {realpath,lstat} from 'node:fs/promises';
 import {dirname} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {readRuntimeConfig,windowsFileAcl,validateFileAcl} from './runtime-config.js';
+import {readBackupDeployment} from './backup-deployment.js';
 import {readExternalSecret} from './secret-file.js';
 import {externalDirectory,fail} from '../backup/format.js';
 import {readAcceptedArtifact,verifyInstalledArtifact} from '../shared/release-artifact.js';
@@ -16,16 +17,20 @@ async function protectedFile(path,sid){
 // No caller-selected commit/root, ambient identity, Git, or runtime secret reads.
 export async function readBackupIdentity({configFile,config,env}){
  try{
-  const runtime=await readRuntimeConfig(config.runtimeConfigFile,env);
+  const deployment=await readBackupDeployment();
+  if(configFile!==deployment.backupConfigFile||config.runtimeConfigFile!==deployment.runtimeConfigFile)throw Error('IDENTITY_DEPLOYMENT_MISMATCH');
+  const runtime=await readRuntimeConfig(deployment.runtimeConfigFile,env,deployment.serviceSid);
+  if(runtime.serviceAccountSid!==deployment.serviceSid)throw Error('IDENTITY_SERVICE_MISMATCH');
   await protectedFile(configFile,runtime.serviceAccountSid);
   if(JSON.stringify(await readExternalSecret(configFile))!==JSON.stringify(config))throw Error('IDENTITY_CONFIG_CHANGED');
   const artifact=await protectedFile(config.releaseArtifactFile,runtime.serviceAccountSid);
   const data=await readAcceptedArtifact({artifact,expectedChecksum:config.releaseArtifactChecksum,commit:runtime.applicationCommit});
-  const required=['backup/cli.js','production/backup-identity.js','production/runtime-config.js','production/schema-manifest.json','shared/release-artifact.js'];
+  const required=['backup/cli.js','production/backup-identity.js','production/backup-deployment.js','production/runtime-config.js','production/schema-manifest.json','shared/release-artifact.js'];
   if(required.some(path=>!data.files.some(file=>file.path===path)))throw Error('IDENTITY_PACKAGE_INCOMPLETE');
   const root=await externalDirectory(fileURLToPath(new URL('../',import.meta.url)));
   const applicationCommit=await verifyInstalledArtifact(data,root);
-  const current=await readRuntimeConfig(config.runtimeConfigFile,env);
+  if(JSON.stringify(await readBackupDeployment())!==JSON.stringify(deployment))throw Error('IDENTITY_DEPLOYMENT_CHANGED');
+  const current=await readRuntimeConfig(deployment.runtimeConfigFile,env,deployment.serviceSid);
   if(current.applicationCommit!==applicationCommit||current.serviceAccountSid!==runtime.serviceAccountSid||
     JSON.stringify(await readExternalSecret(configFile))!==JSON.stringify(config))throw Error('IDENTITY_CONFIG_CHANGED');
   return applicationCommit;

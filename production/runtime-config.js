@@ -32,11 +32,11 @@ export function validateRuntimeConfig(c,env=process.env,nodeVersion=process.vers
  if(origin.protocol!=='https:'||origin.origin!==c.publicOrigin||origin.username||origin.password||['localhost','127.0.0.1','[::1]'].includes(origin.hostname)||origin.hostname.endsWith('.localhost')||Number(origin.port||443)!==c.port)fail();
  return Object.freeze({...c});
 }
-export async function windowsFileAcl(path){
+export async function windowsFileAcl(path,{directory=false}={}){
  if(process.platform!=='win32')throw runtimeFailure('RUNTIME_PLATFORM_UNSUPPORTED');
  const encoded=Buffer.from(path,'utf8').toString('base64');
- const script="$ErrorActionPreference='Stop';$p=[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('"+encoded+"'));$a=[IO.File]::GetAccessControl($p);$rules=@($a.Access|ForEach-Object{@{sid=$_.IdentityReference.Translate([Security.Principal.SecurityIdentifier]).Value;type=$_.AccessControlType.ToString();rights=[int]$_.FileSystemRights}});@{protected=$a.AreAccessRulesProtected;owner=$a.GetOwner([Security.Principal.SecurityIdentifier]).Value;current=[Security.Principal.WindowsIdentity]::GetCurrent().User.Value;rules=$rules}|ConvertTo-Json -Compress -Depth 4";
- try{const {stdout}=await exec('powershell.exe',['-NoProfile','-NonInteractive','-EncodedCommand',Buffer.from(script,'utf16le').toString('base64')],{windowsHide:true,timeout:5000,maxBuffer:65536});return JSON.parse(stdout.trim());}catch{throw runtimeFailure('RUNTIME_ACL_UNVERIFIED');}
+ const script="$ErrorActionPreference='Stop';$p=[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('"+encoded+"'));$a=[IO."+(directory?'Directory':'File')+"]::GetAccessControl($p);$rules=@($a.Access|ForEach-Object{@{sid=$_.IdentityReference.Translate([Security.Principal.SecurityIdentifier]).Value;type=$_.AccessControlType.ToString();rights=[int]$_.FileSystemRights}});@{protected=$a.AreAccessRulesProtected;owner=$a.GetOwner([Security.Principal.SecurityIdentifier]).Value;current=[Security.Principal.WindowsIdentity]::GetCurrent().User.Value;rules=$rules}|ConvertTo-Json -Compress -Depth 4";
+ try{const {stdout}=await exec('C:/Windows/System32/WindowsPowerShell/v1.0/powershell.exe',['-NoProfile','-NonInteractive','-EncodedCommand',Buffer.from(script,'utf16le').toString('base64')],{windowsHide:true,timeout:5000,maxBuffer:65536});return JSON.parse(stdout.trim());}catch{throw runtimeFailure('RUNTIME_ACL_UNVERIFIED');}
 }
 export function validateRuntimeFileAclStructure(acl,serviceSid){
  const trusted=new Set([serviceSid,'S-1-5-18','S-1-5-32-544']);
@@ -46,8 +46,9 @@ export function validateFileAcl(acl,serviceSid){
  if(acl?.current!==serviceSid)throw runtimeFailure('RUNTIME_ACL_DENIED');
  validateRuntimeFileAclStructure(acl,serviceSid);
 }
-export async function readRuntimeConfig(path,env=process.env){
+export async function readRuntimeConfig(path,env=process.env,expectedServiceSid){
  const config=validateRuntimeConfig(await readExternalSecret(path),env);
+ if(expectedServiceSid!==undefined&&config.serviceAccountSid!==expectedServiceSid)throw runtimeFailure('RUNTIME_SERVICE_IDENTITY_MISMATCH');
  const configPath=await realpath(path);validateFileAcl(await windowsFileAcl(configPath),config.serviceAccountSid);
  return config;
 }
