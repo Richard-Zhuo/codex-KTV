@@ -23,7 +23,7 @@ test('shared Option A core keeps admission, strict ACL, projection and fingerpri
  const root=await mkdtemp(join(tmpdir(),'s3d-reader-unit-'));
  const configPath=join(root,'runtime.json'),secretPath=join(root,'secrets.json'),policyPath=join(root,'policy.json');
  const config={configVersion:1,applicationCommit:'a'.repeat(40),publicOrigin:'https://ktv.example.invalid:8443',listenHost:'127.0.0.1',port:8443,
-  storeId:'synthetic-store',ledgerId:'synthetic-ledger',timeZone:'Asia/Shanghai',businessDateCutoff:'12:00',sessionRuleVersion:'opening-hours-v1',deviceControlMode:'disabled',liveControlEnabled:false,
+  storeId:'synthetic-store',ledgerId:'synthetic-ledger',timeZone:'Asia/Shanghai',businessDateCutoff:'06:00',sessionRuleVersion:'opening-hours-v1',deviceControlMode:'disabled',liveControlEnabled:false,
   secretsFile:secretPath,logDirectory:root,serviceAccountSid:service,backupPolicyConfigured:false,directoryAclReviewed:true,networkModel:'private-vpn',monitoring:{backupDirectory:root},recovery:{journalDirectory:root,operatorDbSecretsFile:join(root,'operator.json')}};
  let actor={sid:operator,elevated:true},operatorAce=false;
  const fileAcl=async path=>({protected:true,current:actor.sid,owner:admin,rules:[{sid:path===policyPath?operator:service,type:'Allow',rights:1},{sid:admin,type:'Allow',rights:2032127},...(operatorAce?[{sid:operator,type:'Allow',rights:1}]:[])]});

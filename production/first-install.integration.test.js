@@ -208,7 +208,7 @@ test('S1 first install on isolated MySQL 8.4.11', {skip:process.env.S1_RUN!=='sy
       await writeFile(secretFile,JSON.stringify({database:{host:'127.0.0.1',port:f.port,name:cliDb,user:dbUser,password:dbPassword}}));
       await writeFile(configFile,JSON.stringify({configVersion:1,applicationCommit:commit,publicOrigin:'https://synthetic.example:4443',
         listenHost:'127.0.0.1',port:4443,storeId:f.names.storeId,ledgerId:f.names.ledgerId,timeZone:'Asia/Shanghai',
-        businessDateCutoff:'12:00',sessionRuleVersion:'opening-hours-v1',deviceControlMode:'disabled',
+        businessDateCutoff:'06:00',sessionRuleVersion:'opening-hours-v1',deviceControlMode:'disabled',
         liveControlEnabled:false,secretsFile:secretFile,logDirectory:f.dirs.logs,serviceAccountSid:'S-1-5-21-123-456-789-1001',
         backupPolicyConfigured:false,directoryAclReviewed:true,networkModel:'private-vpn'}));
       const cliCommon={...common,database:cliDb},cliLedger={...cliCommon,kind:'ledger'};

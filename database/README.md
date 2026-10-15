@@ -57,7 +57,7 @@ procurement 仅接入既有 trusted 入口，无新 migration／表。采购及�
 
 ## 营业日规则与历史 SQL
 
-当前正式营业日 cutoff 是 12:00，计算入口和 K05 snapshot／报表边界见 [ARCHITECTURE](../docs/ARCHITECTURE.md)。本轮无 MySQL migration；纯日期结果可原样保存在现有 state_json。旧 PostgreSQL schema.sql 的 06:00 default 属于当时设计，保留历史原文，已不代表当前规则；不要运行该草案来配置正式营业日或推断历史归属。MySQL JSON 也不能替代原始时间／原文备份。
+当前正式营业日 cutoff 是 Owner 于 2026-10-16 确认的 06:00（cutoff-0600-v1），计算入口和 K05 snapshot／报表边界见 [ARCHITECTURE](../docs/ARCHITECTURE.md)。本轮无 MySQL migration；纯日期结果可原样保存在现有 state_json。既有 noon-v1 冻结事实原样保留，不自动迁移。旧 PostgreSQL schema.sql 的 06:00 default 属于当时设计，保留历史原文，但不是当前规则的执行权威；不要运行该草案来配置正式营业日或推断历史归属。MySQL JSON 也不能替代原始时间／原文备份。
 
 ## 当前方向：MySQL 8.4 LTS／InnoDB 过渡账本
 

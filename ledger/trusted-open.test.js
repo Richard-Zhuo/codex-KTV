@@ -13,7 +13,7 @@ const employeeId='10000000-0000-4000-8000-000000000001',rid='20000000-0000-4000-
 const dbNow='2026-10-05T12:00:00.123456Z';
 const cmd=(key='open',revision=0,payload={})=>({operationKey:key,expectedRevision:revision,action:'open',
  payload:{room:'V01',beer:'bw',creditedEmployeeId:employeeId,...payload}});
-function fixture({permissions=['room.open','staff.record'],setup=()=>{},mapping=true,binding=true,timeZone='Asia/Shanghai'}={}){
+function fixture({permissions=['room.open','staff.record'],setup=()=>{},mapping=true,binding=true,timeZone='Asia/Shanghai',clock=dbNow}={}){
  const state=initialState();state.user='invalid-demo';state.clock='not-time';state.permissions={administrator:['管理员']};state.capabilities={administrator:['*']};
  state.inventory.bw.count=100;state.inventory.qd.count=null;state.inventory.lm.count=0;
  state.orders=[{id:'old-retail',kind:'retail',room:null,sales:[{productNameSnapshot:'old name',pricePerSaleUnitCents:null}],payments:[]}];setup(state);
@@ -28,7 +28,7 @@ function fixture({permissions=['room.open','staff.record'],setup=()=>{},mapping=
  lockSessionById:async()=>{events.push('session');return{principalId:auth.principalId,sessionId:'synthetic-session',tokenDigest:digest,credentialVersion:1,
   revoked:auth.revoked,idleExpiresAt:'2099-01-01T00:00:00.000000Z',absoluteExpiresAt:'2099-01-02T00:00:00.000000Z'};},
  listGrants:async()=>{events.push('grants');return auth.permissions;},listPolicyAttributes:async()=>[],
- readDbNow:async()=>{events.push('dbNow');return dbNow;}
+ readDbNow:async()=>{events.push('dbNow');return clock;}
  };
  let executionContext,executions=0,fault=null;
  const store={ledgerId:memory.ledgerId,runAtomic:async work=>{
@@ -57,7 +57,8 @@ test('trusted ordinary open uses session actor, independent employee and frozen 
  const result=await f.app.execute(request,f.credential),h=await f.memory.read(),o=h.state.orders.at(-1);
  assert.equal(result.status,'committed');assert.equal(o.actualActorPrincipalId,f.auth.principalId);
  assert.equal(o.recordedBy,f.auth.principalId);assert.equal(o.creditedEmployeeId,employeeId);assert.equal(o.person,f.employee.displayName);
- assert.equal(o.time,dbNow);assert.deepEqual({businessDate:o.businessDate,businessDayRuleVersion:o.businessDayRuleVersion,businessTimeZone:o.businessTimeZone},
+ assert.equal(o.businessDayRuleVersion,'cutoff-0600-v1');assert.equal(o.businessDate,'2026-10-05');
+ assert.equal(o.businessTimeZone,'Asia/Shanghai');assert.equal(o.time,dbNow);assert.deepEqual({businessDate:o.businessDate,businessDayRuleVersion:o.businessDayRuleVersion,businessTimeZone:o.businessTimeZone},
   orderBusinessDaySnapshot(dbNow,{timeZone:'Asia/Shanghai'}));
  assert.equal(h.revision,1);assert.equal(h.state.rooms[0].status,'营业中');
  const q=quote(f.state.rooms[0].type,'2026-10-05T20:00:00+08:00','bw','',f.state.catalog);
@@ -134,3 +135,13 @@ test('Stage 4A: trusted open freezes NIGHT session and ignores browser countdown
  const o=(await f.memory.read()).state.orders.at(-1);
  assert.deepEqual(o.businessSession,{sessionType:'NIGHT',sessionDate:'2026-10-05',timeZone:'Asia/Shanghai',ruleVersion:'opening-hours-v1',pricePlanId:'night-existing-v1',targetEndAt:'2026-10-05T18:00:00.000Z'});
 });
+
+for(const [time,date]of [['2026-10-15T21:59:59.000000Z','2026-10-15'],['2026-10-15T22:00:00.000000Z','2026-10-16']]){
+ test('06:00 correction: room open at '+time+' keeps the opening-hours gate',async()=>{
+  const f=fixture({clock:time}),result=await f.app.execute(cmd('closed'),f.credential);
+  assert.equal(result.status,'business-rejected');
+  assert.match(result.reason,/现在仅接受预订，请选择营业时段到店/);
+  assert.deepEqual(f.context().orderBusinessDay,{businessDate:date,businessDayRuleVersion:'cutoff-0600-v1',businessTimeZone:'Asia/Shanghai'});
+  await unchanged(f,1);
+ });
+}

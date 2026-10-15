@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
-import {writeFile,readFile,mkdir} from 'node:fs/promises';import {join} from 'node:path';import {fileURLToPath} from 'node:url';import {randomBytes,randomUUID} from 'node:crypto';import {spawn} from 'node:child_process';import {once} from 'node:events';import net from 'node:net';import https from 'node:https';
+import {writeFile,readFile,mkdir} from 'node:fs/promises';import {join} from 'node:path';import {fileURLToPath,pathToFileURL} from 'node:url';import {randomBytes,randomUUID} from 'node:crypto';import {spawn} from 'node:child_process';import {once} from 'node:events';import net from 'node:net';import https from 'node:https';
 import {createTestTls,ACCEPTED} from './fresh-environment.js';import {protectSyntheticFile} from '../test-support/runtime-tls.js';
-import {loadRuntimeConfig} from '../production/runtime-config.js';
+// Pinned historical packages retain their own config contract; do not reinterpret it with current policy.
 export const sleep=ms=>new Promise(r=>setTimeout(r,ms));
 export const productionEnv={NODE_ENV:'production',KTV_HTTP_ENV:'production',KTV_DEPLOYMENT_ENV:'production'};
 export async function launcher(f,{database=f.active.database,label='fake',formal=false,previous=false}={}){
@@ -9,12 +9,15 @@ export async function launcher(f,{database=f.active.database,label='fake',formal
  const domain='ktv-smoke.127.0.0.1.sslip.io',tls=f.tls??=await createTestTls(domain),user='s5e_'+randomBytes(8).toString('hex'),password=randomBytes(32).toString('base64url');
  f.secretMarkers.add(password);f.secretMarkers.add(tls.privateKey);await f.serverGuard();await f.setup.query('CREATE USER ?@? IDENTIFIED BY ?',[user,'127.0.0.1',password]);f.users.add(user);await f.setup.query('GRANT SELECT,INSERT,UPDATE,DELETE ON '+database+'.* TO ?@?',[user,'127.0.0.1']);
  const logs=join(f.dirs.logs,label);await mkdir(logs);const configPath=join(f.dirs.secrets,label+'-config.json'),secretPath=join(f.dirs.secrets,label+'-secret.json');
- const config={configVersion:1,applicationCommit:previous?f.packages.previous.commit:ACCEPTED,publicOrigin:'https://'+domain+':'+port,listenHost:'127.0.0.1',port,storeId:f.names.storeId,ledgerId:f.names.ledgerId,timeZone:'Asia/Shanghai',businessDateCutoff:'12:00',sessionRuleVersion:'opening-hours-v1',deviceControlMode:'disabled',liveControlEnabled:false,secretsFile:secretPath,logDirectory:logs,serviceAccountSid:tls.sid,backupPolicyConfigured:true,directoryAclReviewed:true,networkModel:'private-vpn',monitoring:{intervalMs:1000,probeTimeoutMs:2500,minFreeBytes:1,backupDirectory:f.dirs.backups,alertingRequired:!formal,offlineMs:1000,verificationMs:1000,tlsWarnDays:3,tlsErrorDays:2,tlsCriticalDays:1}};
+ const application=previous?f.packages.previous.app:f.packages.current.app;
+ const {BUSINESS_DAY_POLICY}=await import(pathToFileURL(join(application,'shared/business-day.js')).href);
+ const {loadRuntimeConfig}=await import(pathToFileURL(join(application,'production/runtime-config.js')).href);
+ const config={configVersion:1,applicationCommit:previous?f.packages.previous.commit:ACCEPTED,publicOrigin:'https://'+domain+':'+port,listenHost:'127.0.0.1',port,storeId:f.names.storeId,ledgerId:f.names.ledgerId,timeZone:'Asia/Shanghai',businessDateCutoff:BUSINESS_DAY_POLICY.cutoff,sessionRuleVersion:'opening-hours-v1',deviceControlMode:'disabled',liveControlEnabled:false,secretsFile:secretPath,logDirectory:logs,serviceAccountSid:tls.sid,backupPolicyConfigured:true,directoryAclReviewed:true,networkModel:'private-vpn',monitoring:{intervalMs:1000,probeTimeoutMs:2500,minFreeBytes:1,backupDirectory:f.dirs.backups,alertingRequired:!formal,offlineMs:1000,verificationMs:1000,tlsWarnDays:3,tlsErrorDays:2,tlsCriticalDays:1}};
  if(previous)delete config.monitoring;
  const secret={database:{host:'127.0.0.1',port:f.port,name:database,user,password},tls:{certificate:tls.certificate,privateKey:tls.privateKey}};
  await writeFile(configPath,JSON.stringify(config));await writeFile(secretPath,JSON.stringify(secret));await protectSyntheticFile(configPath,tls.sid);await protectSyntheticFile(secretPath,tls.sid);
  await loadRuntimeConfig(configPath,productionEnv);
- const application=previous?f.packages.previous.app:f.packages.current.app,controlPath=join(f.dirs.secrets,label+'-control.json');
+ const controlPath=join(f.dirs.secrets,label+'-control.json');
  await writeFile(controlPath,JSON.stringify({id:f.names.id,root:f.root,application,database,configPath,serverUuid:f.identity.server_uuid}));
  try{await readFile(join(f.root,'controls.json'));}catch{await writeFile(join(f.root,'controls.json'),JSON.stringify({online:true,clock:'2026-10-10T07:00:00.000Z',clockSetAt:Date.now()}));}
  let child,output='',startupComplete=false;

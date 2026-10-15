@@ -56,7 +56,7 @@ ledger/voucher-opening.js 在 auth／existing terminal／新授权／revision／
 
 createMySqlLedgerStore 的可选 bindVoucherRedemptions 仅绑定当前 connection，不借第二个连接。固定顺序 head→auth→employee→voucher→domain state/link→head/operation/audit；同一 ledger 的 voucher orchestration/event 也先 head，不能倒序 voucher→head。本地业务提交失败完整回滚 link；已成功的 provider fact 属于更早独立事务，开房失败不会抹去或重新 consume。事件对已绑定券逆向只产生异常，不修改历史订单。
 
-rooms.js:openRoom 显式 demo/trusted，可信 actor 与 attributed employee 分开；shared/identity.js 的 withTrustedRoomOpening 仅接受内部冻结证据与服务器新订单 UUID。snapshot 仍保留原套餐／商品／基础数量逻辑；只在真实证据与当前套餐匹配时覆盖房费。quote 不接浏览器 evidence、不把待验券计作覆盖。trusted 使用显式 store zone 判断原 14-18／18-02 时段并冻结 noon-v1，demo 保留原设备时间。历史数据不自动迁移。
+rooms.js:openRoom 显式 demo/trusted，可信 actor 与 attributed employee 分开；shared/identity.js 的 withTrustedRoomOpening 仅接受内部冻结证据与服务器新订单 UUID。snapshot 仍保留原套餐／商品／基础数量逻辑；只在真实证据与当前套餐匹配时覆盖房费。quote 不接浏览器 evidence、不把待验券计作覆盖。trusted 使用显式 store zone 判断原 14-18／18-02 时段并冻结 cutoff-0600-v1，demo 保留原设备时间。历史数据不自动迁移。
 
 vouchers/application.js 是独立 orchestration，使用 vouchers/domain.js 的集中状态转换与 PlatformVoucherGateway DTO；领域不接触美团原始 JSON。vouchers/gateway.js 定义四方法 port 和显式 DTO mapping boundary；vouchers/gateways.js 的 MeituanSkillGateway 只保留 config／credential／transport／mapping seam，所有真实方法均拒绝，Meituan production redemption = NOT ENABLED。没有网络或 mt-tech 调用。FakePlatformVoucherGateway 有可观察调用次数，并要求显式 test mode 与隔离 test store。
 
@@ -72,9 +72,11 @@ state snapshot 仍是过渡账本模型；新增 provider 元数据不代表完�
 
 本文件描述已集成的 Track A＋B 单机演示运行边界，以及尚未接入客户端的 P0-1 账本、Stage 2A 命令策略、Stage 2B 认证基础和 Stage 2C.1 同连接重验、2C.2 clean 与 2C.3 房间异常／目录维护／取消预约／存取酒、预约、销售、配品／其他消费及换酒小批的可信执行能力。具体入口见 [MODULE_MAP](./MODULE_MAP.md)，验证结果见 [CURRENT_STAGE](./CURRENT_STAGE.md)。
 
-## 营业日 12:00 规则边界
+## 营业日 06:00 规则边界
 
-shared/business-day.js:businessDateFor(occurredAt, {timeZone}) 是独立纯计算规则，BUSINESS_DAY_POLICY 标明 noon-v1／12:00。时间必须是带显式 offset 的有效 ISO 时间戳，门店时区必须显式提供；缺失／无效值直接失败，不使用设备默认时区、state.clock 或 order.time 猜测未知历史。当地 12:00 前归前一日，12:00:00 起归当天；只返回日期，不改写源时间戳。
+shared/business-day.js:businessDateFor(occurredAt, {timeZone}) 是独立纯计算规则，BUSINESS_DAY_POLICY 标明 cutoff-0600-v1／06:00。时间必须是带显式 offset 的有效 ISO 时间戳，门店时区必须显式提供；缺失／无效值直接失败，不使用设备默认时区、state.clock 或 order.time 猜测未知历史。当地 06:00 前归前一日，06:00:00 起归当天；只返回日期，不改写源时间戳。
+
+当前营业日合同以 REQUIREMENTS 的 2026-10-16 Owner 确认为准。旧 noon-v1 冻结事实原样读取和持久化，不按现行规则重算；不新增 migration 或多版本执行引擎。
 
 K05 只扩展过渡 snapshot：ledger/application.js 在 session revalidation、旧 operation lookup、当前授权／revision 与 employee resolver 之后，为新的 retailSale 使用 dbNow 和显式 businessTimeZone 构造 orderBusinessDaySnapshot；branded trusted context 携带该不可变快照，sales.js 创建订单时保存。重放不重算日期。trusted open 现同样复用工厂保存冻结日期，并通过显式 store zone 判原营业时段；不回填历史日期。真实门店时区和历史处置仍见 OPEN_BUSINESS_DECISIONS；测试中的 Asia/Shanghai 仅是显式 synthetic 配置。
 

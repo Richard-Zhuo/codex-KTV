@@ -7,7 +7,7 @@
   "storeId": "REPLACE_WITH_APPROVED_STORE_ID",
   "ledgerId": "REPLACE_WITH_APPROVED_LEDGER_ID",
   "timeZone": "Asia/Shanghai",
-  "businessDateCutoff": "12:00",
+  "businessDateCutoff": "06:00",
   "sessionRuleVersion": "REPLACE_WITH_CURRENT_SESSION_RULE_VERSION",
   "deviceControlMode": "disabled",
   "liveControlEnabled": false,

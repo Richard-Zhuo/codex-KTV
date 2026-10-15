@@ -1,3 +1,5 @@
+import { businessDateFor } from './shared/business-day.js';
+import { encodeLedgerSnapshot, decodeLedgerSnapshot } from './ledger/mysql-snapshot.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { selectRevenueOrders, selectPaymentFlows, reportViewModel, reportPeriodMatch } from './reporting.js';
@@ -97,4 +99,17 @@ test('K05: empty and damaged payment lists are safe and clear; invalid query int
  assert.equal(result.totalCents,0);assert.deepEqual(result.ambiguities.map(a=>a.code),['ORDER_PAYMENTS_UNKNOWN','PAYMENT_TIME_AMBIGUOUS']);
  for(const range of [{from:'2026-10-05',to:'2026-10-06'}, {from:'2026-10-05T12:00:00+08:00',to:'2026-10-05T12:00:00+08:00'}])assert.throws(()=>selectPaymentFlows({orders:[]},range),TypeError);
  assert.throws(()=>selectRevenueOrders({orders:[]},{fromBusinessDate:'2026-02-30',toBusinessDate:'2026-10-05'}),TypeError);
+});
+
+test('06:00 correction: noon-v1 frozen facts survive snapshot read and formal reporting unchanged',()=>{
+ const original={orders:[{...order([payment('historical-payment','2026-10-16T08:00:00.123456+08:00')]),
+  time:'2026-10-05T08:00:00+08:00',businessTimeZone:'Asia/Shanghai'}],rooms:[{id:'V01'}]};
+ const encoded=encodeLedgerSnapshot(original),state=decodeLedgerSnapshot(encoded.json,encoded.checksum);
+ assert.equal(businessDateFor(state.orders[0].time,{timeZone:'Asia/Shanghai'}),'2026-10-05');
+ assert.equal(state.orders[0].businessDate,'2026-10-04');assert.equal(state.orders[0].businessDayRuleVersion,'noon-v1');
+ const funds={from:'2026-10-16T06:00:00+08:00',to:'2026-10-17T06:00:00+08:00'};
+ const report=reportViewModel(state,'day',{...day('2026-10-04'),paymentInterval:funds});
+ assert.equal(report.totals.total,300);assert.equal(report.cashFlow.totalCents,100);
+ assert.equal(report.cashFlow.payments[0].occurredAt,'2026-10-16T08:00:00.123456+08:00');
+ assert.deepEqual(state,original);assert.deepEqual(encodeLedgerSnapshot(state),encoded);
 });

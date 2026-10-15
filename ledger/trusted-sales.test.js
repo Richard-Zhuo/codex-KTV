@@ -160,12 +160,12 @@ for (const action of SALES_TEST_ACTIONS) {
   });
 }
 
-test('K05: retailSale freezes business date from dbNow and explicit store zone before noon', async () => {
-  const f=fixture('retailSale',{clock:'2026-10-05T03:59:59.000000Z',businessTimeZone:'Asia/Shanghai'});
+test('K05: retailSale freezes business date from dbNow and explicit store zone before 06:00', async () => {
+  const f=fixture('retailSale',{clock:'2026-10-04T21:59:59.000000Z',businessTimeZone:'Asia/Shanghai'});
   await f.app.execute(salesCommand('retailSale',employeeId,'dated-retail',0),f.credential);
   const saved=soldOrder((await f.memory.read()).state,'retailSale');
   assert.equal(saved.businessDate,'2026-10-04');
-  assert.equal(saved.businessDayRuleVersion,'noon-v1');
+  assert.equal(saved.businessDayRuleVersion,'cutoff-0600-v1');
   assert.equal(saved.businessTimeZone,'Asia/Shanghai');
 });
 
@@ -181,12 +181,13 @@ test('K05: trusted retail payments have unique server IDs, real times and actor;
  assert.deepEqual(await f.memory.read(),head);assert.equal(f.executions(),1);
 });
 
-for(const [time,date]of [['2026-10-05T03:59:59.000000Z','2026-10-04'],['2026-10-05T04:00:00.000000Z','2026-10-05'],
- ['2026-10-05T04:00:01.000000Z','2026-10-05'],['2026-10-04T18:00:00.000000Z','2026-10-04'],['2026-10-05T12:00:00.000000Z','2026-10-05']]){
+for(const [time,date]of [['2026-10-04T21:59:59.000000Z','2026-10-04'],['2026-10-04T22:00:00.000000Z','2026-10-05'],
+ ['2026-10-04T22:00:01.000000Z','2026-10-05'],['2026-10-04T18:00:00.000000Z','2026-10-04'],['2026-10-05T12:00:00.000000Z','2026-10-05']]){
  test('K05: retail freezes '+time+' as '+date+'; replay never recomputes',async()=>{
   const f=fixture('retailSale',{clock:time}),cmd=salesCommand('retailSale',employeeId,'date-freeze');
   const first=await f.app.execute(cmd,f.credential),head=await f.memory.read(),order=soldOrder(head.state,'retailSale');
-  assert.equal(order.businessDate,date);assert.equal(order.businessDayRuleVersion,'noon-v1');
+  assert.equal(first.status,'committed');assert.equal(order.businessTimeZone,'Asia/Shanghai');
+  assert.equal(order.businessDate,date);assert.equal(order.businessDayRuleVersion,'cutoff-0600-v1');
   assert.ok(order.payments.every(p=>p.occurredAt===time));f.setClock('2026-10-06T12:00:00.000000Z');
   assert.deepEqual(await f.app.execute(cmd,f.credential),first);assert.deepEqual(await f.memory.read(),head);
  });

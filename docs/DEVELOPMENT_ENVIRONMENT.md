@@ -1,3 +1,7 @@
+## BUSINESS-DAY 06:00 correction targeted verification
+
+Use Node 24.19.0 with --test --test-isolation=none --test-reporter=tap on shared/business-day.test.js, shared/business-session.test.js, ledger/trusted-open.test.js, ledger/trusted-sales.test.js, reporting-ledger.test.js, production/readiness.test.js and production/runtime.test.js. For MySQL snapshot and K05 reporting persistence, reuse the owned disposable rehearsal/fresh-environment.js fixture (packages:false, port 33313), its exact synthetic selectors and cleanup. Filter existing nested suites to the directly affected 06:00 snapshot, K05 MySQL and open MySQL cases; do not treat this as full regression. Current config fixtures require 06:00; pinned historical rehearsal packages retain their own artifact policy and validator. Attempt npm test with explicit scoped paths; if npm is unavailable, report that separately and use the frozen Node directly. No production DB, full regression or C0 work is authorized by this entry.
+
 ## S4 focused verification only
 
 Contract and backup-only configuration extension: [S4](S4_GIT_FREE_BACKUP_IDENTITY.md). No full regression is implied by these commands.

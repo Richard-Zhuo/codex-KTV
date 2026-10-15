@@ -8,14 +8,14 @@ import { assertFixtureEnvironment } from '../test-support/destructive-safety.js'
 import { acquireMySqlFixtureLock } from '../test-support/mysql-fixture-lock.js';
 import { applyPolicyAttributeMigration } from '../test-support/mysql-policy-attributes-fixture.js';
 import { createHttpApiFromEnv } from '../http/bootstrap.js';
-const env={NODE_ENV:'production',KTV_HTTP_ENV:'production',KTV_API_MODE:'enabled',KTV_STORE_ID:'synthetic-store',KTV_LEDGER_ID:'synthetic-ledger',KTV_BUSINESS_TIME_ZONE:'Asia/Shanghai',KTV_MYSQL_URL:'mysql://synthetic:nonlive@127.0.0.1/synthetic_production',KTV_PUBLIC_ORIGIN:'https://synthetic.invalid',KTV_BUSINESS_DATE_CUTOFF:'12:00',KTV_SESSION_RULE_VERSION:'opening-hours-v1',DEVICE_CONTROL_MODE:'disabled',KTVSKY_LIVE_CONTROL_ENABLED:'false'};
-test('production config preserves explicit timezone, noon cutoff, session rules and OFF gate',()=>{
-  const c=validateProductionConfig(env);assert.equal(c.timeZone,'Asia/Shanghai');assert.equal(c.businessCutoff,'12:00');assert.equal(c.liveControlEnabled,false);
+const env={NODE_ENV:'production',KTV_HTTP_ENV:'production',KTV_API_MODE:'enabled',KTV_STORE_ID:'synthetic-store',KTV_LEDGER_ID:'synthetic-ledger',KTV_BUSINESS_TIME_ZONE:'Asia/Shanghai',KTV_MYSQL_URL:'mysql://synthetic:nonlive@127.0.0.1/synthetic_production',KTV_PUBLIC_ORIGIN:'https://synthetic.invalid',KTV_BUSINESS_DATE_CUTOFF:'06:00',KTV_SESSION_RULE_VERSION:'opening-hours-v1',DEVICE_CONTROL_MODE:'disabled',KTVSKY_LIVE_CONTROL_ENABLED:'false'};
+test('production config preserves explicit timezone, 06:00 cutoff, session rules and OFF gate',()=>{
+  const c=validateProductionConfig(env);assert.equal(c.timeZone,'Asia/Shanghai');assert.equal(c.businessCutoff,'06:00');assert.equal(c.liveControlEnabled,false);
   assert.equal(c.sessions.DAY,'14:00–18:00');assert.equal(c.sessions.NIGHT,'18:00–02:00');
   assert.equal(JSON.stringify(c).includes('nonlive'),false);
 });
 test('production startup rejects invalid or incomplete config before connecting',()=>{
-  const patches=[{KTV_BUSINESS_TIME_ZONE:'Unknown/Zone'},{KTV_BUSINESS_TIME_ZONE:''},{KTV_MYSQL_URL:''},{KTV_MYSQL_URL:'mysql://u:p@localhost/jbhh_ktv_test'},{KTV_MYSQL_URL:'mysql://u@localhost/live'},{DEVICE_CONTROL_MODE:'guess'},{KTVSKY_LIVE_CONTROL_ENABLED:'true'},{KTVSKY_LIVE_CONTROL_ENABLED:undefined},{KTV_BUSINESS_DATE_CUTOFF:'02:00'},{KTV_SESSION_RULE_VERSION:'unknown'},{KTV_API_MODE:'disabled'},{KTV_INSECURE_COOKIE:'true'},{KTV_PUBLIC_ORIGIN:'http://store.invalid'},{KTV_HTTP_ENV:'development'}];
+  const patches=[{KTV_BUSINESS_DATE_CUTOFF:'12:00'},{KTV_BUSINESS_TIME_ZONE:'Unknown/Zone'},{KTV_BUSINESS_TIME_ZONE:''},{KTV_MYSQL_URL:''},{KTV_MYSQL_URL:'mysql://u:p@localhost/jbhh_ktv_test'},{KTV_MYSQL_URL:'mysql://u@localhost/live'},{DEVICE_CONTROL_MODE:'guess'},{KTVSKY_LIVE_CONTROL_ENABLED:'true'},{KTVSKY_LIVE_CONTROL_ENABLED:undefined},{KTV_BUSINESS_DATE_CUTOFF:'02:00'},{KTV_SESSION_RULE_VERSION:'unknown'},{KTV_API_MODE:'disabled'},{KTV_INSECURE_COOKIE:'true'},{KTV_PUBLIC_ORIGIN:'http://store.invalid'},{KTV_HTTP_ENV:'development'}];
   for(const patch of patches)assert.throws(()=>validateProductionConfig({...env,...patch}));
   assert.throws(()=>createHttpApiFromEnv({NODE_ENV:'production'}));
   for(const key of ['NODE_ENV','KTV_HTTP_ENV','KTV_DEPLOYMENT_ENV'])for(const value of ['Production',' production ','prod','live','staging','unknown',''])assert.throws(()=>createHttpApiFromEnv({[key]:value}));

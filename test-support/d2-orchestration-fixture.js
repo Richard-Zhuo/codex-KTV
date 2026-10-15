@@ -53,7 +53,7 @@ export async function withD2Fixture(work){
    await protectActivationPath(logs,tls.sid,true);
    const reservation=net.createServer();await new Promise(r=>reservation.listen(0,'127.0.0.1',r));const runtimePort=reservation.address().port;await new Promise(r=>reservation.close(r));
    const config={configVersion:1,applicationCommit:b.backupArgs.applicationCommit,publicOrigin:'https://ktv-smoke.127.0.0.1.sslip.io:'+runtimePort,listenHost:'127.0.0.1',port:runtimePort,
-    storeId:b.storeId,ledgerId:b.ledgerId,timeZone:'Asia/Shanghai',businessDateCutoff:'12:00',sessionRuleVersion:'opening-hours-v1',deviceControlMode:'disabled',liveControlEnabled:false,
+    storeId:b.storeId,ledgerId:b.ledgerId,timeZone:'Asia/Shanghai',businessDateCutoff:'06:00',sessionRuleVersion:'opening-hours-v1',deviceControlMode:'disabled',liveControlEnabled:false,
     secretsFile:secretPath,logDirectory:logs,serviceAccountSid:tls.sid,backupPolicyConfigured:true,directoryAclReviewed:true,networkModel:'private-vpn',monitoring:{intervalMs:1000,backupDirectory:join(root,'backups')},recovery:{journalDirectory:journal,operatorDbSecretsFile:operatorPath}};
    const runtimeSource=new URL(b.raw);
    const bundle={database:{host:'127.0.0.1',port:33313,name:'jbhh_ktv_test',user:runtimeUser,password:runtimePassword},tls:{certificate:tls.certificate,privateKey:tls.privateKey},ktvsky:{password:'D2_PROVIDER_SENTINEL'}};

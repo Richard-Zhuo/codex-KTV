@@ -1,6 +1,6 @@
 // 营业日是日期归属，不改写开单或付款的真实时间戳。
 // 门店时区尚待正式配置；调用方必须显式提供，不能依赖设备默认时区。
-export const BUSINESS_DAY_POLICY = Object.freeze({ version: 'noon-v1', cutoff: '12:00' });
+export const BUSINESS_DAY_POLICY = Object.freeze({ version: 'cutoff-0600-v1', cutoff: '06:00' });
 
 export function businessDateFor(occurredAt, { timeZone } = {}) {
   if (typeof timeZone !== 'string' || !timeZone.trim()) {

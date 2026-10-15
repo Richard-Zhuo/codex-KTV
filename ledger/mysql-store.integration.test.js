@@ -299,29 +299,30 @@ test('MySQL 8.4 InnoDB ledger integration in jbhh_ktv_test',
         assert.equal(zero.head.state.inventory.qd.count, null);
       });
 
-      await t.test('noon business date snapshot roundtrip preserves dates, history and actual payment timestamps', async () => {
+      await t.test('06:00 business date snapshot roundtrip preserves dates, history and actual payment timestamps', async () => {
         const examples = [
-          ['02:00:00', '2026-10-04'], ['11:59:59', '2026-10-04'],
-          ['12:00:00', '2026-10-05'], ['12:00:01', '2026-10-05'], ['20:00:00', '2026-10-05']
+          ['02:00:00', '2026-10-04'], ['05:59:59', '2026-10-04'],
+          ['06:00:00', '2026-10-05'], ['06:00:01', '2026-10-05'], ['20:00:00', '2026-10-05']
         ];
         // Fixtures exercise the pure policy and JSON port, not an order creation/import entry point.
-        const seeded = await seed('business-date-noon', state => {
+        const seeded = await seed('business-date-0600', state => {
           state.orders = examples.map(([time], index) => {
             const occurredAt = '2026-10-05T' + time + '+08:00';
             return { id: index + 1, kind: 'retail', room: null, time: occurredAt,
               businessDate: businessDateFor(occurredAt, { timeZone: 'Asia/Shanghai' }),
-              businessDatePolicyVersion: BUSINESS_DAY_POLICY.version,
+              businessDayRuleVersion: BUSINESS_DAY_POLICY.version,
               payments: [{ paymentId: 'existing-payment-' + index, occurredAt, time: occurredAt,
                 recordedByPrincipalId: 'synthetic-actor', amount: 100, method: '现金' }] };
           });
           state.orders.push({ id: 6, kind: 'retail', room: null, time: '2026-10-05T11:00:00+08:00',
-            businessDate: '2026-10-05', businessDatePolicyVersion: 'historic-proof', payments: [] });
+            businessDate: '2026-10-04', businessDayRuleVersion: 'noon-v1', payments: [] });
         });
-        const actual = await inspect('business-date-noon');
+        const actual = await inspect('business-date-0600');
         assert.deepEqual(actual.head.state.orders, seeded.orders);
         assert.deepEqual(actual.head.state.orders.slice(0, 5).map(order => order.businessDate),
           examples.map(([, date]) => date));
-        assert.equal(actual.head.state.orders[5].businessDate, '2026-10-05');
+        assert.equal(actual.head.state.orders[5].businessDate, '2026-10-04');
+        assert.equal(actual.head.state.orders[5].businessDayRuleVersion, 'noon-v1');
         assert.equal(actual.head.revision, 0);
         assert.equal(actual.operations.length, 0); assert.equal(actual.audit.length, 0);
       });

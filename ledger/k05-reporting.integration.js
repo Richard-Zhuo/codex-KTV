@@ -27,7 +27,7 @@ export async function testK05Reporting({ t,pool,setup,auth,table,provision,seed,
   }
   if(source===sources.retail){
    assert.equal(order.room,null);assert.equal(order.businessDate,businessDateFor(context.dbNow,{timeZone:'Asia/Shanghai'}));
-   assert.equal(order.businessDayRuleVersion,'noon-v1');assert.equal(order.businessTimeZone,'Asia/Shanghai');
+   assert.equal(order.businessDayRuleVersion,'cutoff-0600-v1');assert.equal(order.businessTimeZone,'Asia/Shanghai');
    assert.equal(actual.head.state.inventory.bw.count,94);assert.equal(actual.head.state.inventory.qd.count,null);
    assert.equal(actual.head.state.inventory.xl.count,0);
   }else{
@@ -90,6 +90,10 @@ export async function testK05Reporting({ t,pool,setup,auth,table,provision,seed,
    businessDayRuleVersion:'noon-v1',time:'2026-10-05T11:59:59+08:00',base:300,gift:0,sales:[],payments,
    credit:{repayments:[payments[1]]}}];});
   const actual=await inspect('k05-projection'),state=actual.head.state;assert.deepEqual(state,original);
+  // This persisted noon-v1 fact intentionally differs from today's 06:00 projection.
+  assert.equal(businessDateFor(state.orders[0].time,{timeZone:'Asia/Shanghai'}),'2026-10-05');
+  assert.equal(state.orders[0].businessDayRuleVersion,'noon-v1');
+  assert.equal(state.orders[0].businessDate,'2026-10-04');
   const d1={fromBusinessDate:'2026-10-04',toBusinessDate:'2026-10-05'},d2={fromBusinessDate:'2026-10-05',toBusinessDate:'2026-10-06'};
   assert.equal(selectRevenueOrders(state,d1).orders.length,1);assert.equal(selectRevenueOrders(state,d2).orders.length,0);
   const before=selectPaymentFlows(state,{from:'2026-10-04T12:00:00+08:00',to:'2026-10-05T12:00:00+08:00'});

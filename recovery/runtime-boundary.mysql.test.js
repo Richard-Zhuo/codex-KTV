@@ -41,7 +41,7 @@ if(enabled)test('Option A owned consumer boundary, pointer and credential isolat
  const directoryAcl=async()=>({protected:true,current:actor.sid,owner:ADMIN,rules:[{sid:operator,type:'Allow',rights:197055,inheritance:'ObjectInherit'}]});
  const env={NODE_ENV:'production',KTV_HTTP_ENV:'production',KTV_DEPLOYMENT_ENV:'production'};
  const config={configVersion:1,applicationCommit:'a'.repeat(40),publicOrigin:'https://ktv.example.invalid:8443',listenHost:'127.0.0.1',port:8443,
- storeId:'synthetic-store',ledgerId:'synthetic-ledger',timeZone:'Asia/Shanghai',businessDateCutoff:'12:00',sessionRuleVersion:'opening-hours-v1',deviceControlMode:'disabled',liveControlEnabled:false,
+ storeId:'synthetic-store',ledgerId:'synthetic-ledger',timeZone:'Asia/Shanghai',businessDateCutoff:'06:00',sessionRuleVersion:'opening-hours-v1',deviceControlMode:'disabled',liveControlEnabled:false,
  secretsFile:secretPath,logDirectory:join(root,'logs'),serviceAccountSid:service,backupPolicyConfigured:false,directoryAclReviewed:true,networkModel:'private-vpn',
  monitoring:{backupDirectory:join(root,'backups')},recovery:{journalDirectory:join(root,'journal'),operatorDbSecretsFile:operatorPath}};
  const tls=await syntheticTls('ktv.example.invalid');

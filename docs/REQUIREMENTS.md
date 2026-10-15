@@ -90,7 +90,7 @@ Meituan production redemption = NOT ENABLED。Fake Gateway 仅用于显式隔离
 
 - 14 天离场目标下，现场人员必须能安全、正确、简单地营业。共享可信账本、真人身份、正向交易与库存、撤单／退款／冲正、营业日与班次、渠道对账、审批审计、异常恢复及备份恢复的逐项目标见 [29 项 P0 矩阵](./OFFSITE_P0_MATRIX.md)。
 - [OFFSITE_CONTRACTS](./OFFSITE_CONTRACTS.md) 定义跨模块金额、快照与反向交易行为；[KNOWN_ISSUES](./KNOWN_ISSUES.md) 标明当前错误复现及已修状态。错误结果不构成产品要求。
-- 已确认的真人营业职责、免零限额、12:00 营业日切换点、营业额与资金归属、平台券门禁和无固定备用金规则见下文；账号映射、退款与冲正授权等仍待确认，见 [OPEN BUSINESS DECISIONS](./OPEN_BUSINESS_DECISIONS.md)。
+- 已确认的真人营业职责、免零限额、06:00 营业日切换点、营业额与资金归属、平台券门禁和无固定备用金规则见下文；账号映射、退款与冲正授权等仍待确认，见 [OPEN BUSINESS DECISIONS](./OPEN_BUSINESS_DECISIONS.md)。
 - 当前单机演示阶段的非目标不限制将来的脱岗 MVP 范围；本候选的实现和测试状态以 [CURRENT_STAGE](./CURRENT_STAGE.md) 为准。
 
 ## 已确认：项目目标与范围
@@ -209,7 +209,7 @@ Meituan production redemption = NOT ENABLED。Fake Gateway 仅用于显式隔离
 - 正式 trusted repay 只使用 session context 的 credit.repay、principal 和冻结 dbNow；新 repaymentRequests 保存 submittedByPrincipalId，submittedById 不填演示 ID，submittedBy 只作可信显示快照，submittedAt 只用 dbNow。姓名、角色、payload 身份／权限／时钟不能覆盖。保留原已挂账订单、正整数分金额、付款方式及扣除待审申请后余额的校验；仅创建待审核申请，不扣挂账余额、不生成 payment／已确认回款，不改变订单状态、房态、库存或历史快照。授权拒绝不占键，既有终态 replay／冲突与完整 rollback 保持；回款审核见下一条；跨日资金筛选见下文，不把申请本身计入资金。
 - 正式 approveRepayment／rejectRepayment 只从锁内本次 repaymentRequest.submittedByPrincipalId 判断本人，不能用原 credit 经办人；需 credit.repay.approve，本人另需 review.self。legacy 申请无有效 principal 两动作都 fail closed，不猜姓名／旧 ID。决定保存 decidedByPrincipalId；批准 payment／回款记录保存 approvedByPrincipalId，原姓名字段只作显示快照，时间只用冻结 dbNow，payload 身份／权限／时间不能覆盖。批准的申请决定、一笔 payment、挂账余额、相关历史与 ledger revision／result／audit 同事务提交，任一步失败全回滚；同 key 重放和双连接竞争不得重复资金效果。驳回不生成 payment、不减余额，原金额／状态／原因规则不变。授权拒绝不占 key；有效原 actor 撤权后旧 key 返回原终态，新 key 验当前资格。新 trusted 批准付款复用安全 UUID paymentId、occurredAt=dbNow、recordedByPrincipalId，同时保留 approvedByPrincipalId；原 time 仅兼容显示，资金只从 order.payments 计一次。
 - Demo 交班保留实点收款合计与前台现金的旧界面；正式 trusted handover 只输入 actualCash（整数分、非负），使用当前 handover 权限及同事务 session principal／冻结 dbNow，不接受 payload 的 expected／previous／身份或时间。
-- 正式交班采用连续现金抽屉链：第一次 bootstrap 保存实际清点，expectedCash=actualCash、difference=0；后续 expectedCash=上次 actualCash+本区间现金增加−本区间已证明的现金减少，difference=actualCash−expectedCash。差额后的下一轮仍以上次 actualCash 为基线，不绑定 12:00 营业日，不预设备用金。
+- 正式交班采用连续现金抽屉链：第一次 bootstrap 保存实际清点，expectedCash=actualCash、difference=0；后续 expectedCash=上次 actualCash+本区间现金增加−本区间已证明的现金减少，difference=actualCash−expectedCash。差额后的下一轮仍以上次 actualCash 为基线，不绑定营业日 cutoff，不预设备用金。
 - 当前明确现金增加只来自 canonical order.payments 中新出现的可信 paymentId／occurredAt／recordedByPrincipalId 且 method=现金；非现金只作区间渠道统计，credit.repayments 镜像不再计。deposit／withdraw 是存取酒；expense／procurement 没有抽屉资金来源事实，即使 method=现金也不能推断为抽屉支出，当前没有可认定的现金出流。真实抽屉支出的来源与登记规则仍为 OPEN，不宣称已覆盖该场景。
 - 每次交班保存 handoverId／occurredAt／submittedByPrincipalId、actualCash／expectedCash／difference、previousHandoverId、bootstrap、版本化累计 payment ID 边界（含不可变事实签名）。首次基线吸收旧付款但不推算过去金额；旧 demo handover 永不成为可信前序。后续新增不明付款或边界事实被删改时停止计算，不猜时间、来源或退款。付款 ID 集合差保证同时间戳与跨 12:00 的每笔付款只计一次。
 - 交班、稳定边界、revision、operation、success audit 一同提交；失败不前移边界，重放不消费第二次区间，两个旧 revision 命令最多一个成功。有效原 actor 撤权后可取旧终态，新 key 必须验当前 handover 权限；授权拒绝不占 key。
@@ -247,7 +247,7 @@ Meituan production redemption = NOT ENABLED。Fake Gateway 仅用于显式隔离
 
 ## 已确认：报表、主题与数据边界
 
-- 系统营业日切换点正式为每天 12:00，门店通常约凌晨 02:00 结束营业；两者不是同一时间。00:00:00–11:59:59 开立的订单归前一个 `businessDate`，12:00:00 起归当天。营业额按订单开单所属 `businessDate` 归属；每笔付款的资金流水按其真实 `occurredAt` 及相应营业日归属，不能全部从 `order.time` 推导。正式实现须保存原始时间和采用的规则版本，回款与将来退款的资金事件同样按各自实际发生时间归属。`shared/business-day.js:businessDateFor` 已提供版本化 12:00 纯计算规则，必须显式配置门店时区；当前新 trusted retailSale 在创建时冻结 businessDate、businessDayRuleVersion=noon-v1、businessTimeZone；服务端必须显式配置时区，缺失则拒绝新开单且不占操作键。唯一其他新订单入口 open 仍为 demo、未 trusted-enable；共享 orderBusinessDaySnapshot 能力已准备，不据练习时钟补正式日期。已确定的历史日期永不按现行 cutoff 重算。
+- Owner 于 2026-10-16 明确确认：系统营业日切换点正式为每天 06:00。00:00:00–05:59:59 归前一个 businessDate，06:00:00 起归当天；门店约 02:00 结束营业与营业日切换是不同规则。营业额按订单开单时冻结的 businessDate 归属；资金事实保留真实 occurredAt，不能从原订单日期推导或回拨时间。未来退款／冲正／cashOut 同样保留实际发生时间并按 06:00 计算其营业日，本轮不实现这些动作。shared/business-day.js 的共享 BUSINESS_DAY_POLICY 为 cutoff-0600-v1／06:00；新 trusted room open 与 retailSale 使用服务器 dbNow、显式门店时区冻结 businessDate、businessDayRuleVersion、businessTimeZone。缺失时区拒绝新开单；重放不重算。现有 noon-v1 等历史冻结字段及 payment.occurredAt 原样保留，不自动迁移；历史 12:00 记录已被本次 Owner 规则纠正。opening-hours-v1、营业时间、套餐和价格保持不变，05:59:59／06:00:00 仍不可开房。
 - 报表按日／周／月切换；房间视图只列统计周期内开过房的房间，并另列独立零售交易。房间与零售商品销售都计入营业账单汇总，按销售行的名称、分类、单位、成交金额和人员快照统计；商品改名、改价后不得改变历史报表，不按 `category === '烟'` 等分类写专门统计分支。
 - 房间视图继续列房费、套餐赠饮、商品销售、后续赠送、付款方式、免零和挂账备注；套餐赠饮不填赠送人，后续赠送单列参考值与赠送人。套餐免费果盘、小吃不作为付费商品销售。
 - “我的”提供日间、夜间、自动三种主题。自动模式使用设备实际时间 06:00–19:00 为日间，其余为夜间，与手动练习时间无关。
