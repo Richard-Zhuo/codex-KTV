@@ -10,8 +10,9 @@ export async function launcher(f,{database=f.active.database,label='fake',formal
  f.secretMarkers.add(password);f.secretMarkers.add(tls.privateKey);await f.serverGuard();await f.setup.query('CREATE USER ?@? IDENTIFIED BY ?',[user,'127.0.0.1',password]);f.users.add(user);await f.setup.query('GRANT SELECT,INSERT,UPDATE,DELETE ON '+database+'.* TO ?@?',[user,'127.0.0.1']);
  const logs=join(f.dirs.logs,label);await mkdir(logs);const configPath=join(f.dirs.secrets,label+'-config.json'),secretPath=join(f.dirs.secrets,label+'-secret.json');
  const application=previous?f.packages.previous.app:f.packages.current.app;
- const {BUSINESS_DAY_POLICY}=await import(pathToFileURL(join(application,'shared/business-day.js')).href);
+ const {BUSINESS_DAY_POLICY,businessDateFor}=await import(pathToFileURL(join(application,'shared/business-day.js')).href);
  const {loadRuntimeConfig}=await import(pathToFileURL(join(application,'production/runtime-config.js')).href);
+ const {preflight}=await import(pathToFileURL(join(application,'production/preflight.js')).href);
  const config={configVersion:1,applicationCommit:previous?f.packages.previous.commit:ACCEPTED,publicOrigin:'https://'+domain+':'+port,listenHost:'127.0.0.1',port,storeId:f.names.storeId,ledgerId:f.names.ledgerId,timeZone:'Asia/Shanghai',businessDateCutoff:BUSINESS_DAY_POLICY.cutoff,sessionRuleVersion:'opening-hours-v1',deviceControlMode:'disabled',liveControlEnabled:false,secretsFile:secretPath,logDirectory:logs,serviceAccountSid:tls.sid,backupPolicyConfigured:true,directoryAclReviewed:true,networkModel:'private-vpn',monitoring:{intervalMs:1000,probeTimeoutMs:2500,minFreeBytes:1,backupDirectory:f.dirs.backups,alertingRequired:!formal,offlineMs:1000,verificationMs:1000,tlsWarnDays:3,tlsErrorDays:2,tlsCriticalDays:1}};
  if(previous)delete config.monitoring;
  const secret={database:{host:'127.0.0.1',port:f.port,name:database,user,password},tls:{certificate:tls.certificate,privateKey:tls.privateKey}};
@@ -53,5 +54,5 @@ export async function launcher(f,{database=f.active.database,label='fake',formal
   throw Error('REHEARSAL_SNAPSHOT_NOT_READY '+JSON.stringify(last));
  };
  const command=async(session,action,payload,body)=>{body??={operationKey:randomUUID(),expectedRevision:(await snapshot(session)).revision,payload};const r=await call(session,'/api/v1/commands/'+action,{method:'POST',body});return {...r,body};};
- return {config,configPath,secretPath,secret,tls,port,user,password,logs,request,start,wait,stop,crash,controls,login,call,snapshot,command,get child(){return child;},get output(){return output;}};
+ return {preflight:()=>preflight(configPath,productionEnv),loadRuntimeConfig:()=>loadRuntimeConfig(configPath,productionEnv),businessDateFor,config,configPath,secretPath,secret,tls,port,user,password,logs,request,start,wait,stop,crash,controls,login,call,snapshot,command,get child(){return child;},get output(){return output;}};
 }

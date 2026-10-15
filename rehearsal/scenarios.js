@@ -1,7 +1,7 @@
 import {expireCrashedQueryLeases} from './crash-recovery.js';
 import assert from 'node:assert/strict';
 import {readFile,writeFile} from 'node:fs/promises';import {join} from 'node:path';import mysql from 'mysql2/promise';
-import {launcher,sleep,productionEnv} from './launcher.js';
+import {launcher,sleep} from './launcher.js';
 import {backupRestoredRehearsal} from './restored-backup.js';
 import {initialize,makeBackup,restore} from './prepare.js';
 import {migrateFresh} from './migration.js';
@@ -10,34 +10,33 @@ import {CATEGORIES,cutoverDecision,rollbackDecision} from './gates.js';
 import {decodeLedgerSnapshot} from '../ledger/mysql-snapshot.js';
 import {total,outstanding,nextCollectCharge} from '../sales.js';
 import {freezeDatabase} from '../recovery/operator.js';
-import {loadRuntimeConfig} from '../production/runtime-config.js';
-import {preflight} from '../production/preflight.js';
 import {reportBackup} from '../operations/backup-report.js';
-import {businessSessionFor} from '../shared/business-session.js';import {businessDateFor} from '../shared/business-day.js';
+import {businessSessionFor} from '../shared/business-session.js';
 export async function eventually(read,predicate,description,timeout=20000){const until=Date.now()+timeout;let result;while(Date.now()<until){try{result=await read();if(predicate(result))return result;}catch(error){if(!['ECONNREFUSED','ECONNRESET','EPIPE'].includes(error.code))throw error;result={code:error.code};}await sleep(200);}throw Error('REHEARSAL_TIMEOUT '+description+' '+JSON.stringify(result));}
 export async function scenarios(f,record){
- const evidence={id:f.names.id,startedAt:new Date().toISOString(),package:{current:f.packages.current.sha256,previous:f.packages.previous.sha256,application:f.packages.current.commit,previousApplication:f.packages.previous.commit},checkpoints:f.source.checkpoints};
+ const evidence={scope:'historical-self-rehearsal',id:f.names.id,startedAt:new Date().toISOString(),package:{current:f.packages.current.sha256,previous:f.packages.previous.sha256,application:f.packages.current.commit,previousApplication:f.packages.previous.commit},checkpoints:f.source.checkpoints};
  const step=async(name,work)=>{record?.(name);const at=new Date().toISOString();const facts=await work();evidence[name]={at,...facts};return facts;};
- // Actual production entry and predecessor artifact, on a separate fresh synthetic database.
+ // Self-rehearse the pinned historical release and predecessor startup, not
+ // an upgrade to the current source. Config, validation and runtime share authority.
  let formal;const formalPreflight=[];
- const entry=await initialize(f,f.names.entryDatabase,'production',async step=>{formal??=await launcher(f,{database:f.names.entryDatabase,label:'formal',formal:true});const r=await preflight(formal.configPath,productionEnv);formalPreflight.push({step,ready:r.ready,blockers:r.blockers});});
+ const entry=await initialize(f,f.names.entryDatabase,'production',async step=>{formal??=await launcher(f,{database:f.names.entryDatabase,label:'formal',formal:true});const r=await formal.preflight();formalPreflight.push({step,ready:r.ready,blockers:r.blockers});});
  await step('formalEntry',async()=>{
-  const initial=await preflight(formal.configPath,productionEnv);assert.equal(initial.ready,true);assert.equal(formalPreflight[0].ready,false);
-  const broken=await launcher(f,{database:f.names.failureDatabase,label:'migration-failed',formal:true});assert.equal((await preflight(broken.configPath,productionEnv)).ready,false);broken.start();await eventually(()=>broken.request('/health/live'),r=>r.status===200,'partial schema runtime liveness');assert.equal((await broken.request('/health/ready')).status,503);await broken.stop();
+  const initial=await formal.preflight();assert.equal(initial.ready,true,JSON.stringify({blockers:initial.blockers,checks:initial.checks}));assert.equal(initial.appVersion,formal.config.applicationCommit);assert.equal(formalPreflight[0].ready,false);
+  const broken=await launcher(f,{database:f.names.failureDatabase,label:'migration-failed',formal:true});assert.equal((await broken.preflight()).ready,false);broken.start();await eventually(()=>broken.request('/health/live'),r=>r.status===200,'partial schema runtime liveness');assert.equal((await broken.request('/health/ready')).status,503);await broken.stop();
   formal.start();await formal.wait();assert.equal((await formal.request('/')).status,200);const css=await formal.request('/style.css');assert.equal(css.status,200);assert.match(css.headers['content-type'],/text\/css/);await formal.stop();
   formal.start();await formal.wait();await formal.crash();formal.start();await formal.wait();await formal.stop();
   const old=await launcher(f,{database:f.names.entryDatabase,label:'previous',formal:true,previous:true});old.start();await old.wait();await old.stop();
   // Required real channel remains blocked; no fake is silently inserted in start.js.
   const config=JSON.parse(await readFile(formal.configPath,'utf8'));config.monitoring.alertingRequired=true;await writeFile(formal.configPath,JSON.stringify(config));
-  const blocked=await preflight(formal.configPath,productionEnv);assert.equal(blocked.ready,false);assert.ok(blocked.blockers.includes('ALERT_CHANNEL_REQUIRED'));
+  const blocked=await formal.preflight();assert.equal(blocked.ready,false);assert.ok(blocked.blockers.includes('ALERT_CHANNEL_REQUIRED'));
   config.monitoring.alertingRequired=false;await writeFile(formal.configPath,JSON.stringify(config));
   return {productionStart:'PASS',preflightCheckpoints:formalPreflight,freshMigration:entry.migration.last,restart:'PASS',freshProcess:'PASS',previousArtifactStartup:'PASS',schemaCompatibility:'001-011 verified for both accepted artifacts',realRequiredAlertGate:'BLOCKED as intended',actualScmInstall:'BLOCKED',serviceProcessLifecycle:'PASS'};
  });
  await step('tlsFailure',async()=>{
   const saved=await readFile(formal.secretPath,'utf8'),invalid=JSON.parse(saved);invalid.tls.certificate=f.tls.ca;
   await writeFile(formal.secretPath,JSON.stringify(invalid));
-  await assert.rejects(loadRuntimeConfig(formal.configPath,productionEnv),{code:'RUNTIME_TLS_INVALID'});
-  await writeFile(formal.secretPath,saved);await loadRuntimeConfig(formal.configPath,productionEnv);return {mismatchedCertificate:'rejected',correctCertificate:'accepted',bypass:false};
+  await assert.rejects(formal.loadRuntimeConfig(),{code:'RUNTIME_TLS_INVALID'});
+  await writeFile(formal.secretPath,saved);await formal.loadRuntimeConfig();return {mismatchedCertificate:'rejected',correctCertificate:'accepted',bypass:false};
  });
  let app=await launcher(f);f.app=app;app.start();await app.wait();
  let pool=mysql.createPool({uri:f.dbUrl(f.active.database),connectionLimit:4});f.pools.add(pool);
@@ -99,7 +98,7 @@ export async function scenarios(f,record){
  await step('timeBoundaries',async()=>{
   const expected=[['2026-10-10T09:59:59Z','DAY'],['2026-10-10T10:00:00Z','NIGHT'],['2026-10-10T17:59:59Z','NIGHT'],['2026-10-10T18:00:00Z',null]];
   for(const [instant,type]of expected)assert.equal(businessSessionFor(instant,{timeZone:'Asia/Shanghai'})?.sessionType??null,type);
-  assert.equal(businessDateFor('2026-10-10T03:59:59Z',{timeZone:'Asia/Shanghai'}),'2026-10-09');assert.equal(businessDateFor('2026-10-10T04:00:00Z',{timeZone:'Asia/Shanghai'}),'2026-10-10');
+  assert.equal(app.businessDateFor('2026-10-10T03:59:59Z',{timeZone:'Asia/Shanghai'}),'2026-10-09');assert.equal(app.businessDateFor('2026-10-10T04:00:00Z',{timeZone:'Asia/Shanghai'}),'2026-10-10');
   return {sessionBoundaries:'PASS',noonCutover:'PASS',clockAuthority:'private server-only control file'};
  });
  await step('deviceOfflineAndUnknown',async()=>{

@@ -1,3 +1,5 @@
+Stage5E historical self-rehearsal authority: rehearsal/launcher.js binds preflight, loadRuntimeConfig and businessDateFor to the selected validated package; rehearsal/scenarios.js uses those methods. rehearsal/release-authority.test.js protects historical-config validation against accidental current-release wiring, while confirming current06 acceptance/current12 rejection. See CURRENT_STAGE for evidence and DEVELOPMENT_ENVIRONMENT for the scoped command.
+
 ## S4 Git-free backup identity
 
 - shared/release-artifact.js: existing artifact/path/checksum validator extracted for both rehearsal unpackAccepted and installed backup verification; verifies exact installed file inventory.
