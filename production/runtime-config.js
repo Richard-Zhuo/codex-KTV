@@ -46,9 +46,13 @@ export function validateFileAcl(acl,serviceSid){
  if(acl?.current!==serviceSid)throw runtimeFailure('RUNTIME_ACL_DENIED');
  validateRuntimeFileAclStructure(acl,serviceSid);
 }
-export async function loadRuntimeConfig(path,env=process.env){
+export async function readRuntimeConfig(path,env=process.env){
  const config=validateRuntimeConfig(await readExternalSecret(path),env);
  const configPath=await realpath(path);validateFileAcl(await windowsFileAcl(configPath),config.serviceAccountSid);
+ return config;
+}
+export async function loadRuntimeConfig(path,env=process.env){
+ const config=await readRuntimeConfig(path,env);
  const secrets=await readExternalSecret(config.secretsFile),secretPath=await realpath(config.secretsFile);validateFileAcl(await windowsFileAcl(secretPath),config.serviceAccountSid);
  return materializeRuntimeContext(config,secrets);
 }

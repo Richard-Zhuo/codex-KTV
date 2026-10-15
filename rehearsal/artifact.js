@@ -1,14 +1,8 @@
-import {execFile} from 'node:child_process';import {promisify} from 'node:util';import {readFile,writeFile,readdir,lstat,realpath,mkdir} from 'node:fs/promises';import {resolve,dirname,relative,sep} from 'node:path';import {createHash} from 'node:crypto';import {createRequire} from 'node:module';
+import {execFile} from 'node:child_process';import {promisify} from 'node:util';import {readFile,writeFile,readdir,lstat,realpath,mkdir} from 'node:fs/promises';import {resolve,dirname,relative,sep} from 'node:path';import {createRequire} from 'node:module';
 import {externalDirectory} from '../backup/format.js';
-const run=promisify(execFile);export const sha=bytes=>createHash('sha256').update(bytes).digest('hex');
-const roots=new Set(['auth','backup','database','devices','employees','http','ledger','operations','production','recovery','shared','ui','vouchers']);
-export function runtimePath(path){
- if(!/^[A-Za-z0-9_./-]+$/.test(path)||path.split('/').some(p=>!p||p==='.'||p==='..')||/\.(test|integration)\.js$/.test(path))return false;
- if(['package.json','pnpm-lock.yaml','index.html','admin.html','style.css'].includes(path))return true;
- if(!path.includes('/'))return path.endsWith('.js');
- const root=path.split('/')[0];
- return roots.has(root)&&(/\.js$/.test(path)||path==='production/schema-manifest.json'||/^database\/migrations\/\d{3}_[a-z_]+\.sql$/.test(path));
-}
+import {sha,runtimePath,readAcceptedArtifact} from '../shared/release-artifact.js';
+export {sha,runtimePath};
+const run=promisify(execFile);
 export async function packageAccepted({repository,commit,acceptedCommits,output,dependencyRoot=repository}){
  if(!/^[a-f0-9]{40}$/.test(commit)||!Array.isArray(acceptedCommits)||!acceptedCommits.includes(commit))throw Error('ARTIFACT_COMMIT_NOT_ACCEPTED');
  await externalDirectory(dirname(output));
@@ -40,13 +34,7 @@ export async function packageAccepted({repository,commit,acceptedCommits,output,
  const bytes=Buffer.from(JSON.stringify(manifest));await writeFile(output,bytes,{flag:'wx',mode:0o600});return {commit,sha256:sha(bytes),files:files.length,dependencies:manifest.dependencies};
 }
 export async function unpackAccepted({artifact,expectedChecksum,commit,destination}){
- const bytes=await readFile(artifact);if(sha(bytes)!==expectedChecksum)throw Error('ARTIFACT_CHECKSUM_MISMATCH');
- const data=JSON.parse(bytes);if(data.format!==1||data.applicationCommit!==commit)throw Error('ARTIFACT_COMMIT_MISMATCH');
- const seen=new Set();
- for(const file of data.files){const path=file.path;
-  if(typeof path!=='string'||path.includes('\\')||path.split('/').some(p=>!p||p==='.'||p==='..')||(!runtimePath(path)&&!/^node_modules\/(?:@[a-z0-9_-]+\/)?[a-z0-9_.-]+\/[A-Za-z0-9_@.\/-]+$/.test(path))||seen.has(path)||sha(Buffer.from(file.bytes,'base64'))!==file.sha256)throw Error('ARTIFACT_PATH_OR_CONTENT_INVALID');
-  seen.add(path);
- }
+ const data=await readAcceptedArtifact({artifact,expectedChecksum,commit});
  await mkdir(destination);const root=await realpath(destination);
  for(const file of data.files){const target=resolve(root,file.path);if(!target.startsWith(root+sep))throw Error('ARTIFACT_PATH_DENIED');await mkdir(dirname(target),{recursive:true});await writeFile(target,Buffer.from(file.bytes,'base64'),{flag:'wx',mode:0o600});}
  return {commit,sha256:expectedChecksum,files:data.files.length};

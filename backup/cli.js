@@ -2,7 +2,7 @@ import {reportBackup} from '../operations/backup-report.js';
 import { readExternalSecret } from '../production/secret-file.js';
 import { backupDatabase,restoreDatabase } from './mysql-backup.js';
 import { fail } from './format.js';
-import { execFileSync } from 'node:child_process';
+import {readBackupIdentity} from '../production/backup-identity.js';
 import { fileURLToPath } from 'node:url';
 import { resolve } from 'node:path';
 export async function runBackupCli(argv=process.argv.slice(2),env=process.env,logger=console) {
@@ -15,11 +15,13 @@ export async function runBackupCli(argv=process.argv.slice(2),env=process.env,lo
       if(!['--config-file','--output-dir','--artifact-dir','--checksum','--confirm'].includes(k)||options[k]||!rest[i+1]||rest[i+1].startsWith('--'))throw fail('BACKUP_ARGUMENTS_INVALID');options[k]=rest[++i];
     }
     const config=await readExternalSecret(options['--config-file']);
-    const allowed=['databaseUrl','environment','storeId','ledgerId','serverUuid','initiatedBy','operationalDirectory'];
+    const allowed=['databaseUrl','environment','storeId','ledgerId','serverUuid','initiatedBy','operationalDirectory',...(backupAction?['runtimeConfigFile','releaseArtifactFile','releaseArtifactChecksum']:[])];
     if(!config||Object.keys(config).some(k=>!allowed.includes(k)))throw fail('BACKUP_CONFIG_INVALID');
     operationalDirectory=config.operationalDirectory;
+    const applicationCommit=backupAction?await readBackupIdentity({configFile:options['--config-file'],config,env}):undefined;
+    operationalDirectory=config.operationalDirectory;
     const args={...config,env,confirmation:options['--confirm']};
-    const result=action==='backup'?await backupDatabase({...args,outputDirectory:options['--output-dir'],applicationCommit:execFileSync('git',['rev-parse','HEAD'],{cwd:fileURLToPath(new URL('../',import.meta.url)),encoding:'utf8'}).trim()}):await restoreDatabase({...args,directory:options['--artifact-dir'],expectedChecksum:options['--checksum'],restoreToNewDb:options.restoreToNewDb===true});
+    const result=action==='backup'?await backupDatabase({...args,outputDirectory:options['--output-dir'],applicationCommit}):await restoreDatabase({...args,directory:options['--artifact-dir'],expectedChecksum:options['--checksum'],restoreToNewDb:options.restoreToNewDb===true});
     if(backupAction&&operationalDirectory)await reportBackup(operationalDirectory,{success:true,createdAt:result.createdAt});
     logger.log(JSON.stringify(result));return 0;
   }catch(e){if(backupAction&&operationalDirectory)await reportBackup(operationalDirectory,{success:false}).catch(()=>logger.error(JSON.stringify({code:'BACKUP_REPORT_FAILED'})));logger.error(JSON.stringify({code:/^(BACKUP|RESTORE)_[A-Z_]+$/.test(e.code??'')?e.code:'BACKUP_OPERATION_FAILED'}));return 1;}

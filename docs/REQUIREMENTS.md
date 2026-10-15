@@ -1,3 +1,7 @@
+## S4 Git-free backup identity
+
+Production backup must bind the existing controlled artifact applicationCommit, exact installed contents and protected runtime config before creating a backup; no runtime Git or alternative identity fallback is allowed. Preserve format1 and exact-version restore. [Narrow contract](S4_GIT_FREE_BACKUP_IDENTITY.md).
+
 ## S3-D D1 authorization requirement
 
 A production recovery grant must bind the immutable PREPARED plan, trusted deployment and actual approved Windows operator. Preserve history, fixed four-hour expiry, safe replay and revocation; fixture authority cannot become production authority. D1 adds no destructive production execution. [Authoritative D1 contract](S3D_PRODUCTION_AUTHORIZATION.md).

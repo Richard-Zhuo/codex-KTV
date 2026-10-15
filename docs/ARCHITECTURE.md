@@ -1,3 +1,7 @@
+## S4 installed release identity boundary
+
+The retained controlled artifact is compared with an independently pinned digest in protected backup configuration and the existing runtime applicationCommit. A shared read-only artifact validator also verifies exact installed files before backup admission. Runtime config-only reading preserves the existing service SID/ACL rules and avoids loading runtime secrets. No receipt or second version authority is added. [Trust boundary](S4_GIT_FREE_BACKUP_IDENTITY.md).
+
 ## S3-D D1 authorization boundary
 
 The separate protected Windows operator loader issues private plan authority from append-only authorization evidence. It shares runtime materialization while preserving the normal service SID contract. D1 does not admit production authority into S3-A/B/C execution; owned fixture authority remains separate. [Contract and trust boundary](S3D_PRODUCTION_AUTHORIZATION.md).

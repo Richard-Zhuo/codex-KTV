@@ -1,3 +1,11 @@
+## S4 Git-free backup identity
+
+- shared/release-artifact.js: existing artifact/path/checksum validator extracted for both rehearsal unpackAccepted and installed backup verification; verifies exact installed file inventory.
+- production/runtime-config.js: readRuntimeConfig shares existing config/current-service-SID ACL checks without secret loading; loadRuntimeConfig retains its original secret/materialization path.
+- production/backup-identity.js: protected artifact/config binding to the executing installed root, without Git or caller-supplied commit.
+- backup/cli.js: backup-only protected release configuration, admission before backup creation; restore action unchanged.
+- shared/release-artifact.test.js and backup/identity.integration.test.js: focused corruption/identity/content/path/actual Windows ACL and packaged CLI acceptance. [Contract](S4_GIT_FREE_BACKUP_IDENTITY.md).
+
 ## S3-D runtime activation proof and Stage5C compatibility
 
 - production/activation-receipt.js owns the fixed logDirectory/runtime-activation/current.json path, protected ACL/owner checks and atomic receipt persistence; process-observation.js reads actual process creation/listener identity. activation-producer.js is wired by the fixed production start entry; receipt publication depends on trusted startup admission.
