@@ -1,3 +1,4 @@
+import { testTrustedFinancialAdjustments } from './trusted-financial-adjustments.integration.js';
 import { assertFixtureEnvironment } from '../test-support/destructive-safety.js';
 import { testOpenDevice } from '../devices/open.integration.js';
 import { testRoomControl } from '../devices/mysql.integration.js';
@@ -555,6 +556,7 @@ test('MySQL trusted clean vertical slice in jbhh_ktv_test',
         assertUnchanged, wrapConnection, poolOptions, database });
       await testTrustedIncidentReviews({ t, pool, setup, auth, table, provision, seed, inspect, application, roster,
         assertUnchanged, wrapConnection, poolOptions, database });
+      await testTrustedFinancialAdjustments({ t, pool, table, provision, seed, inspect, application, wrapConnection, assertUnchanged, auth });
       await testTrustedPayments({ t, pool, setup, auth, table, provision, seed, inspect, application,
         assertUnchanged, wrapConnection, poolOptions, database });
       await testTrustedRounding({ t, pool, setup, auth, table, provision, seed, inspect, application,

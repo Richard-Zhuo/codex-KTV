@@ -1,3 +1,15 @@
+## C1-A refund / reversal core（内部候选）
+
+Owner 本轮冻结：只实现 reversePayment、refundPayment、approveFinancialAdjustment、rejectFinancialAdjustment 的内部 trusted command。原 order.payments 永久保留；order.financialAdjustments 追加 PAYMENT_REVERSAL／REFUND，state.financialRequests 共用申请、异人审批及原申请人执行流程。批准不生成资金事实，实际执行才保存服务器 actualActorPrincipalId、dbNow 及当前 06:00 营业日快照。
+
+具体 grants：payment.reverse／payment.refund 为发起和执行权限，financial.direct 仅配置给卓老板；financial.approve 配置给四名独立营业人员。其他三人必须经另一 principal 批准，review.self 不绕过；卓益不得独立发起或审批。代码不按姓名、岗位或演示 ID 授权，不自动配置真人 grants。
+
+退款可多次部分执行，必须显式选择 refundChannel 和 refundFundingSource（现金 CURRENT_DRAWER／OUTSIDE_DRAWER，非现金 NON_CASH），不从渠道猜抽屉来源。整条付款只可完整冲正一次，有退款、冲正或其他待审／已批准占额时拒绝。两个动作共用同一锁内余额，已消费 request 新 key 也不能重执行。缺乏可信 paymentId／occurredAt／recordedByPrincipalId／chargeId 的历史付款拒绝调整，不补造。
+
+orderPaymentCredit 只扣冲正；netReceipts 再扣实际退款；adjustablePaymentBalance 还扣未终结申请占额。outstanding、收费项及回款使用相应有效投影，退款不增加顾客债务。挂账金额快照保留：挂账开立时只在已有冲正时记录 paymentReversalBaselineIds，防止以后重复计算；后续冲正恢复实际未付余额，原回款与镜像不改写。待审批挂账先完成既有审核再执行冲正，避免无痕改变待批本金；已关房单不自动重新占房。
+
+本阶段不开放员工 HTTP/UI，不实现 cashOut／cancelOrder，不改 handover／reporting，不自动回库，无 SQL migration、新表或新列。交班与报表尚未消费反向事实，不能据内部核心候选声称 C0 或生产营业完整可用。
+
 ## S4 Git-free backup identity
 
 Production backup must first bind fixed JbhhKtv SCM registration and administrator-owned read-only backup.json, then the existing controlled artifact applicationCommit, exact installed contents and protected runtime config before creating a backup; no runtime Git or alternative identity fallback is allowed. Preserve format1 and exact-version restore. [Narrow contract](S4_GIT_FREE_BACKUP_IDENTITY.md).

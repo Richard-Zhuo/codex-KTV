@@ -1,3 +1,12 @@
+## C1-A internal payment adjustments
+
+- financial-adjustments.js owns validated original references, append-only refund/reversal facts, shared requests, balance reservation, applicant-only execution and effective money projections.
+- shared/identity.js registers explicit grants and a server-only financial business-day context; ledger/command-policy.js enforces strict other-person financial decisions.
+- ledger/trusted-execution.js and rules.js register the four internal commands; ledger/application.js attaches execution-time 06:00 snapshots after session/replay/revision gates.
+- sales.js uses billing payment credit for outstanding/charge balances and effective credit balance for repayment; refunds never create debt.
+- financial-adjustments.test.js and test-support/financial-adjustments-fixture.js cover the core and affected consumers. ledger/trusted-financial-adjustments.integration.js is registered in the existing guarded ledger/trusted-clean.integration.test.js fixture.
+- HTTP registries, employee/admin UI, handover, reporting and inventory writers are not extended. Contract: [REQUIREMENTS](REQUIREMENTS.md#c1-a-refund--reversal-core内部候选).
+
 Stage5E historical self-rehearsal authority: rehearsal/launcher.js binds preflight, loadRuntimeConfig and businessDateFor to the selected validated package; rehearsal/scenarios.js uses those methods. rehearsal/release-authority.test.js protects historical-config validation against accidental current-release wiring, while confirming current06 acceptance/current12 rejection. See CURRENT_STAGE for evidence and DEVELOPMENT_ENVIRONMENT for the scoped command.
 
 ## S4 Git-free backup identity

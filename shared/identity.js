@@ -31,6 +31,10 @@ export const PERMISSION_DEFINITIONS = [
   { id: 'order.gift', label: '登记赠酒水', group: '房间与订单', roles: ['开单员', '服务员', '店长', '老板'] },
   { id: 'order.serveExtra', label: '标记小吃／果盘已上', group: '房间与订单', roles: ['开单员', '服务员', '老板'] },
   { id: 'payment.collect', label: '收钱', group: '收款与挂账', roles: ['收银员', '老板'] },
+  { id: 'payment.reverse', label: '申请／执行付款冲正', group: '收款与挂账', roles: [] },
+  { id: 'payment.refund', label: '申请／执行退款', group: '收款与挂账', roles: [] },
+  { id: 'financial.direct', label: '资金调整直接执行资格', group: '收款与挂账', roles: [] },
+  { id: 'financial.approve', label: '审核他人资金调整申请', group: '营业审核', roles: [] },
   { id: 'payment.settle', label: '结账', group: '收款与挂账', roles: ['收银员', '老板'] },
   { id: 'credit.apply', label: '申请挂账', group: '收款与挂账', roles: ['开单员', '收银员', '服务员', '库管', '店长', '老板'] },
   { id: 'credit.approve', label: '审批挂账', group: '收款与挂账', roles: ['店长', '老板'] },
@@ -165,6 +169,12 @@ export function withTrustedOrderBusinessDay(context, snapshot) {
       typeof snapshot.businessDayRuleVersion !== 'string' || !snapshot.businessDayRuleVersion ||
       typeof snapshot.businessTimeZone !== 'string' || !snapshot.businessTimeZone) throw TypeError('缺少可信开单营业日快照');
   return registerTrustedExecutionContext(Object.freeze({ ...context, orderBusinessDay: snapshot }));
+}
+
+export function withTrustedFinancialBusinessDay(context, snapshot) {
+  assertTrustedExecutionContext(context);
+  const checked = withTrustedOrderBusinessDay(context, snapshot);
+  return registerTrustedExecutionContext(Object.freeze({ ...context, financialBusinessDay: checked.orderBusinessDay }));
 }
 
 export function withTrustedRoomOpening(context, { orderId, voucherRedemption = null }) {

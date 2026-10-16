@@ -1,3 +1,13 @@
+## C1-A payment refund / reversal core — local candidate
+
+Parent: 27aba1946d2411b9e2a27139e681d23954e7e546. Branch: codex/c0-financial-core. Internal trusted commands only; independent acceptance and full regression remain pending. No merge, push, deployment or real production execution.
+
+Author evidence: new domain/trusted and affected payment/repay/rounding/authorization files 177/177 PASS, fail/cancel/skip 0, exit 0. New C1-A real MySQL cases 11/11 PASS: immutable originals, approval separated from execution, applicant-only consumption, reservations, current grants/replay, three independently verified two-connection races, and two rollback points. Directly scoped evidence 188/188 PASS.
+
+Execution deviation: the name pattern matched the existing trusted fixture parent, so its complete registered suite actually ran: 700/700 PASS, fail/cancel/skip 0, exit 0, 110379.1462 ms. This includes the 11 C1-A cases; it is not project full regression. Fixture cleanup confirmed SQL, database/account/root and processes absent. Scoped npm test was attempted but npm was unavailable; formal evidence uses frozen Node 24.19.0.
+
+Scope and money semantics: [REQUIREMENTS](REQUIREMENTS.md#c1-a-refund--reversal-core内部候选). No cashOut, cancelOrder, handover/reporting/UI/HTTP employee exposure, inventory restore, SQL migration or C1-B work.
+
 ## 2026-10-16: Stage5E historical release authority fixture fix — local candidate
 
 Parent candidate ce6f18a9dc8e642fd731f7a91ae46e5aa0be7475 remains unchanged. Its first feature full regression was 2493/2494 PASS, one formalEntry assertion failure, exit1, no ENOENT. The actual preflight blocker was RUNTIME_PREFLIGHT_FAILED, caused by PRODUCTION_CONFIG_INVALID: the historical c1502c0fb0713ef040b210e5ea35f6c31079b7ee protected config supplied businessDateCutoff=12:00 to the current 06:00 validator. The same file and ready database passed the artifact-owned preflight with no blockers; changing only the cutoff in the current validator input also passed. Root-cause evidence is the external stage5e-0600-root-cause-1792088275530.log; the original assertion was reproduced before fixture edits.

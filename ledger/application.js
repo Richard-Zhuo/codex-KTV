@@ -3,7 +3,7 @@ import { createHash } from 'node:crypto';
 import { transact } from '../rules.js';
 import { BusinessRejection } from '../shared/business-error.js';
 import { orderBusinessDaySnapshot } from '../shared/business-day.js';
-import { withTrustedOrderBusinessDay } from '../shared/identity.js';
+import { withTrustedOrderBusinessDay, withTrustedFinancialBusinessDay } from '../shared/identity.js';
 import { EMPLOYEE_ATTRIBUTED_ACTIONS, resolveEmployeeContext } from './employee-attribution.js';
 import { resolveVoucherOpeningContext, linkOpenedVoucher } from './voucher-opening.js';
 import { resolveIncidentActorContext } from './incident-resolution.js';
@@ -116,6 +116,10 @@ export function createLedgerApplication({ store, principal, executionMode = 'dem
             : trusted && request.action === 'resolveIncident' ? await resolveIncidentActorContext(transaction, context) : context;
           if (trusted && ['retailSale', 'open'].includes(request.action)) {
             executionContext = withTrustedOrderBusinessDay(executionContext,
+              orderBusinessDaySnapshot(context.dbNow, { timeZone: businessTimeZone }));
+          }
+          if (trusted && ['reversePayment', 'refundPayment'].includes(request.action)) {
+            executionContext = withTrustedFinancialBusinessDay(executionContext,
               orderBusinessDaySnapshot(context.dbNow, { timeZone: businessTimeZone }));
           }
           if (trusted && request.action === 'open') executionContext = await resolveVoucherOpeningContext(transaction, executionContext, request.payload);

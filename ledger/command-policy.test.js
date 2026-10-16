@@ -12,7 +12,7 @@ const principal = (id, permissionIds = [], policyAttributeIds = []) =>
 test('formal action list denies unknown and every demo-only mutation', () => {
   const actor = principal('synthetic-actor', ['catalog.manage', 'identity.manage']);
   assert.equal(new Set(FORMAL_COMMAND_ACTIONS).size, FORMAL_COMMAND_ACTIONS.length);
-  for (const action of [...DEMO_ONLY_ACTIONS, 'refund', 'reversePayment', 'newAction']) {
+  for (const action of [...DEMO_ONLY_ACTIONS, 'refund', 'newAction']) {
     const decision = authorizeCommand({ principal: actor, action, payload: {} });
     assert.equal(decision.allowed, false, action);
     assert.equal(decision.requiresInTransactionAuthorization, false, action);

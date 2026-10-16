@@ -16,6 +16,7 @@ import { submitExpense, decideExpense } from './expenses.js';
 import { submitProcurement } from './procurement.js';
 import { submitIncident, submitIncidentResolution, decideIncidentResolution } from './incidents.js';
 import { submitHandover } from './handover.js';
+import { FINANCIAL_ACTIONS, executeFinancialCommand } from './financial-adjustments.js';
 import { USERS, PERMISSION_ROLES, PERMISSION_IDS, defaultPermissions, defaultCapabilities, permissionsForRoles, effectiveUser, hasPermission, assertTrustedExecutionContext, requireTrustedPermission, AuthorizationDenied } from './shared/identity.js';
 
 export const OTHER_CHARGE_CATEGORIES = ['小吃', '热食', '烧鸡烤肉', '代驾', '其他'];
@@ -232,7 +233,8 @@ function executeExchange(s, data, person, time, execution = { mode: 'demo' }) {
 export function transact(original, action, data = {}, key, execution = { mode: 'demo' }) {
   if (!execution || !['demo', 'trusted'].includes(execution.mode)) throw TypeError('事务执行模式无效');
   const context = execution.mode === 'trusted' ? assertTrustedExecutionContext(execution.context) : null;
-  if (context && !['clean', 'markRoomIssue', 'clearRoomIssue', 'approveRoomIssue', 'rejectRoomIssue', ...CATALOG_COMMAND_ACTIONS, 'cancelReservation', 'deposit', 'withdraw', 'reserve', 'sale', 'retailSale', ...ORDER_ADDITION_ACTIONS, 'exchange', 'stock', 'consumableStock', 'approveInventory', 'rejectInventory', 'gift', 'approveGift', 'rejectGift', 'expense', 'approveExpense', 'rejectExpense', 'credit', 'approve', 'reject', 'repay', 'approveRepayment', 'rejectRepayment', 'incident', 'resolveIncident', 'approveIncidentResolution', 'rejectIncidentResolution', 'procurement', 'collect', 'pay', 'settle', 'approveRounding', 'rejectRounding', 'handover', 'open'].includes(action)) throw new AuthorizationDenied('trusted-action-not-enabled');
+  if (!context && FINANCIAL_ACTIONS.includes(action)) throw new AuthorizationDenied('financial-trusted-only');
+  if (context && ![...FINANCIAL_ACTIONS, 'clean', 'markRoomIssue', 'clearRoomIssue', 'approveRoomIssue', 'rejectRoomIssue', ...CATALOG_COMMAND_ACTIONS, 'cancelReservation', 'deposit', 'withdraw', 'reserve', 'sale', 'retailSale', ...ORDER_ADDITION_ACTIONS, 'exchange', 'stock', 'consumableStock', 'approveInventory', 'rejectInventory', 'gift', 'approveGift', 'rejectGift', 'expense', 'approveExpense', 'rejectExpense', 'credit', 'approve', 'reject', 'repay', 'approveRepayment', 'rejectRepayment', 'incident', 'resolveIncident', 'approveIncidentResolution', 'rejectIncidentResolution', 'procurement', 'collect', 'pay', 'settle', 'approveRounding', 'rejectRounding', 'handover', 'open'].includes(action)) throw new AuthorizationDenied('trusted-action-not-enabled');
   if (!key) throw new BusinessRejection('缺少操作编号');
   if (original.processed.includes(key)) return original;
   const s = structuredClone(original);
@@ -242,7 +244,8 @@ export function transact(original, action, data = {}, key, execution = { mode: '
   if (context) {
     // Only migrated commands; never evaluate demo identity or clock.
     const execution = { mode: 'trusted', context };
-    if (CATALOG_COMMAND_ACTIONS.includes(action)) executeCatalogCommand(s, action, data, execution);
+    if (FINANCIAL_ACTIONS.includes(action)) executeFinancialCommand(s, action, data, execution);
+    else if (CATALOG_COMMAND_ACTIONS.includes(action)) executeCatalogCommand(s, action, data, execution);
     else if (action === 'deposit') submitDeposit(s, data, undefined, undefined, execution);
     else if (action === 'withdraw') withdrawDeposit(s, data, undefined, undefined, execution);
     else if (action === 'sale') {

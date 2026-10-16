@@ -1,3 +1,4 @@
+import { orderPaymentCredit, creditRepaymentRemaining } from './financial-adjustments.js';
 import { pricedSaleOptions } from './catalog-pricing.js';
 import { businessSessionFor, EXISTING_PRICE_PLAN } from './shared/business-session.js';
 // 销售领域：房间增购与独立零售共用成交管道、收款、结账（抹零）、挂账与回款。
@@ -36,7 +37,7 @@ function effectiveRoundingCents(order) {
     return record.roundingType === '免零' && amount <= SMALL_ROUNDING_LIMIT_CENTS ? sum + amount : sum;
   }, 0);
 }
-export const outstanding = order => Math.max(0, total(order) - (order.payments || []).reduce((sum, payment) => sum + payment.amount, 0) - effectiveRoundingCents(order));
+export const outstanding = order => Math.max(0, total(order) - orderPaymentCredit(order) - effectiveRoundingCents(order));
 function closeSettledOrder(order, time) {
   if (order.status !== '营业中' || outstanding(order) !== 0) return { release: false };
   order.status = '已结账'; order.closedAt = time;
@@ -45,7 +46,7 @@ function closeSettledOrder(order, time) {
 // collected（实收汇总）自 rules.js 迁入（Phase 5）：payments 口径的跨订单汇总选择器，供交班与报表使用。
 export const collected = state => state.orders.reduce((sum, o) => sum + (o.payments || []).reduce((n,p) => n+p.amount, 0), 0);
 export function collectableCharges(order, catalog = DEFAULT_CATALOG) {
-  const paidFor = chargeId => (order.payments || []).filter(payment => payment.chargeId === chargeId).reduce((sum, payment) => sum + payment.amount, 0);
+  const paidFor = chargeId => orderPaymentCredit(order, chargeId);
   const opening = { id: 'open', kind: 'open', label: '开房费用（含套餐赠饮）', amount: (order.packageBaseCents ?? order.base ?? 0) + (order.packageGiftValueCents ?? order.gift ?? 0) };
   const groups = new Map();
   for (const line of (order.sales || [])) {
@@ -323,6 +324,8 @@ export function applyCredit(s, order, data, person, time, execution = { mode: 'd
   if (typeof data.signature !== 'string' || !data.signature.startsWith('data:image/png;base64,') || data.signature.length < 100) throw new BusinessRejection('请由经办员工本人手写签字');
   const amount = outstanding(order); if (!amount) throw new BusinessRejection('本单已经收清，无需挂账');
   order.credit = { id: ++s.serial, amount, remaining: amount, phone: phoneValue, name, note, person, submittedById: context ? '' : s.user, ...(context ? { submittedByPrincipalId: context.principalId } : {}), openedBy: order.openedBy || order.person || '未记录', openSource: order.openSource || '线下', reservedBy: order.reservedBy || '', reservationSource: order.reservationSource || '', signature: data.signature, submittedAt: time, due: new Date(Date.parse(time)+86400000).toISOString(), approver: amount>100000 ? '老板' : '店长', repayments: [], repaymentRequests: [] };
+  const reversals = (order.financialAdjustments ?? []).filter(a => a.kind === 'PAYMENT_REVERSAL').map(a => a.adjustmentId);
+  if (reversals.length) order.credit.paymentReversalBaselineIds = reversals;
   order.status = '待审批挂账';
   return { release: true };
 }
@@ -386,8 +389,9 @@ export function submitRepay(s, order, data, person, time, execution = { mode: 'd
   } else need(s, ['收银员','财务','老板'], 'credit.repay');
   if (!order || order.status !== '已挂账') throw new BusinessRejection('请选择已审批的挂账');
   order.credit.repaymentRequests ??= [];
+  const remaining = creditRepaymentRemaining(order);
   const pendingAmount = order.credit.repaymentRequests.filter(request => request.status === '待审核').reduce((sum, request) => sum + request.amount, 0);
-  if (!Number.isSafeInteger(data.amount) || data.amount <= 0 || data.amount > order.credit.remaining - pendingAmount) throw new BusinessRejection('回款金额应大于零且不超过扣除待审核回款后的欠款');
+  if (!Number.isSafeInteger(data.amount) || data.amount <= 0 || data.amount > remaining - pendingAmount) throw new BusinessRejection('回款金额应大于零且不超过扣除待审核回款后的欠款');
   if (!PAYMENT_METHODS.includes(data.method)) throw new BusinessRejection('请选择收款方式');
   order.credit.repaymentRequests.push({ id: ++s.serial, amount: data.amount, method: data.method, status: '待审核', submittedBy: person, submittedById: context ? '' : s.user, ...(context ? { submittedByPrincipalId: context.principalId } : {}), submittedAt: time, decidedBy: '', decidedAt: '', decisionNote: '' });
 }
@@ -414,7 +418,8 @@ export function decideRepayment(s, order, action, data, person, time, authorizeR
   const decisionNote = String(data.decisionNote || '').trim().slice(0, 300);
   if (action === 'rejectRepayment' && !decisionNote) throw new BusinessRejection('请填写驳回原因');
   if (action === 'approveRepayment') {
-    if (order.status !== '已挂账' || request.amount > order.credit.remaining) throw new BusinessRejection('挂账余额已经变化，请驳回后重新登记');
+    const remaining = creditRepaymentRemaining(order);
+    if (order.status !== '已挂账' || request.amount > remaining) throw new BusinessRejection('挂账余额已经变化，请驳回后重新登记');
     let payment;
     if (context) {
       [payment] = appendPaymentRecords(s, order, [{ amount: request.amount, method: request.method }], 'credit-repayment',
@@ -425,7 +430,7 @@ export function decideRepayment(s, order, action, data, person, time, authorizeR
         person: request.submittedBy, approvedBy: person, repaymentRequestId: request.id };
       order.payments.push(payment);
     }
-    order.credit.repayments.push(payment); order.credit.remaining -= request.amount;
+    order.credit.repayments.push(payment); order.credit.remaining = remaining - request.amount;
     if (!order.credit.remaining) order.status = '已回款';
   }
   request.status = action === 'approveRepayment' ? '已批准' : '已驳回'; request.decidedBy = person; request.decidedAt = time; request.decisionNote = decisionNote; request.selfReviewAuthorized = selfReview;

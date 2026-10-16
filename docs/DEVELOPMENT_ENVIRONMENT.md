@@ -1,3 +1,13 @@
+## C1-A focused verification only
+
+Frozen Node 24.19.0, no project full regression:
+
+```text
+node --test --test-isolation=none --test-reporter=tap financial-adjustments.test.js sales.test.js ledger/trusted-payments.test.js ledger/trusted-repay.test.js ledger/trusted-repayment-review.test.js ledger/trusted-rounding.test.js ledger/command-policy.test.js
+```
+
+MySQL cases use testTrustedFinancialAdjustments registered in the existing guarded trusted-clean fixture. Provision only freshEnvironment(repository,{port:33313,packages:false}) with STAGE5E_RUN=synthetic-only and test deployment selectors; create its owned database, assertRegressionFixture, pass exact fixture root/id/UUID and LEDGER_MYSQL_TEST_URL to the child, and always invoke fixture cleanup. Do not point at production or existing MySQL. Parent-name matching includes descendants: the author run therefore executed the existing 700-case trusted fixture, not a narrow 11-case discovery; retain that distinction. This does not authorize another broad run or project full regression. Scoped npm was unavailable in the author environment.
+
 ## Stage5E historical release authority focused verification
 
 Set STAGE5E_RUN=synthetic-only and use frozen Node24.19.0: node --test --test-isolation=none --test-reporter=tap rehearsal/release-authority.test.js rehearsal/integration.test.js rehearsal/crash-recovery.integration.test.js. These owned disposable MySQL33315 fixtures run serially; do not supply production config or credentials. The historical self-rehearsal uses its selected package preflight/config/date authority; the new protection separately verifies current06 acceptance/current12 rejection. This command does not authorize full regression. Attempt the same scoped files with npm test after JavaScript edits and report npm unavailability separately.

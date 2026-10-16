@@ -1,9 +1,10 @@
 // Migrated execution is a separate gate from Stage 2A eligibility.
+import { FINANCIAL_ACTIONS } from '../financial-adjustments.js';
 import { authorizeCommand } from './command-policy.js';
 import { EMPLOYEE_ATTRIBUTED_ACTIONS, employeePolicyPayload } from './employee-attribution.js';
 import { assertTrustedExecutionContext, requireTrustedPermission, AuthorizationDenied } from '../shared/identity.js';
 
-export const TRUSTED_ENABLED_ACTIONS = Object.freeze(['clean', 'markRoomIssue', 'clearRoomIssue',
+export const TRUSTED_ENABLED_ACTIONS = Object.freeze([...FINANCIAL_ACTIONS, 'clean', 'markRoomIssue', 'clearRoomIssue',
   'createCatalogProduct', 'updateCatalogProduct', 'updateCatalogPackage', 'cancelReservation', 'deposit', 'withdraw', 'reserve', 'sale', 'retailSale', 'serveExtra', 'otherCharge', 'exchange',
   'approveRoomIssue', 'rejectRoomIssue', 'stock', 'consumableStock', 'approveInventory', 'rejectInventory', 'gift', 'approveGift', 'rejectGift', 'expense', 'approveExpense', 'rejectExpense', 'credit', 'approve', 'reject', 'repay', 'approveRepayment', 'rejectRepayment', 'incident', 'resolveIncident', 'approveIncidentResolution', 'rejectIncidentResolution', 'procurement', 'collect', 'pay', 'settle', 'approveRounding', 'rejectRounding', 'handover', 'open']);
 const enabled = new Set(TRUSTED_ENABLED_ACTIONS);

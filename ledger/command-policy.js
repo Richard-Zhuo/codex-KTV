@@ -25,6 +25,9 @@ const groups = {
   'order.gift': ['gift'],
   'order.serveExtra': ['serveExtra'],
   'gift.approve': ['approveGift', 'rejectGift'],
+  'payment.reverse': ['reversePayment'],
+  'payment.refund': ['refundPayment'],
+  'financial.approve': ['approveFinancialAdjustment', 'rejectFinancialAdjustment'],
   'payment.collect': ['collect'],
   'payment.settle': ['settle', 'pay'],
   'rounding.approve': ['approveRounding', 'rejectRounding'],
@@ -51,7 +54,7 @@ const reviewActions = new Set([
   'approveRounding', 'rejectRounding', 'approve', 'reject',
   'approveRepayment', 'rejectRepayment', 'approveInventory', 'rejectInventory',
   'approveIncidentResolution', 'rejectIncidentResolution',
-  'approveExpense', 'rejectExpense'
+  'approveExpense', 'rejectExpense', 'approveFinancialAdjustment', 'rejectFinancialAdjustment'
 ]);
 const demoActions = new Set(['identity', 'setUser', 'clock', 'setClock', 'reset', 'setPermissions']);
 export const FORMAL_COMMAND_ACTIONS = Object.freeze([...Object.keys(actionPermissions), ...stockActions]);
@@ -137,6 +140,9 @@ export function authorizeReviewCommand({ principal, action, reviewFacts }) {
     return result(false, action, 'invalid-review-facts');
   }
   const self = reviewFacts.submittedByPrincipalId === principal.id;
+  if (self && ['approveFinancialAdjustment', 'rejectFinancialAdjustment'].includes(action)) {
+    return result(false, action, 'financial-other-reviewer-required', base.requiredPermissions.allOf);
+  }
   const allOf = [...base.requiredPermissions.allOf, ...(self ? ['review.self'] : [])];
   if (self && !principal.permissionIds.includes('review.self')) {
     return result(false, action, 'missing-review-self', allOf);
