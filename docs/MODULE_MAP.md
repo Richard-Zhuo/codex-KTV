@@ -1,5 +1,7 @@
 ## C1-A internal payment adjustments
 
+Static delivery: server.js explicitly serves financial-adjustments.js for the existing employee module graph. server-static.test.js verifies graph closure, exact module delivery and unknown path rejection; this does not expose financial HTTP/UI commands.
+
 - financial-adjustments.js owns validated original references, append-only refund/reversal facts, shared requests, balance reservation, applicant-only execution and effective money projections.
 - shared/identity.js registers explicit grants and a server-only financial business-day context; ledger/command-policy.js enforces strict other-person financial decisions.
 - ledger/trusted-execution.js and rules.js register the four internal commands; ledger/application.js attaches execution-time 06:00 snapshots after session/replay/revision gates.

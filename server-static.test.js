@@ -1,3 +1,6 @@
+import { readFile } from 'node:fs/promises';
+import { runtimePath } from './shared/release-artifact.js';
+import { isHttpCommand } from './http/registry.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { once } from 'node:events';
@@ -44,7 +47,7 @@ async function servedModuleGraph(pagePath, entry, required = []) {
 
 test('staff page and its JavaScript module graph are served by server.js', async () => {
   await servedModuleGraph('/', '/ui/staff-app.js',
-    ['/ui/pending-command-journal.js']);
+    ['/ui/pending-command-journal.js', '/sales.js', '/rules.js', '/financial-adjustments.js']);
 });
 
 test('formal admin page and its JavaScript module graph are served without demo entry', async () => {
@@ -54,4 +57,35 @@ test('formal admin page and its JavaScript module graph are served without demo 
   assert.doesNotMatch(html, /type="module" src="\/app\.js"/);
   assert.doesNotMatch(html, /demo-banner|演示数据/);
   assert.equal(visited.has('/app.js'), false);
+});
+
+test('C1-A static financial module delivery preserves the explicit allowlist boundary', async t => {
+  const server = createKtvServer({ api: null });
+  server.listen(0, '127.0.0.1');
+  await once(server, 'listening');
+  const origin = 'http://127.0.0.1:' + server.address().port;
+  try {
+    await t.test('financial-adjustments.js is delivered as the exact JavaScript module', async () => {
+      const response = await fetch(origin + '/financial-adjustments.js');
+      assert.equal(response.status, 200);
+      assert.match(response.headers.get('content-type') ?? '', /^text\/javascript/);
+      assert.equal(response.headers.get('x-content-type-options'), 'nosniff');
+      assert.equal(await response.text(), await readFile(new URL('./financial-adjustments.js', import.meta.url), 'utf8'));
+      assert.equal(runtimePath('financial-adjustments.js'), true, 'existing artifact selection includes the module');
+    });
+    await t.test('unknown and private static paths still return 404', async () => {
+      for (const path of ['/unlisted-financial.js', '/financial-adjustments.test.js', '/ledger/application.js', '/package.json', '/.git/config']) {
+        const response = await fetch(origin + path);
+        assert.equal(response.status, 404, path);
+        assert.equal(await response.text(), 'Not found', path);
+      }
+    });
+    await t.test('serving a dependency does not expose financial employee commands', () => {
+      for (const action of ['reversePayment', 'refundPayment', 'approveFinancialAdjustment', 'rejectFinancialAdjustment']) {
+        assert.equal(isHttpCommand(action), false, action);
+      }
+    });
+  } finally {
+    await new Promise(resolve => server.close(resolve));
+  }
 });

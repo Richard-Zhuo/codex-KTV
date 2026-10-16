@@ -1,3 +1,11 @@
+## C1-A static module delivery P1 fix — local candidate
+
+Parent: 069b3d06a8b649a8542dd00b009aabc63cfa3d43; branch codex/c0-financial-core. Independent narrow acceptance previously stopped with P1: the existing employee module graph imported financial-adjustments.js, but the explicit server mapping returned 404. This slice changes only that production mapping; the existing artifact runtimePath already selects tracked root JavaScript, so no package change is required.
+
+Author static-focused evidence: server-static.test.js 6/6 PASS, fail/cancel/skip 0, exit 0, frozen Node 24.19.0. Real loopback responses verify exact module bytes/MIME, complete existing employee imports, unknown/private path 404 and unchanged financial command HTTP exclusion. Scoped npm test was attempted; npm unavailable. No money tests, 188/700 reruns, full regression or browser-wide acceptance.
+
+C1-A independent dynamic acceptance remains NOT COMPLETED and READY FOR C1-B remains NO. This fix is ready only for independent re-acceptance; no funds semantics, UI actions, deployment, merge or push changed.
+
 ## C1-A payment refund / reversal core — local candidate
 
 Parent: 27aba1946d2411b9e2a27139e681d23954e7e546. Branch: codex/c0-financial-core. Internal trusted commands only; independent acceptance and full regression remain pending. No merge, push, deployment or real production execution.
