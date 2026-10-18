@@ -35,7 +35,7 @@ export async function testTrustedHandover({ t, pool, setup, auth, table, provisi
     assert.equal(h.expectedCash, 50000); assert.equal(h.difference, 0); assert.equal(h.intervalCashIn, 0); assert.equal(h.intervalCashOut, 0);
     assert.match(h.handoverId, /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
     assert.equal(h.submittedByPrincipalId, login.principalId); assert.equal(h.occurredAt, run.context().dbNow); assert.equal(h.person, null);
-    assert.equal(h.cashBoundary.version, 'payment-set-v1'); assert.deepEqual(actual.head.state.handovers.slice(0,-1), original.handovers);
+    assert.equal(h.cashBoundary.version, 'cash-fact-set-v2'); assert.deepEqual(actual.head.state.handovers.slice(0,-1), original.handovers);
     assert.deepEqual(actual.head.state.orders, original.orders); assert.equal(actual.head.state.orders[0].room, null);
     assert.equal(actual.head.state.inventory.bw.count, 0); assert.equal(actual.head.state.inventory.qd.count, null);
     for (const field of ['user','clock','permissions','capabilities','administrator','inventory','catalog']) assert.deepEqual(actual.head.state[field], original[field]);

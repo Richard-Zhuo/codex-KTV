@@ -3,9 +3,11 @@ import { BusinessRejection } from './shared/business-error.js';
 import { need } from './inventory.js';
 import { collected, PAYMENT_METHODS } from './sales.js';
 import { assertTrustedExecutionContext, requireTrustedPermission } from './shared/identity.js';
+import { cashDrawerFacts } from './financial-adjustments.js';
 
-const HANDOVER_VERSION = 'drawer-v1';
-const BOUNDARY_VERSION = 'payment-set-v1';
+const HANDOVER_VERSION = 'drawer-v2';
+const BOUNDARY_VERSION = 'cash-fact-set-v2';
+const boundaryVersions = { 'drawer-v1': 'payment-set-v1', 'drawer-v2': BOUNDARY_VERSION };
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const fail = () => { throw new BusinessRejection('交班现金边界或付款事实无法安全解释'); };
 const validTime = value => typeof value === 'string' && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,6})?Z$/.test(value) && Number.isFinite(Date.parse(value));
@@ -36,58 +38,85 @@ function previousTrustedHandover(state) {
   const ids = new Set();
   for (const handover of state.handovers) {
     if (!Object.hasOwn(handover, 'trustedHandoverVersion')) continue;
-    if (handover.trustedHandoverVersion !== HANDOVER_VERSION || !UUID.test(handover.handoverId) ||
+    if (!Object.hasOwn(boundaryVersions, handover.trustedHandoverVersion) || !UUID.test(handover.handoverId) ||
         ids.has(handover.handoverId) || !validTime(handover.occurredAt) ||
         typeof handover.submittedByPrincipalId !== 'string' || !handover.submittedByPrincipalId ||
         !Number.isSafeInteger(handover.actualCash) || handover.actualCash < 0 ||
         handover.bootstrap !== !previous || handover.previousHandoverId !== (previous?.handoverId ?? null) ||
-        handover.cashBoundary?.version !== BOUNDARY_VERSION ||
-        !Array.isArray(handover.cashBoundary.payments) || !Array.isArray(handover.cashBoundary.legacyPayments)) fail();
+        handover.cashBoundary?.version !== boundaryVersions[handover.trustedHandoverVersion] ||
+        !Array.isArray(handover.cashBoundary.payments) || !Array.isArray(handover.cashBoundary.legacyPayments) ||
+        handover.trustedHandoverVersion === HANDOVER_VERSION && !Array.isArray(handover.cashBoundary.facts) ||
+        handover.trustedHandoverVersion === 'drawer-v1' && Object.hasOwn(handover.cashBoundary, 'facts')) fail();
     ids.add(handover.handoverId); previous = handover;
   }
   return previous;
 }
 
-function intervalCash(previous, current, records) {
-  if (!previous) return { cashIn: 0, cashOut: 0, byChannel: {} };
+function safeAdd(a, b) {
+  if (!Number.isSafeInteger(a) || !Number.isSafeInteger(b) || a < 0 || b < 0 || !Number.isSafeInteger(a + b)) fail();
+  return a + b;
+}
+function intervalCash(state, previous, current, records, financial) {
+  if (!previous) return { cashIn: 0, cashOut: 0, refundCashOut: 0, independentCashOut: 0, byChannel: {} };
   const before = previous.cashBoundary, ids = new Set(), currentById = new Map(current.payments.map(p => [p.paymentId, p]));
-  // Old ambiguous payments are absorbed at bootstrap, never dated or turned into new money.
-  // A new ambiguous payment, mutation or removal cannot silently advance the drawer cursor.
   if (JSON.stringify(before.legacyPayments) !== JSON.stringify(current.legacyPayments)) fail();
   for (const payment of before.payments) {
     if (!payment || !UUID.test(payment.paymentId) || ids.has(payment.paymentId) ||
         typeof payment.signature !== 'string' || currentById.get(payment.paymentId)?.signature !== payment.signature) fail();
     ids.add(payment.paymentId);
   }
-  let cashIn = 0;
+  const seenFacts = new Set(), currentFacts = new Map(financial.facts.map(f => [f.factId, f]));
+  for (const fact of before.facts ?? []) {
+    const actual = currentFacts.get(fact?.factId);
+    if (!fact || !UUID.test(fact.factId) || seenFacts.has(fact.factId) ||
+        !actual || actual.kind !== fact.kind || actual.signature !== fact.signature) fail();
+    seenFacts.add(fact.factId);
+  }
+  let cashIn = 0, refundCashOut = 0, independentCashOut = 0;
   const byChannel = {};
   for (const { paymentId } of current.payments) {
     if (ids.has(paymentId)) continue;
-    const payment = records.get(paymentId);
-    byChannel[payment.method] = (byChannel[payment.method] || 0) + payment.amount;
-    if (!Number.isSafeInteger(byChannel[payment.method])) fail();
-    if (payment.method === '现金') cashIn += payment.amount;
+    const payment = records.get(paymentId), amount = payment.amount - (financial.paymentReversals.get(paymentId) ?? 0);
+    if (!Number.isSafeInteger(amount) || amount < 0) fail();
+    byChannel[payment.method] = safeAdd(byChannel[payment.method] || 0, amount);
+    if (payment.method === '\u73b0\u91d1') cashIn = safeAdd(cashIn, amount);
   }
-  if (!Number.isSafeInteger(cashIn)) fail();
-  // No current command records a proven drawer cash outflow. Do not infer it from an expense's method.
-  return { cashIn, cashOut: 0, byChannel };
+  const chain = state.handovers.filter(h => Object.hasOwn(h, 'trustedHandoverVersion'));
+  const previousIndex = chain.findIndex(h => h.handoverId === previous.handoverId);
+  for (const fact of financial.facts) {
+    if (fact.kind === 'PAYMENT_REVERSAL' || seenFacts.has(fact.factId)) continue;
+    if (previous.trustedHandoverVersion === 'drawer-v1') {
+      const index = chain.findIndex(h => h.handoverId === fact.drawerHandoverId);
+      if (index < 0 || index > previousIndex) fail();
+      if (index < previousIndex) continue;
+    } else if (fact.drawerHandoverId !== previous.handoverId) fail();
+    if (fact.kind === 'REFUND') refundCashOut = safeAdd(refundCashOut, fact.amount);
+    else independentCashOut = safeAdd(independentCashOut, fact.amount);
+  }
+  return { cashIn, cashOut: safeAdd(refundCashOut, independentCashOut), refundCashOut, independentCashOut, byChannel };
 }
-
-// Read-only admission view; no count, boundary advance or reconciliation change.
-export function readTrustedDrawer(state) {
+// One read-only calculation shared by execution and the handover writer.
+// Capturing correction IDs preserves the interpretation of every historical interval.
+function drawerInterval(state) {
   const { boundary, records } = paymentBoundary(state), previous = previousTrustedHandover(state);
+  const financial = cashDrawerFacts(state);
+  boundary.facts = financial.facts.map(({ factId, kind, signature }) => ({ factId, kind, signature }));
+  return { boundary, previous, ...intervalCash(state, previous, boundary, records, financial) };
+}
+export function readTrustedDrawer(state) {
+  const { previous, cashIn, cashOut } = drawerInterval(state);
   if (!previous) fail();
-  const { cashIn } = intervalCash(previous, boundary, records);
-  return { handoverId: previous.handoverId, actualCash: previous.actualCash, cashIn,
+  const expectedCash = safeAdd(previous.actualCash, cashIn) - cashOut;
+  if (!Number.isSafeInteger(expectedCash) || expectedCash < 0) fail();
+  return { handoverId: previous.handoverId, actualCash: previous.actualCash, cashIn, cashOut, expectedCash,
     boundaryPaymentIds: previous.cashBoundary.payments.map(p => p.paymentId) };
 }
 
 function submitTrustedHandover(state, data, context) {
   assertTrustedExecutionContext(context); requireTrustedPermission(context, 'handover');
   if (!Number.isSafeInteger(data.actualCash) || data.actualCash < 0) throw new BusinessRejection('请输入有效实点现金金额');
-  const { boundary, records } = paymentBoundary(state), previous = previousTrustedHandover(state);
-  const { cashIn, cashOut, byChannel } = intervalCash(previous, boundary, records);
-  const expectedCash = previous ? previous.actualCash + cashIn - cashOut : data.actualCash;
+  const { boundary, previous, cashIn, cashOut, refundCashOut, independentCashOut, byChannel } = drawerInterval(state);
+  const expectedCash = previous ? safeAdd(previous.actualCash, cashIn) - cashOut : data.actualCash;
   if (!Number.isSafeInteger(expectedCash) || expectedCash < 0) fail();
   const handoverId = globalThis.crypto.randomUUID();
   if (state.handovers.some(h => h.handoverId === handoverId)) throw Error('交班 ID 冲突');
@@ -95,7 +124,8 @@ function submitTrustedHandover(state, data, context) {
     occurredAt: context.dbNow, submittedByPrincipalId: context.principalId,
     actualCash: data.actualCash, expectedCash, difference: data.actualCash - expectedCash,
     previousHandoverId: previous?.handoverId ?? null, bootstrap: !previous, cashBoundary: boundary,
-    intervalCashIn: cashIn, intervalCashOut: cashOut, intervalByChannel: byChannel,
+    intervalCashIn: cashIn, intervalCashOut: cashOut, intervalRefundCashOut: refundCashOut,
+    intervalIndependentCashOut: independentCashOut, intervalByChannel: byChannel,
     person: context.actorSnapshot?.displayName ?? null, time: context.dbNow,
     expected: expectedCash, actual: data.actualCash, drawerCash: data.actualCash });
 }

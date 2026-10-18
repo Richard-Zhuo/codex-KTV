@@ -16,6 +16,7 @@ const fail = () => { throw new BusinessRejection('资金事实或申请无法安
 const rows = v => { if (v === undefined) return []; if (!Array.isArray(v)) fail(); return v; };
 const sum = values => values.reduce((a, b) => { if (!Number.isSafeInteger(b) || b < 0 || !Number.isSafeInteger(a + b)) fail(); return a + b; }, 0);
 const permission = kind => kind === 'REFUND' ? 'payment.refund' : 'payment.reverse';
+const usesCashDrawer = terms => terms.kind === 'CASH_OUT' || terms.kind === 'REFUND' && terms.refundFundingSource === 'CURRENT_DRAWER';
 function refundTerms(item) {
   if (!PAYMENT_METHODS.includes(item.refundChannel)) fail();
   if (item.refundChannel === '现金' ? !['CURRENT_DRAWER', 'OUTSIDE_DRAWER'].includes(item.refundFundingSource) : item.refundFundingSource !== 'NON_CASH') fail();
@@ -145,6 +146,11 @@ function eligible(state, terms, excluding = null) {
       terms.kind === 'PAYMENT_REVERSAL' && (terms.amount !== b.originalAmount || b.refunds || b.reversed || b.reserved)) {
     throw new BusinessRejection('原付款可调整余额不足或已被占用');
   }
+  if (usesCashDrawer(terms)) {
+    const drawer = cashOutBalance(state, excluding);
+    if (terms.amount > drawer.available)
+      throw new BusinessRejection('Cash refund exceeds the current verified drawer boundary');
+  }
 }
 function uniqueId(state) {
   const id = globalThis.crypto.randomUUID();
@@ -165,7 +171,8 @@ function append(state, terms, context, request = null) {
     amount: terms.amount, reason: terms.reason, actualActorPrincipalId: context.principalId,
     occurredAt: context.dbNow, ...context.financialBusinessDay, requestId: request?.requestId ?? null,
     ...(terms.kind === 'REFUND' ? { refundChannel: terms.refundChannel, refundFundingSource: terms.refundFundingSource,
-      affectsCurrentDrawer: terms.refundFundingSource === 'CURRENT_DRAWER' } : {}) };
+      affectsCurrentDrawer: terms.refundFundingSource === 'CURRENT_DRAWER',
+      ...(usesCashDrawer(terms) ? { drawerHandoverId: readTrustedDrawer(state).handoverId } : {}) } : {}) };
   (order.financialAdjustments ??= []).push(adjustment);
   // Only derived credit cache/lifecycle changes; original payment/mirrors stay intact.
   if (terms.kind === 'PAYMENT_REVERSAL' && order.credit) {
@@ -178,7 +185,7 @@ function append(state, terms, context, request = null) {
 // Facts bind to the actual-count cursor, never wall-clock ordering.
 function cashOutFacts(state) {
   const facts = rows(state.cashOutflows), seen = new Set();
-  const handovers = rows(state.handovers).filter(h => h.trustedHandoverVersion === 'drawer-v1');
+  const handovers = rows(state.handovers).filter(h => ['drawer-v1', 'drawer-v2'].includes(h.trustedHandoverVersion));
   let previousIndex = -1;
   for (const fact of facts) {
     const index = handovers.findIndex(h => h.handoverId === fact?.drawerHandoverId);
@@ -191,27 +198,41 @@ function cashOutFacts(state) {
   }
   return facts;
 }
-export function cashOutBalance(state, excludingRequestId = null) {
-  const drawer = readTrustedDrawer(state), included = new Set(drawer.boundaryPaymentIds);
-  let correctedNewCash = 0;
+// No time-window attribution. Unknown historical refunds remain blocked.
+export function cashDrawerFacts(state) {
+  const facts = [], paymentReversals = new Map(), seen = new Set();
+  const handovers = new Set(rows(state.handovers).filter(h =>
+    ['drawer-v1', 'drawer-v2'].includes(h.trustedHandoverVersion)).map(h => h.handoverId));
+  const add = fact => { if (seen.has(fact.factId)) fail(); seen.add(fact.factId); facts.push(fact); };
   for (const order of rows(state.orders)) {
     const effective = adjustments(order);
+    for (const [id, totals] of effective) if (totals.reversed) paymentReversals.set(id, totals.reversed);
     for (const a of rows(order.financialAdjustments)) {
-      // C1-A drawer refunds lack a count-cursor association. Refuse ambiguity.
-      if (a.kind === 'REFUND' && a.affectsCurrentDrawer) throw new BusinessRejection('Cash drawer refund boundary is not established');
+      if (a.kind === 'REFUND' && !a.affectsCurrentDrawer) continue;
+      if (a.kind === 'REFUND' && (!uuid(a.drawerHandoverId) || !handovers.has(a.drawerHandoverId)))
+        throw new BusinessRejection('Cash drawer refund attribution requires audited reconciliation');
+      add({ factId: a.adjustmentId, kind: a.kind, amount: a.amount, drawerHandoverId: a.drawerHandoverId ?? null,
+        signature: JSON.stringify([order.id, a.adjustmentId, a.kind, a.originalPaymentId, a.amount, a.reason,
+          a.actualActorPrincipalId, a.occurredAt, a.businessDate, a.businessDayRuleVersion, a.businessTimeZone,
+          a.requestId, a.refundChannel ?? null, a.refundFundingSource ?? null, a.affectsCurrentDrawer ?? null, a.drawerHandoverId ?? null]) });
     }
-    correctedNewCash = sum([correctedNewCash, ...rows(order.payments)
-      .filter(p => p.method === '\u73b0\u91d1' && !included.has(p.paymentId))
-      .map(p => effective.get(p.paymentId)?.reversed ?? 0)]);
   }
-  const out = sum(cashOutFacts(state).filter(f => f.drawerHandoverId === drawer.handoverId).map(f => f.amountCents));
+  for (const f of cashOutFacts(state)) add({ factId: f.cashOutId, kind: 'CASH_OUT', amount: f.amountCents,
+    drawerHandoverId: f.drawerHandoverId,
+    signature: JSON.stringify([f.cashOutId, f.amountCents, f.reason, f.actualActorPrincipalId, f.occurredAt,
+      f.businessDate, f.businessDayRuleVersion, f.businessTimeZone, f.requestId, f.drawerHandoverId]) });
+  return { facts, paymentReversals };
+}
+
+export function cashOutBalance(state, excludingRequestId = null) {
+  const drawer = readTrustedDrawer(state), included = new Set(drawer.boundaryPaymentIds);
   const reserved = sum(requests(state).filter(r => r.requestId !== excludingRequestId &&
     ['\u5f85\u5ba1\u6838', '\u5df2\u6279\u51c6'].includes(r.status) &&
     (r.kind === 'CASH_OUT' || r.kind === 'REFUND' && r.refundFundingSource === 'CURRENT_DRAWER' ||
       r.kind === 'PAYMENT_REVERSAL' && !included.has(r.originalPaymentId) &&
       validateOriginalPayment(state, r.orderId, r.originalPaymentId).payment.method === '\u73b0\u91d1'))
     .map(r => r.amount));
-  const available = sum([drawer.actualCash, drawer.cashIn]) - correctedNewCash - out - reserved;
+  const available = drawer.expectedCash - reserved;
   if (!Number.isSafeInteger(available) || available < 0) fail();
   return { drawerHandoverId: drawer.handoverId, available, reserved };
 }

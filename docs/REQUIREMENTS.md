@@ -1,3 +1,23 @@
+## C2-A cash drawer / handover integration（内部候选）
+
+本节为当前现金交班合同；下方 C1-B/C1-A 保留已验收阶段范围，不覆盖本次明确授权的集成点。只改现金领域、可信交班及其执行门禁，不开放员工资金 HTTP/UI，不进入 C2-B 报表或 C3。
+
+新交班写 drawer-v2／cash-fact-set-v2。cashBoundary 继续保存可信 paymentId／固定内容快照与原 legacyPayments，另保存冲正、当前抽屉退款和独立 cashOut 的累计 factId／kind／signature（固定字段序列的内容快照）。旧快照中的事实必须仍存在且内容一致；同一事实不按日期或时间戳重复计入。新旧版本可共存，历史交班、退款、付款及金额不回写。
+
+expectedCash=上次可信 actualCash+本区间有效新增现金付款−本区间 CURRENT_DRAWER 实际退款−本区间已执行独立 cashOut。intervalCashOut 为两类实际出流之和，intervalRefundCashOut／intervalIndependentCashOut 分别记录其构成；非现金付款仅进入对应渠道统计。EXPENSE 不自动成为 cashOut，批准未执行的申请不计实际交班出流，退款不复制成第二条独立出流。
+
+本区间新增付款若已冲正，减少对应 cashIn；冲正不是实际出流。已包含在上次实点中的付款后来冲正，不从实际现金基线再次扣款。边界保存冲正事实引用，后来的冲正不重算或改写旧交班。首次可信实点建立基线，不假设备用金；旧付款和旧已吸收出流不再次计算。
+
+新 CURRENT_DRAWER 退款必须有可信实点和可解释的现金边界。复用原资金资格、权限和审批，并在申请、批准、执行时校验锁内当前抽屉可用现金及未执行申请占额。实际执行才把服务器读取的最新 handoverId 写为 drawerHandoverId，不接受客户端指定，不使用申请时间、审批时间或原订单时间代替归属。OUTSIDE_DRAWER／NON_CASH 不扣当前抽屉；原 payment、退款不生成新债务、冲正语义及 06:00 快照保持。
+
+现金退款与 cashOut 共用 readTrustedDrawer 的实际余额和现有申请占额。旧申请不能使用过去的余额绕过新边界：实际执行必须重新通过最新边界、余额、session、grants、request status、expectedRevision；成功后绑定执行时的交班。申请本身不是现金移动，不引入新的跨交班重审批业务流程，已消费申请仍不能重复执行。
+
+历史 v1 交班保留 payment-set-v1 原文。已有 C1-B cashOut 的可信 handoverId 可以判断是否已被后续实点吸收；首次 v2 交班保存累计事实快照。缺少归属游标的历史 CURRENT_DRAWER 退款一律阻断交班和 cashOut，包括第一次／重新清点；任意 actualCash 都不能替它生成归属。旧差额始终留在原交班，不被新交班覆盖或自动标记解决。
+
+这类历史阻断需要有权限人员逐笔核对退款凭证、现金清点记录，形成独立可审计核对事实，明确 refund ID 与已吸收的可信 handoverId 或应归属区间，并保留凭证引用、核对人 principal、核对时间、理由及相应授权／审批证据。人工核对入口和权限需另行冻结，本阶段不实现、不伪造、不改写历史。
+
+交班、事实边界、revision、operation、audit 同事务提交；重放不再次前移边界。继续使用现有 ledger head lock 与 MySQL 事务，不新增锁系统。无 SQL migration、新表或新列，不修改库存、销售价格、设备控制、reporting 或员工资金 UI/HTTP。
+
 ## C1-B cashOut / cancelOrder core（内部候选）
 
 Owner 冻结本阶段仅扩展内部 trusted core，不开放员工 HTTP/UI。cashOut 确认现金已从当前收银抽屉实际取出；只追加 state.cashOutflows，包含 cashOutId、正整数分 amountCents、reason、actualActorPrincipalId、occurredAt、执行时 06:00 营业日三字段、requestId（可空）及 drawerHandoverId。不写负 payment，不生成 expense，不重复复制 REFUND 为 cashOut，不改变库存或原付款。

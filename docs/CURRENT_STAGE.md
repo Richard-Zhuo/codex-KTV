@@ -1,3 +1,15 @@
+## C2-A cash drawer / handover integration — local candidate
+
+Frozen parent: dba8b4a710d198f6b2d70853e1bdd13ce0212d7b; branch codex/c0-financial-core; main=origin/main=27aba1946d2411b9e2a27139e681d23954e7e546. All three previous feature commits are preserved. Owner accepted C1-A and C1-B independent acceptance; their evidence is historical and was not rerun. Older pending-acceptance headings below are historical slices.
+
+New drawer-v2 / cash-fact-set-v2 snapshots capture payment identities plus immutable correction/refund/cashOut references. CURRENT_DRAWER refund execution binds the current trusted handover in the existing locked transaction. The handover calculation and cashOut/refund admission share the same physical-cash projection; pending approvals reserve funds without being counted as real outflows. Historical v1 contents and discrepancy evidence are preserved. Contract and unknown-history/manual-reconciliation blocker: [REQUIREMENTS](REQUIREMENTS.md#c2-a-cash-drawer--handover-integration内部候选).
+
+Author focused evidence: frozen Node24.19.0, synthetic-only. New cash-drawer tests (22 cases), directly affected handover/cashOut cases and static module delivery: 84/84 PASS, fail/cancel/skip=0, exit0, 715.3139ms. Tests are selected by the exact focused pattern in DEVELOPMENT_ENVIRONMENT; this is not the old C1-B acceptance set or full regression. Necessary fixture changes update the new boundary version, integrated output calculation, historical unbound-refund setup and outside-drawer funding for cancellation-only coverage.
+
+New standalone owned MySQL integration: 9/9 TAP PASS (8 business subtests plus parent), fail/cancel/skip=0, exit0, 5412.5796ms. Four real two-connection directions (handover/cashOut and handover/refund), boundary and refund-consumption SQL rollback, old-intent revalidation and unknown-history rejection passed. Fixture cleanup confirmed processes/databases/accounts/root absent, sqlCleanup=true. Total focused evidence: 93/93. Initial tracer failed because the old refund had no handover reference, then passed after implementation; no production security check was relaxed to obtain green tests.
+
+Scoped npm test was attempted and npm unavailable; formal evidence uses frozen Node. git diff --check passed. No C2-A independent acceptance or full regression yet, no real data reconciliation, deployment, C2-B/C3, merge or push. Commit identity is reported externally after freezing rather than embedded in its own contents.
+
 ## C1-B cashOut / unpaid cancellation — local candidate
 
 Frozen parent: 36d8efd7c5b28b360e5355493152179966e3ba47; branch codex/c0-financial-core; main=origin/main=27aba1946d2411b9e2a27139e681d23954e7e546. Preserve both prior feature commits. Owner accepted C1-A independent re-acceptance (16/16, P0/P1/P2=0); that evidence is historical to this implementation, not rerun here. Older C1-A pending-acceptance entries below are historical snapshots.

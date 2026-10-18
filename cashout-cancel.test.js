@@ -111,12 +111,12 @@ test('C1-B: cashOut direct replay, current permissions and consumed physical bal
   await assert.rejects(f.execute(cash('revoked',2,1)),e=>e.code==='AUTHORIZATION_DENIED');
   assert.equal((await read(f)).cashOutflows.length,1);
 });
-test('C1-B: new actual count absorbs old cashOut by cursor without changing handover formula',async()=>{
+test('C1-B: new actual count absorbs old cashOut once with the integrated handover formula',async()=>{
   const f=coreFixture();await counted(f);
   assert.equal((await f.execute(cash('first',1,7000))).status,'committed');await counted(f,3000);
   const state=await read(f);
-  assert.equal(state.handovers.at(-1).intervalCashOut,0);
-  assert.equal(state.handovers.at(-1).expectedCash,10000);
+  assert.equal(state.handovers.at(-1).intervalCashOut,7000);
+  assert.equal(state.handovers.at(-1).expectedCash,3000);
   assert.equal(cashOutBalance(state).available,3000);
   assert.equal((await f.execute(cash('all-remaining',3,3000))).status,'committed');
   assert.equal((await f.execute(cash('one-too-many',4,1))).status,'business-rejected');
@@ -199,7 +199,7 @@ test('C1-B: cancellation fails closed for '+kind,async()=>{
   let rev=0;
   if(kind==='fully-refunded'||kind==='fully-reversed'){
     const action=kind==='fully-refunded'?'refundPayment':'reversePayment';
-    assert.equal((await f.execute(financialCommand(action,'adjust',0,{amount:10000}))).status,'committed');rev=1;
+    assert.equal((await f.execute(financialCommand(action,'adjust',0,{amount:10000,...(action==='refundPayment'?{refundFundingSource:'OUTSIDE_DRAWER'}:{})}))).status,'committed');rev=1;
   }
   const before=await read(f);
   assert.equal((await f.execute(cancel('blocked',rev))).status,'business-rejected');
@@ -256,18 +256,24 @@ test('C1-B: fourth independently granted operator may cancel without role/name a
   assert.equal((await f.execute(cancel(),id)).status,'committed');
   assert.equal(financialOrder(await read(f)).cancellation.actualActorPrincipalId,id);
 });
-test('C1-B: approved cashOut rechecks drawer eligibility after a drawer-funded refund',async()=>{
+test('C1-B: approved cashOut protects its reservation from refunds and rechecks a later smaller count',async()=>{
   const f=coreFixture();await counted(f);await f.execute(cash('request',1,7000),applicantId);
   const requestId=(await read(f)).financialRequests[0].requestId;
   await f.execute({action:'approveFinancialAdjustment',operationKey:'approve',expectedRevision:2,payload:{requestId}},reviewerId);
-  await f.execute(financialCommand('refundPayment','refund',3,{amount:7000}));
+  assert.equal((await f.execute(financialCommand('refundPayment','refund',3,{amount:7000}))).status,'business-rejected');
+  await counted(f,3000);
   assert.equal((await f.execute({action:'cashOut',operationKey:'execute',expectedRevision:4,payload:{requestId}},applicantId)).status,'business-rejected');
   const s=await read(f);assert.equal(s.cashOutflows,undefined);assert.equal(s.financialRequests[0].executedAdjustmentId,null);
 });
 test('C1-B: prior drawer-funded refund stays fail closed even after a fresh count, without guessing absorption',async()=>{
-  const f=coreFixture();
-  await f.execute(financialCommand('refundPayment','refund-before-count',0,{amount:3000}));await counted(f,7000);
-  assert.equal((await f.execute(cash('unknown-refund-boundary',2,1))).status,'business-rejected');
+  const f=coreFixture(s=>financialOrder(s).financialAdjustments=[{
+    adjustmentId:'70000000-0000-4000-8000-000000000098',kind:'REFUND',originalPaymentId:paymentId,amount:3000,
+    reason:'Historical drawer refund without attribution',actualActorPrincipalId:ownerId,occurredAt:'2026-10-15T12:00:00.000000Z',
+    businessDate:'2026-10-15',businessDayRuleVersion:'cutoff-0600-v1',businessTimeZone:'Asia/Shanghai',requestId:null,
+    refundChannel:'\u73b0\u91d1',refundFundingSource:'CURRENT_DRAWER',affectsCurrentDrawer:true
+  }]);
+  assert.equal((await f.execute({action:'handover',operationKey:'cannot-launder',expectedRevision:0,payload:{actualCash:7000}})).status,'business-rejected');
+  assert.equal((await f.execute(cash('unknown-refund-boundary',0,1))).status,'business-rejected');
   assert.equal((await read(f)).cashOutflows,undefined);
 });
 test('C1-B: changed cash receipt or new ambiguous receipt invalidates drawer eligibility',async()=>{

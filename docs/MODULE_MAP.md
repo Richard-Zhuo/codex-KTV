@@ -1,3 +1,11 @@
+## C2-A cash drawer / handover integration
+
+- handover.js: drawer-v2 / cash-fact-set-v2 writer; drawerInterval / intervalCash validate retained payment and financial-fact identities, compute effective cashIn and the two actual outflow classes, preserve v1 history, and expose readTrustedDrawer to execution admission.
+- financial-adjustments.js: cashDrawerFacts reuses the existing adjustment/cashOut validators and exports immutable fact projections; CURRENT_DRAWER execution adds the current handover reference. cashOutBalance now uses the shared expected physical cash less outstanding reservations; refund admission consults this same authority.
+- cash-drawer.test.js: 22 direct behavior cases covering new/old boundaries, reversal placement, attributed versus unknown refunds, request/execution separation, replay, immutable references and 06:00 snapshots.
+- ledger/trusted-cash-drawer.integration.test.js: opt-in owned MySQL; four dual-connection directions, two rollback paths, latest-balance checks and legacy unknown-refund rejection. Existing ledger/trusted-handover test/integration expectations and the directly affected cashout-cancel cases are updated for the new contract.
+- No new browser module or transport entry; existing server-static.test.js verifies the changed dependency graph. No reporting, inventory, price, device, permission-catalog or SQL schema changes. Contract: [REQUIREMENTS](REQUIREMENTS.md#c2-a-cash-drawer--handover-integration内部候选); focused commands: [DEVELOPMENT_ENVIRONMENT](DEVELOPMENT_ENVIRONMENT.md#c2-a-focused-verification).
+
 ## C1-B internal cashOut / unpaid cancellation
 
 - financial-adjustments.js: cashOutBalance and cashOut facts; CASH_OUT uses existing financialRequests / decisions / consumed-request linking; cancelUnpaidOrder preserves original order and inventory facts while checking funding and room ownership.

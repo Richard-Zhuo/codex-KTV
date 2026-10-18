@@ -1,3 +1,16 @@
+## C2-A focused verification
+
+Frozen Node24.19.0; S1_RUN=synthetic-only and STAGE5E_RUN=synthetic-only. The explicit pattern selects the new and directly affected cash/handover tests plus the necessary static graph check, without running frozen C1-A/C1-B independent acceptance or the broad trusted-clean fixture:
+
+```text
+node --test --test-isolation=none --test-reporter=tap --test-name-pattern="C2-A:|K04:|handover:|C1-B:.*(cashOut|drawer|refund|receipt|pending reversal)|C1-B: cancellation fails closed for fully-refunded|staff page|formal admin page|C1-A static" cash-drawer.test.js ledger/trusted-handover.test.js cashout-cancel.test.js server-static.test.js
+node --test --test-isolation=none --test-reporter=tap ledger/trusted-cash-drawer.integration.test.js
+```
+
+The new integration uses freshEnvironment(repository,{port:33313,packages:false}), its owned empty database and checksum-checked existing migrations. It never accepts an external database URL and always cleans its own processes, SQL resources and directory. Eight business subtests plus parent produce nine TAP tests. Without the synthetic-only selector the integration is skipped and provides no MySQL evidence.
+
+After JavaScript edits, attempt npm test with these same explicit focused arguments. npm is unavailable in the current author environment; record that separately and use the frozen Node. Do not run project full regression, the old broad trusted-clean fixture, production configuration, deployment or external providers for this stage.
+
 ## C1-B focused verification
 
 Use frozen Node24.19.0 directly; set S1_RUN=synthetic-only and STAGE5E_RUN=synthetic-only. No project full regression:

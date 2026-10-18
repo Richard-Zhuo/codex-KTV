@@ -11,7 +11,7 @@ test('K04: first trusted handover bootstraps actual cash without historical inco
  assert.equal(result.status,'committed');assert.equal(h.bootstrap,true);assert.equal(h.previousHandoverId,null);
  assert.equal(h.actualCash,50000);assert.equal(h.expectedCash,50000);assert.equal(h.difference,0);
  assert.equal(h.submittedByPrincipalId,f.auth.id);assert.equal(h.occurredAt,f.context().dbNow);
- assert.match(h.handoverId,/^[0-9a-f-]{36}$/);assert.equal(h.cashBoundary.version,'payment-set-v1');
+ assert.match(h.handoverId,/^[0-9a-f-]{36}$/);assert.equal(h.cashBoundary.version,'cash-fact-set-v2');
  assert.deepEqual(head.state.handovers[0],f.state.handovers[0]);assert.equal(head.revision,1);assert.equal(head.audit.length,1);
 });
 
@@ -46,7 +46,7 @@ test('handover: forged payload and demo identity/clock cannot set actor, expecte
  await f.app.execute(request,f.credential);
  const h=last(await f.memory.read());assert.equal(h.actualCash,0);assert.equal(h.expectedCash,0);assert.equal(h.difference,0);
  assert.equal(h.submittedByPrincipalId,f.auth.id);assert.equal(h.person,null);assert.equal(h.previousHandoverId,null);
- assert.equal(h.occurredAt,f.context().dbNow);assert.equal(h.cashBoundary.version,'payment-set-v1');
+ assert.equal(h.occurredAt,f.context().dbNow);assert.equal(h.cashBoundary.version,'cash-fact-set-v2');
  const state=structuredClone(f.state);
  for(const field of ['user','permissions','capabilities','administrator','clock'])Object.defineProperty(state,field,{get(){throw Error('demo fact read '+field);}});
  submitHandover(state,{actualCash:50000},undefined,undefined,{mode:'trusted',context:f.context()});
