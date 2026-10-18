@@ -1,3 +1,11 @@
+## C1-B internal cashOut / unpaid cancellation
+
+- financial-adjustments.js: cashOutBalance and cashOut facts; CASH_OUT uses existing financialRequests / decisions / consumed-request linking; cancelUnpaidOrder preserves original order and inventory facts while checking funding and room ownership.
+- handover.js: readTrustedDrawer is a read-only admission view over the existing paymentBoundary / previousTrustedHandover / intervalCash validators. Existing handover writer, calculation and versions are unchanged.
+- shared/identity.js and ledger/command-policy.js: cash.out and order.cancel explicit grants. Existing FINANCIAL_ACTIONS routing in rules.js / ledger/trusted-execution.js admits the two internal commands; ledger/application.js attaches cashOut execution-time business-day context.
+- cashout-cancel.test.js: focused public-command behavior, drawer admission, shared approvals, cancellation, time, replay, room/device and memory rollback. ledger/trusted-cashout-cancel.integration.test.js: standalone opt-in owned MySQL fixture; three dual-connection races and SQL rollback/consumption.
+- Existing server-static.test.js closes the served employee module graph and private-path boundary. No new served module, staff HTTP registry, UI, reporting, inventory writer or SQL schema change. Contract: [REQUIREMENTS](REQUIREMENTS.md#c1-b-cashout--cancelorder-core内部候选); commands: [DEVELOPMENT_ENVIRONMENT](DEVELOPMENT_ENVIRONMENT.md#c1-b-focused-verification).
+
 ## C1-A internal payment adjustments
 
 Static delivery: server.js explicitly serves financial-adjustments.js for the existing employee module graph. server-static.test.js verifies graph closure, exact module delivery and unknown path rejection; this does not expose financial HTTP/UI commands.

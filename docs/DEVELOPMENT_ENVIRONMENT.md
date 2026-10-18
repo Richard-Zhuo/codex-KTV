@@ -1,3 +1,16 @@
+## C1-B focused verification
+
+Use frozen Node24.19.0 directly; set S1_RUN=synthetic-only and STAGE5E_RUN=synthetic-only. No project full regression:
+
+```text
+node --test --test-isolation=none --test-reporter=tap cashout-cancel.test.js financial-adjustments.test.js ledger/trusted-handover.test.js ledger/command-policy.test.js server-static.test.js
+node --test --test-isolation=none --test-reporter=tap ledger/trusted-cashout-cancel.integration.test.js
+```
+
+The standalone integration creates freshEnvironment(repository,{port:33313,packages:false}), migrates only its owned empty database using the checked schema manifest, and always cleans its owned MySQL root/databases/accounts/processes. It never accepts a caller-selected database URL. It has six focused business subtests (seven TAP tests including parent); it does not register or match the broad trusted-clean fixture. Without synthetic-only opt-in the integration is skipped; this is not MySQL evidence.
+
+After JavaScript changes, attempt npm test with the same explicit focused files/arguments; npm is unavailable in the current author environment, so record that separately and use the frozen runtime. No dependency installation, production configuration, production DB or provider call is needed.
+
 ## C1-A focused verification only
 
 Frozen Node 24.19.0, no project full regression:

@@ -17,6 +17,8 @@ export const USER_ALIASES = { staff: 'shaoBoss', keeper: 'wife', boss: 'zhuBoss'
 // 管理员可为其他演示身份分配的具体操作权限。管理员本身固定保留总管理权限。
 export const PERMISSION_ROLES = ['老板', '店长', '财务', '采购', '开单员', '服务员', '收银员', '库管'];
 export const PERMISSION_DEFINITIONS = [
+  { id: 'order.cancel', label: '无款撤单', group: '资金操作', roles: [] },
+  { id: 'cash.out', label: '确认抽屉现金取出', group: '资金操作', roles: [] },
   { id: 'identity.manage', label: '调整身份权限', group: '系统管理', roles: ['管理员'] },
   { id: 'catalog.manage', label: '维护商品、套餐与当前价格', group: '系统管理', roles: ['管理员'] },
   { id: 'staff.record', label: '代员工登记订房与增购', group: '营业补录', roles: ['管理员', '老板', '店长', '财务'] },

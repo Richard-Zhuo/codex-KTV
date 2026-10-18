@@ -1,12 +1,13 @@
-// C1-A: append-only adjustments. No transport, drawer accounting or UI.
+// Internal financial core: append-only adjustments/cashOut and guarded unpaid cancellation. No transport or UI.
 import { BusinessRejection } from './shared/business-error.js';
 import { assertTrustedExecutionContext, requireTrustedPermission, AuthorizationDenied } from './shared/identity.js';
 import { authorizeReviewCommand, createTrustedReviewFacts } from './ledger/command-policy.js';
 import { orderBusinessDaySnapshot } from './shared/business-day.js';
 import { PAYMENT_METHODS } from './sales.js';
+import { readTrustedDrawer } from './handover.js';
 
-export const FINANCIAL_ACTIONS = Object.freeze(['reversePayment', 'refundPayment', 'approveFinancialAdjustment', 'rejectFinancialAdjustment']);
-const kinds = ['PAYMENT_REVERSAL', 'REFUND'];
+export const FINANCIAL_ACTIONS = Object.freeze(['cancelOrder', 'cashOut', 'reversePayment', 'refundPayment', 'approveFinancialAdjustment', 'rejectFinancialAdjustment']);
+const kinds = ['PAYMENT_REVERSAL', 'REFUND', 'CASH_OUT'];
 const uuid = v => typeof v === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(v);
 const text = (v, max = 191) => typeof v === 'string' && v.length > 0 && v.length <= max && v.trim() === v;
 const positive = v => Number.isSafeInteger(v) && v > 0;
@@ -38,7 +39,7 @@ export function validateOriginalPayment(state, orderId, paymentId) {
 function adjustments(order) {
   const ids = new Set(), amounts = new Map();
   for (const a of rows(order.financialAdjustments)) {
-    if (!a || !uuid(a.adjustmentId) || ids.has(a.adjustmentId) || !kinds.includes(a.kind) ||
+    if (!a || !uuid(a.adjustmentId) || ids.has(a.adjustmentId) || !['PAYMENT_REVERSAL', 'REFUND'].includes(a.kind) ||
         !positive(a.amount) || !text(a.reason, 300) || !text(a.actualActorPrincipalId) || !time(a.occurredAt) ||
         !(a.requestId === null || uuid(a.requestId))) fail();
     const p = paymentInOrder(order, a.originalPaymentId);
@@ -93,18 +94,30 @@ function requests(state) {
     if (!r || !uuid(r.requestId) || ids.has(r.requestId) || !kinds.includes(r.kind) ||
         !text(r.submittedByPrincipalId) || !text(r.reason, 300) || !positive(r.amount) || !time(r.submittedAt) ||
         !['待审核', '已批准', '已驳回', '已执行'].includes(r.status)) fail();
-    const { order, payment } = validateOriginalPayment(state, r.orderId, r.originalPaymentId);
-    if (r.kind === 'REFUND') refundTerms(r);
-    else if (r.amount !== payment.amount) fail();
+    let order;
+    if (r.kind === 'CASH_OUT') {
+      if (r.orderId !== undefined || r.originalPaymentId !== undefined) fail();
+    } else {
+      const original = validateOriginalPayment(state, r.orderId, r.originalPaymentId);
+      order = original.order;
+      if (r.kind === 'REFUND') refundTerms(r);
+      else if (r.amount !== original.payment.amount) fail();
+    }
     if (r.status === '待审核') {
       if (r.decidedByPrincipalId !== null || r.decidedAt !== null || r.executedAdjustmentId !== null) fail();
     } else {
       if (!text(r.decidedByPrincipalId) || r.decidedByPrincipalId === r.submittedByPrincipalId || !time(r.decidedAt)) fail();
       if (r.status === '已执行') {
-        const a = rows(order.financialAdjustments).filter(a => a.adjustmentId === r.executedAdjustmentId && a.requestId === r.requestId);
-        if (a.length !== 1 || a[0].actualActorPrincipalId !== r.submittedByPrincipalId || a[0].kind !== r.kind ||
-            a[0].amount !== r.amount || a[0].originalPaymentId !== r.originalPaymentId || a[0].reason !== r.reason ||
-            r.kind === 'REFUND' && (a[0].refundChannel !== r.refundChannel || a[0].refundFundingSource !== r.refundFundingSource)) fail();
+        if (r.kind === 'CASH_OUT') {
+          const facts = cashOutFacts(state).filter(f => f.cashOutId === r.executedAdjustmentId && f.requestId === r.requestId);
+          if (facts.length !== 1 || facts[0].actualActorPrincipalId !== r.submittedByPrincipalId ||
+              facts[0].amountCents !== r.amount || facts[0].reason !== r.reason) fail();
+        } else {
+          const a = rows(order.financialAdjustments).filter(a => a.adjustmentId === r.executedAdjustmentId && a.requestId === r.requestId);
+          if (a.length !== 1 || a[0].actualActorPrincipalId !== r.submittedByPrincipalId || a[0].kind !== r.kind ||
+              a[0].amount !== r.amount || a[0].originalPaymentId !== r.originalPaymentId || a[0].reason !== r.reason ||
+              r.kind === 'REFUND' && (a[0].refundChannel !== r.refundChannel || a[0].refundFundingSource !== r.refundFundingSource)) fail();
+        }
       } else if (r.executedAdjustmentId !== null) fail();
     }
     ids.add(r.requestId);
@@ -122,6 +135,11 @@ export function adjustablePaymentBalance(state, orderId, paymentId, excludingReq
   return { ...effective, reserved, available, originalAmount: payment.amount };
 }
 function eligible(state, terms, excluding = null) {
+  if (terms.kind === 'CASH_OUT') {
+    const balance = cashOutBalance(state, excluding);
+    if (!positive(terms.amount) || terms.amount > balance.available) throw new BusinessRejection('Insufficient verified drawer cash');
+    return;
+  }
   const b = adjustablePaymentBalance(state, terms.orderId, terms.originalPaymentId, excluding);
   if (!positive(terms.amount) || terms.amount > b.available ||
       terms.kind === 'PAYMENT_REVERSAL' && (terms.amount !== b.originalAmount || b.refunds || b.reversed || b.reserved)) {
@@ -130,6 +148,7 @@ function eligible(state, terms, excluding = null) {
 }
 function uniqueId(state) {
   const id = globalThis.crypto.randomUUID();
+  if (rows(state.cashOutflows).some(f => f.cashOutId === id) || state.orders.some(o => o.cancellation?.cancellationId === id)) throw Error('Cash-out ID collision');
   if (rows(state.financialRequests).some(r => r.requestId === id) ||
       state.orders.some(o => rows(o.financialAdjustments).some(a => a.adjustmentId === id))) throw Error('资金事实 ID 冲突');
   return id;
@@ -155,9 +174,118 @@ function append(state, terms, context, request = null) {
   }
   if (request) { request.status = '已执行'; request.executedAdjustmentId = adjustment.adjustmentId; }
 }
+
+// Facts bind to the actual-count cursor, never wall-clock ordering.
+function cashOutFacts(state) {
+  const facts = rows(state.cashOutflows), seen = new Set();
+  const handovers = rows(state.handovers).filter(h => h.trustedHandoverVersion === 'drawer-v1');
+  let previousIndex = -1;
+  for (const fact of facts) {
+    const index = handovers.findIndex(h => h.handoverId === fact?.drawerHandoverId);
+    if (!fact || !uuid(fact.cashOutId) || seen.has(fact.cashOutId) || !positive(fact.amountCents) ||
+        !text(fact.reason, 300) || !text(fact.actualActorPrincipalId) || !time(fact.occurredAt) ||
+        !(fact.requestId === null || uuid(fact.requestId)) || index < previousIndex || index < 0) fail();
+    const snapshot = orderBusinessDaySnapshot(fact.occurredAt, { timeZone: fact.businessTimeZone });
+    if (snapshot.businessDate !== fact.businessDate || snapshot.businessDayRuleVersion !== fact.businessDayRuleVersion) fail();
+    seen.add(fact.cashOutId); previousIndex = index;
+  }
+  return facts;
+}
+export function cashOutBalance(state, excludingRequestId = null) {
+  const drawer = readTrustedDrawer(state), included = new Set(drawer.boundaryPaymentIds);
+  let correctedNewCash = 0;
+  for (const order of rows(state.orders)) {
+    const effective = adjustments(order);
+    for (const a of rows(order.financialAdjustments)) {
+      // C1-A drawer refunds lack a count-cursor association. Refuse ambiguity.
+      if (a.kind === 'REFUND' && a.affectsCurrentDrawer) throw new BusinessRejection('Cash drawer refund boundary is not established');
+    }
+    correctedNewCash = sum([correctedNewCash, ...rows(order.payments)
+      .filter(p => p.method === '\u73b0\u91d1' && !included.has(p.paymentId))
+      .map(p => effective.get(p.paymentId)?.reversed ?? 0)]);
+  }
+  const out = sum(cashOutFacts(state).filter(f => f.drawerHandoverId === drawer.handoverId).map(f => f.amountCents));
+  const reserved = sum(requests(state).filter(r => r.requestId !== excludingRequestId &&
+    ['\u5f85\u5ba1\u6838', '\u5df2\u6279\u51c6'].includes(r.status) &&
+    (r.kind === 'CASH_OUT' || r.kind === 'REFUND' && r.refundFundingSource === 'CURRENT_DRAWER' ||
+      r.kind === 'PAYMENT_REVERSAL' && !included.has(r.originalPaymentId) &&
+      validateOriginalPayment(state, r.orderId, r.originalPaymentId).payment.method === '\u73b0\u91d1'))
+    .map(r => r.amount));
+  const available = sum([drawer.actualCash, drawer.cashIn]) - correctedNewCash - out - reserved;
+  if (!Number.isSafeInteger(available) || available < 0) fail();
+  return { drawerHandoverId: drawer.handoverId, available, reserved };
+}
+function appendCashOut(state, terms, context, request = null) {
+  const balance = cashOutBalance(state, request?.requestId ?? null);
+  if (!positive(terms.amount) || terms.amount > balance.available) throw new BusinessRejection('Insufficient verified drawer cash');
+  if (!context.financialBusinessDay) throw TypeError('Missing trusted financial day');
+  const cashOutId = uniqueId(state);
+  (state.cashOutflows ??= []).push({ cashOutId, amountCents: terms.amount, reason: terms.reason,
+    actualActorPrincipalId: context.principalId, occurredAt: context.dbNow, ...context.financialBusinessDay,
+    drawerHandoverId: balance.drawerHandoverId, requestId: request?.requestId ?? null });
+  if (request) { request.status = '\u5df2\u6267\u884c'; request.executedAdjustmentId = cashOutId; }
+}
+function cancelUnpaidOrder(state, data, context) {
+  requireTrustedPermission(context, 'order.cancel');
+  exact(data, ['order', 'reason'], ['order', 'reason']);
+  if (!text(data.reason, 300)) throw new BusinessRejection('A cancellation reason is required');
+  const matches = rows(state.orders).filter(o => o.id === data.order);
+  if (matches.length !== 1) fail();
+  const order = matches[0];
+  if (order.cancellation || order.status !== '\u8425\u4e1a\u4e2d' ||
+      !Array.isArray(order.payments) || order.payments.length ||
+      rows(order.financialAdjustments).length || order.credit || rows(order.creditHistory).length ||
+      order.roundingReview || order.voucher) throw new BusinessRejection('Only an unambiguous unpaid order may be cancelled');
+  if (requests(state).some(r => r.orderId === order.id && !['\u5df2\u9a73\u56de', '\u5df2\u6267\u884c'].includes(r.status)) ||
+      rows(order.giftRequests).some(r => !['\u5df2\u6279\u51c6', '\u5df2\u9a73\u56de'].includes(r.status)))
+    throw new BusinessRejection('Unfinished order request prevents cancellation');
+  const owners = rows(state.rooms).filter(r => r.order === order.id);
+  if (order.kind === 'retail') {
+    if (order.room !== null || owners.length) fail();
+  } else if (order.kind === 'room') {
+    const rooms = state.rooms.filter(r => r.id === order.room);
+    if (rooms.length !== 1 || owners.length > 1 || owners.some(r => r.id !== order.room)) fail();
+    const room = rooms[0];
+    if (room.order === order.id) {
+      if (room.status !== '\u8425\u4e1a\u4e2d') fail();
+      room.order = null; room.status = '\u5f85\u6e05\u6d01';
+    } else if (room.order === null) {
+      if (!['\u7a7a\u95f2', '\u5f85\u6e05\u6d01'].includes(room.status)) fail();
+    } else {
+      const current = state.orders.filter(o => o.id === room.order && o.room === room.id &&
+        o.kind === 'room' && o.status === '\u8425\u4e1a\u4e2d' && !o.cancellation);
+      if (current.length !== 1 || room.status !== '\u8425\u4e1a\u4e2d') fail();
+    }
+  } else fail();
+  order.cancellation = { cancellationId: uniqueId(state), orderId: order.id, reason: data.reason,
+    actualActorPrincipalId: context.principalId, occurredAt: context.dbNow, status: 'CANCELLED' };
+  order.status = '\u5df2\u64a4\u5355';
+}
 export function executeFinancialCommand(state, action, data, execution) {
   const context = assertTrustedExecutionContext(execution?.context);
   if (!FINANCIAL_ACTIONS.includes(action)) throw new BusinessRejection('未知资金命令');
+  if (action === 'cancelOrder') return cancelUnpaidOrder(state, data, context);
+  if (action === 'cashOut') {
+    requireTrustedPermission(context, 'cash.out');
+    if (Object.hasOwn(data, 'requestId')) {
+      exact(data, ['requestId'], ['requestId']);
+      const r = requests(state).find(r => r.requestId === data.requestId);
+      if (!r) throw new BusinessRejection('Financial request not found');
+      if (r.submittedByPrincipalId !== context.principalId) throw new AuthorizationDenied('financial-applicant-required');
+      if (r.kind !== 'CASH_OUT' || r.status !== '\u5df2\u6279\u51c6' || r.executedAdjustmentId !== null) throw new BusinessRejection('Cash-out request is not approved or is consumed');
+      appendCashOut(state, r, context, r); return;
+    }
+    exact(data, ['amountCents', 'reason'], ['amountCents', 'reason']);
+    if (!text(data.reason, 300)) throw new BusinessRejection('A withdrawal reason is required');
+    const terms = { kind: 'CASH_OUT', amount: data.amountCents, reason: data.reason };
+    eligible(state, terms);
+    if (context.permissionIds.includes('financial.direct')) appendCashOut(state, terms, context);
+    else (state.financialRequests ??= []).push({ requestId: uniqueId(state), ...terms,
+      submittedByPrincipalId: context.principalId, submittedAt: context.dbNow,
+      status: '\u5f85\u5ba1\u6838', decidedByPrincipalId: null, decidedAt: null,
+      decisionNote: '', executedAdjustmentId: null });
+    return;
+  }
   if (action === 'approveFinancialAdjustment' || action === 'rejectFinancialAdjustment') {
     requireTrustedPermission(context, 'financial.approve');
     exact(data, ['requestId', 'decisionNote'], ['requestId']);

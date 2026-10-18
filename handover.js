@@ -73,6 +73,15 @@ function intervalCash(previous, current, records) {
   return { cashIn, cashOut: 0, byChannel };
 }
 
+// Read-only admission view; no count, boundary advance or reconciliation change.
+export function readTrustedDrawer(state) {
+  const { boundary, records } = paymentBoundary(state), previous = previousTrustedHandover(state);
+  if (!previous) fail();
+  const { cashIn } = intervalCash(previous, boundary, records);
+  return { handoverId: previous.handoverId, actualCash: previous.actualCash, cashIn,
+    boundaryPaymentIds: previous.cashBoundary.payments.map(p => p.paymentId) };
+}
+
 function submitTrustedHandover(state, data, context) {
   assertTrustedExecutionContext(context); requireTrustedPermission(context, 'handover');
   if (!Number.isSafeInteger(data.actualCash) || data.actualCash < 0) throw new BusinessRejection('请输入有效实点现金金额');

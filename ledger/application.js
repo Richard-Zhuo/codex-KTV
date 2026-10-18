@@ -118,7 +118,7 @@ export function createLedgerApplication({ store, principal, executionMode = 'dem
             executionContext = withTrustedOrderBusinessDay(executionContext,
               orderBusinessDaySnapshot(context.dbNow, { timeZone: businessTimeZone }));
           }
-          if (trusted && ['reversePayment', 'refundPayment'].includes(request.action)) {
+          if (trusted && ['reversePayment', 'refundPayment', 'cashOut'].includes(request.action)) {
             executionContext = withTrustedFinancialBusinessDay(executionContext,
               orderBusinessDaySnapshot(context.dbNow, { timeZone: businessTimeZone }));
           }

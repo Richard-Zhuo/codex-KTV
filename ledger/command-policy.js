@@ -25,6 +25,8 @@ const groups = {
   'order.gift': ['gift'],
   'order.serveExtra': ['serveExtra'],
   'gift.approve': ['approveGift', 'rejectGift'],
+  'order.cancel': ['cancelOrder'],
+  'cash.out': ['cashOut'],
   'payment.reverse': ['reversePayment'],
   'payment.refund': ['refundPayment'],
   'financial.approve': ['approveFinancialAdjustment', 'rejectFinancialAdjustment'],

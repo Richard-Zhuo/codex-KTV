@@ -1,3 +1,19 @@
+## C1-B cashOut / cancelOrder core（内部候选）
+
+Owner 冻结本阶段仅扩展内部 trusted core，不开放员工 HTTP/UI。cashOut 确认现金已从当前收银抽屉实际取出；只追加 state.cashOutflows，包含 cashOutId、正整数分 amountCents、reason、actualActorPrincipalId、occurredAt、执行时 06:00 营业日三字段、requestId（可空）及 drawerHandoverId。不写负 payment，不生成 expense，不重复复制 REFUND 为 cashOut，不改变库存或原付款。
+
+权限使用明确 grants：cash.out 为申请／执行资格；financial.direct 仍仅供 Owner 配置给卓老板，financial.approve 供四名独立营业人员配置。其余三人先申请、另一 principal 批准、原 applicant 执行；卓益不可独立执行或批准。复用 financialRequests 的 CASH_OUT kind 与既有异人审批，executedAdjustmentId 对 CASH_OUT 关联 cashOutId。批准不出流，执行重新验证当前 session、grants、revision、请求及抽屉资格；消费后换 key 也不能重执行。不按姓名、岗位或 demo 身份授权，不自动配置真人 grants。
+
+cashOut 门禁只读复用既有 drawer-v1／payment-set-v1 校验：必须有 trusted actualCash 清点，付款集合边界完整，以上次实点及边界外可信现金付款建立基线，扣除这些新付款的有效冲正、同一 handoverId 下已执行 cashOut，以及相关待审／已批准申请占额。cashOut 事实绑定当时的 handoverId，后续可信实点按该游标吸收旧出流，不靠时间排序。未清点、破损边界、新增不明付款、余额不足或不确定状态均拒绝，不假设备用金。
+
+明确限制：C1-A 的已执行 CURRENT_DRAWER 退款未关联清点游标，无法证明是否已被某次 actualCash 吸收。只要存在这类事实，C1-B cashOut 即 fail closed，包括再清点以后；不靠退款时间猜归属，也不改写原退款。OUTSIDE_DRAWER／NON_CASH 退款不创造抽屉出流。此限制需后续已授权 C2 建立正式出流边界后再关闭；本候选不声称交班现金闭环。handover 的 intervalCashOut、expectedCash 公式和 boundary version 保持原状。
+
+cancelOrder 只允许明确的从未收款订单，要求 order.cancel、原因及可信执行 actor／dbNow。四名独立营业人员可配置该 grant，卓益不可独立撤单。保留订单与全部销售／payment／库存流水，写 order.cancellation 并转已撤单；不自动回库、不消除挂账。存在任何原付款、已执行调整、credit／creditHistory、未终结资金申请、未决赠送／差额、平台券或不明状态时拒绝；全额退款或全额冲正不自动授予撤单资格。已撤订单不能继续收款或重复撤单。
+
+房单仅释放仍由该订单拥有、状态明确的房间；新客合法占用时保留其房态、订单及归属，不重新占房，不明确归属拒绝。继续经过现有 required device admission，不新增设备控制，不改 opening-hours-v1。复用 ledger head lock、expectedRevision、fingerprint、operationKey、transaction 与 terminal replay；未知／SQL 失败整体回滚。
+
+C1-A 原 payment 保留、退款与冲正区别、三种资金投影、占额、自批保护和 06:00 语义保持。C2/C3 的交班计算、正式报表、员工资金 UI／HTTP、回库及外部支付均不在本候选；无 SQL migration、新表或新列。下方 C1-A 范围描述保留其阶段语境，不覆盖本节新增的内部能力。
+
 ## C1-A refund / reversal core（内部候选）
 
 Owner 本轮冻结：只实现 reversePayment、refundPayment、approveFinancialAdjustment、rejectFinancialAdjustment 的内部 trusted command。原 order.payments 永久保留；order.financialAdjustments 追加 PAYMENT_REVERSAL／REFUND，state.financialRequests 共用申请、异人审批及原申请人执行流程。批准不生成资金事实，实际执行才保存服务器 actualActorPrincipalId、dbNow 及当前 06:00 营业日快照。
