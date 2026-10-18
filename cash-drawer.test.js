@@ -204,3 +204,93 @@ test('C2-A: v1 boundary cannot acquire v2 fact authority by adding a facts prope
   const f=fixture(s=>{const h=legacyHandover(s);h.cashBoundary.facts=[];s.handovers.push(h);});
   await rejected(f,handover('invalid-version-boundary',0));await rejected(f,cashOut('invalid-cash',0,1));
 });
+
+async function reversedAfterWithdrawal() {
+  const f=fixture(s=>{financialOrder(s).payments=[];});
+  await committed(f,handover('p1-baseline',0,0));
+  await committed(f,collect('p1-receipt',1));
+  const receipt=structuredClone(financialOrder(await read(f)).payments[0]);
+  await committed(f,cashOut('p1-withdrawal',2,10000));
+  const before=await read(f);
+  await committed(f,financialCommand('reversePayment','p1-correction',3,{originalPaymentId:receipt.paymentId}));
+  return {f,before,receipt};
+}
+
+test('C2-A P1: negative book cash records an anomalous physical count without changing original facts',async()=>{
+  const {f,before,receipt}=await reversedAfterWithdrawal(),corrected=await read(f);
+  const request=handover('p1-anomalous-count',4,0);
+  const result=await committed(f,request),s=await read(f),h=s.handovers.at(-1);
+  assert.equal(h.expectedCash,-10000);assert.equal(h.actualCash,0);assert.equal(h.difference,10000);
+  assert.equal(h.cashAnomaly,'NEGATIVE_EXPECTED_CASH');
+  assert.equal(h.intervalCashIn,0);assert.equal(h.intervalCashOut,10000);
+  assert.equal(h.intervalIndependentCashOut,10000);assert.equal(h.intervalRefundCashOut,0);
+  assert.deepEqual(financialOrder(s).payments,[receipt]);
+  assert.deepEqual(financialOrder(s).financialAdjustments,financialOrder(corrected).financialAdjustments);
+  assert.deepEqual(s.cashOutflows,before.cashOutflows);assert.deepEqual(s.handovers[0],before.handovers[0]);
+  assert.deepEqual(s.inventory,before.inventory);assert.deepEqual(s.expenses,before.expenses);
+  assert.deepEqual(financialOrder(s).sales,financialOrder(before).sales);
+  assert.equal(h.cashBoundary.facts.filter(x=>x.kind==='PAYMENT_REVERSAL').length,1);
+  assert.equal(h.cashBoundary.facts.filter(x=>x.kind==='CASH_OUT').length,1);
+  assert.equal(h.submittedByPrincipalId,ownerId);assert.equal(h.occurredAt,'2026-10-15T21:59:59.000000Z');
+  await committed(f,handover('p1-next-count',5,0));
+  const after=await read(f);assert.deepEqual(after.handovers[1],h);
+  assert.equal(after.handovers.at(-1).expectedCash,0);assert.equal(after.handovers.at(-1).intervalCashOut,0);
+  assert.deepEqual(await f.execute(request),result);assert.deepEqual(await read(f),after);
+});
+
+test('C2-A P1: negative book cash and an anomalous zero count cannot fund further cashOut',async()=>{
+  const {f}=await reversedAfterWithdrawal();
+  const before=await read(f);
+  await rejected(f,cashOut('p1-before-recount',4,1));
+  assert.deepEqual(await read(f),before);
+  await committed(f,handover('p1-zero-recount',4,0));
+  await rejected(f,cashOut('p1-after-recount',5,1));
+  const anomaly=structuredClone((await read(f)).handovers.at(-1));
+  await committed(f,collect('p1-genuine-new-receipt',5));
+  await rejected(f,cashOut('p1-variance-is-not-cash',6,10001));
+  await committed(f,cashOut('p1-genuine-cash-only',6,10000));
+  const s=await read(f);assert.equal(cashOutBalance(s).available,0);
+  assert.deepEqual(s.handovers[1],anomaly);assert.equal(s.cashOutflows.length,2);
+});
+
+test('C2-A P1: a nonzero physical recount funds only actual cash, never its positive variance',async()=>{
+  const {f}=await reversedAfterWithdrawal();
+  await committed(f,handover('p1-physical-six',4,600));
+  const h=structuredClone((await read(f)).handovers.at(-1));
+  assert.equal(h.expectedCash,-10000);assert.equal(h.difference,10600);assert.equal(cashOutBalance(await read(f)).available,600);
+  await rejected(f,cashOut('p1-over-physical',5,601));
+  await committed(f,cashOut('p1-physical-only',5,600));
+  await committed(f,handover('p1-empty-after-out',6,0));
+  const s=await read(f);assert.equal(s.handovers.at(-1).expectedCash,0);
+  assert.deepEqual(s.handovers[1],h);assert.equal(h.cashAnomaly,'NEGATIVE_EXPECTED_CASH');
+});
+
+test('C2-A P1: ordinary nonnegative book cash retains the existing formula',async()=>{
+  const f=fixture(s=>{financialOrder(s).payments=[];});
+  await committed(f,handover('p1-normal-baseline',0,5000));
+  await committed(f,collect('p1-normal-receipt',1));
+  await committed(f,cashOut('p1-normal-out',2,4000));
+  await committed(f,handover('p1-normal-count',3,10800));
+  const h=(await read(f)).handovers.at(-1);
+  assert.equal(h.expectedCash,11000);assert.equal(h.difference,-200);
+  assert.equal(h.intervalCashIn,10000);assert.equal(h.intervalCashOut,4000);
+  assert.equal(Object.hasOwn(h,'cashAnomaly'),false);
+});
+
+test('C2-A P1: a reversal after a previous physical count never subtracts counted cash again',async()=>{
+  const f=fixture();await committed(f,handover('p1-counted-receipt',0,10000));
+  const before=await read(f);
+  await committed(f,financialCommand('reversePayment','p1-later-correction',1));
+  await committed(f,handover('p1-later-count',2,10000));
+  const s=await read(f),h=s.handovers.at(-1);
+  assert.equal(h.expectedCash,10000);assert.equal(h.intervalCashIn,0);assert.equal(h.intervalCashOut,0);
+  assert.deepEqual(s.handovers[0],before.handovers[0]);assert.deepEqual(financialOrder(s).payments,financialOrder(before).payments);
+  assert.equal(financialOrder(s).financialAdjustments.length,1);
+});
+
+test('C2-A P1: anomalous counts still reject negative physical cash and unsafe variance without advancing',async()=>{
+  const {f}=await reversedAfterWithdrawal(),before=await read(f);
+  await rejected(f,handover('p1-negative-actual',4,-1));
+  await rejected(f,handover('p1-overflow-variance',4,Number.MAX_SAFE_INTEGER));
+  assert.deepEqual(await read(f),before);
+});

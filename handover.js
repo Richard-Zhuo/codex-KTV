@@ -117,12 +117,15 @@ function submitTrustedHandover(state, data, context) {
   if (!Number.isSafeInteger(data.actualCash) || data.actualCash < 0) throw new BusinessRejection('请输入有效实点现金金额');
   const { boundary, previous, cashIn, cashOut, refundCashOut, independentCashOut, byChannel } = drawerInterval(state);
   const expectedCash = previous ? safeAdd(previous.actualCash, cashIn) - cashOut : data.actualCash;
-  if (!Number.isSafeInteger(expectedCash) || expectedCash < 0) fail();
+  // A physical count records book anomalies; it does not authorize spending or settle the variance.
+  const difference = data.actualCash - expectedCash;
+  if (!Number.isSafeInteger(expectedCash) || !Number.isSafeInteger(difference)) fail();
   const handoverId = globalThis.crypto.randomUUID();
   if (state.handovers.some(h => h.handoverId === handoverId)) throw Error('交班 ID 冲突');
   state.handovers.push({ id: ++state.serial, trustedHandoverVersion: HANDOVER_VERSION, handoverId,
     occurredAt: context.dbNow, submittedByPrincipalId: context.principalId,
-    actualCash: data.actualCash, expectedCash, difference: data.actualCash - expectedCash,
+    actualCash: data.actualCash, expectedCash, difference,
+    ...(expectedCash < 0 ? { cashAnomaly: 'NEGATIVE_EXPECTED_CASH' } : {}),
     previousHandoverId: previous?.handoverId ?? null, bootstrap: !previous, cashBoundary: boundary,
     intervalCashIn: cashIn, intervalCashOut: cashOut, intervalRefundCashOut: refundCashOut,
     intervalIndependentCashOut: independentCashOut, intervalByChannel: byChannel,
