@@ -1,7 +1,7 @@
 import { createHttpAuthBoundary, exactKeys, HttpBoundaryError, readJson, sendJson } from './transport.js';
 import { sendCommandResult, sendMappedError } from './contract.js';
 import { isHttpCommand } from './registry.js';
-import { projectStoreSnapshot } from './query.js';
+import { projectStoreSnapshot, projectFinancialReport } from './query.js';
 import { projectEmployeeWorkspace } from './staff-query.js';
 import { projectAdminSnapshot } from './admin-query.js';
 
@@ -80,12 +80,26 @@ export function createHttpApi(options) {
         }
         if (path === '/api/v1/store/snapshot' && req.method === 'GET') {
           const session = await auth.resolve(req);
-          if (url.search) throw new HttpBoundaryError('invalid_input');
+          let reportQuery = null;
+          if (url.search) {
+            const keys = ['fromBusinessDate', 'toBusinessDate', 'paymentFrom', 'paymentTo'];
+            if ([...url.searchParams.keys()].length !== keys.length || keys.some(key => url.searchParams.getAll(key).length !== 1) ||
+                [...url.searchParams.keys()].some(key => !keys.includes(key))) throw new HttpBoundaryError('invalid_input');
+            reportQuery = { fromBusinessDate: url.searchParams.get('fromBusinessDate'), toBusinessDate: url.searchParams.get('toBusinessDate'),
+              paymentInterval: { from: url.searchParams.get('paymentFrom'), to: url.searchParams.get('paymentTo') } };
+          }
           const projected = await sessionReader.withContext(session.credential,
             async (context, connection) => {
               const rawHead = await store.readInTransaction(connection);
               const head = options.deviceSnapshot ? await options.deviceSnapshot(connection,rawHead) : rawHead;
               const result = projectStoreSnapshot(head, context);
+              if (reportQuery) {
+                try { result.view.financialReport = projectFinancialReport(head, context, reportQuery).report; }
+                catch (error) {
+                  if (error instanceof TypeError || error instanceof RangeError) throw new HttpBoundaryError('invalid_input');
+                  throw error;
+                }
+              }
               const employees = options.employeeStore ?
                 await options.employeeStore.listActiveInTransaction(connection) : [];
               const workspace = projectEmployeeWorkspace(head.state, context,

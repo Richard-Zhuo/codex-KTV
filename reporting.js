@@ -23,6 +23,27 @@
 import { money } from './shared/money.js';
 import { total, outstanding } from './sales.js';
 import { productIdOf } from './catalog.js';
+import { orderPaymentCredit, netReceipts, cashDrawerFacts, validateOriginalPayment } from './financial-adjustments.js';
+import { readTrustedDrawer } from './handover.js';
+import { BusinessRejection } from './shared/business-error.js';
+
+
+const reportUuid = value => typeof value === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(value);
+function cancellationState(order) {
+  const c = order?.cancellation;
+  if (!c && order?.status !== '\u5df2\u64a4\u5355') return 'active';
+  return order?.status === '\u5df2\u64a4\u5355' && c?.status === 'CANCELLED' && c.orderId === order.id &&
+    reportUuid(c.cancellationId) && typeof c.reason === 'string' && c.reason.trim() &&
+    typeof c.actualActorPrincipalId === 'string' && c.actualActorPrincipalId && paymentInstant(c.occurredAt) !== null
+    ? 'cancelled' : 'unknown';
+}
+function effectiveOrders(orders) {
+  return orders.filter(order => {
+    const status = cancellationState(order);
+    if (status === 'unknown') throw TypeError('Unverifiable cancellation in revenue query');
+    return status === 'active';
+  });
+}
 
 export const reportMoney = centsValue => money(Number(centsValue || 0));
 export const reportQuantity = value => Number(value || 0).toFixed(2).replace(/\.00$/,'').replace(/(\.\d)0$/,'$1');
@@ -56,14 +77,14 @@ export function reportOtherDetails(order) {
 }
 export function reportBreakdown(orders, key) {
   const totals=new Map();
-  for (const line of orders.flatMap(order=>order.sales||[])) {
+  for (const line of effectiveOrders(orders).flatMap(order=>order.sales||[])) {
     const label=key==='category' ? (line.categoryLabelSnapshot || line.categorySnapshot || '历史未分类') : (line.person || '归属未记录');
     totals.set(label,(totals.get(label)||0)+Number(line.amountCents ?? line.amount ?? 0));
   }
   return [...totals.entries()];
 }
 export function reportTotals(orders) {
-  return orders.reduce((sum,order)=>{sum.base+=Number(order.packageBaseCents ?? order.base ?? 0);sum.sales+=(order.sales||[]).reduce((n,line)=>n+Number(line.amountCents ?? line.amount ?? 0),0)+Number(order.packageGiftValueCents ?? order.gift ?? 0);sum.gift+=reportGiftAmount(order);sum.total+=total(order);sum.rounding+=Number(order.rounding||0);return sum;},{base:0,sales:0,gift:0,total:0,rounding:0});
+  return effectiveOrders(orders).reduce((sum,order)=>{sum.base+=Number(order.packageBaseCents ?? order.base ?? 0);sum.sales+=(order.sales||[]).reduce((n,line)=>n+Number(line.amountCents ?? line.amount ?? 0),0)+Number(order.packageGiftValueCents ?? order.gift ?? 0);sum.gift+=reportGiftAmount(order);sum.total+=total(order);sum.rounding+=Number(order.rounding||0);return sum;},{base:0,sales:0,gift:0,total:0,rounding:0});
 }
 export function reportGiftPerson(order) {
   if (!order) return '';
@@ -116,7 +137,9 @@ export function reportViewModel(state, reportPeriod, query) {
   const roomOther=roomOrders.flatMap(order=>order.otherCharges||[]).reduce((sum,line)=>sum+Number(line.amountCents ?? line.amount ?? 0),0);
   const categoryRows=reportBreakdown(periodOrders,'category'), sellerRows=reportBreakdown(periodOrders,'seller');
   return { periodOrders, roomOrders, retailOrders, rows, totals, roomTotals, roomSales, roomOther, categoryRows, sellerRows,
-    ...(query ? { revenueAmbiguities: revenue.ambiguities, revenueComplete: revenue.complete, cashFlow } : {}) };
+    ...(query ? { revenueAmbiguities: revenue.ambiguities, revenueComplete: revenue.complete, cashFlow,
+      cancelledOrders: revenue.cancelledOrders, financialFlows: selectFinancialFlows(state, query.paymentInterval),
+      currentBalances: selectCurrentOrderBalances(state, revenue.orders), cashCounts: selectCashCountHistory(state) } : {}) };
 }
 
 // Formal revenue queries use only frozen dates. Missing historical facts are exposed, never recalculated.
@@ -129,13 +152,18 @@ export function selectRevenueOrders(state, { fromBusinessDate, toBusinessDate })
   if (!validBusinessDate(fromBusinessDate) || !validBusinessDate(toBusinessDate) || fromBusinessDate >= toBusinessDate) {
     throw TypeError('营业额查询需要明确的起止营业日（左闭右开）');
   }
-  const orders = [], ambiguities = [];
+  const orders = [], cancelledOrders = [], ambiguities = [];
   for (const order of state.orders) {
     if (!validBusinessDate(order?.businessDate)) {
       ambiguities.push({ code: 'ORDER_BUSINESS_DATE_UNKNOWN', orderId: order?.id ?? null });
-    } else if (order.businessDate >= fromBusinessDate && order.businessDate < toBusinessDate) orders.push(order);
+    } else {
+      const status = cancellationState(order);
+      if (status === 'unknown') ambiguities.push({ code: 'ORDER_CANCELLATION_UNVERIFIABLE', orderId: order.id });
+      else if (order.businessDate >= fromBusinessDate && order.businessDate < toBusinessDate)
+        (status === 'cancelled' ? cancelledOrders : orders).push(order);
+    }
   }
-  return { orders, ambiguities, complete: ambiguities.length === 0 };
+  return { orders, cancelledOrders, ambiguities, complete: ambiguities.length === 0 };
 }
 
 // Preserve MySQL's microsecond precision; query boundaries never depend on a device time zone.
@@ -178,5 +206,122 @@ export function selectPaymentFlows(state, { from, to }) {
     }
   }
   return { payments, totalCents, byChannel: [...channels].map(([method, amountCents]) => ({ method, amountCents })),
+    ambiguities, complete: ambiguities.length === 0 };
+}
+
+
+// Period events and current order balances intentionally have different semantics.
+// Original K05 selectPaymentFlows remains the unchanged original-receipt query.
+const reportPick = (value, fields) => Object.fromEntries(fields.filter(k => value?.[k] !== undefined).map(k => [k, value[k]]));
+const financialFields = ['adjustmentId', 'kind', 'originalPaymentId', 'amount', 'occurredAt',
+  'businessDate', 'businessDayRuleVersion', 'businessTimeZone', 'refundChannel', 'refundFundingSource',
+  'affectsCurrentDrawer', 'drawerHandoverId'];
+const cashOutFields = ['cashOutId', 'amountCents', 'occurredAt', 'businessDate',
+  'businessDayRuleVersion', 'businessTimeZone', 'drawerHandoverId'];
+function reportSum(values) {
+  return values.reduce((sum, value) => {
+    if (!Number.isSafeInteger(value) || !Number.isSafeInteger(sum + value)) throw RangeError('Unsafe financial report amount');
+    return sum + value;
+  }, 0);
+}
+export function selectFinancialFlows(state, interval) {
+  const original = selectPaymentFlows(state, interval), ambiguities = [...original.ambiguities];
+  const start = paymentInstant(interval.from), end = paymentInstant(interval.to);
+  const inPeriod = value => {
+    const instant = paymentInstant(value);
+    return instant !== null && instant >= start && instant < end;
+  };
+  const verifiedPayments = [];
+  for (const p of original.payments) {
+    try { validateOriginalPayment(state, p.orderId, p.paymentId); verifiedPayments.push(p); }
+    catch (error) {
+      if (!(error instanceof BusinessRejection)) throw error;
+      ambiguities.push({ code: 'PAYMENT_IDENTITY_UNVERIFIABLE', orderId: p.orderId, paymentIndex: p.paymentIndex });
+    }
+  }
+  const candidates = [], identities = new Map();
+  for (const order of state.orders) {
+    try {
+      orderPaymentCredit(order); netReceipts(order);
+      for (const a of order.financialAdjustments ?? []) {
+        validateOriginalPayment(state, order.id, a.originalPaymentId);
+        candidates.push({ ...reportPick(a, financialFields), orderId: order.id });
+        identities.set(a.adjustmentId, (identities.get(a.adjustmentId) ?? 0) + 1);
+      }
+    } catch (error) {
+      if (!(error instanceof BusinessRejection)) throw error;
+      ambiguities.push({ code: 'ORDER_FINANCIAL_FACTS_UNVERIFIABLE', orderId: order.id });
+    }
+  }
+  const adjustments = candidates.filter(a => {
+    if (identities.get(a.adjustmentId) !== 1) {
+      ambiguities.push({ code: 'FINANCIAL_FACT_ID_DUPLICATE', orderId: a.orderId }); return false;
+    }
+    return inPeriod(a.occurredAt);
+  });
+  const reversals = adjustments.filter(a => a.kind === 'PAYMENT_REVERSAL');
+  const refunds = adjustments.filter(a => a.kind === 'REFUND');
+  let drawerFacts = null;
+  try {
+    drawerFacts = cashDrawerFacts(state).facts;
+    if (!selectCashCountHistory(state).complete) throw new BusinessRejection('Unverifiable cash count chain');
+  }
+  catch (error) {
+    if (!(error instanceof BusinessRejection)) throw error;
+    ambiguities.push({ code: 'DRAWER_FACTS_UNVERIFIABLE' });
+  }
+  const cashOutflows = drawerFacts === null ? [] : (state.cashOutflows ?? [])
+    .filter(f => inPeriod(f.occurredAt)).map(f => reportPick(f, cashOutFields));
+  const refundCents = reportSum(refunds.map(a => a.amount)), reversalCents = reportSum(reversals.map(a => a.amount));
+  // Reuse the accepted drawer fact validator; reversal facts are corrections, never cash outflows.
+  const refundIds = new Set(drawerFacts?.filter(f => f.kind === 'REFUND').map(f => f.factId));
+  const drawerRefundCents = drawerFacts === null ? null : reportSum(refunds.filter(a => refundIds.has(a.adjustmentId)).map(a => a.amount));
+  const independentCashOutCents = drawerFacts === null ? null : reportSum(cashOutflows.map(f => f.amountCents));
+  return {
+    payments: verifiedPayments.map(p => reportPick(p, ['paymentId', 'orderId', 'amount', 'method', 'occurredAt'])),
+    reversals, refunds, cashOutflows, originalPaymentCents: reportSum(verifiedPayments.map(p => p.amount)),
+    reversalCents, refundCents, netReceiptsChangeCents: reportSum([...verifiedPayments.map(p => p.amount), -reversalCents, -refundCents]),
+    drawerRefundCents, independentCashOutCents,
+    drawerCashOutCents: drawerFacts === null ? null : reportSum([drawerRefundCents, independentCashOutCents]),
+    ambiguities, complete: ambiguities.length === 0
+  };
+}
+export function selectCurrentOrderBalances(state, orders) {
+  const balances = [], ambiguities = [];
+  for (const order of orders) {
+    try {
+      if (!Array.isArray(order.payments)) throw new BusinessRejection('Unknown original payments');
+      for (const payment of order.payments) validateOriginalPayment(state, order.id, payment?.paymentId);
+      balances.push({ orderId: order.id, effectivePaymentCreditCents: orderPaymentCredit(order), netReceiptsCents: netReceipts(order) });
+    } catch (error) {
+      if (!(error instanceof BusinessRejection)) throw error;
+      ambiguities.push({ code: 'ORDER_CURRENT_BALANCE_UNVERIFIABLE', orderId: order.id });
+    }
+  }
+  return { orders: balances,
+    effectivePaymentCreditCents: ambiguities.length ? null : reportSum(balances.map(o => o.effectivePaymentCreditCents)),
+    netReceiptsCents: ambiguities.length ? null : reportSum(balances.map(o => o.netReceiptsCents)),
+    ambiguities, complete: ambiguities.length === 0 };
+}
+export function selectCashCountHistory(state) {
+  const counts = [], ambiguities = [];
+  for (const h of state.handovers ?? []) {
+    if (!['drawer-v1', 'drawer-v2'].includes(h?.trustedHandoverVersion)) {
+      ambiguities.push({ code: 'LEGACY_CASH_COUNT_UNVERIFIABLE' }); continue;
+    }
+    counts.push(reportPick(h, ['trustedHandoverVersion', 'handoverId', 'previousHandoverId', 'occurredAt',
+      'expectedCash', 'actualCash', 'difference', 'cashAnomaly']));
+    if (!Number.isSafeInteger(h.expectedCash) || !Number.isSafeInteger(h.actualCash) || h.actualCash < 0 ||
+        !Number.isSafeInteger(h.difference) || h.difference !== h.actualCash - h.expectedCash)
+      ambiguities.push({ code: 'CASH_COUNT_AMOUNTS_UNVERIFIABLE', handoverId: h.handoverId });
+  }
+  if (counts.length) {
+    try { readTrustedDrawer(state); }
+    catch (error) {
+      if (!(error instanceof BusinessRejection)) throw error;
+      ambiguities.push({ code: 'CASH_COUNT_CHAIN_UNVERIFIABLE' });
+    }
+  }
+  return { counts, unresolvedDifferences: counts.filter(h => h.difference !== 0 || h.cashAnomaly),
     ambiguities, complete: ambiguities.length === 0 };
 }

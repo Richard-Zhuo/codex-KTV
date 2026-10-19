@@ -1,3 +1,15 @@
+## C2-B focused reporting verification
+
+Use frozen Node24.19.0 with S1_RUN=synthetic-only and STAGE5E_RUN=synthetic-only. The new tests exercise existing selectors, trusted in-memory commands and a real loopback HTTP server with isolated auth/store boundary ports. No production URL, external provider or MySQL instance is used. Existing affected reporting, HTTP auth/projections and module-graph checks are included; no full regression or C1/C2-A author/independent suite.
+
+```text
+node --test --test-isolation=none --test-reporter=tap reporting-financial.test.js reporting-ledger.test.js reporting.test.js offsite.report.test.js http/financial-report.test.js http/auth.test.js http/contract.test.js http/staff-query.test.js http/admin-query.test.js server-static.test.js
+```
+
+Attempt npm test with the same explicit scoped files after JavaScript edits. npm is unavailable in this environment; record that evidence separately and use frozen Node for the formal focused result.
+
+For an authorized read, GET /api/v1/store/snapshot?fromBusinessDate=2026-10-15&toBusinessDate=2026-10-16&paymentFrom=2026-10-15T06%3A00%3A00%2B08%3A00&paymentTo=2026-10-16T06%3A00%3A00%2B08%3A00 returns view.financialReport only with revalidated report.view. Use URLSearchParams to encode offsets. No arguments preserves the old snapshot response; partial, extra or duplicate arguments and invalid ranges are rejected. Date and time intervals are half-open and independent.
+
 ## C2-A focused verification
 
 Frozen Node24.19.0; S1_RUN=synthetic-only and STAGE5E_RUN=synthetic-only. The explicit pattern selects the new and directly affected cash/handover tests plus the necessary static graph check, without running frozen C1-A/C1-B independent acceptance or the broad trusted-clean fixture:

@@ -1,3 +1,11 @@
+## C2-B effective revenue and financial reads
+
+- reporting.js owns the common effective-order filter used by selectRevenueOrders, reportTotals and reportBreakdown. reportViewModel keeps the original cashFlow semantics and adds independent financialFlows, currentBalances and cashCounts; no UI aggregation or new four-number definition.
+- selectFinancialFlows reuses accepted financial-adjustment validation and cashDrawerFacts; cash-count history reuses the existing trusted drawer reader. Unknown identities/attribution are explicit. No financial/handover writer or compatibility contract is modified.
+- http/query.js:projectFinancialReport is the report.view-only fixed DTO. http/api.js composes it into the existing GET store snapshot when all four explicit report-range parameters are supplied; same session transaction / snapshot, no new write route or grant. Ordinary snapshot requests remain unchanged.
+- reporting-financial.test.js covers legal cancellation and zero-net non-cancellation, two time axes, 60+40 actual outflows, v1/v2 history and negative book-cash anomalies. http/financial-report.test.js covers the projection and real loopback GET, current permission revocation, strict ranges and no private fields. Exact focused command is in DEVELOPMENT_ENVIRONMENT.
+- The existing staff/admin pages and explicit static map remain unchanged; affected static graph tests cover the added imports. Existing C1/C2-A acceptance is historical and not rerun as a suite.
+
 ## C2-A cash drawer / handover integration
 
 - handover.js: drawer-v2 / cash-fact-set-v2 writer; drawerInterval / intervalCash validate retained payment and financial-fact identities, compute effective cashIn and the two actual outflow classes, preserve v1 history, and expose readTrustedDrawer to execution admission.

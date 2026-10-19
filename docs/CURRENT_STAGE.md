@@ -1,3 +1,13 @@
+## C2-B formal financial reporting integration -- local candidate
+
+Frozen parent: 590b4d1bcf72d196a3c663a380420b09b8efdb35; branch codex/c0-financial-core; main=origin/main=27aba1946d2411b9e2a27139e681d23954e7e546. Owner accepted C1-A/C1-B/C2-A; the preceding joint independent evidence is historical 32/32 PASS, P0/P1/P2=0. Older pending entries below are historical slice states and do not override that acceptance.
+
+Owner chose effective-transaction revenue for totals, category and seller summaries. Only explicit trustworthy unpaid cancellation is excluded; zero payments, credit, refunds and reversals are not cancellation. Current financial balances and period events are separate read-only projections. The existing GET snapshot optionally returns a report.view-protected fixed financial DTO using explicit independent date/time intervals. Accepted money, cashOut, cancellation and handover writers are unchanged. Contract: REQUIREMENTS C2-B; query and test entrypoints: MODULE_MAP / DEVELOPMENT_ENVIRONMENT.
+
+Author focused evidence: frozen Node24.19.0, S1_RUN=synthetic-only, STAGE5E_RUN=synthetic-only; 79/79 PASS, fail/cancel/skip=0, exit0, duration1142.8269ms. Includes 15 new C2-B cases and existing directly affected reporting, HTTP authorization/contract, staff/admin projection and static module-graph tests. npm test was attempted with the same scoped files; npm unavailable. Tracers first failed for cancelled totals, missing period projection, missing current balances and rejected GET ranges, then passed after their respective slices. One new query test initially omitted existing mandatory context policy fields; the test was corrected without weakening production context validation.
+
+Unknown historical funds remain incomplete, cash-attribution totals unknown rather than fabricated zero; historical v1/v2 differences and negative book-cash markers are preserved. No new four-number contract, reporting UI, financial write exposure, permissions, SQL migration, domain writer change, full regression, deployment, independent C2-B acceptance, merge or push. Ready only for C2-B independent narrow acceptance after the candidate commit and clean-tree verification.
+
 ## C2-A negative expectedCash P1 fix -- pending joint re-acceptance
 
 Frozen fix parent: d6ac0efc0c662c0005a548f11fa7a500b37a3b62; branch codex/c0-financial-core; main=origin/main=27aba1946d2411b9e2a27139e681d23954e7e546. C1-A = independent accepted; C1-B = independent acceptance incomplete; C2-A = P1 fix candidate / pending joint independent re-acceptance. The preceding joint review stopped at one reproduced P1 and one evidence-status P2; it did not establish joint acceptance.

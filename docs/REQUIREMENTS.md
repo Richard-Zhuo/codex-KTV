@@ -1,3 +1,17 @@
+## C2-B 正式经营汇总与资金只读查询（Owner 已冻结）
+
+Owner 已确认：现有 totals.total 为撤单后的有效账单合计；商品分类和销售人员金额采用同一有效订单集合。仅合法无款撤单终态及可信撤单事实明确对应的整单被排除，其全部销售行不再进入三类经营汇总。原订单、销售行、原始金额、库存流水及撤单事实原样保留；撤单不回库、不改成本。未付款、挂账、部分／全额退款、付款冲正或零净实收均不等于撤单。不可信或矛盾的撤单标记明确报告歧义，不猜金额或默认为有效成交。原始金额仍可通过现有可信订单只读数据核对，不新增第二套经营报表。
+
+营业额继续按冻结 order.businessDate，以 [fromBusinessDate,toBusinessDate) 查询，不重算 noon-v1 等历史日期。资金期间独立按各自真实 occurredAt 的 [from,to) 查询并保留微秒；申请／批准不是执行事件。原 selectPaymentFlows／cashFlow 继续仅表示原付款，不改变已有字段含义。新增 financialFlows 明确列 originalPaymentCents、reversalCents、refundCents 与 netReceiptsChangeCents=期间原付款−期间冲正−期间实际退款；这是期间更正后资金变动，不是营业额，也不是实际抽屉现金出流。独立 cashOut 不减少营业额或净实收，不冒充 expense。
+
+currentBalances 是查询时所选有效营业订单的当前有效付款与当前净实收，复用已接受的 orderPaymentCredit／netReceipts；它不表示该期间发生额，也不把退款变成顾客新欠款。没有冻结新的“经营四数”，本阶段不创建四数名称或公式。
+
+抽屉出流复用 cashDrawerFacts 与可信交班链校验：CURRENT_DRAWER refund 和 independent cashOut 各一次；冲正不成为现金支出。cashCounts 只读保留 v1/v2 实点历史、signed expectedCash、actualCash、difference 和 cashAnomaly。旧差额继续作为 unresolvedDifferences 留存，后续正常实点不自动核销。清点与差额不是额外收入／支出。不改变 cashOut 资格或交班算法。
+
+正式只读查询复用 GET /api/v1/store/snapshot，可选同时提供且仅提供 fromBusinessDate、toBusinessDate、paymentFrom、paymentTo 四个参数；结果在 view.financialReport。该投影在原 session 事务中读取同一 snapshot，必须有当前 report.view，不以后台入口、收款或交班权限替代；只返回固定报表字段，不返回原订单私有字段、客户联系方式、secret 或审批原因。无参数旧快照保持原状；未知、重复、缺失参数和非法区间拒绝。新员工写命令／权限／UI、SQL migration、会计总账和人工核销均不在本阶段。
+
+未知原付款身份或时间、未知退款游标、无法验证的现金链／事实明确通过 ambiguities 和 complete=false 暴露，不补造 ID／actor／时间／归属。新资金投影只合计已证明的原付款；不完整资金合计仅为可证明部分，不能作为完整日结。抽屉来源无法证明时相关合计为 null；当前余额存在未知事实时合计亦为 null。cashCounts 为历史实点解释，不按资金期间重新计钱。
+
 ## C2-A cash drawer / handover integration（内部候选）
 
 本节为当前现金交班合同；下方 C1-B/C1-A 保留已验收阶段范围，不覆盖本次明确授权的集成点。只改现金领域、可信交班及其执行门禁，不开放员工资金 HTTP/UI，不进入 C2-B 报表或 C3。
