@@ -1,3 +1,15 @@
+## C3-A trusted financial staff HTTP -- local candidate
+
+Frozen parent: c32217706448d92467090d22c95b0183091879bb; branch codex/c0-financial-core; main=origin/main=27aba1946d2411b9e2a27139e681d23954e7e546. Preserve the preceding seven feature commits. Owner accepted C1-A/C1-B/C2-A/C2-B; C2-B independent 21/21 PASS and P0/P1/P2=0 are historical accepted evidence, not rerun as independent acceptance here. C2B-P1-01 is closed. Older pending headings below are historical slice records.
+
+The six existing financial actions now use the existing HTTP dispatcher and registry. Existing session/CSRF checks, current grants, request fingerprint/revision/key handling, other-person financial approval, original-applicant execution and domain transactions remain authoritative. The staff snapshot projects one filtered list of the existing financialRequests, authorized original payment references/balances, verified drawer availability, minimal cancellation references and own execution results. No financial core, handover/report calculation, true staff grant, UI, SQL or external-provider change.
+
+Author focused evidence: frozen Node24.19.0, S1_RUN=synthetic-only, STAGE5E_RUN=synthetic-only; 66/66 PASS, fail/cancel/skip=0, exit0, duration1320.1531ms. Includes 19 new C3-A loopback HTTP cases and directly affected auth, contract, staff/report projection, module/private-static-path and pending-journal checks. The direct-command tracer first failed because the registry excluded it; the request-query tracer then failed because the staff financial projection was absent. Both passed after their respective narrow implementation slices. Scoped npm test was attempted but npm unavailable; frozen Node supplies focused evidence.
+
+New cases cover all six grant gates; direct versus request mode; refund/reversal/cashOut approval and original-applicant execution; self approval even with review.self; no approval money facts; request consumption, replay/fingerprint/revision and concurrent execution; spoofed identity/time/grants; expired/revoked sessions and lock-time grant revocation; unpaid cancellation and insufficient cash; own/eligible-review query isolation; report.view separation; and a lost response recovered with the exact existing pending key. Requests/approval/execution and transport unknown/failure remain distinct without new domain states. Manual refund confirmation is not external provider settlement proof.
+
+Ready only for C3-A independent acceptance after committing the candidate and verifying a clean tree. No independent C3-A acceptance, full regression, C3-B, deployment, merge or push has been performed. Runtime/production MySQL deployment evidence is not claimed by these loopback memory-adapter tests.
+
 ## C2-B P1-01 drawer reporting trust fix -- pending independent re-acceptance
 
 Frozen fix parent: 7200f5fa4429c26192fc3fb1ee39a75c7881a042; branch codex/c0-financial-core; main=origin/main=27aba1946d2411b9e2a27139e681d23954e7e546. Preserve all six preceding feature commits. C1-A/C1-B/C2-A remain accepted. C2-B independent acceptance stopped at C2B-P1-01; the historical author candidate status below does not establish C2-B acceptance.

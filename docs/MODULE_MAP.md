@@ -1,3 +1,10 @@
+## C3-A trusted financial staff HTTP
+
+- http/registry.js explicitly exposes the six existing financial actions through the unchanged http/api.js dispatcher.
+- http/staff-query.js adds workspace.financial to the same current-session snapshot. Its single filtered requests list projects existing financialRequests; existing review policy determines eligible pending reviews. Original-payment and drawer balances reuse financial-adjustments.js read functions. Own execution results use fixed fields and existing fact/request IDs.
+- http/financial-staff.test.js runs real loopback HTTP with synthetic session accounts, current transaction revalidation and the trusted memory-ledger application. It covers permissions, three request/approval/execution paths, rejection, direct actions, replay/conflict/race, spoofing, revocation, read isolation and original-key recovery through the existing pending journal.
+- server-static.test.js retains module/private-path checks and updates the obsolete internal-only registry expectation for the explicitly authorized C3-A commands. No employee financial UI or core writer changes. Focused command: DEVELOPMENT_ENVIRONMENT C3-A.
+
 ## C2-B effective revenue and financial reads
 
 - reporting.js owns the common effective-order filter used by selectRevenueOrders, reportTotals and reportBreakdown. reportViewModel keeps the original cashFlow semantics and adds independent financialFlows, currentBalances and cashCounts; no UI aggregation or new four-number definition.

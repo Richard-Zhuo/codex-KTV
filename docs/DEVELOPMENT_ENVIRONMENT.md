@@ -1,3 +1,13 @@
+## C3-A focused financial HTTP verification
+
+Use frozen Node24.19.0, S1_RUN=synthetic-only and STAGE5E_RUN=synthetic-only. The new loopback HTTP tests use isolated synthetic accounts and in-memory ledger transactions with real session revalidation, command policy and domain execution. They do not configure real staff grants, a production URL, external payments or a production database.
+
+```text
+node --test --test-isolation=none --test-reporter=tap http/financial-staff.test.js http/auth.test.js http/contract.test.js http/staff-query.test.js http/financial-report.test.js server-static.test.js ui/command-flow.test.js
+```
+
+After JavaScript edits attempt npm test with the same explicit scoped arguments; npm is unavailable in the current environment, so record that separately. This focused set is not full regression or a repeat of C1/C2 independent acceptance. The existing static internal-only assertion is superseded by C3-A's explicit six-command HTTP allowlist; private static paths remain forbidden.
+
 ## C2-B focused reporting verification
 
 Use frozen Node24.19.0 with S1_RUN=synthetic-only and STAGE5E_RUN=synthetic-only. The new tests exercise existing selectors, trusted in-memory commands and a real loopback HTTP server with isolated auth/store boundary ports. No production URL, external provider or MySQL instance is used. Existing affected reporting, HTTP auth/projections and module-graph checks are included; no full regression or C1/C2-A author/independent suite.

@@ -80,9 +80,9 @@ test('C1-A static financial module delivery preserves the explicit allowlist bou
         assert.equal(await response.text(), 'Not found', path);
       }
     });
-    await t.test('serving a dependency does not expose financial employee commands', () => {
-      for (const action of ['reversePayment', 'refundPayment', 'approveFinancialAdjustment', 'rejectFinancialAdjustment']) {
-        assert.equal(isHttpCommand(action), false, action);
+    await t.test('C3-A: financial HTTP commands require explicit registry entries', () => {
+      for (const action of ['reversePayment', 'refundPayment', 'cashOut', 'cancelOrder', 'approveFinancialAdjustment', 'rejectFinancialAdjustment']) {
+        assert.equal(isHttpCommand(action), true, action);
       }
     });
   } finally {

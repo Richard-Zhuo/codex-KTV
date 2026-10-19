@@ -1,3 +1,6 @@
+import { adjustablePaymentBalance, validateOriginalPayment, cashOutBalance } from '../financial-adjustments.js';
+import { authorizeReviewCommand, createTrustedReviewFacts } from '../ledger/command-policy.js';
+import { BusinessRejection } from '../shared/business-error.js';
 import { mergeCatalog } from '../catalog.js';
 import { businessSessionFor } from '../shared/business-session.js';
 import { assertTrustedExecutionContext } from '../shared/identity.js';
@@ -140,6 +143,74 @@ function stock(value) {
     [id, pick(item, ['count', 'opened', 'unit', 'threshold'])]));
 }
 
+
+// One filtered view of the existing financialRequests, not a second approval system.
+const financialGrants = ['payment.reverse', 'payment.refund', 'cash.out', 'order.cancel', 'financial.approve'];
+const financialPermission = kind => ({PAYMENT_REVERSAL:'payment.reverse',REFUND:'payment.refund',CASH_OUT:'cash.out'})[kind];
+function financialWorkspace(state, context, grants) {
+  const owns = row => row.actualActorPrincipalId === context.principalId;
+  const canStartPayment = any(grants, ['payment.reverse', 'payment.refund']);
+  const permissions = {reversePayment:'payment.reverse',refundPayment:'payment.refund',cashOut:'cash.out',cancelOrder:'order.cancel'};
+  const capabilities = Object.fromEntries(Object.entries(permissions).map(([action, permission]) => [action, {
+    allowed: grants.has(permission), mode: !grants.has(permission) ? null :
+      action === 'cancelOrder' || grants.has('financial.direct') ? 'DIRECT' : 'REQUEST'
+  }]));
+  const requests = [];
+  for (const request of state.financialRequests ?? []) {
+    const permission = financialPermission(request.kind);
+    if (!permission) continue;
+    const ownRequest = own(request, context.principalId) && grants.has(permission);
+    const canReview = request.status === '\u5f85\u5ba1\u6838' && grants.has('financial.approve') &&
+      authorizeReviewCommand({principal:context.principal,action:'approveFinancialAdjustment',
+        reviewFacts:createTrustedReviewFacts({submittedByPrincipalId:request.submittedByPrincipalId})}).allowed;
+    if (!ownRequest && !canReview) continue;
+    const canExecute = ownRequest && request.status === '\u5df2\u6279\u51c6' && request.executedAdjustmentId === null;
+    requests.push({...pick(request, ['requestId','kind','orderId','originalPaymentId','amount','reason','status',
+      'submittedByPrincipalId','submittedAt','decidedByPrincipalId','decidedAt','decisionNote',
+      'executedAdjustmentId','refundChannel','refundFundingSource']),
+      canApprove:canReview,canReject:canReview,canExecute,
+      executionBlockedReason:canExecute ? null : !ownRequest ? 'ORIGINAL_APPLICANT_REQUIRED' :
+        request.status === '\u5df2\u6267\u884c' ? 'REQUEST_CONSUMED' : 'REQUEST_NOT_APPROVED',
+      reviewBlockedReason:canReview ? null : request.submittedByPrincipalId === context.principalId ?
+        'ANOTHER_REVIEWER_REQUIRED' : 'REQUEST_NOT_PENDING'});
+  }
+  const reviewedPayments = new Set(requests.filter(r => r.canApprove && r.originalPaymentId)
+    .map(r => JSON.stringify([r.orderId,r.originalPaymentId])));
+  const payments = [];
+  for (const order of state.orders) for (const p of order.payments ?? []) {
+    if (!canStartPayment && !reviewedPayments.has(JSON.stringify([order.id,p.paymentId]))) continue;
+    try {
+      const {payment:original} = validateOriginalPayment(state, order.id, p.paymentId);
+      const balance = adjustablePaymentBalance(state, order.id, p.paymentId);
+      payments.push({orderId:order.id,...payment(original),availableAmountCents:balance.available,
+        reservedCents:balance.reserved,refundCents:balance.refunds,reversalCents:balance.reversed});
+    } catch (error) {
+      if (!(error instanceof BusinessRejection)) throw error;
+      payments.push({orderId:order.id,paymentId:p.paymentId ?? null,unavailableReason:'PAYMENT_FACTS_UNVERIFIABLE'});
+    }
+  }
+  let drawer = null;
+  if (grants.has('cash.out')) {
+    try { const b = cashOutBalance(state); drawer = {availableCents:b.available,reservedCents:b.reserved,drawerHandoverId:b.drawerHandoverId}; }
+    catch (error) {
+      if (!(error instanceof BusinessRejection)) throw error;
+      drawer = {availableCents:null,reservedCents:null,unavailableReason:'DRAWER_BALANCE_UNVERIFIABLE'};
+    }
+  }
+  const results = [];
+  for (const o of state.orders) {
+    for (const a of o.financialAdjustments ?? []) if (owns(a) && grants.has(financialPermission(a.kind)))
+      results.push({orderId:o.id,...pick(a,['adjustmentId','kind','originalPaymentId','amount','occurredAt',
+        'businessDate','requestId','refundChannel','refundFundingSource','drawerHandoverId'])});
+    if (o.cancellation && owns(o.cancellation) && grants.has('order.cancel'))
+      results.push({kind:'CANCEL_ORDER',...pick(o.cancellation,['cancellationId','orderId','occurredAt','status'])});
+  }
+  if (grants.has('cash.out')) for (const f of state.cashOutflows ?? []) if (owns(f))
+    results.push({kind:'CASH_OUT',...pick(f,['cashOutId','amountCents','occurredAt','businessDate','requestId','drawerHandoverId'])});
+  return {capabilities,requests,payments,drawer,results,
+    orders:grants.has('order.cancel') ? rows(state.orders, o => pick(o,['id','kind','room','status'])) : []};
+}
+
 export function projectEmployeeWorkspace(state, context, {
   employees = [], serverNow = new Date().toISOString(), businessTimeZone
 } = {}) {
@@ -162,10 +233,12 @@ export function projectEmployeeWorkspace(state, context, {
     roomIssueReviews: any(grants, ['room.issue', 'room.issue.approve']),
     inventoryReviews: any(grants, ['inventory.opening', 'inventory.adjust',
       'inventory.approve']),
+    financial: any(grants, financialGrants),
     handovers: any(grants, ['handover', 'report.view'])
   };
   if (!Object.values(sections).some(Boolean)) return null;
   const workspace = { serverNow, sections };
+  if (sections.financial) workspace.financial = financialWorkspace(state, context, grants);
   const actorEmployee = employees.find(item => item.principalId === context.principalId &&
     item.enabled !== false);
   if (actorEmployee) workspace.actorEmployee = pick(actorEmployee,

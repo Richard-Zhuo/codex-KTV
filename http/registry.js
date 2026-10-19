@@ -12,7 +12,9 @@ export const HTTP_COMMAND_ACTIONS = Object.freeze([
   'credit', 'approve', 'reject', 'repay', 'approveRepayment', 'rejectRepayment',
   'incident', 'resolveIncident', 'approveIncidentResolution', 'rejectIncidentResolution',
   'procurement', 'collect', 'pay', 'settle', 'approveRounding', 'rejectRounding',
-  'handover', 'open'
+  'handover', 'open',
+  'reversePayment', 'refundPayment', 'cashOut', 'cancelOrder',
+  'approveFinancialAdjustment', 'rejectFinancialAdjustment'
 ]);
 
 const policy = new Set(FORMAL_COMMAND_ACTIONS);
