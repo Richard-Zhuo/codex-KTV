@@ -1,3 +1,15 @@
+## C3B-P2-01 task count fix -- local candidate for C0 final validation
+
+Frozen parent: 9fad815b5fce9e9d8441690ec94c32a997fbc112, branch codex/c0-financial-core; main=origin/main=27aba1946d2411b9e2a27139e681d23954e7e546. Owner accepted C1-A through C3-B; C3-B independent13/13 PASS and P0/P1/P2=0/0/1 are preceding accepted evidence, not repeated here.
+
+Only taskCenterPage changes production behavior: add distinct requestIds from the existing authorized workspace.financial requests when status is pending and canApprove/canReject is true. The existing business-review sum is retained. No back-end count, permission rule, financial state machine, domain writer, grant or schema change.
+
+The initial heading regression reproduced 0!=1. Four new rendering tests cover0/1/2, duplicate references, own/unauthorized/terminal exclusions, existing expense plus financial totals, decision transitions and refreshed permission removal. Direct focused set19/19 PASS, fail/cancel/skip0, exit0, duration439.0081ms under frozen Node24.19.0. Scoped npm test attempted; npm unavailable.
+
+Fresh real MySQL/HTTP synthetic setup supplied two qualified financial requests to a reviewer with no roster permission. At390px the actual task heading displayed2; after approving the125-cent refund request, the heading displayed1 and only the225-cent cashOut remained pending. No actual money execution occurred. Browser session stopped and owned fixture cleanup confirmed sqlCleanup=true with processes/databases/accounts/root absent.
+
+C3B-P2-01 focused closure complete. Preserve the preceding nine commits and create only the requested fix candidate. The authorized full regression follows that fixed candidate through rehearsal/regression.js with both synthetic-only selectors and a new external TAP; its result must be recorded against the actual candidate SHA, never inferred from these focused results. Cross-module evidence is checked against that run and the accepted C1/C2/C3 evidence; only an uncovered interface warrants a narrow extra check. No merge, push or production readiness claim.
+
 ## C3-B employee financial UI -- local candidate, browser supplement complete
 
 Frozen parent: 4605370c737d350535ce65162f86f1ae2d03d935; branch codex/c0-financial-core; main=origin/main=27aba1946d2411b9e2a27139e681d23954e7e546. Owner reports C1-A/C1-B/C2-A/C2-B/C3-A independently accepted; C3-A 14/14 is historical accepted evidence, not repeated here. Preserve all eight commits. Earlier candidate headings below describe historical slices.

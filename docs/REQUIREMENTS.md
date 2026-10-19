@@ -1,5 +1,7 @@
 ## C3-B minimal employee financial UI contract
 
+The task heading counts existing authorized business reviews plus distinct pending financial requestIds from the trusted projection with canApprove/canReject. Own/unqualified or terminal financial requests do not enter that count; a refreshed decision or permission projection updates it without a new authorization or state machine.
+
 The existing employee order dialog, task center and My page use workspace.financial and the six accepted HTTP commands. Server capabilities, request canApprove/canReject/canExecute and current principal identity control available UI actions; names never authorize. Refund/reversal/cashOut requests, qualified other-person decisions and original-applicant execution remain distinct. Direct actions still require the action grant plus existing financial.direct; cancellation eligibility is decided by the server.
 
 Amounts display in yuan and submit exact integer cents through shared money conversion. Reversal corrects a whole original receipt and is not a customer refund. Refund and cashOut execution require explicit confirmation of the manual action; no external payment settlement is claimed. The existing command flow and pending journal retain the original key/request on an unknown outcome, prevent a new write until resolved and refresh after a revision conflict.

@@ -116,7 +116,10 @@ function taskCenterPage() {
     incident:['客诉／异常恢复审核','处理结果批准后才转为完成。',incidentResolutionReviewCards],
     expense:['大额报销审批','超过500元的报销由有权限人员处理。',expenseReviewCards]
   };
-  const pendingCount=sections.reduce((sum,section)=>sum+pendingBusinessReviewCount(section),0);
+  const financialPendingCount=new Set((ctx.formal?.workspace?.financial?.requests??[])
+    .filter(request=>request.status==='\u5f85\u5ba1\u6838'&&(request.canApprove||request.canReject))
+    .map(request=>request.requestId)).size;
+  const pendingCount=sections.reduce((sum,section)=>sum+pendingBusinessReviewCount(section),0)+financialPendingCount;
   const reviews=sections.map(section=>{const [title,hint,renderCards]=reviewViews[section];return `<section class="task-review-section" data-review-section="${section}"><div class="section-title"><div><h2>${title}</h2><p class="muted">${hint}</p></div><span>${pendingBusinessReviewCount(section)} 项</span></div>${renderCards()}</section>`;}).join('');
   return `<p class="eyebrow">员工系统 · 营业待办</p><h1>待办 / 审核中心</h1><p class="muted">这里只汇总当前需要你处理的事项；主动发起型营业操作仍在房间、库存、采购、客诉、交班或“我的”中。</p><section class="summary"><div><strong>${myTasks.length}</strong><span>我的待办</span></div><div><strong>${pendingCount}</strong><span>待审核事项</span></div><div><strong>${history.length}</strong><span>最近已处理</span></div></section><div class="section-title"><h2>我的待办</h2><span>按负责人显示</span></div>${myTaskCards(myTasks)}${ctx.formal?financialPanel():''}<div class="section-title"><h2>待我审核</h2><span>按具体审核权限显示</span></div>${reviews||'<div class="empty">当前身份没有业务审核权限，不显示其他审核事项。</div>'}<div class="section-title"><h2>审核记录 / 已处理事项</h2><span>仅显示当前身份处理的对应业务</span></div>${reviewHistoryCards(history)}`;
 }

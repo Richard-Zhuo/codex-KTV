@@ -1,3 +1,7 @@
+## C3B-P2-01 task count focused check
+
+Use frozen Node24.19.0: node --test --test-isolation=none --test-reporter=tap ui/financial-task-count.test.js ui/financial.test.js ui/formal-entry.test.js server-static.test.js. Attempt the same scoped npm test separately. Real browser evidence requires two eligible synthetic financial reviews -> approve one -> header one, using the existing owned disposable MySQL/HTTP fixture and browser help rules. Full C0 validation uses the unchanged rehearsal/regression.js entry with both synthetic-only selectors and an external TAP, exactly once after the fix commit.
+
 ## C3-B focused verification
 
 Use frozen Node24.19.0, S1_RUN=synthetic-only and STAGE5E_RUN=synthetic-only:
