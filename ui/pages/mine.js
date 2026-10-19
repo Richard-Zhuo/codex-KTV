@@ -1,6 +1,7 @@
 // Phase 7 自 app.js 迁入；唯一机械转换：模块级可变状态（state/page/filter/searchTerm/
 // reportPeriod/storageProblem/APP_ENTRY/DEFAULT_PAGE/modal 等）→ ctx.*，函数体逐字保留。
 
+import {financialPanel} from '../financial.js';
 import { allowedPermission, appearanceSettings, btn, ctx, currentUser, esc, reservationSessionName } from '../context.js';
 import { creditCards } from './tasks.js';
 import { staffRecordingPanel } from './admin.js';
@@ -30,7 +31,7 @@ function minePage() {
   const reminders=pendingIncidentReminders((ctx.formal ? ctx.state.incidents : visibleIncidents(ctx.state,currentUser())),ctx.state.clock);
   const businessTools=`${allowedPermission('expense.view')?btn('支出 / 报销记录　→','expenses'):''}${allowedPermission('procurement.create')||ctx.state.procurements?.length?btn('采购记录　→','procurement'):''}${allowedPermission('incident.create')||allowedPermission('incident.resolve')||ctx.state.incidents?.length?btn('客诉 / 异常　→','incidents'):''}${allowedPermission('handover')?btn('交班 · 核对收款　→','handover'):''}${allowedPermission('inventory.adjust')||allowedPermission('inventory.opening')||allowedPermission('inventory.approve')?btn('库存 · 建账与调整　→','inventory'):''}`;
   const creditRecords=allowedPermission('credit.approve')||allowedPermission('credit.repay')||allowedPermission('credit.repay.approve')?`<div class="section-title"><h2>挂账与回款记录</h2><span>主动登记回款仍在本业务模块</span></div>${creditCards()}`:'';
-  return `<p class="eyebrow">我的账户</p><h1>${esc(currentUser().name)}，辛苦了</h1><p class="muted">岗位说明：${esc(currentUser().title || '未设置')} · 岗位名称只作说明，具体权限由管理员调整</p>${reminders.length?`<div class="notice incident-reminder">今天14:00提醒：还有 ${reminders.length} 项客诉／异常待处理。${btn('查看记录','incidents','', 'quiet')}</div>`:''}${myReservationSection()}${staffRecordingPanel()}${businessTools?`<div class="section-title"><h2>日常营业</h2><span>按具体权限显示</span></div><div class="menu-list">${businessTools}</div>`:''}${creditRecords}${appearanceSettings()}`;
+  return `<p class="eyebrow">我的账户</p><h1>${esc(currentUser().name)}，辛苦了</h1><p class="muted">岗位说明：${esc(currentUser().title || '未设置')} · 岗位名称只作说明，具体权限由管理员调整</p>${reminders.length?`<div class="notice incident-reminder">今天14:00提醒：还有 ${reminders.length} 项客诉／异常待处理。${btn('查看记录','incidents','', 'quiet')}</div>`:''}${myReservationSection()}${staffRecordingPanel()}${businessTools?`<div class="section-title"><h2>日常营业</h2><span>按具体权限显示</span></div><div class="menu-list">${businessTools}</div>`:''}${creditRecords}${ctx.formal?financialPanel({reviews:false}):''}${appearanceSettings()}`;
 }
 
 export {

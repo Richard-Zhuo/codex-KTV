@@ -1,6 +1,7 @@
 // Phase 7 自 app.js 迁入；唯一机械转换：模块级可变状态（state/page/filter/searchTerm/
 // reportPeriod/storageProblem/APP_ENTRY/DEFAULT_PAGE/modal 等）→ ctx.*，函数体逐字保留。
 
+import {financialPanel} from '../financial.js';
 import { allowedPermission, btn, canReviewSubmission, contactText, ctx, currentUser, date, esc, product, reviewPermissionHint } from '../context.js';
 import { roomIssueEvidenceMarkup } from '../forms.js';
 import { BUSINESS_REVIEW_SECTIONS, businessReviewSections } from '../../shared/identity.js';
@@ -117,7 +118,7 @@ function taskCenterPage() {
   };
   const pendingCount=sections.reduce((sum,section)=>sum+pendingBusinessReviewCount(section),0);
   const reviews=sections.map(section=>{const [title,hint,renderCards]=reviewViews[section];return `<section class="task-review-section" data-review-section="${section}"><div class="section-title"><div><h2>${title}</h2><p class="muted">${hint}</p></div><span>${pendingBusinessReviewCount(section)} 项</span></div>${renderCards()}</section>`;}).join('');
-  return `<p class="eyebrow">员工系统 · 营业待办</p><h1>待办 / 审核中心</h1><p class="muted">这里只汇总当前需要你处理的事项；主动发起型营业操作仍在房间、库存、采购、客诉、交班或“我的”中。</p><section class="summary"><div><strong>${myTasks.length}</strong><span>我的待办</span></div><div><strong>${pendingCount}</strong><span>待审核事项</span></div><div><strong>${history.length}</strong><span>最近已处理</span></div></section><div class="section-title"><h2>我的待办</h2><span>按负责人显示</span></div>${myTaskCards(myTasks)}<div class="section-title"><h2>待我审核</h2><span>按具体审核权限显示</span></div>${reviews||'<div class="empty">当前身份没有业务审核权限，不显示其他审核事项。</div>'}<div class="section-title"><h2>审核记录 / 已处理事项</h2><span>仅显示当前身份处理的对应业务</span></div>${reviewHistoryCards(history)}`;
+  return `<p class="eyebrow">员工系统 · 营业待办</p><h1>待办 / 审核中心</h1><p class="muted">这里只汇总当前需要你处理的事项；主动发起型营业操作仍在房间、库存、采购、客诉、交班或“我的”中。</p><section class="summary"><div><strong>${myTasks.length}</strong><span>我的待办</span></div><div><strong>${pendingCount}</strong><span>待审核事项</span></div><div><strong>${history.length}</strong><span>最近已处理</span></div></section><div class="section-title"><h2>我的待办</h2><span>按负责人显示</span></div>${myTaskCards(myTasks)}${ctx.formal?financialPanel():''}<div class="section-title"><h2>待我审核</h2><span>按具体审核权限显示</span></div>${reviews||'<div class="empty">当前身份没有业务审核权限，不显示其他审核事项。</div>'}<div class="section-title"><h2>审核记录 / 已处理事项</h2><span>仅显示当前身份处理的对应业务</span></div>${reviewHistoryCards(history)}`;
 }
 
 export {

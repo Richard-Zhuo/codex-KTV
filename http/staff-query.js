@@ -147,7 +147,7 @@ function stock(value) {
 // One filtered view of the existing financialRequests, not a second approval system.
 const financialGrants = ['payment.reverse', 'payment.refund', 'cash.out', 'order.cancel', 'financial.approve'];
 const financialPermission = kind => ({PAYMENT_REVERSAL:'payment.reverse',REFUND:'payment.refund',CASH_OUT:'cash.out'})[kind];
-function financialWorkspace(state, context, grants) {
+function financialWorkspace(state, context, grants, employees) {
   const owns = row => row.actualActorPrincipalId === context.principalId;
   const canStartPayment = any(grants, ['payment.reverse', 'payment.refund']);
   const permissions = {reversePayment:'payment.reverse',refundPayment:'payment.refund',cashOut:'cash.out',cancelOrder:'order.cancel'};
@@ -165,7 +165,9 @@ function financialWorkspace(state, context, grants) {
         reviewFacts:createTrustedReviewFacts({submittedByPrincipalId:request.submittedByPrincipalId})}).allowed;
     if (!ownRequest && !canReview) continue;
     const canExecute = ownRequest && request.status === '\u5df2\u6279\u51c6' && request.executedAdjustmentId === null;
-    requests.push({...pick(request, ['requestId','kind','orderId','originalPaymentId','amount','reason','status',
+    const matches = employees.filter(e => e.principalId === request.submittedByPrincipalId && e.enabled !== false);
+    const displayName = matches.length === 1 && typeof matches[0].displayName === 'string' && matches[0].displayName.trim() ? matches[0].displayName : null;
+    requests.push({submittedByDisplayName:displayName,...pick(request, ['requestId','kind','orderId','originalPaymentId','amount','reason','status',
       'submittedByPrincipalId','submittedAt','decidedByPrincipalId','decidedAt','decisionNote',
       'executedAdjustmentId','refundChannel','refundFundingSource']),
       canApprove:canReview,canReject:canReview,canExecute,
@@ -238,7 +240,7 @@ export function projectEmployeeWorkspace(state, context, {
   };
   if (!Object.values(sections).some(Boolean)) return null;
   const workspace = { serverNow, sections };
-  if (sections.financial) workspace.financial = financialWorkspace(state, context, grants);
+  if (sections.financial) workspace.financial = financialWorkspace(state, context, grants, employees);
   const actorEmployee = employees.find(item => item.principalId === context.principalId &&
     item.enabled !== false);
   if (actorEmployee) workspace.actorEmployee = pick(actorEmployee,

@@ -1,3 +1,15 @@
+## C3-B focused verification
+
+Use frozen Node24.19.0, S1_RUN=synthetic-only and STAGE5E_RUN=synthetic-only:
+
+```text
+node --test --test-isolation=none --test-reporter=tap ui/financial.test.js http/financial-identity.test.js ui/command-flow.test.js ui/formal-workspace.test.js ui/formal-entry.test.js server-static.test.js
+```
+
+Attempt npm test with those same scoped arguments after JavaScript edits; record npm unavailability separately. Do not substitute a full regression run.
+
+Real HTTP/mobile verification uses only an owned disposable MySQL fixture, synthetic auth/employee mappings and the formal server/dispatcher. Verify 360px/390px, applicant submission, another qualified principal approval, original-applicant actual confirmation, direct actions, rejection and unknown-result recovery. Browser login/payment confirmation follows browser-skill help settings. A help timeout is missing evidence, not a successful execution or product failure; do not bypass/repeat it. No real staff account, production DB or external payment is used.
+
 ## C3-A focused financial HTTP verification
 
 Use frozen Node24.19.0, S1_RUN=synthetic-only and STAGE5E_RUN=synthetic-only. The new loopback HTTP tests use isolated synthetic accounts and in-memory ledger transactions with real session revalidation, command policy and domain execution. They do not configure real staff grants, a production URL, external payments or a production database.

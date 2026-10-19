@@ -3,6 +3,7 @@
 // 页面渲染在 ui/pages/*，对话框在 ui/dialogs/*，外壳与 persist/commit 在 ui/shell.js，
 // 表单件在 ui/forms.js，通用助手与 ctx 单例在 ui/context.js；业务命令经 rules.js facade。
 // 唯一机械转换：模块级可变状态 → ctx.*（见 ui/context.js 头注释），分支与文案逐字保留。
+import {financialClick,financialSubmit} from './ui/financial.js';
 import { initialState } from './rules.js';
 import { USERS, PERMISSION_DEFINITIONS, effectiveUser } from './shared/identity.js';
 import { PAYMENT_METHODS, collected } from './sales.js';
@@ -96,6 +97,7 @@ document.addEventListener('click',async e=>{
     return;
   }
   try {
+    if(FORMAL && a.startsWith('financial')){financialClick(a,target.dataset);return;}
     if(a==='close'){ctx.modal.close();return;}
     if(a==='retryRecovery'){const loaded=ctx.persistence.load();ctx.state=loaded.state;ctx.storageProblem=loaded.problem;render();return;}
     if(a==='toggleTheme'||a==='autoTheme'){
@@ -266,6 +268,7 @@ document.addEventListener('submit',async e=>{
   ctx.busy=true;const submit=f.querySelector('[type=submit]');if(submit)submit.disabled=true;
   try{
     const a=f.dataset.form,d=Object.fromEntries(new FormData(f));
+    if(FORMAL && ['financialDraft','financialConfirm'].includes(a)){await financialSubmit(f);return;}
     if(FORMAL && ['identity','clock','reset','setPermissions'].includes(a)) throw Error('正式员工端不支持演示身份或状态操作');
     if(a==='identity'){persist({...ctx.state,user:d.user});ctx.page=ctx.DEFAULT_PAGE;ctx.modal.close();render();}
     else if(a==='clock'){if(!Number.isFinite(Date.parse(d.clock)))throw Error('请选择有效时间');persist({...ctx.state,clock:new Date(d.clock).toISOString()});ctx.modal.close();render();}

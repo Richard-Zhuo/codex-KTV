@@ -211,3 +211,5 @@
 .room-card:focus-visible{outline:3px solid var(--gold);outline-offset:3px}
 
 #admin-modal .evidence-preview { max-width: 100%; max-height: 280px; object-fit: contain; }
+
+.financial-card p,.financial-card h3{overflow-wrap:anywhere}.financial-section{margin:22px 0}.financial-section .action-grid{margin-bottom:18px}.financial-confirm{padding:14px;border:1px solid var(--line);border-radius:10px;line-height:1.65}.financial-confirm input{width:auto;min-height:20px;margin-right:8px}dialog select,dialog textarea,dialog input{min-width:0;max-width:100%}.financial-card .inline-actions{flex-wrap:wrap}.financial-card .inline-actions button{flex:1;min-height:44px}

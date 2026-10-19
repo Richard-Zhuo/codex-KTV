@@ -1,3 +1,11 @@
+## C3-B minimal employee financial interface
+
+- ui/financial.js builds intents from the authorized financial workspace, renders own requests/eligible approvals/results and uses existing shell dialogs/commit. No new domain states, operation key generator or business route.
+- app.js dispatches the two financial form steps and existing command actions; ui/dialogs/orders.js, ui/pages/tasks.js and ui/pages/mine.js embed these controls. ui/shell.js permits approval-only task navigation and retains the existing unknown-result recovery.
+- http/staff-query.js decorates requests only after the existing visibility filter, using employee principalId/displayName already loaded in the transaction. server.js serves the one new public UI module.
+- http/financial-identity.test.js and ui/financial.test.js cover display isolation, same-name principals, fail-closed mapping, intent/amount/confirmation/status rules. Reuse existing command-flow, formal-entry/workspace and static module tests; scoped command is in DEVELOPMENT_ENVIRONMENT.
+- Current evidence and the unfinished mobile execution check are in CURRENT_STAGE; interface presence is not browser acceptance.
+
 ## C3-A trusted financial staff HTTP
 
 - http/registry.js explicitly exposes the six existing financial actions through the unchanged http/api.js dispatcher.

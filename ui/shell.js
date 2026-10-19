@@ -66,7 +66,7 @@ function renderFormal() {
   const available = {
     rooms: sections.rooms, retail: grants.has('retail.sale'),
     deposits: sections.deposits,
-    tasks: sections.roomIssueReviews || sections.inventoryReviews ||
+    tasks: sections.financial || sections.roomIssueReviews || sections.inventoryReviews ||
       sections.incidents || sections.expenses || sections.orders,
     report: grants.has('report.view'), mine: true,
     expenses: sections.expenses, procurement: sections.procurements,
@@ -102,7 +102,7 @@ function renderFormal() {
   })[error?.code] ?? '暂时无法确认操作结果。';
   const error = ctx.formal.lastError ?? model.error;
   const notice = flow.phase === 'unknown'
-    ? '<p class="notice" role="alert">上一笔操作结果待确认。请勿重做；由原操作人员使用同一操作编号和完全相同的请求确认。</p>' +
+    ? '<p class="notice" role="alert">上一笔操作结果待确认。结果待确认，请先核对记录，不要重复操作。请勿重做；由原操作人员使用同一操作编号和完全相同的请求确认。</p>' +
       btn('确认上一笔结果', 'formalRetryUnknown')
     : flow.phase === 'foreign'
       ? '<p class="notice" role="alert">上一笔操作由另一账号发起，结果待确认。当前账号不能重试；请由原操作人员登录并确认。</p>'

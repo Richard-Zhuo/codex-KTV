@@ -1,3 +1,11 @@
+## C3-B minimal employee financial UI contract
+
+The existing employee order dialog, task center and My page use workspace.financial and the six accepted HTTP commands. Server capabilities, request canApprove/canReject/canExecute and current principal identity control available UI actions; names never authorize. Refund/reversal/cashOut requests, qualified other-person decisions and original-applicant execution remain distinct. Direct actions still require the action grant plus existing financial.direct; cancellation eligibility is decided by the server.
+
+Amounts display in yuan and submit exact integer cents through shared money conversion. Reversal corrects a whole original receipt and is not a customer refund. Refund and cashOut execution require explicit confirmation of the manual action; no external payment settlement is claimed. The existing command flow and pending journal retain the original key/request on an unknown outcome, prevent a new write until resolved and refresh after a revision conflict.
+
+Only already-visible requests receive submittedByDisplayName from a unique active trusted employee principal mapping. Missing or ambiguous mapping stays null, with UI identity-unavailable feedback; the UI must not guess names or open the employee roster. No request visibility, grants, original facts, SQL schema or domain semantics change.
+
 ## C3-A trusted employee financial HTTP boundary
 
 This section is the current authorized HTTP scope; earlier C1/C2 internal-only descriptions retain their stage history. The six existing trusted actions reversePayment, refundPayment, cashOut, cancelOrder, approveFinancialAdjustment and rejectFinancialAdjustment use the existing POST /api/v1/commands/:action dispatcher, registry, session/CSRF checks and ledger transaction. No action-specific route, authentication, idempotency mechanism or financial writer is added.
