@@ -263,8 +263,10 @@ export function selectFinancialFlows(state, interval) {
   const refunds = adjustments.filter(a => a.kind === 'REFUND');
   let drawerFacts = null;
   try {
-    drawerFacts = cashDrawerFacts(state).facts;
+    const facts = cashDrawerFacts(state).facts;
     if (!selectCashCountHistory(state).complete) throw new BusinessRejection('Unverifiable cash count chain');
+    // Publish drawer facts only after both fact and chain validation succeed.
+    drawerFacts = facts;
   }
   catch (error) {
     if (!(error instanceof BusinessRejection)) throw error;

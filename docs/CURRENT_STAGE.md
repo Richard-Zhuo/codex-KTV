@@ -1,3 +1,13 @@
+## C2-B P1-01 drawer reporting trust fix -- pending independent re-acceptance
+
+Frozen fix parent: 7200f5fa4429c26192fc3fb1ee39a75c7881a042; branch codex/c0-financial-core; main=origin/main=27aba1946d2411b9e2a27139e681d23954e7e546. Preserve all six preceding feature commits. C1-A/C1-B/C2-A remain accepted. C2-B independent acceptance stopped at C2B-P1-01; the historical author candidate status below does not establish C2-B acceptance.
+
+Root cause: selectFinancialFlows published drawerFacts before the complete cash-count chain was verified. A BusinessRejection from the later chain check added ambiguity but left those facts available for numeric totals. The minimal read-only fix publishes the facts only after both existing fact and chain validation succeed. Failed validation leaves all dependent drawer totals null and cashOutflows unprojected, with existing complete/ambiguity behavior. Independently verified revenue, refund events and current balances remain available. No exception handling or domain validation is weakened.
+
+Author focused evidence: frozen Node24.19.0, S1_RUN=synthetic-only, STAGE5E_RUN=synthetic-only; reporting-financial.test.js and http/financial-report.test.js passed 20/20, fail/cancel/skip=0, exit0, duration320.2544ms. Five new regressions cover the original broken predecessor link, valid 6000+4000 outflows, captured cash-fact signature mismatch, trusted zero outflows, and null retention through the real loopback GET; each checks financial snapshot immutability. The original broken-chain tracer failed with 6000 != null before the fix and passed after it. Scoped npm test was attempted but npm unavailable; frozen Node provides the focused evidence.
+
+Only reporting.js, its direct HTTP report tests and this status document changed. No financial/handover writer, authorization, staff write registry, UI, migration, 06:00 policy, full regression, independent re-acceptance, merge or push. Ready only for C2-B independent narrow re-acceptance after the fix commit and clean-tree verification.
+
 ## C2-B formal financial reporting integration -- local candidate
 
 Frozen parent: 590b4d1bcf72d196a3c663a380420b09b8efdb35; branch codex/c0-financial-core; main=origin/main=27aba1946d2411b9e2a27139e681d23954e7e546. Owner accepted C1-A/C1-B/C2-A; the preceding joint independent evidence is historical 32/32 PASS, P0/P1/P2=0. Older pending entries below are historical slice states and do not override that acceptance.
