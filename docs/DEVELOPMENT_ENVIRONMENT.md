@@ -1,3 +1,29 @@
+## B4-B focused verification
+
+Use pinned Node24.19.0 and synthetic data only. No full C0/B2/project run.
+
+~~~text
+node --test --test-isolation=none --test-reporter=tap --test-name-pattern="^B4-B|^backup serialization|^backup refuses|^backup destination|^B2-A absent policy|^B2-A default disabled|^B2-A refuses S4|^B2-A exit zero|^B2-B policy is default off|^B2-B absent or false|^B2-B start is idempotent|^B2-B schedule invokes" backup/encrypted-pipeline.test.js backup/format.test.js production/backup-execution.test.js production/backup-schedule.test.js
+~~~
+
+For SQL use existing freshEnvironment(repository,{port:33313,packages:false}), create its
+owned jbhh_ktv_test database and pass LEDGER_MYSQL_TEST_URL=f.dbUrl(f.names.database),
+STAGE5E_FIXTURE_ROOT=f.root, STAGE5E_FIXTURE_ID=f.names.id, STAGE5E_FIXTURE_UUID=f.identity.server_uuid,
+STAGE5E_RUN=synthetic-only and NODE_ENV/KTV_HTTP_ENV/KTV_DEPLOYMENT_ENV=test to the child.
+Always call fixture.cleanup in finally. No ordinary configured database endpoint is accepted.
+
+~~~text
+node --test --test-isolation=none --test-reporter=tap backup/encrypted-pipeline.integration.test.js backup/identity.integration.test.js
+~~~
+
+This reuses the original S4 Git-free CLI regression, not a new S4 authority fixture.
+Without an owned SQL environment integration may skip, which cannot be counted as PASS.
+After JS edits attempt npm test with the same explicit focused arguments; missing npm is
+reported separately, without installing a toolchain. Actual evidence uses the pinned Node.
+The real process-interruption test only kills its own synthetic child. Native directory ACLs
+are checked on Windows. TAP is retained outside Git; current evidence is CURRENT_STAGE.md.
+[Pipeline and remaining risks](B4B_ENCRYPTED_BACKUP_PIPELINE.md).
+
 ## B4-A focused verification
 
 Pinned Node24.19.0，synthetic 数据和内存随机测试密钥，不安装依赖。非数据库 focused：

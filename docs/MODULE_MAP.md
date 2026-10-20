@@ -1,3 +1,16 @@
+## B4-B encrypted pipeline
+
+- backup/encryption-policy.js: lightweight exact policy and synthetic-only admission.
+- backup/encrypted-pipeline.js: createConfiguredBackup / runEncryptedBackup compose the original
+  backupDatabase, verifyArtifact and B4-A; controlled own-run cleanup, nonoverwriting hard-link
+  publication, separate result facts and read-only inspectEncryptedBackupResidues.
+- backup/cli.js: original S4 admission, default original backup path, enabled-only dynamic load
+  and existing boolean result mailbox; no key argv or identity injection.
+- backup/encrypted-pipeline.test.js and integration.test.js: fault/interruption/link tests and
+  owned synthetic MySQL / original TEST restore. test-support/encrypted-pipeline-fixture.js
+  supplies only owned synthetic files and ephemeral in-memory keys. Original S4/B2 tests are
+  regression evidence, not changed implementations. [Contract](B4B_ENCRYPTED_BACKUP_PIPELINE.md).
+
 ## B4-A 认证加密封装
 
 - backup/encryption.js：encryptArtifact、withDecryptedArtifact；AES-256-GCM 封装、可迁移密钥提供接口、认证后受控暂存／原 format1 校验／限定目录清理。复用既有 Windows ACL helper，不改变其实现。

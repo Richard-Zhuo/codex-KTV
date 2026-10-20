@@ -1,3 +1,55 @@
+## B4-B minimal encrypted pipeline candidate (2026-10-21)
+
+Actual starting main=origin/main=702a9c454f42e0f6f4a09d99a23b9bbfcb8f4ff0, clean;
+remote main matched. Branch codex/b4-backup-pipeline was created in the existing clean
+p0-1-mysql-ledger checkout. The old dirty D:/iwen-codex/codex-KTV checkout was untouched.
+Owner confirms B4-A independent acceptance/Git closure; its candidate entries below are
+historical. Retail browser acceptance remains deferred/blocked under the prior Owner merge
+exception; no production acceptance is implied or reopened here.
+
+The synthetic-only selector composes existing backupDatabase -> original format1 verify ->
+B4-A encrypt -> authenticated read-back/original verify -> exclusive hard-link publication
+-> narrow owned-source cleanup. Private append-only records distinguish valid ciphertext,
+observed plaintext residue and durable overall completion. Incomplete/unknown runs block a
+new attempt and are discoverable read-only, including an actually killed synthetic child.
+[Contract, review procedure and remaining plaintext risks](B4B_ENCRYPTED_BACKUP_PIPELINE.md).
+Default-disabled CLI keeps the original S4/backup load path; encrypted modules are loaded
+only after original admission and explicit synthetic-only admission. S4/B2/B4-A/format1 and
+TEST restore implementations remain unchanged; no new production dependency or key source.
+
+Final-source author focused evidence: pinned Node24.19.0, 39/39 PASS in two nonoverlapping
+commands from DEVELOPMENT_ENVIRONMENT.md. File/selected legacy set: 34/34, exit0,
+114746.7591ms, fail/cancelled/skipped=0/0/0, external TEMP log
+b4b-final-files-1792517658270.tap. Owned real MySQL/unchanged S4 Git-free CLI set: 5/5,
+exit0, 56519.3484ms, fail/cancelled/skipped=0/0/0, external TEMP log
+b4b-final-mysql-1792517632196.tap. Counts include Node parent/subtests, with no duplicate
+addition of earlier runs. SQL fixture ad58797c9a296e13 cleanup confirmed runtimeProcesses,
+mysqlProcess, databases, accounts and root all absent; sqlCleanup=true.
+
+Earlier S4 regression exposed eager loading of B4-A's larger dependency graph into the
+unencrypted packaged CLI. A baseline runtime snapshot loaded normally; the new dependency
+load was corrected within B4-B (lightweight policy and enabled-only dynamic import). Final
+unchanged S4 regression above passed. One intervening harness launch used the wrong UUID
+variable and was safely refused before test connections; its owned fixture was cleaned and
+the final run used the required STAGE5E_FIXTURE_UUID. An earlier interruption test fixture
+was also corrected to keep its own child alive before the deliberate kill. Earlier failures
+are retained as historical debugging evidence, not counted as final passes.
+
+After final JS edits scoped npm test was attempted but npm was not found. The actual
+execution evidence is the pinned Node commands above; no toolchain was installed. No full
+C0/B2/project test run or new B4-A audit was performed. Author self-check has no unresolved
+P0/P1/P2; this is not independent acceptance. Candidate commit/clean state is reported in
+the session delivery; independent B4-B acceptance requires separate Owner authorization.
+
+Remaining: default-disabled legacy backup still writes plaintext; failed/killed runs can
+retain protected source/authentication scratch and are not auto-deleted. Ordinary unlink is
+not secure erasure. Production disk/paging/dump/power-loss behavior, packaged encrypted
+closure, formal key custody/rotation/history/retrieval and real server-loss restore remain
+unverified or unimplemented. RPO/RTO is not established. No production data, keys, backups,
+restore, Windows service installation, cloud resources, merge or push were used/enabled.
+PRODUCTION KEY MANAGEMENT=NOT IMPLEMENTED; PRODUCTION ENCRYPTION ENABLED=NO;
+PRODUCTION RESTORE ENABLED=NO; PRODUCTION READY=NO. B4-B is not the complete production chain.
+
 ## B4-A：认证加密封装本地候选（2026-10-20）
 
 实际基线 main=origin/main=4f2bf25a7d13088069a006559f33f749d95e7108，开始时 clean；远端 main 同值。分支 codex/b4-backup-encryption。Owner 确认 C0／S4／B2-A／B2-B／独立零售代码已 Git 收尾，下方旧候选描述保留历史语境。独立零售的 Owner 合入例外不免除浏览器 BLOCKED／手机及成交未验证的待办，不批准生产使用。

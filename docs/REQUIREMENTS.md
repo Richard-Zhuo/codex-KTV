@@ -1,3 +1,12 @@
+## B4-B synthetic encrypted pipeline (2026-10-21)
+
+Owner-authorized minimal composition of existing format1 creation/validation and accepted
+B4-A: controlled staging, authenticated read-back validation, exclusive ciphertext publication,
+separate ciphertext/plaintext/result facts and discoverable incomplete runs. Default-disabled,
+synthetic-only, no plaintext fallback when enabled; existing S4/B2/format1 unchanged. No
+production key custody, automatic backup enablement or production restore. Unlink is not
+secure erasure; failures retain protected evidence for review. [Contract](B4B_ENCRYPTED_BACKUP_PIPELINE.md).
+
 ## B4-A：独立认证加密组件（2026-10-20）
 
 Owner 授权只封装现有 format1：成熟 AEAD、安全随机 nonce、认证元数据及非秘密密钥标识，原字节和校验不变；认证与原格式校验成功后才借出受控临时明文供 TEST 恢复。密钥由可独立迁移的提供接口输入，只使用 synthetic 密钥，不绑定原 Windows 主机秘密。错误密钥、缺失／错标识、篡改、截断及格式错误均拒绝，不泄露敏感异常，不降级为明文。

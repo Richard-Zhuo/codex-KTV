@@ -1,3 +1,10 @@
+## B4-B synthetic encrypted backup pipeline
+
+[Controlled staging, authenticated validation and ciphertext publication](B4B_ENCRYPTED_BACKUP_PIPELINE.md).
+Default-disabled; no production encryption or key management. Current author evidence and
+pending independent acceptance are in [Current stage](CURRENT_STAGE.md). Earlier slice
+headings below are historical and do not supersede current Owner scope.
+
 ## B2-B controlled scheduling candidate
 
 [Default-disabled internal quarter-hour backup scheduling](B2B_BACKUP_SCHEDULING.md).
