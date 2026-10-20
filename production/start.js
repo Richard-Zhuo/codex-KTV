@@ -1,3 +1,4 @@
+import {createBackupScheduler} from './backup-schedule.js';
 import {createServiceBackupExecution} from './backup-execution.js';
 import {createOperationalRuntime} from '../operations/runtime.js';
 import {createWeComAlertTransport} from '../operations/wecom.js';
@@ -20,7 +21,8 @@ export async function startProduction(argv=process.argv.slice(2),env=process.env
  const transport=loaded.alertTransportConfig?createWeComAlertTransport(loaded.alertTransportConfig):undefined;
  const operations=await createOperationalRuntime({loaded,logger,transport});
  const backupExecution=createServiceBackupExecution({loaded,runtimeConfigFile:argv[1],logger,onContainmentFailure:()=>process.exit(1)});
- const runtime=createProductionRuntime(loaded,{logger,operations,activation:createRuntimeActivationProducer(loaded),backupExecution});
+ const backupScheduler=createBackupScheduler({config:loaded.config,execution:backupExecution,observations:operations.backupSchedule,logger});
+ const runtime=createProductionRuntime(loaded,{logger,operations,activation:createRuntimeActivationProducer(loaded),backupExecution,backupScheduler});
  let exiting=false;
  const stop=async(reason,exit=0)=>{
   if(exiting)return;exiting=true;
@@ -33,7 +35,8 @@ export async function startProduction(argv=process.argv.slice(2),env=process.env
  logFailure=()=>{void operations.fatal('LOG_WRITE_FAILURE').finally(()=>stop('LOG_IO_FAILED',1));};
  // SCM host owns this private stdin pipe; it can stop the process, never authenticate or mutate business.
  const input=createInterface({input:process.stdin});input.on('line',line=>{if(line==='STOP')void stop('SERVICE_STOP');});input.on('close',()=>void stop('SERVICE_PIPE_CLOSED'));
- try{await runtime.start();}catch(error){await backupExecution.stop();throw error;}
+ try{await runtime.start();}
+ catch(error){await backupScheduler.stop().catch(()=>{});await backupExecution.stop();if(operations.ownsWriter())await operations.stop({clean:false});throw error;}
  // Internal capability only: never passed to HTTP, stdin or operational projections.
  return runtime;
 }

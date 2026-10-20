@@ -1,3 +1,15 @@
+## B2-B periodic scheduling
+
+- production/backup-schedule-policy.js: default-disabled fixed policy, Shanghai slot arithmetic,
+  bounded observation validation and safe projection.
+- production/backup-schedule.js: internal start/stop controller; calls B2-A runOnce with no args.
+- production/start.js and runtime.js: same-service composition, readiness-independent start,
+  activation failure/shutdown fences. operations/runtime.js shares its existing writer/store.
+- production/backup-schedule.test.js, backup-schedule-operations.test.js and
+  startup-degraded.test.js: mock clock, original admission refusal, telemetry and lifecycle.
+  Existing B2-A/native tests remain the execution/Job regression route.
+  [Contract](B2B_BACKUP_SCHEDULING.md).
+
 ## B2-A internal service backup execution
 
 - production/backup-execution-policy.js: default-disabled policy and execution bounds.

@@ -1,3 +1,9 @@
+## B2-B controlled scheduling candidate
+
+[Default-disabled internal quarter-hour backup scheduling](B2B_BACKUP_SCHEDULING.md).
+B2-A is Owner-accepted and Git-closed. B2-B author evidence and pending independent
+acceptance are in [Current stage](CURRENT_STAGE.md); production enablement remains prohibited.
+
 ## S3-D D1 authorization candidate
 
 [Protected production plan authorization](S3D_PRODUCTION_AUTHORIZATION.md) adds authorization only. S3-A/B/C are merged; S3-D D1 is local and production restore remains disabled. See [current stage](CURRENT_STAGE.md) for evidence and remaining work. Older stage headings below are historical slice descriptions.

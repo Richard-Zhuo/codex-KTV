@@ -7,7 +7,7 @@ import { createSafeLogger } from './runtime-log.js';
 import {secureRequest,SECURITY_HEADERS,configureHttpServer,createTransportLoginLimiter} from './http-security.js';
 import {assertNormalStartupAllowed,readCurrentRecoveryControl} from '../recovery/production-cutover-journal.js';
 export const SHUTDOWN_MS=15000;
-export function createProductionRuntime(loaded,{logger=createSafeLogger({secrets:loaded.redactionSecrets}),services,operations,activation,backupExecution}={}){
+export function createProductionRuntime(loaded,{logger=createSafeLogger({secrets:loaded.redactionSecrets}),services,operations,activation,backupExecution,backupScheduler}={}){
  services??=createHttpApiFromEnv(loaded.apiEnv,logger,{managed:true,mysqlSsl:loaded.mysqlSsl,loginGate:createTransportLoginLimiter(),operationalSnapshot:()=>operations?.snapshot(),onLoginOutcome:value=>operations?.login(value)});
  let phase='STARTING',lastReady=null,checking=null,stopping=null,activating=null,retryTimer=null;
  let startupBlocker='PRODUCTION_STARTUP_GATE_PENDING',operationsStarted=false,workerStarted=false;
@@ -72,6 +72,7 @@ export function createProductionRuntime(loaded,{logger=createSafeLogger({secrets
     if(phase!=='LIVENESS_ONLY')return false;
     await services.startWorker?.();workerStarted=true;
    }catch(error){
+    await backupScheduler?.stop().catch(()=>{});
     await services.stopWorker?.().catch(()=>{});
     await operations?.stop({clean:false}).catch(()=>{});
     operationsStarted=false;workerStarted=false;throw error;
@@ -80,6 +81,7 @@ export function createProductionRuntime(loaded,{logger=createSafeLogger({secrets
    phase='RUNNING';startupBlocker=null;
    try{await activation?.publish();activationPublished=Boolean(activation);}catch(error){
     phase='DRAINING';activationPublished=false;await activation?.invalidate().catch(()=>{});
+    await backupScheduler?.stop().catch(()=>{});
     await services.stopWorker?.();workerStarted=false;await operations?.stop({clean:false});operationsStarted=false;throw error;
    }
    logger.info({event:'runtime_started',...version});return true;
@@ -116,21 +118,27 @@ export function createProductionRuntime(loaded,{logger=createSafeLogger({secrets
    await activation?.initialize();
    phase='LIVENESS_ONLY';
    await new Promise((resolve,reject)=>{server.once('error',reject);server.listen(loaded.config.port,loaded.config.listenHost,()=>{server.removeListener('error',reject);resolve();});});
-   try{await activate(true);}catch(error){
+   try{await activate(true);await backupScheduler?.start();}catch(error){
+    await backupScheduler?.stop().catch(()=>{});
+    await backupExecution?.stop().catch(()=>{});
+    if(activationPublished)await invalidateActivation().catch(()=>{});
+    if(workerStarted){await services.stopWorker?.().catch(()=>{});workerStarted=false;workerStopped=true;}
+    if(operationsStarted||operations?.ownsWriter?.())await operations.stop({clean:false}).catch(()=>{});
     await new Promise(resolve=>server.close(resolve));await services.close().catch(()=>{});connectionsClosed=true;phase='STOPPED';throw error;
    }
    scheduleRetry();
   },
   shutdown(reason='STOP'){return stopping??(stopping=(async()=>{
    phase='DRAINING';activationPublished=false;clearTimeout(retryTimer);
+   const scheduleStopped=backupScheduler?.stop();
    const backupStopped=backupExecution?.stop();
    await activation?.invalidate().catch(()=>{});
    logger.info({event:'runtime_draining',code:reason,...version});
    const closeHttp=new Promise(resolve=>server.close(resolve));server.closeIdleConnections();
-   const drain=(async()=>{await backupStopped;await activating?.catch(()=>{});
+   const drain=(async()=>{await scheduleStopped;await backupStopped;await activating?.catch(()=>{});
     if(workerStarted)await services.stopWorker();workerStopped=true;
     await Promise.all([...active]);await closeHttp;
-    if(operationsStarted)await operations.stop({clean:!['FATAL','LOG_IO_FAILED'].includes(reason)});
+    if(operationsStarted||operations?.ownsWriter?.())await operations.stop({clean:!['FATAL','LOG_IO_FAILED'].includes(reason)});
     operationalStopped=true;await services.close();connectionsClosed=true;phase='STOPPED';
     logger.info({event:'runtime_stopped',...version});return true;})();
    let timer;try{await Promise.race([drain,new Promise((_,reject)=>{timer=setTimeout(()=>reject(Error('timeout')),SHUTDOWN_MS);})]);}

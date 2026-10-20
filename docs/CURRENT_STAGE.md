@@ -1,3 +1,35 @@
+## B2-B controlled scheduling -- local implementation candidate
+
+Owner-confirmed accepted base main=origin/main:
+0f423c210a6b98cbcfd43f06f766649e5bf3af4d. B2-A is accepted and Git-closed;
+its candidate entries below are historical. C0 remains frozen and S4 accepted/merged.
+B2-B branch: codex/b2-backup-scheduling; no merge or push.
+
+Default-disabled existing-service scheduling calls unchanged B2-A runOnce at Shanghai
+quarter-hours, with zero retries, overlap skips, persisted missed-slot cursor and no batch
+catch-up. Existing monitoring writer/facts and service shutdown are reused.
+[Contract and limits](B2B_BACKUP_SCHEDULING.md).
+
+Author focused evidence (2026-10-20, Node24.19.0): the nine-file command in
+DEVELOPMENT_ENVIRONMENT.md passed 101/101, fail/skip/cancelled=0/0/0, exit0,
+20828.8832ms. External TAP: b2b-final-1792502883462.tap in the author's TEMP directory.
+Includes mock clocks, real internal admission refusal, operational-writer integration,
+readiness-independent lifecycle, B2-A/incomplete artifact/timeout regression and Windows
+native Job tests. Earlier incremental runs: 29/29 and 40/40; these overlap the final set
+and are not added to its total. The earlier 101/101 run was repeated after the narrow
+observation-slot/error-persistence correction; only the final-source result above is counted.
+No full C0 or real database regression was run.
+
+npm test with the same focused arguments was attempted after the final JavaScript edits;
+PowerShell could not find npm, so no npm execution evidence is claimed. The pinned Node
+command above is the actual result. No toolchain was installed.
+
+Self-check has no unresolved P0/P1/P2. This is author evidence only: independent B2-B
+acceptance is pending Owner authorization. Real SCM/service SID/deployment ACL remain
+NOT VERIFIED. PRODUCTION BACKUP ENABLED=NO; PRODUCTION READY=NO. No production data,
+service installation, restore enablement, B3/B4/B5/B6, cloud deployment or financial
+contract changes. Local success does not establish offsite recovery or RPO/RTO attainment.
+
 ## B2-A trusted service backup execution -- local code candidate
 
 Base main/origin/main: 4e7e0a242266db1a842f7a283e6ac8a44bbb4869.

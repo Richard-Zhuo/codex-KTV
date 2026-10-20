@@ -1,3 +1,4 @@
+import {backupSchedulePolicy} from './backup-schedule-policy.js';
 import {backupExecutionPolicy} from './backup-execution-policy.js';
 import {monitoringConfig} from '../operations/monitors.js';
 import {validateWeComConfig} from '../operations/wecom.js';
@@ -25,7 +26,8 @@ export function validateRuntimeConfig(c,env=process.env,nodeVersion=process.vers
  isProductionEnvironment(env);
  if(env.KTV_DEPLOYMENT_ENV!=='production'||env.NODE_ENV!=='production'||env.KTV_HTTP_ENV!=='production'||env.NODE_OPTIONS||env.NODE_TLS_REJECT_UNAUTHORIZED!==undefined)fail();
  if(!/^24\.19\.\d+$/.test(nodeVersion))throw runtimeFailure('RUNTIME_NODE_UNSUPPORTED');
- fields(c,['configVersion','applicationCommit','publicOrigin','listenHost','port','storeId','ledgerId','timeZone','businessDateCutoff','sessionRuleVersion','deviceControlMode','liveControlEnabled','secretsFile','logDirectory','serviceAccountSid','backupPolicyConfigured','directoryAclReviewed','networkModel'],['monitoring','recovery','backupExecution']);
+ fields(c,['configVersion','applicationCommit','publicOrigin','listenHost','port','storeId','ledgerId','timeZone','businessDateCutoff','sessionRuleVersion','deviceControlMode','liveControlEnabled','secretsFile','logDirectory','serviceAccountSid','backupPolicyConfigured','directoryAclReviewed','networkModel'],['monitoring','recovery','backupExecution','backupSchedule']);
+ if(backupSchedulePolicy(c.backupSchedule).enabled&&!backupExecutionPolicy(c.backupExecution).enabled)fail();
  backupExecutionPolicy(c.backupExecution);
  if(c.recovery!==undefined)fields(c.recovery,['journalDirectory','operatorDbSecretsFile']);
  if(c.monitoring!==undefined)monitoringConfig(c.monitoring);
@@ -60,7 +62,7 @@ export async function loadRuntimeConfig(path,env=process.env){
  return materializeRuntimeContext(config,secrets);
 }
 export function runtimePublicFacts(config){
- return {configVersion:config.configVersion,backupPolicyConfigured:config.backupPolicyConfigured,directoryAclReviewed:config.directoryAclReviewed,businessDateCutoff:config.businessDateCutoff,sessionRuleVersion:config.sessionRuleVersion,liveControlEnabled:config.liveControlEnabled,applicationCommit:config.applicationCommit,publicOrigin:config.publicOrigin,listenHost:config.listenHost,port:config.port,storeId:config.storeId,ledgerId:config.ledgerId,timeZone:config.timeZone,deviceControlMode:config.deviceControlMode,networkModel:config.networkModel,monitoring:config.monitoring??null,...(config.backupExecution===undefined?{}:{backupExecution:backupExecutionPolicy(config.backupExecution)})};
+ return {configVersion:config.configVersion,backupPolicyConfigured:config.backupPolicyConfigured,directoryAclReviewed:config.directoryAclReviewed,businessDateCutoff:config.businessDateCutoff,sessionRuleVersion:config.sessionRuleVersion,liveControlEnabled:config.liveControlEnabled,applicationCommit:config.applicationCommit,publicOrigin:config.publicOrigin,listenHost:config.listenHost,port:config.port,storeId:config.storeId,ledgerId:config.ledgerId,timeZone:config.timeZone,deviceControlMode:config.deviceControlMode,networkModel:config.networkModel,monitoring:config.monitoring??null,...(config.backupExecution===undefined?{}:{backupExecution:backupExecutionPolicy(config.backupExecution)}),...(config.backupSchedule===undefined?{}:{backupSchedule:backupSchedulePolicy(config.backupSchedule)})};
 }
 export function runtimeConfigFingerprint(config){
  return createHash('sha256').update(JSON.stringify(runtimePublicFacts(config))).digest('hex');

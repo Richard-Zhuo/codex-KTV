@@ -1,3 +1,19 @@
+## B2-B focused verification
+
+Use pinned Node24.19.0, ordinary-user owned test temp directories and synthetic data only.
+No MySQL connection, production service installation or fifteen-minute wait is required.
+
+~~~text
+node --test --test-isolation=none --test-reporter=tap production/backup-schedule.test.js production/backup-schedule-operations.test.js production/backup-execution.test.js production/backup-execution-native.test.js production/runtime.test.js production/startup-degraded.test.js operations/runtime.test.js backup/format.test.js production/http-security.test.js
+~~~
+
+After JavaScript edits attempt npm test with the same scoped file arguments; report missing
+npm separately and use the pinned Node command without installing a toolchain. Native Job
+tests compile only in their owned temporary directory, run synthetic child trees and the
+original CLI negative S4 path. They do not prove real SCM/service SID/deployment ACL setup.
+Current author evidence and pending independent acceptance: CURRENT_STAGE.md.
+[Scheduling contract](B2B_BACKUP_SCHEDULING.md).
+
 ## B2-A focused verification
 
 Use pinned Node24.19.0. No project full regression or C0 re-acceptance is authorized.

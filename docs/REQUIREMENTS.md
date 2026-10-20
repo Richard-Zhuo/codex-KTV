@@ -1,3 +1,12 @@
+## B2-B controlled periodic backup scheduling (Owner scope)
+
+Owner targets remain Windows cloud production, RPO<=60 minutes and RTO<=240 minutes;
+this candidate implements only a default-disabled Shanghai quarter-hour internal trigger.
+Reuse B2-A and S4 unchanged, no overlap at this entry, zero immediate retries, explicit
+missed-slot observations, no historical catch-up and a shutdown barrier. Schedule observations
+reuse monitoring storage; local success is not offsite or RPO evidence. No production
+enablement, B3/B4/B5/B6 or financial changes. [Contract](B2B_BACKUP_SCHEDULING.md).
+
 ## B2-A trusted single-backup execution (Owner scope)
 
 The production target is long-running cloud Windows service operation with one authorized
