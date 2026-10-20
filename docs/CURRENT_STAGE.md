@@ -1,3 +1,17 @@
+## B4-A：认证加密封装本地候选（2026-10-20）
+
+实际基线 main=origin/main=4f2bf25a7d13088069a006559f33f749d95e7108，开始时 clean；远端 main 同值。分支 codex/b4-backup-encryption。Owner 确认 C0／S4／B2-A／B2-B／独立零售代码已 Git 收尾，下方旧候选描述保留历史语境。独立零售的 Owner 合入例外不免除浏览器 BLOCKED／手机及成交未验证的待办，不批准生产使用。
+
+仅新增独立 backup/encryption.js 与两项测试文件：AES-256-GCM、随机96位 nonce、128位 tag，头与必要元数据一并认证；可迁移32字节密钥提供接口，认证前不落盘，原 format1 再校验后借出受保护临时目录，正常路径限定清理。源 format1 字节及原校验、TEST 恢复、C0／S4／B2 均未改变；未接入 CLI、调度或生产配置，无依赖新增。[合同及剩余风险](B4A_BACKUP_ENCRYPTION.md)。
+
+作者最终源码 focused：Node24.19.0，backup/encryption.test.js、backup/format.test.js、backup/encryption.integration.test.js 共38/38 PASS；fail/cancelled/skipped=0/0/0，exit0，30309.5294ms。完整 Git 外 TAP：作者 TEMP/b4a-final-focused-1792508765452.tap。首轮32/32与早期SQL1/1不叠加最终总数。最终用例包含原生受保护父目录、错误密钥／标识／版本、篡改与截断、认证后的原校验拒绝、源明文校验不变、清理失败不报成功、独立进程可迁移密钥，以及自有 MySQL 原 TEST 恢复逐表一致与源账本不变。此处跨环境证据是同一测试机的独立进程和目录，不是实际第二台服务器或灾难恢复验收。
+
+JavaScript 最终修改后已尝试 scoped npm test，环境找不到 npm，未取得 npm 执行证据；实际结果是上述 Node focused。未运行 C0／B2 或项目全量。最终自有夹具 cec21912b425f889 的 runtimeProcesses／mysqlProcess／databases／accounts／root 均 absent，sqlCleanup=true；未使用生产配置、数据库或真实经营数据。
+
+作者自查无未解决 P0/P1/P2；尚待 Owner 授权独立验收。PRODUCTION KEY MANAGEMENT=NOT IMPLEMENTED；PRODUCTION ENCRYPTION ENABLED=NO；PRODUCTION RESTORE ENABLED=NO；PRODUCTION READY=NO。现有创建流程仍落地明文，源／中断／崩溃／清理失败残留、可靠密文发布与后续明文处置尚未闭环；普通删除不保证安全擦除。正式托管、轮换、历史密钥保留和紧急取回及全损新机恢复单独验收，未证明RPO/RTO。B4-A组件完成不等于B4生产加密链完成。
+
+候选 commit／clean 状态在会话交付报告；不自动 merge、push、部署或开始 B3／B5／B6。
+
 ## 2026-10-20：独立零售入口候选，待 Owner 独立验收
 
 本任务基线实查为 main=origin/main=1cd01a6ddbac4f43a370986bc4df5d298d967285，干净；使用既有 p0-1-mysql-ledger 工作树，从 main 创建 codex/standalone-retail-entry。启动目录 D:/iwen-codex/codex-KTV 是旧分支且有用户修改，未触碰。本节与下方备份阶段记录独立；B2-B 已由 Owner 确认验收及 Git 合入，历史候选标题不作为本任务当前状态。

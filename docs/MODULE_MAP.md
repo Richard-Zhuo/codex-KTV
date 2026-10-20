@@ -1,3 +1,9 @@
+## B4-A 认证加密封装
+
+- backup/encryption.js：encryptArtifact、withDecryptedArtifact；AES-256-GCM 封装、可迁移密钥提供接口、认证后受控暂存／原 format1 校验／限定目录清理。复用既有 Windows ACL helper，不改变其实现。
+- backup/encryption.test.js：错误密钥、元数据／密文／截断、原校验、独立进程、原生权限与失败不报成功；backup/encryption.integration.test.js：自有 synthetic MySQL 下复用未改的 TEST restoreDatabase 并逐表核对。
+- backup/format.js、backup/mysql-backup.js、backup/cli.js、S4 与 B2 均未修改，正式执行路径无组件接线。[合同](B4A_BACKUP_ENCRYPTION.md)，focused 命令见 DEVELOPMENT_ENVIRONMENT。
+
 ## 独立零售入口与正式员工衔接
 
 - ui/pages/rooms.js 的 roomsPage：总览独立零售按钮，复用既有 startRetail 事件；正式入口保留 retail.sale 与 staff.record 门禁。

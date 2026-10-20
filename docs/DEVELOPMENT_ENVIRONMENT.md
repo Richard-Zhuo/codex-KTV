@@ -1,3 +1,19 @@
+## B4-A focused verification
+
+Pinned Node24.19.0，synthetic 数据和内存随机测试密钥，不安装依赖。非数据库 focused：
+
+~~~text
+node --test --test-isolation=none --test-reporter=tap backup/encryption.test.js backup/format.test.js
+~~~
+
+SQL 衔接仅在既有 freshEnvironment(repository,{port:33313,packages:false}) 自有 disposable 夹具中运行；创建其空数据库，传递精确 LEDGER_MYSQL_TEST_URL、STAGE5E_FIXTURE_ROOT／ID／UUID，STAGE5E_RUN=synthetic-only，NODE_ENV／KTV_HTTP_ENV／KTV_DEPLOYMENT_ENV=test，finally 调用 fixture.cleanup。遵循下方原 S4／B2-A 自有33313路由，不连接已有数据库或改安全门禁。在同一夹具中运行最终三文件集合：
+
+~~~text
+node --test --test-isolation=none --test-reporter=tap backup/encryption.test.js backup/format.test.js backup/encryption.integration.test.js
+~~~
+
+保存完整 TAP 到 Git 外新文件并检查清理结果；无夹具环境时 integration 会 skip，不能计为 SQL PASS。JavaScript 修改后还须尝试 npm test -- --test-isolation=none 加同一文件列表；npm 缺失单独记录。Windows 用例复用原生目录 ACL，只保护自建测试目录；移植测试使用另一个进程／目录和经 stdin 管道传递的同一授权测试密钥，不把密钥放入 argv、文件、快照或日志。无 C0／B2 全量回归。[合同](B4A_BACKUP_ENCRYPTION.md)。
+
 ## B2-B focused verification
 
 Use pinned Node24.19.0, ordinary-user owned test temp directories and synthetic data only.
