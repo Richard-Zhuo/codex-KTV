@@ -52,3 +52,15 @@ export function financialFixture({ prepare = () => {}, businessTimeZone = 'Asia/
   return { state, memory, app, store, accounts, credentials, setTime: value => { dbNow = value; },
     execute: (command, id = ownerId) => app.execute(command, credentials.get(id)) };
 }
+
+export async function withTrustedFinancialDrawer(state) {
+  const opening=financialFixture({prepare:s=>Object.assign(s,structuredClone(state))});
+  opening.accounts.get(ownerId).grants.push('handover');
+  const result=await opening.execute({action:'handover',operationKey:'fixture-opening-count',expectedRevision:0,payload:{actualCash:10000}});
+  if(result.status!=='committed')throw Error('FIXTURE_OPENING_DRAWER_REJECTED '+JSON.stringify(result));
+  return (await opening.memory.read()).state;
+}
+export async function financialDrawerFixture({prepare=()=>{},...options}={}) {
+  const snapshot=await withTrustedFinancialDrawer(financialFixture().state);
+  return financialFixture({...options,prepare:state=>{Object.assign(state,structuredClone(snapshot));prepare(state);}});
+}

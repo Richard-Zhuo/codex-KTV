@@ -97,7 +97,7 @@ test('trusted clean uses session actor and frozen DB context; all demo facts are
 });
 
 test('trusted-enabled commands are independent from all other eligible and demo actions', async () => {
-  assert.deepEqual(TRUSTED_ENABLED_ACTIONS, ['clean', 'markRoomIssue', 'clearRoomIssue',
+  assert.deepEqual(TRUSTED_ENABLED_ACTIONS, ['cancelOrder','cashOut','reversePayment','refundPayment','approveFinancialAdjustment','rejectFinancialAdjustment','clean', 'markRoomIssue', 'clearRoomIssue',
     'createCatalogProduct', 'updateCatalogProduct', 'updateCatalogPackage', 'cancelReservation', 'deposit', 'withdraw', 'reserve', 'sale', 'retailSale', 'serveExtra', 'otherCharge', 'exchange',
     'approveRoomIssue', 'rejectRoomIssue', 'stock', 'consumableStock', 'approveInventory', 'rejectInventory', 'gift', 'approveGift', 'rejectGift', 'expense', 'approveExpense', 'rejectExpense', 'credit', 'approve', 'reject', 'repay', 'approveRepayment', 'rejectRepayment', 'incident', 'resolveIncident', 'approveIncidentResolution', 'rejectIncidentResolution', 'procurement', 'collect', 'pay', 'settle', 'approveRounding', 'rejectRounding', 'handover', 'open']);
   assert.equal(Object.isFrozen(TRUSTED_ENABLED_ACTIONS), true);

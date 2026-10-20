@@ -4,7 +4,7 @@ import {scopeNames,assertOwnedRoot,assertOwnedDatabase,removeOwnedRoot} from './
 const run=promisify(execFile),sleep=ms=>new Promise(r=>setTimeout(r,ms));
 export const ACCEPTED='c1502c0fb0713ef040b210e5ea35f6c31079b7ee',PREVIOUS='e57af99dd49a46771ff20dd495f71f22d9db97ff';
 export async function freshEnvironment(repository,{port=33315,packages:buildPackages=true}={}){
- if(process.env.STAGE5E_RUN!=='synthetic-only'||process.platform!=='win32'||![33313,33315].includes(port)||[process.env.NODE_ENV,process.env.KTV_HTTP_ENV,process.env.KTV_DEPLOYMENT_ENV].some(v=>v&&v!=='development'&&v!=='test'))throw Error('REHEARSAL_EXPLICIT_SCOPE_REQUIRED');
+ if(process.env.STAGE5E_RUN!=='synthetic-only'||process.platform!=='win32'||(![33313,33315].includes(port)&&!(port===0&&!buildPackages))||[process.env.NODE_ENV,process.env.KTV_HTTP_ENV,process.env.KTV_DEPLOYMENT_ENV].some(v=>v&&v!=='development'&&v!=='test'))throw Error('REHEARSAL_EXPLICIT_SCOPE_REQUIRED');
  const names=scopeNames(randomBytes(8).toString('hex')),root=join(tmpdir(),names.rootName),registered=new Set(),children=new Set(),users=new Set(),pools=new Set();
  let server,setup,identity,cleaned=false;
  await mkdir(root);await writeFile(join(root,'rehearsal-owner.json'),JSON.stringify({id:names.id,kind:'synthetic-cutover-rehearsal'}),{flag:'wx'});
@@ -37,7 +37,7 @@ export async function freshEnvironment(repository,{port=33315,packages:buildPack
  }
 
  try{
-  const probe=net.createServer();await new Promise((r,j)=>{probe.once('error',j);probe.listen(port,'127.0.0.1',r);});await new Promise(r=>probe.close(r));
+  const probe=net.createServer();await new Promise((r,j)=>{probe.once('error',j);probe.listen(port,'127.0.0.1',r);});port=probe.address().port;await new Promise(r=>probe.close(r));
   await run(mysqlExe,['--no-defaults','--initialize-insecure','--datadir='+dirs.data],{windowsHide:true,timeout:60000,maxBuffer:65536});
   server=spawn(mysqlExe,['--no-defaults','--datadir='+dirs.data,'--port='+port,'--bind-address=127.0.0.1','--mysqlx=OFF','--console'],{windowsHide:true,stdio:['ignore','ignore','pipe']});server.stderr.resume();
   for(let n=0;n<100;n++){try{setup=await mysql.createConnection({host:'127.0.0.1',port,user:'root'});break;}catch{if(server.exitCode!==null)throw Error('REHEARSAL_MYSQL_START_FAILED');await sleep(100);}}

@@ -325,7 +325,9 @@ export async function verifyPolicyAttributes(t, { pool, database, qualified, att
     await auth.grantPermission({ principalId: login.principalId,permissionId:'review.self' });
     context = await read(login);
     assert.equal(authorizeReviewCommand({ principal: context.principal,action:'approveRounding',reviewFacts }).allowed,true);
-    assert.equal(TRUSTED_ENABLED_ACTIONS.length,45);
+    const financial=['cancelOrder','cashOut','reversePayment','refundPayment','approveFinancialAdjustment','rejectFinancialAdjustment'];
+    assert.deepEqual(TRUSTED_ENABLED_ACTIONS.filter(action=>financial.includes(action)).sort(),[...financial].sort());
+    assert.equal(new Set(TRUSTED_ENABLED_ACTIONS).size,TRUSTED_ENABLED_ACTIONS.length);
     assert.equal(TRUSTED_ENABLED_ACTIONS.includes('approveRounding'),true);
     assert.equal(authorizeTrustedExecution(context,{action:'approveRounding',payload:{}}).allowed,true); // Locked review facts remain the domain's responsibility.
   });

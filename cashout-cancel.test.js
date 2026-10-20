@@ -245,9 +245,9 @@ test('C1-B: cancelled order cannot later collect money through a fresh key',asyn
   assert.equal((await f.execute({action:'collect',operationKey:'late-payment',expectedRevision:1,payload:{order:orderId,charge:'open',payments:[{method:'\u73b0\u91d1',amount:10000}]}})).status,'business-rejected');
   assert.deepEqual(financialOrder(await read(f)).payments,[]);
 });
-test('C1-B: internal core does not expose staff HTTP commands',()=>{
+test('C3-A contract: six financial actions use the explicit staff HTTP allowlist',()=>{
   for(const action of ['cashOut','cancelOrder','refundPayment','reversePayment','approveFinancialAdjustment','rejectFinancialAdjustment'])
-    assert.equal(isHttpCommand(action),false);
+    assert.equal(isHttpCommand(action),true);
 });
 
 test('C1-B: fourth independently granted operator may cancel without role/name authority',async()=>{

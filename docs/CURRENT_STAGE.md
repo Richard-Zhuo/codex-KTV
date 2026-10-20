@@ -1,3 +1,17 @@
+## C0 final regression repair -- local software candidate PASS
+
+Frozen parent c83a674b676058fb2946d417fc99fafa4de0ee2a on codex/c0-financial-core; main/origin/main remains27aba1946d2411b9e2a27139e681d23954e7e546. Existing C1/C2/C3 independent acceptance is retained. [Repair evidence](verification/C0_REGRESSION_REPAIR.md) records every original failed result, four root-cause groups, isolated diagnosis and actual focused/full evidence.
+
+Only tests/fixtures/harness and necessary evidence docs changed. No financial domain, HTTP authorization, employee UI, schema, real grants, production backup/restore or deployment change. Stale assertions, child port collisions, missing trusted drawer prehistory and historical-package permission contamination are closed. The new real owned-MySQL refund/application/other approval/execution/handover/formal-report chain PASS, including original facts, one outflow, real occurredAt, current/period distinction and broken-chain null amounts.
+
+Latest distinct focused checks248/248 PASS. Official single rerun PASS: 2696/2696; fail/skip/cancelled=0/0/0, exit0, duration735315.7177ms. Frozen Node24.19.0; S1_RUN=synthetic-only and STAGE5E_RUN=synthetic-only; STAGE5E_TAP_LOG points to the external full-regression-repaired.tap. Command: frozen node.exe rehearsal/regression.js; unchanged child args --test --test-isolation=none --test-reporter=tap. Stage5E original scenario PASS133526.324ms, historical identity/config/date authority PASS33360.6887ms; ENOENT absent. Parent owned fixture id03de37965aa15be5 cleaned with sqlCleanup=true, processes/databases/accounts/root absent.
+
+Total increases by15 from the original2681: the two former startup failures now run their14 original child cases, plus the one new refund/reporting child case. No discovery filters or skips were introduced. The 13 changed JS files have identical SHA256 before and after the full run.
+
+Latest focused evidence248/248 and the refund/reporting chain PASS; original33 failures classified and all four root-cause groups closed. No open P0/P1/P2 in this bounded repair. This permits only main merge review after the single local repair commit and clean-tree verification. No merge, push or production deployment.
+
+Earlier sections below are historical candidate slices.
+
 ## C3B-P2-01 task count fix -- local candidate for C0 final validation
 
 Frozen parent: 9fad815b5fce9e9d8441690ec94c32a997fbc112, branch codex/c0-financial-core; main=origin/main=27aba1946d2411b9e2a27139e681d23954e7e546. Owner accepted C1-A through C3-B; C3-B independent13/13 PASS and P0/P1/P2=0/0/1 are preceding accepted evidence, not repeated here.

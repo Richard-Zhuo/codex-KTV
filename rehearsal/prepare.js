@@ -3,8 +3,6 @@ import {randomBytes,randomUUID} from 'node:crypto';
 import {freshEnvironment,migrateDatabase,uniquePerson,ACCEPTED} from './fresh-environment.js';
 import {migrateFresh} from './migration.js';
 import {initialState} from '../rules.js';
-import {PERMISSION_IDS} from '../shared/identity.js';
-import {POLICY_ATTRIBUTE_IDS} from '../ledger/command-policy.js';
 import {bootstrapIdentities} from '../production/bootstrap.js';
 import {inspectFirstInstall,applyInitialLedger,applyOpeningInventory,firstInstallConfirmation} from '../production/first-install.js';
 import {bootstrapRehearsalMappings} from './mapping.js';
@@ -19,6 +17,9 @@ import {backupDatabase,restoreDatabase,connect} from '../backup/mysql-backup.js'
 import {verifyRecovery,resumeRecovery} from '../recovery/operator.js';
 import {join} from 'node:path';
 export async function initialize(f,database,environment='test',onCheckpoint){
+ // Fixture identities must obey the same validated historical release as its runtime.
+ const {PERMISSION_IDS}=await import(new URL('shared/identity.js',f.packages.current.applicationRoot));
+ const {POLICY_ATTRIBUTE_IDS}=await import(new URL('ledger/command-policy.js',f.packages.current.applicationRoot));
  const {pool,migration}=await migrateDatabase(f,database);
  const state=initialState();
  const config={environment,database,storeId:f.names.storeId,ledgerId:f.names.ledgerId,applicationCommit:ACCEPTED,timeZone:'Asia/Shanghai',deviceControlMode:'disabled'};

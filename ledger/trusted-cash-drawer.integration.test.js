@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { freshEnvironment } from '../rehearsal/fresh-environment.js';
 import { migrateFresh } from '../rehearsal/migration.js';
 import { initialState, transact } from '../rules.js';
+import { projectFinancialReport } from '../http/query.js';
 import { createMySqlLedgerStore } from './mysql-store.js';
 import { createTrustedLedgerApplication } from './application.js';
 import { encodeLedgerSnapshot, decodeLedgerJson } from './mysql-snapshot.js';
@@ -16,7 +17,7 @@ import { seedFinancialState, financialOrder, orderId, paymentId, ownerId } from 
 
 test('C2-A owned MySQL handover cash integration',
   {skip:process.env.STAGE5E_RUN!=='synthetic-only'&&'Requires owned synthetic-only MySQL fixture'},async t=>{
-  const fixture=await freshEnvironment(fileURLToPath(new URL('../',import.meta.url)),{port:33313,packages:false});
+  const fixture=await freshEnvironment(fileURLToPath(new URL('../',import.meta.url)),{port:0,packages:false});
   try {
     const database=fixture.names.database,pool=await fixture.createDatabase(database);fixture.pools.add(pool);
     const connection=await pool.getConnection();
@@ -30,7 +31,7 @@ test('C2-A owned MySQL handover cash integration',
       const login=await auth.login({loginIdentifier,password});assert.equal(login.ok,true);
       return {principalId,credential:{tokenDigest:digestSessionToken(login.token)}};
     }
-    const direct=await provision('direct',['handover','cash.out','payment.collect','payment.refund','financial.direct','financial.approve']);
+    const direct=await provision('direct',['handover','cash.out','payment.collect','payment.refund','financial.direct','financial.approve','report.view']);
     const applicant=await provision('applicant',['cash.out','payment.refund']);
     const reviewer=await provision('reviewer',['financial.approve']);
     const contexts=new Map();
@@ -181,6 +182,50 @@ test('C2-A owned MySQL handover cash integration',
       assert.equal(actual.head.state.cashOutflows,undefined);assert.equal(actual.head.state.financialRequests[0].executedAdjustmentId,null);
       assert.equal(actual.head.state.handovers.at(-1).intervalCashOut,0);
       assert.equal(actual.head.state.handovers.at(-1).difference,-8000);
+    });
+    await t.test('refund request / other approval / actual execution / handover / formal report',async()=>{
+      const id='c0-refund-report';await seed(id);const app=application(id);
+      const before=await inspect(id),original=structuredClone(financialOrder(before.head.state).payments);
+      const request=await refund(id,'refund-request',2);
+      assert.equal((await app.execute(request,applicant.credential)).status,'committed');
+      let head=(await inspect(id)).head,requestId=head.state.financialRequests[0].requestId;
+      assert.equal(financialOrder(head.state).financialAdjustments?.length??0,0);
+      assert.equal((await app.execute(command('approveFinancialAdjustment','refund-approve',3,{requestId}),reviewer.credential)).status,'committed');
+      head=(await inspect(id)).head;
+      assert.equal(head.state.financialRequests[0].status,'\u5df2\u6279\u51c6');
+      assert.equal(financialOrder(head.state).financialAdjustments?.length??0,0);
+      const execution=command('refundPayment','refund-execute',4,{order:orderId,requestId});
+      const terminal=await app.execute(execution,applicant.credential);assert.equal(terminal.status,'committed');
+      assert.deepEqual(await app.execute(execution,applicant.credential),terminal);
+      assert.equal((await app.execute(h('refund-close',5,8000),direct.credential)).status,'committed');
+      head=(await inspect(id)).head;let order=financialOrder(head.state);
+      assert.deepEqual(order.payments,original);assert.equal(order.financialAdjustments.length,1);
+      const fact=order.financialAdjustments[0],count=head.state.handovers.at(-1);
+      assert.equal(fact.occurredAt,contexts.get(id+'/refund-execute').dbNow);
+      assert.equal(count.intervalRefundCashOut,2000);assert.equal(count.intervalCashOut,2000);
+      assert.equal(count.expectedCash,8000);assert.equal(count.actualCash,8000);
+      const context=contexts.get(id+'/refund-close');
+      const to=new Date(Date.parse(fact.occurredAt)+1000).toISOString();
+      const range={fromBusinessDate:'2026-01-01',toBusinessDate:'2026-01-02',paymentInterval:{from:'2026-01-01T00:00:00Z',to}};
+      const unchanged=structuredClone(head.state),report=projectFinancialReport(head,context,range).report;
+      assert.equal(report.complete,true);assert.equal(report.currentBalances.netReceiptsCents,8000);
+      assert.equal(report.financialFlows.originalPaymentCents,10000);assert.equal(report.financialFlows.refundCents,2000);
+      assert.equal(report.financialFlows.netReceiptsChangeCents,8000);assert.equal(report.financialFlows.drawerRefundCents,2000);
+      assert.equal(report.financialFlows.independentCashOutCents,0);assert.equal(report.financialFlows.drawerCashOutCents,2000);
+      assert.ok(Date.parse(original[0].occurredAt)<Date.parse(fact.occurredAt));
+      const later=projectFinancialReport(head,context,{...range,paymentInterval:{from:fact.occurredAt,to}}).report;
+      assert.equal(later.financialFlows.originalPaymentCents,0);assert.equal(later.financialFlows.refundCents,2000);
+      assert.equal(later.financialFlows.netReceiptsChangeCents,-2000);assert.equal(later.currentBalances.netReceiptsCents,8000);
+      assert.deepEqual(head.state,unchanged);
+      const broken=structuredClone(head);broken.state.handovers[0].previousHandoverId='91000000-0000-4000-8000-000000000099';
+      const invalid=projectFinancialReport(broken,context,range).report;
+      assert.equal(invalid.complete,false);assert.equal(invalid.financialFlows.drawerRefundCents,null);
+      assert.equal(invalid.financialFlows.independentCashOutCents,null);assert.equal(invalid.financialFlows.drawerCashOutCents,null);
+      assert.equal((await app.execute(h('refund-next',6,8000),direct.credential)).status,'committed');
+      head=(await inspect(id)).head;assert.equal(head.state.handovers.at(-1).intervalCashOut,0);
+      assert.equal(projectFinancialReport(head,contexts.get(id+'/refund-next'),range).report.financialFlows.drawerCashOutCents,2000);
+      assert.deepEqual(financialOrder(head.state).payments,original);
+      t.diagnostic('Original payment retained; request/approval have no money fact; one refund; drawer counted once; real occurredAt and current/period queries distinct; broken chain null');
     });
     await t.test('unknown historical CURRENT_DRAWER refund blocks bootstrap without rewriting historical facts',async()=>{
       const id='c2a-unknown-refund';await seed(id,true);const app=application(id),before=await inspect(id);

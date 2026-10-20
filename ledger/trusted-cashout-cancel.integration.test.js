@@ -16,7 +16,7 @@ import { seedFinancialState, orderId } from '../test-support/financial-adjustmen
 
 test('C1-B owned MySQL cashOut and cancellation integration',
   { skip: process.env.STAGE5E_RUN !== 'synthetic-only' && 'Requires owned synthetic-only MySQL fixture' }, async t => {
-  const fixture = await freshEnvironment(fileURLToPath(new URL('../', import.meta.url)), {port:33313, packages:false});
+  const fixture = await freshEnvironment(fileURLToPath(new URL('../', import.meta.url)), {port:0, packages:false});
   try {
     const database=fixture.names.database, pool=await fixture.createDatabase(database);fixture.pools.add(pool);
     const connection=await pool.getConnection();

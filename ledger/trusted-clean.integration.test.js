@@ -133,7 +133,7 @@ test('MySQL trusted clean vertical slice in jbhh_ktv_test',
           sales: [{ productNameSnapshot: 'historical-name', saleOptionNameSnapshot: 'historical-spec',
             pricePerSaleUnitCents: null, baseQuantityPerSaleUnit: 12, totalBaseQuantity: 12 }],
           payments: [{ method: '现金', amount: 100 }, { method: '微信', amount: 200 }] }];
-        prepareState(state);
+        await prepareState(state);
         const snapshot = encodeLedgerSnapshot(state);
         await pool.execute('INSERT INTO ' + table('ledger_heads') +
           ' (ledger_id, revision, state_schema_version, state_json, state_checksum) VALUES (?, 0, ?, ?, ?)',

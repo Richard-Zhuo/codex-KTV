@@ -15,8 +15,19 @@ test('Stage5E historical release authority owns preflight, config and date polic
  let f;
  try{
   f=await freshEnvironment(fileURLToPath(new URL('../',import.meta.url)));
-  await initialize(f,f.names.entryDatabase,'production');
+  const source=await initialize(f,f.names.entryDatabase,'production');
+  f.source=source;
+  const {PERMISSION_IDS}=await import(new URL('shared/identity.js',f.packages.current.applicationRoot));
+  assert.deepEqual(source.people[0].permissions,PERMISSION_IDS);
+  for(const grant of ['order.cancel','cash.out','payment.reverse','payment.refund','financial.direct','financial.approve'])
+   assert.equal(source.people[0].permissions.includes(grant),false);
+
   const app=await launcher(f,{database:f.names.entryDatabase,label:'authority',formal:true});
+  app.start();await app.wait();
+  const session=await app.login(source.people[0]);
+  const snapshot=await app.call(session,'/api/v1/store/snapshot');
+  assert.equal(snapshot.status,200);assert.ok(snapshot.json().view.workspace);
+  await app.stop();
   assert.equal(app.config.applicationCommit,ACCEPTED);
   assert.equal(app.config.businessDateCutoff,'12:00');
   const own=await app.preflight();assert.equal(own.ready,true);assert.equal(own.appVersion,ACCEPTED);

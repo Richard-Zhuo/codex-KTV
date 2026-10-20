@@ -70,9 +70,12 @@ test('身份基线：7 个在用身份 + 3 个 legacy 身份与别名映射不�
   assert.deepEqual(USERS.meiJiao.roles, ['开单员']);
 });
 
-test('权限定义基线：40 个唯一权限，岗位集合与关键角色不变', () => {
-  assert.equal(PERMISSION_DEFINITIONS.length, 39);
-  assert.equal(new Set(PERMISSION_IDS).size, 39);
+test('permission contract: legacy grants plus six explicit financial grants, no default role grants', () => {
+  assert.equal(new Set(PERMISSION_IDS).size, PERMISSION_DEFINITIONS.length);
+  const financial=['order.cancel','cash.out','payment.reverse','payment.refund','financial.direct','financial.approve'];
+  assert.deepEqual(PERMISSION_IDS.filter(id=>financial.includes(id)).sort(),[...financial].sort());
+  assert.equal(PERMISSION_IDS.filter(id=>!financial.includes(id)).length,39);
+  for(const id of financial)assert.deepEqual(PERMISSION_DEFINITIONS.find(p=>p.id===id).roles,[]);
   assert.deepEqual(PERMISSION_ROLES, ['老板', '店长', '财务', '采购', '开单员', '服务员', '收银员', '库管']);
   const byId = Object.fromEntries(PERMISSION_DEFINITIONS.map(p => [p.id, p]));
   // Phase 2 明确不得改变的四个语义点

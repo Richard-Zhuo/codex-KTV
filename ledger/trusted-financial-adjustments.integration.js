@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { transact } from '../rules.js';
 import { AuthorizationDenied } from '../shared/identity.js';
-import { seedFinancialState, financialOrder, financialCommand, orderId, paymentId, actorGrants } from '../test-support/financial-adjustments-fixture.js';
+import { seedFinancialState, withTrustedFinancialDrawer, financialOrder, financialCommand, orderId, paymentId, actorGrants } from '../test-support/financial-adjustments-fixture.js';
 import { orderPaymentCredit, netReceipts, adjustablePaymentBalance } from '../financial-adjustments.js';
 
 // Runs only inside the existing guarded owned MySQL/auth/ledger fixture.
@@ -9,7 +9,9 @@ export async function testTrustedFinancialAdjustments({ t, pool, table, provisio
   const owner = await provision([...actorGrants,'financial.direct','financial.approve']);
   const applicant = await provision([...actorGrants,'financial.approve','review.self']);
   const reviewer = await provision(['financial.approve',...actorGrants]);
-  const pending = id => seed(id,seedFinancialState);
+  const pending = id => seed(id,async state=>{
+    seedFinancialState(state);Object.assign(state,await withTrustedFinancialDrawer(state));
+  });
   const cmd = (action,key,revision,changes={}) => financialCommand(action,key,revision,changes);
   const decide = (action,key,revision,requestId) => ({action,operationKey:key,expectedRevision:revision,payload:{requestId,decisionNote:'现场核对'}});
   const execute = (action,key,revision,requestId) => ({action,operationKey:key,expectedRevision:revision,payload:{order:orderId,requestId}});
