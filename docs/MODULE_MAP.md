@@ -1,3 +1,10 @@
+## 独立零售入口与正式员工衔接
+
+- ui/pages/rooms.js 的 roomsPage：总览独立零售按钮，复用既有 startRetail 事件；正式入口保留 retail.sale 与 staff.record 门禁。
+- ui/dialogs/retail.js 的 retailDialog：正式服务器员工 UUID 必选，沿用 saleItemRow／bindSaleForm／paymentFields；ui/forms.js 的 paymentFields 区分正式与演示收款确认文案。
+- app.js 的既有 startRetail／retailSale 处理 → ui/command-flow.js 的 submit 与原键 retryUnknown → 既有 HTTP／trusted retailSale → sales.js 的共享销售与付款流水，均未新增分支或第二套账本。
+- ui/retail-entry.test.js：入口权限、无房正式表单、员工 UUID、金额／付款联动、空名册与演示兼容。原 ledger/trusted-sales.test.js、retail.test.js、shared/business-day.test.js 和 ui/command-flow.test.js 验证业务原子性、06:00 时间和防重契约；当前证据及手机待验收项见 [CURRENT_STAGE](CURRENT_STAGE.md)。
+
 ## B2-B periodic scheduling
 
 - production/backup-schedule-policy.js: default-disabled fixed policy, Shanghai slot arithmetic,

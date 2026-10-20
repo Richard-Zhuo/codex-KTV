@@ -24,7 +24,7 @@ function paymentRow(amount=0, selected=PAYMENT_METHODS[0]) {
 
 function paymentFields(amount, allowRounding=false) {
   const differenceFields=allowRounding?`<label>差额处理<select name="differenceType"><option value="免零" selected>免零（默认）</option><option value="特殊情况">特殊情况（需店长审核）</option></select></label><div id="difference-note" hidden><label>特殊情况说明<textarea name="differenceNote" maxlength="200" placeholder="请填写少收原因，结账后提醒店长审核"></textarea></label></div>`:'';
-  return `<p class="notice">请先核实收款码已到账或现金已收到，再登记。此处不会自动扣款。${allowRounding?'结账少收时请选择差额处理方式；特殊情况需填写说明并提醒店长审核。':''}</p><div id="payment-lines">${paymentRow(amount)}</div>${btn('＋ 添加一笔付款','addPayment','','secondary full')}<p id="pay-sum"></p>${differenceFields}<label class="check"><input type="checkbox" required>我已核实以上款项（演示确认）</label>`;
+  return `<p class="notice">请先核实收款码已到账或现金已收到，再登记。此处不会自动扣款。${allowRounding?'结账少收时请选择差额处理方式；特殊情况需填写说明并提醒店长审核。':''}</p><div id="payment-lines">${paymentRow(amount)}</div>${btn('＋ 添加一笔付款','addPayment','','secondary full')}<p id="pay-sum"></p>${differenceFields}<label class="check"><input type="checkbox" required>我已核实以上款项${ctx.formalEnabled?'':'（演示确认）'}</label>`;
 }
 
 function bindPaymentSummary(amount, allowRounding=false) {

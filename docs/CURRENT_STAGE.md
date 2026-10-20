@@ -1,3 +1,21 @@
+## 2026-10-20：独立零售入口候选，待 Owner 独立验收
+
+本任务基线实查为 main=origin/main=1cd01a6ddbac4f43a370986bc4df5d298d967285，干净；使用既有 p0-1-mysql-ledger 工作树，从 main 创建 codex/standalone-retail-entry。启动目录 D:/iwen-codex/codex-KTV 是旧分支且有用户修改，未触碰。本节与下方备份阶段记录独立；B2-B 已由 Owner 确认验收及 Git 合入，历史候选标题不作为本任务当前状态。
+
+检查确认：原 retailSale 已支持 kind=retail、room=null、商品计价、足额付款、销售与库存流水、服务端权限和操作键重放；员工底部“零售 → 新建零售成交”入口存在。缺口是房间总览没有直接入口，以及零售表单仍提供演示员工标识，未提供正式服务端要求的员工 UUID，不能将旧入口视为完整可用的正式员工流程。
+
+最小修改：总览增加全宽“独立零售”按钮；正式表单使用服务器员工列表和必选 creditedEmployeeId，并沿用 retail.sale／staff.record 双权限；正式收款确认去掉“演示确认”字样。复用原计价、提交、付款、扣库与操作键机制，无规则、SQL、依赖或资金合同改动。
+
+作者验证（2026-10-20，Node24.19.0）：14 文件定向集合 114/114 PASS，fail/cancelled/skipped=0/0/0，exit0，415.3491ms。文件为 ui/retail-entry.test.js、ui/sale-attribution.test.js、ui/session-pricing.test.js、ui/room-card-accessibility.test.js、ui/command-flow.test.js、ui/formal-entry.test.js、ui/formal-workspace.test.js、ui/api-client.test.js、ledger/trusted-sales.test.js、retail.test.js、shared/business-day.test.js、http/staff-query.test.js、http/contract.test.js、entry.test.js。完整 TAP 在作者 Git 外 TEMP 的 retail-entry-focused-1792504456603.tap。新增 5 项界面测试包含于 114，不另加总数。覆盖入口与权限、正式员工／空名册、金额联动、原无房零售与扣库原子性、重放／结果未知停写、06:00 边界及付款实际时间。本轮未运行全项目或真实 MySQL 销售回归。
+
+npm test 已在 JavaScript 最终修改后尝试，环境未找到 npm；以上是实际 Node 定向结果，不是 npm 或全量通过。新测试早期因正则转义、夹具价格方案标识和金额显示断言失败，修正限于测试，最终集合结果如上。
+
+浏览器证据未取得：browser-skill 专用会话建立成功，但现有 production-runtime synthetic HTTPS 夹具导航被 ERR_CERT_AUTHORITY_INVALID 拒绝，后续读取亦无法附着；未进入登录、收款或修改浏览器设置。两次夹具生命周期均已清理其自有进程、数据库、账号和目录，sqlCleanup=true；浏览器专用会话已停止。服务启动／清理不代表销售成功，证书工具条件也不证明产品失败。手机窄屏、触摸操作及真实页面成交仍待独立验收。
+
+独立验收边界：仅在准备好的 synthetic 员工环境中，有权账号从房间总览点击“独立零售”，选择员工、商品和数量，核对金额并登记测试付款；确认生成一笔无房已结账订单、一组对应付款／销售／负库存流水，既有房间及房单金额逐项不变。连续提交／丢失响应恢复须沿用原操作键且只成交一次；撤权、库存不足和付款不符不得产生半笔交易；检查 06:00 两侧及付款实际时间。最后在手机窄屏检查入口、数量、付款确认与提交按钮均可触达。资源就绪（测试账号、员工名册、已建账库存、可访问页面）与业务成功证据分别确认，任一失败或结果未知即停止并保留原键核对。
+
+当前仅作者定向验证；可交 Owner 安排独立验收，尚无独立验收或手机视觉 PASS。C0、S4、B2、B4 未改。候选提交及最终 clean 状态在会话交付中报告；不自动 merge、push 或部署。
+
 ## B2-B controlled scheduling -- local implementation candidate
 
 Owner-confirmed accepted base main=origin/main:

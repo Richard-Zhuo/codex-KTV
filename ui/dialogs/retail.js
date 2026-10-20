@@ -11,8 +11,9 @@ import { sellableProducts } from '../../catalog.js';
 
 function retailDialog() {
   if (!allowedPermission('retail.sale')) throw Error('当前身份没有独立零售权限');
+  if (ctx.formalEnabled && !allowedPermission('staff.record')) throw Error('当前账号没有销售归属登记权限');
   if (!sellableProducts(ctx.state.catalog).length) throw Error('当前没有可销售商品');
-  const employeeField=allowedPermission('staff.record')?`<label>销售归属员工（选填）<select name="employee">${options([['','当前登记人'],...Object.entries(USERS).filter(([id,user])=>!user.legacy&&id!=='administrator').map(([id,user])=>[id,user.name])])}</select></label>`:'';
+  const employeeField=ctx.formalEnabled?`<label>销售归属员工<select name="creditedEmployeeId" required><option value="">请选择归属员工</option>${employeeOptions()}</select></label>`:allowedPermission('staff.record')?`<label>销售归属员工（选填）<select name="employee">${options([['','当前登记人'],...Object.entries(USERS).filter(([id,user])=>!user.legacy&&id!=='administrator').map(([id,user])=>[id,user.name])])}</select></label>`:'';
   ctx.salePricePlanId = ctx.state.retailBusinessSession?.pricePlanId;
   openDialog('独立零售成交',`${employeeField}<div id="sale-items">${saleItemRow()}</div>${btn('＋ 添加一种商品','addSaleItem','','secondary full')}<div id="sale-total" class="quote compact"></div>${paymentFields(0)}`,'确认收款并完成零售','retailSale');
   const expected=bindSaleForm(), form=ctx.modal.querySelector('form');

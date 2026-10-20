@@ -1,3 +1,11 @@
+## 2026-10-20：房间总览的独立零售入口
+
+- 房间总览提供明显的“独立零售”按钮，直接复用现有 retailSale 表单与统一 orders／付款／库存流程，不选择房间、不向任何房单加金额；既有“零售”导航与销售记录保留。
+- 正式员工端沿用服务端既有 retail.sale 与 staff.record 双权限；入口按同一权限显示，表单明确选择服务器返回的销售归属员工 UUID（creditedEmployeeId），不使用演示身份或姓名推断归属。
+- 选择商品、规格与数量后显示现有计价结果；核实现金或收款码实际到账、填写足额付款并确认后才提交。此处登记已收款，不发起外部支付。
+- 保留原有操作标识、结果待确认停写及原键重放；保持 06:00 营业日冻结、付款实际发生时间、销售快照和扣库原子性。使用现有自适应表单支持手机操作。
+- 本任务只补入口和界面衔接，不修改 C0、S4、B2 或实施 B4，不增加订单、库存或收款系统。当前验证与待验收项见 [CURRENT_STAGE](CURRENT_STAGE.md)。
+
 ## B2-B controlled periodic backup scheduling (Owner scope)
 
 Owner targets remain Windows cloud production, RPO<=60 minutes and RTO<=240 minutes;
