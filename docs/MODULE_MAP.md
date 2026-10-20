@@ -1,3 +1,15 @@
+## B2-A internal service backup execution
+
+- production/backup-execution-policy.js: default-disabled policy and execution bounds.
+- production/backup-execution.js: SCM-bound one-shot execution, single-run claim, cancellation,
+  original artifact verification and safe result reporting; no HTTP or scheduler.
+- production/start.js and runtime.js: internal capability composition and DRAINING stop barrier.
+- deployment/KtvServiceHost.cs: existing host's one-shot backup child mode and nested Job;
+  existing service registration and S4 readers are unchanged.
+- production/backup-execution.test.js and backup-execution-native.test.js: synthetic policy,
+  failure/race and actual temporary native-process lifecycle checks. startup-degraded.test.js
+  also checks the internal backup shutdown barrier. [Contract](B2A_SERVICE_BACKUP_EXECUTION.md).
+
 ## C3-B minimal employee financial interface
 
 - ui/financial.js builds intents from the authorized financial workspace, renders own requests/eligible approvals/results and uses existing shell dialogs/commit. No new domain states, operation key generator or business route.

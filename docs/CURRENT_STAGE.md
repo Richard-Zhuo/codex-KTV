@@ -1,3 +1,37 @@
+## B2-A trusted service backup execution -- local code candidate
+
+Base main/origin/main: 4e7e0a242266db1a842f7a283e6ac8a44bbb4869.
+Candidate branch: codex/b2-backup-service-execution. C0 is Owner-closed/frozen and S4 is
+accepted/merged; older candidate descriptions below do not reopen them.
+
+Default-disabled internal runOnce reuses the existing CLI, SCM/SID/path admission, format1
+verifier and result mailbox. The existing native host adds a one-shot nested Job mode;
+DRAINING fences triggers and waits for backup containment. No HTTP trigger, timer cadence,
+retry, B3/B4/B5/B6, financial behavior, service installation, production DB/backup or restore
+enablement. [Contract](B2A_SERVICE_BACKUP_EXECUTION.md).
+
+Author evidence on Node24.19.0: final focused 77/77 PASS, fail/skip/cancelled=0/0/0, exit0,
+15646.7208ms (external b2a-focused-1792485136812.tap). Original packaged S4 CLI 1/1 PASS and
+existing MySQL backup/TEST restore/native runtime group 8/8 PASS, both exit0/no skips.
+The final-source packaged CLI recheck also passed1/1 (external
+b2a-final-packaged-cli-1792485345817.tap,39011.4614ms); its owned fixture8155ed0aa87f29e5
+reported all processes/DBs/accounts/root absent,sqlCleanup=true.
+Owned fixture ff8d023eda9633e8 cleanup: runtime/MySQL processes, DBs/accounts/root absent,
+sqlCleanup=true. Latest distinct scoped evidence totals86/86; no full regression.
+
+The first new focused run was17/33 PASS,16 FAIL because its new child-observation helper
+used100 immediate event-loop turns instead of waiting for asynchronous filesystem admission.
+Only that test wait was corrected; the new unit group then passed21/21. Subsequent completion
+race protection and native-process checks are included in the final77/77 above.
+Scoped npm test was attempted and npm is unavailable. Real Windows native process/Job tests
+passed under the current test account; REAL SCM/SERVICE SID/DEPLOYMENT ACL VALIDATION =
+NOT VERIFIED. No installed service, cloud environment or real credentials were used.
+
+Bounded self-review found no unresolved P0/P1/P2. This is author validation and self-review,
+not independent acceptance. Ready only for
+Owner-directed B2-A independent acceptance; no merge/push/deployment or automatic B2-B.
+PRODUCTION DEPLOYMENT READY=NO. Final commit/clean-tree facts are reported outside the commit.
+
 ## C0 final regression repair -- local software candidate PASS
 
 Frozen parent c83a674b676058fb2946d417fc99fafa4de0ee2a on codex/c0-financial-core; main/origin/main remains27aba1946d2411b9e2a27139e681d23954e7e546. Existing C1/C2/C3 independent acceptance is retained. [Repair evidence](verification/C0_REGRESSION_REPAIR.md) records every original failed result, four root-cause groups, isolated diagnosis and actual focused/full evidence.

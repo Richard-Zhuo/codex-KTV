@@ -1,3 +1,23 @@
+## B2-A focused verification
+
+Use pinned Node24.19.0. No project full regression or C0 re-acceptance is authorized.
+
+~~~text
+node --test --test-isolation=none --test-reporter=tap production/backup-execution.test.js production/backup-execution-native.test.js production/backup-deployment.test.js shared/release-artifact.test.js production/runtime.test.js production/startup-degraded.test.js backup/format.test.js production/http-security.test.js
+~~~
+
+Attempt npm test with those same explicit file arguments after JS edits; if unavailable,
+record it separately. Native tests compile only into their owned temporary directory and
+never register a service. They use synthetic lifecycle files and the real CLI's negative
+S4 path; no database connection is needed.
+
+Reuse the S4 owned disposable MySQL33313 route below for backup/identity.integration.test.js
+first (stop on failure), then backup/mysql-backup.integration.test.js and
+production/runtime.integration.test.js. Set exact owned root/id/UUID and test selectors;
+do not supply an existing database or production configuration. Retain external TAP and
+cleanup proof. This verifies CLI compatibility, not real SCM deployment. See
+[B2-A contract](B2A_SERVICE_BACKUP_EXECUTION.md) and CURRENT_STAGE.md.
+
 ## C0 final regression repair verification
 
 See [repair evidence](verification/C0_REGRESSION_REPAIR.md) for all33 original failed results, isolated diagnosis, narrow checks and the one official rerun. Frozen Node24.19.0 remains authoritative. Set S1_RUN=synthetic-only and STAGE5E_RUN=synthetic-only. Attempt scoped npm test after JS edits; npm is unavailable in the current environment.

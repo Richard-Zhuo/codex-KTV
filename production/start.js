@@ -1,3 +1,4 @@
+import {createServiceBackupExecution} from './backup-execution.js';
 import {createOperationalRuntime} from '../operations/runtime.js';
 import {createWeComAlertTransport} from '../operations/wecom.js';
 import { fileURLToPath } from 'node:url';
@@ -18,7 +19,8 @@ export async function startProduction(argv=process.argv.slice(2),env=process.env
  const logger=createSafeLogger({secrets:loaded.redactionSecrets,write:line=>stream.write(line)});
  const transport=loaded.alertTransportConfig?createWeComAlertTransport(loaded.alertTransportConfig):undefined;
  const operations=await createOperationalRuntime({loaded,logger,transport});
- const runtime=createProductionRuntime(loaded,{logger,operations,activation:createRuntimeActivationProducer(loaded)});
+ const backupExecution=createServiceBackupExecution({loaded,runtimeConfigFile:argv[1],logger,onContainmentFailure:()=>process.exit(1)});
+ const runtime=createProductionRuntime(loaded,{logger,operations,activation:createRuntimeActivationProducer(loaded),backupExecution});
  let exiting=false;
  const stop=async(reason,exit=0)=>{
   if(exiting)return;exiting=true;
@@ -31,7 +33,9 @@ export async function startProduction(argv=process.argv.slice(2),env=process.env
  logFailure=()=>{void operations.fatal('LOG_WRITE_FAILURE').finally(()=>stop('LOG_IO_FAILED',1));};
  // SCM host owns this private stdin pipe; it can stop the process, never authenticate or mutate business.
  const input=createInterface({input:process.stdin});input.on('line',line=>{if(line==='STOP')void stop('SERVICE_STOP');});input.on('close',()=>void stop('SERVICE_PIPE_CLOSED'));
- await runtime.start();return runtime;
+ try{await runtime.start();}catch(error){await backupExecution.stop();throw error;}
+ // Internal capability only: never passed to HTTP, stdin or operational projections.
+ return runtime;
 }
 if(process.argv[1]&&resolve(process.argv[1])===fileURLToPath(import.meta.url)){
  try{await startProduction();}catch{process.stderr.write(JSON.stringify({event:'startup_failed',code:'RUNTIME_STARTUP_FAILED'})+'\n');process.exit(1);}

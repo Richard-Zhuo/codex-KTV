@@ -1,3 +1,16 @@
+## B2-A trusted single-backup execution (Owner scope)
+
+The production target is long-running cloud Windows service operation with one authorized
+production writer; the development PC is not a production host. Owner targets RPO <=60 minutes
+and RTO <=240 minutes; 15 minutes is the provisional future backup interval, not an implemented
+schedule or proven recovery guarantee. Cloud vendor/region/size remain undecided.
+
+B2-A adds only a default-disabled internal service capability to execute the unchanged backup
+CLI under its existing S4 trust boundary, with fixed paths/action, single-run exclusion,
+bounded execution, process-tree containment, verified output and secret-safe results.
+No HTTP trigger, scheduler/retry, B3/B4/B5/B6, financial change, privilege widening or production
+restore enablement. [Execution contract](B2A_SERVICE_BACKUP_EXECUTION.md).
+
 ## C3-B minimal employee financial UI contract
 
 The task heading counts existing authorized business reviews plus distinct pending financial requestIds from the trusted projection with canApprove/canReject. Own/unqualified or terminal financial requests do not enter that count; a refreshed decision or permission projection updates it without a new authorization or state machine.

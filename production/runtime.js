@@ -7,7 +7,7 @@ import { createSafeLogger } from './runtime-log.js';
 import {secureRequest,SECURITY_HEADERS,configureHttpServer,createTransportLoginLimiter} from './http-security.js';
 import {assertNormalStartupAllowed,readCurrentRecoveryControl} from '../recovery/production-cutover-journal.js';
 export const SHUTDOWN_MS=15000;
-export function createProductionRuntime(loaded,{logger=createSafeLogger({secrets:loaded.redactionSecrets}),services,operations,activation}={}){
+export function createProductionRuntime(loaded,{logger=createSafeLogger({secrets:loaded.redactionSecrets}),services,operations,activation,backupExecution}={}){
  services??=createHttpApiFromEnv(loaded.apiEnv,logger,{managed:true,mysqlSsl:loaded.mysqlSsl,loginGate:createTransportLoginLimiter(),operationalSnapshot:()=>operations?.snapshot(),onLoginOutcome:value=>operations?.login(value)});
  let phase='STARTING',lastReady=null,checking=null,stopping=null,activating=null,retryTimer=null;
  let startupBlocker='PRODUCTION_STARTUP_GATE_PENDING',operationsStarted=false,workerStarted=false;
@@ -109,7 +109,7 @@ export function createProductionRuntime(loaded,{logger=createSafeLogger({secrets
  });
  configureHttpServer(server);
  server.on('connection',socket=>{sockets.add(socket);socket.once('close',()=>sockets.delete(socket));});
- return Object.freeze({server,readiness,
+ return Object.freeze({server,readiness,...(backupExecution?{backupExecution}:{}),
   status:()=>({phase,workerStopped,operationalStopped,connectionsClosed,
    normalWriterCount:phase==='RUNNING'?null:0}),
   async start(){
@@ -123,10 +123,11 @@ export function createProductionRuntime(loaded,{logger=createSafeLogger({secrets
   },
   shutdown(reason='STOP'){return stopping??(stopping=(async()=>{
    phase='DRAINING';activationPublished=false;clearTimeout(retryTimer);
+   const backupStopped=backupExecution?.stop();
    await activation?.invalidate().catch(()=>{});
    logger.info({event:'runtime_draining',code:reason,...version});
    const closeHttp=new Promise(resolve=>server.close(resolve));server.closeIdleConnections();
-   const drain=(async()=>{await activating?.catch(()=>{});
+   const drain=(async()=>{await backupStopped;await activating?.catch(()=>{});
     if(workerStarted)await services.stopWorker();workerStopped=true;
     await Promise.all([...active]);await closeHttp;
     if(operationsStarted)await operations.stop({clean:!['FATAL','LOG_IO_FAILED'].includes(reason)});

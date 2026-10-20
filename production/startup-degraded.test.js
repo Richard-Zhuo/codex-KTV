@@ -9,7 +9,7 @@ const until=async predicate=>{
  for(let n=0;n<80;n++){if(predicate())return;await new Promise(resolve=>setTimeout(resolve,25));}
  throw Error('STARTUP_ACTIVATION_TIMEOUT');
 };
-async function outageScenario(t,{code='ECONNREFUSED',candidate=false,readinessBlocker=false}={}){
+async function outageScenario(t,{code='ECONNREFUSED',candidate=false,readinessBlocker=false,backup=false}={}){
  let available=false,readinessCleared=!readinessBlocker;const calls=[];
  t.mock.method(mysql,'createConnection',async()=>{
   calls.push('trustedDbRead');
@@ -30,7 +30,8 @@ async function outageScenario(t,{code='ECONNREFUSED',candidate=false,readinessBl
  const operations={readyBlockers:()=>[],observeReadiness:async()=>{},
   start:async()=>{calls.push('operations');},stop:async()=>{calls.push('stopOperations');}};
  const logger={info:()=>{},error:()=>{}};
- const runtime=createProductionRuntime(loaded,{services,operations,logger});
+ const backupExecution=backup?{stop:async()=>{calls.push('stopBackup');}}:undefined;
+ const runtime=createProductionRuntime(loaded,{services,operations,logger,backupExecution});
  const request=path=>new Promise((resolve,reject)=>{
   const req=https.request({host:'127.0.0.1',port:runtime.server.address().port,path,
    ca:tls.certificate,servername:'ktv-smoke.127.0.0.1.sslip.io',
@@ -69,6 +70,7 @@ async function outageScenario(t,{code='ECONNREFUSED',candidate=false,readinessBl
    assert.ok(calls.indexOf('operations')<calls.indexOf('worker'));
   }
  }finally{await runtime.shutdown();}
+ if(backup)assert.ok(calls.indexOf('stopBackup')>=0&&calls.indexOf('stopBackup')<calls.indexOf('close'));
 }
 test('DB port outage starts liveness only and activates ordinary runtime after trusted DB recovery',
  t=>outageScenario(t));
@@ -79,3 +81,6 @@ test('incomplete plan-bound candidate remains liveness only after DB connectivit
 
 test('trusted DB alone cannot activate workers until service readiness passes',
  t=>outageScenario(t,{readinessBlocker:true}));
+
+test('B2-A runtime shutdown awaits internal backup stop before closing service resources',
+ t=>outageScenario(t,{backup:true}));

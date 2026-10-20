@@ -1,6 +1,7 @@
 using System;
 using System.Diagnostics;
 using System.IO;
+using System.Text;
 using System.Runtime.InteropServices;
 using System.ServiceProcess;
 
@@ -53,8 +54,43 @@ public sealed class KtvServiceHost : ServiceBase {
     finally{Marshal.FreeHGlobal(memory);}
     // Keep the handle until OS process exit; children inherit job membership.
   }
+  // One-shot child of the existing service, not a service registration or shell.
+  // The service-side caller supplies only its SCM-bound paths. S4 is still
+  // enforced by the original CLI inside this per-run kill-on-close Job.
+  private static int BackupChild(string[] args) {
+    if(args.Length!=11||args[1]!="--node"||args[3]!="--entry"||
+       args[5]!="--config"||args[7]!="--output-dir"||args[9]!="--confirm")throw new Exception();
+    string node=FullFile(args[2]),entry=FullFile(args[4]),runtimeConfig=FullFile(args[6]);
+    if(Path.GetFileName(entry)!="start.js"||Path.GetFileName(Path.GetDirectoryName(entry))!="production")throw new Exception();
+    string cli=FullFile(Path.Combine(Path.GetDirectoryName(Path.GetDirectoryName(entry)),"backup","cli.js"));
+    string config=FullFile(Path.Combine(Path.GetDirectoryName(runtimeConfig),"backup.json"));
+    string output=args[8],confirmation=args[10];
+    foreach(string value in new string[]{output,confirmation})
+      if(value.IndexOfAny(new char[]{'"','\r','\n'})>=0)throw new Exception();
+    if(!Path.IsPathRooted(output))throw new Exception();
+    OwnProcessTree(); // Before any CLI descendant exists; inherits parent Job too.
+    var info=new ProcessStartInfo(node,"\""+cli+"\" backup --config-file \""+config+
+      "\" --output-dir \""+output+"\" --confirm \""+confirmation+"\"");
+    info.UseShellExecute=false;info.CreateNoWindow=true;
+    info.RedirectStandardOutput=true;info.RedirectStandardError=true;
+    info.StandardOutputEncoding=Encoding.UTF8;info.StandardErrorEncoding=Encoding.UTF8;
+    Console.OutputEncoding=new UTF8Encoding(false);
+    info.EnvironmentVariables.Remove("NODE_OPTIONS");info.EnvironmentVariables.Remove("NODE_TLS_REJECT_UNAUTHORIZED");
+    info.EnvironmentVariables["NODE_ENV"]="production";info.EnvironmentVariables["KTV_HTTP_ENV"]="production";info.EnvironmentVariables["KTV_DEPLOYMENT_ENV"]="production";
+    var outputText=new StringBuilder();bool overflow=false;
+    using(var process=new Process()) {
+      process.StartInfo=info;
+      process.OutputDataReceived+=(s,e)=>{if(e.Data==null)return;lock(outputText){
+        if(outputText.Length+e.Data.Length+1>16384)overflow=true;else outputText.AppendLine(e.Data);}};
+      process.ErrorDataReceived+=(s,e)=>{};
+      process.Start();process.BeginOutputReadLine();process.BeginErrorReadLine();process.WaitForExit();
+      if(process.ExitCode!=0||overflow)return 1;
+      Console.Out.Write(outputText.ToString());return 0;
+    }
+  }
   public static int Main(string[] args) {
     try {
+      if(args.Length>0&&args[0]=="--backup-child")return BackupChild(args);
       bool console=args.Length==7&&args[0]=="--console";int offset=console?1:0;
       if(args.Length!=offset+6||args[offset]!="--node"||args[offset+2]!="--entry"||args[offset+4]!="--config")throw new Exception();
       OwnProcessTree();
