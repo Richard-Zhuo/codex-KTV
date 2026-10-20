@@ -46,7 +46,7 @@ async function readEnvelope(path) {
 }
 function validRecord(record) {
   return record && Object.keys(record).sort().join(',') === 'artifactChecksum,checksum,ciphertext,code,complete,createdAt,phase,plaintext,requestId,version' &&
-    record.version === 1 && /^[a-f0-9-]{36}$/.test(record.requestId) && PHASES.includes(record.phase) &&
+    [1, 2].includes(record.version) && /^[a-f0-9-]{36}$/.test(record.requestId) && PHASES.includes(record.phase) &&
     ['NOT_PUBLISHED', 'VERIFIED', 'PUBLISHED', 'UNKNOWN'].includes(record.ciphertext) &&
     ['POSSIBLE', 'ABSENT', 'REMAINS', 'UNKNOWN'].includes(record.plaintext) && typeof record.complete === 'boolean' &&
     /^BACKUP_[A-Z_]+$/.test(record.code) && [record.checksum, record.artifactChecksum].every(v => v === null || /^[a-f0-9]{64}$/.test(v)) &&
@@ -56,7 +56,14 @@ function validRecord(record) {
 async function appendRecord(run, sequence, state) {
   await checkedDirectory(run);
   if (!validRecord(state)) throw fail('BACKUP_ENCRYPTION_RECORD_INVALID');
-  await durableWrite(join(run, 'state-' + String(sequence).padStart(4, '0') + '.json'), canonical(state));
+  const target = join(run, 'state-' + String(sequence).padStart(4, '0') + '.json'), pending = target + '.pending';
+  // Do not expose trusted JSON before write, sync and close have all succeeded.
+  // Exclusive link publication never replaces an existing record. Any failure keeps
+  // pending evidence, including a stop after publication but before unlink.
+  await durableWrite(pending, canonical(state));
+  await checkedDirectory(run); await checkedFile(pending, 4096);
+  await link(pending, target);
+  await checkedFile(pending, 4096); await unlink(pending);
 }
 async function observePlaintext(run) {
   await checkedDirectory(run);
@@ -67,6 +74,8 @@ async function observePlaintext(run) {
       const path = join(run, name), info = await lstat(path);
       if (!info.isDirectory() || info.isSymbolicLink() || await realpath(path) !== resolve(path)) return 'UNKNOWN';
       remains = true;
+    } else if (/^state-\d{4}\.json\.pending$/.test(name)) {
+      await checkedFile(join(run, name), 4096); // Metadata residue is not plaintext. Never follow a link.
     } else if (!/^state-\d{4}\.json$/.test(name) && name !== 'ciphertext.tmp') return 'UNKNOWN';
   }
   return remains ? 'REMAINS' : 'ABSENT';
@@ -81,7 +90,9 @@ export async function inspectEncryptedBackupResidues(stagingDirectory) {
     const run = join(root, name);
     try {
       await checkedDirectory(run);
-      const records = (await readdir(run)).filter(n => /^state-\d{4}\.json$/.test(n)).sort();
+      const entries = await readdir(run);
+      if (entries.some(n => /^state-\d{4}\.json\.pending$/.test(n))) throw Error();
+      const records = entries.filter(n => /^state-\d{4}\.json$/.test(n)).sort();
       if (!records.length || records.length > 32) throw Error();
       let last;
       for (let i = 0; i < records.length; i++) {
@@ -91,8 +102,10 @@ export async function inspectEncryptedBackupResidues(stagingDirectory) {
         if (!validRecord(last) || last.requestId !== name.slice(7)) throw Error();
       }
       const plaintext = await observePlaintext(run);
-      reports.push({ requestId: last.requestId, phase: last.phase, ciphertext: last.ciphertext,
-        plaintext, incomplete: !last.complete || plaintext !== 'ABSENT' });
+      // Pre-fix COMPLETE JSON cannot prove whether its sync/close succeeded.
+      const legacyComplete = last.version === 1 && last.complete;
+      reports.push({ requestId: last.requestId, phase: legacyComplete ? 'UNKNOWN' : last.phase, ciphertext: last.ciphertext,
+        plaintext, incomplete: legacyComplete || !last.complete || plaintext !== 'ABSENT' });
     } catch { reports.push({ requestId: name.slice(7), phase: 'UNKNOWN', ciphertext: 'UNKNOWN', plaintext: 'UNKNOWN', incomplete: true }); }
   }
   return reports;
@@ -131,7 +144,7 @@ export async function runEncryptedBackup(args, { encryption, keyProvider } = {},
       inside(output, staging) || staging === output || staging === outputParent) throw fail('BACKUP_ENCRYPTION_PATH_DENIED');
   if ((await inspectEncryptedBackupResidues(staging)).some(r => r.incomplete)) throw fail('BACKUP_ENCRYPTION_RESIDUE_REQUIRES_REVIEW');
   const requestId = randomUUID(), run = join(staging, 'b4-run-' + requestId);
-  let state = { version: 1, requestId, phase: 'PREPARING', ciphertext: 'NOT_PUBLISHED', plaintext: 'POSSIBLE',
+  let state = { version: 2, requestId, phase: 'PREPARING', ciphertext: 'NOT_PUBLISHED', plaintext: 'POSSIBLE',
     complete: false, code: 'BACKUP_ENCRYPTION_IN_PROGRESS', checksum: null, artifactChecksum: null, createdAt: null };
   let sequence = 0, recorded = false, published = false, publishedValid = false, outputCreated = false, failed = null;
   const save = async patch => { state = { ...state, ...patch }; await record(run, sequence, state); sequence++; recorded = true; };

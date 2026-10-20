@@ -1,3 +1,22 @@
+## B4-B P2 targeted verification (2026-10-21)
+
+Only the directly changed record writer/inspector and B4-B pipeline tests are rerun.
+The prior independent 39/39 and sync-fault 0/1 are historical, not new passes.
+Use pinned Node24.19.0 and isolated synthetic resources; do not run C0/S4/B2 suites.
+
+~~~text
+node --test --test-isolation=none --test-reporter=tap backup/encrypted-pipeline.test.js
+node --test --test-isolation=none --test-reporter=tap backup/encrypted-pipeline.integration.test.js
+~~~
+
+The second command requires the same owned freshEnvironment / exact UUID setup described
+below and finally cleanup. No configured/production database is accepted. New formal
+regressions inject FileHandle.sync EIO after COMPLETE bytes are written, exercise record
+name collision, interrupted publication and legacy uncertainty. Native methods are restored
+in finally. Normal completion also checks version-2 records and absence of pending files.
+Attempt the same scoped npm test after JS edits; absence of npm is reported separately.
+These are author fix regressions; targeted independent reacceptance remains Owner-gated.
+
 ## B4-B focused verification
 
 Use pinned Node24.19.0 and synthetic data only. No full C0/B2/project run.

@@ -1,3 +1,54 @@
+## B4-B P2 minimal record fix candidate (2026-10-21)
+
+Owner-authorized fix starts at dfe43752e09d343eb74c990ead97803f309d387d on
+codex/b4-backup-pipeline; main/origin/main remain
+702a9c454f42e0f6f4a09d99a23b9bbfcb8f4ff0. The starting candidate worktree was clean.
+The old dirty D:/ checkout and other worktrees remain untouched.
+
+Independent acceptance of the original candidate found one P2: COMPLETE JSON could be
+visible after its sync failed; a same-sequence FAILED write collided and inspection then
+misclassified it as complete. Historical independent evidence is 39/39 existing tests plus
+0/1 added sync-fault check (overall 39/40); that failed acceptance is not relabeled PASS.
+
+The fix writes the same operation journal through an exclusive .json.pending file, completes
+write/sync/close, then hard-links exclusively to the formal JSON name and unlinks only its
+own pending name. Pending evidence always makes inspection incomplete and blocks a new run.
+Operation metadata version 2 identifies the corrected writer; original format1 and the
+B4-A envelope do not change. Pre-fix version-1 COMPLETE records cannot prove successful
+sync, so they remain untouched but UNKNOWN/incomplete pending manual review; their backups
+are not deleted or overwritten. Normal version-2 completion remains recognized. This is
+runtime confirmation, not a new guarantee of power-loss/directory-entry durability.
+[Record protocol and remaining risks](B4B_ENCRYPTED_BACKUP_PIPELINE.md).
+
+Formal regression uses FileHandle.sync EIO on the default record writer after COMPLETE
+bytes are written; it does not substitute a record callback that bypasses the corrected
+writer. It asserts no trusted COMPLETE, retained pending evidence and next-run refusal.
+Other directly related cases cover record-name collision, interrupted publication beside
+COMPLETE, preservation of legacy records/backups and normal confirmed completion.
+
+No changes to B4-A/format1/CLI/S4/B2/production restore restrictions, no dependencies,
+production data/keys/backups, cloud resources, service installation, merge or push.
+PRODUCTION ENCRYPTION ENABLED=NO; PRODUCTION RESTORE ENABLED=NO; PRODUCTION READY=NO.
+This is an author fix candidate, not targeted independent reacceptance; Owner authorization
+is required for that next step.
+
+Final-source author fix verification, Node24.19.0: 31/31 PASS in the two direct B4-B
+commands in DEVELOPMENT_ENVIRONMENT.md. File suite: 27/27, exit0, 189915.3049ms,
+fail/cancelled/skipped=0/0/0, external TEMP/b4b-p2-final-files-1792528615962.tap.
+Owned MySQL integration: 4/4, exit0, 16114.1134ms, fail/cancelled/skipped=0/0/0,
+external TEMP/b4b-p2-final-mysql-1792528447755.tap. Fixture ddfa78a68fa1cf20 cleanup
+confirmed runtimeProcesses/mysqlProcess/databases/accounts/root all absent, sqlCleanup=true.
+The earlier six-case 6/6 selection overlaps the final file suite and is not added.
+The formal added sync regression failed before the fix (0/1) and passed after the fix;
+its default-writer syscall injection is retained in the committed regression file.
+
+Scoped npm test was attempted after JS edits but npm was not found; the actual run uses
+the pinned Node commands above. No C0/S4/B2/project suite or toolchain install occurred.
+Author self-check: no unresolved P0/P1/P2. This closes the reported P2 in the author fix
+candidate only; targeted independent reacceptance is pending. The original independent
+failure evidence remains above. One additive fix commit and final clean state are reported
+in the session delivery; no amend, history rewrite, merge, push or deployment.
+
 ## B4-B minimal encrypted pipeline candidate (2026-10-21)
 
 Actual starting main=origin/main=702a9c454f42e0f6f4a09d99a23b9bbfcb8f4ff0, clean;

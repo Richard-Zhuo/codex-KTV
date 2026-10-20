@@ -1,3 +1,10 @@
+## B4-B P2 record publication fix
+
+backup/encrypted-pipeline.js keeps pending record files until sync/close and exclusive
+publication succeed; inspection blocks pending and uncertain legacy COMPLETE records.
+backup/encrypted-pipeline.test.js contains the formal sync-EIO and related publication
+regressions. Original backups/records are preserved. [Protocol](B4B_ENCRYPTED_BACKUP_PIPELINE.md).
+
 ## B4-B encrypted pipeline
 
 - backup/encryption-policy.js: lightweight exact policy and synthetic-only admission.

@@ -69,8 +69,16 @@ Source failures are retained rather than risking deletion of a unique usable sna
 ## Facts, interruption and review
 
 Tiny append-only state-NNNN.json records are pipeline operation metadata, not a new backup
-format or second ledger. They use the existing canonical/durableWrite helpers (exclusive
-create and file sync). A record contains request ID, bounded phase/code, original/encrypted
+format or second ledger. The P2 fix writes operation metadata version 2 (format1 and the
+B4-A envelope are unchanged). Each state-NNNN.json.pending is exclusively created with the
+existing canonical/durableWrite helper. Only after write, sync and close all succeed is it
+exclusively hard-linked to state-NNNN.json; no existing name is replaced. The owned pending
+name is unlinked only after publication. Any pending entry, including one next to a fully
+visible COMPLETE JSON, makes inspection UNKNOWN/incomplete and blocks a new run. A sync,
+close, publication or pending-cleanup failure leaves detectable uncertainty; no retry deletes
+or overwrites that evidence. This is runtime I/O confirmation, not proof of power-loss
+persistence for directory entries or the future Windows cloud disk. No rename claim is made.
+A record contains request ID, bounded phase/code, original/encrypted
 checksums and time, plus ciphertext / plaintext / complete facts; no DB URL, credentials,
 keys or backup rows. Existing CLI result mailbox success is true only for full completion;
 a false/incomplete result yields exit1. The private journal preserves the distinct facts
@@ -78,7 +86,12 @@ that the older boolean mailbox cannot express. Failure to persist is resultRecor
 
 ciphertext=VERIFIED is not publication. PUBLISHED means published bytes passed the check;
 plaintext=ABSENT means observed pathname absence, not erased disk blocks. complete=true
-also requires the final durable result record. Thus a usable published cipher and retained
+also requires successful runtime confirmation of the final version-2 record publication and
+pending-name cleanup, with no pending residue. Pre-fix version-1 records are read-only:
+a version-1 COMPLETE cannot prove that sync/close succeeded, so inspection reports UNKNOWN /
+incomplete and requires manual review. It never rewrites those records or deletes their
+possibly valid ciphertext; no automatic migration or retrospective durability claim.
+Thus a usable published cipher and retained
 plaintext can coexist with complete=false. Later modification is not continuously monitored.
 
 inspectEncryptedBackupResidues(stagingDirectory) only reads bounded, validated sequential

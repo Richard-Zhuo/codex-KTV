@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { randomBytes } from 'node:crypto';
-import { mkdir, readFile, readdir, writeFile, stat, rename, symlink, link } from 'node:fs/promises';
+import { mkdir, readFile, readdir, writeFile, stat, rename, symlink, link, open } from 'node:fs/promises';
 import { join } from 'node:path';
 import { spawn } from 'node:child_process';
 import { once } from 'node:events';
@@ -52,6 +52,9 @@ test('B4-B create→format1→encrypt→authenticate→exclusive publish→clean
       const data = JSON.parse(await readFile(join(directory, 'data.json'), 'utf8')); assert.equal(data.backupFormatVersion, 1);
     });
   const job = join(f.staging, 'b4-run-' + result.requestId);
+  const records = (await readdir(job)).filter(name => name.endsWith('.json'));
+  assert.equal((await readdir(job)).some(name => name.endsWith('.pending')), false);
+  for (const name of records) assert.equal(JSON.parse(await readFile(join(job, name), 'utf8')).version, 2);
   await assert.rejects(stat(join(job, 'source')), { code: 'ENOENT' });
   await assert.rejects(stat(join(job, 'ciphertext.tmp')), { code: 'ENOENT' });
   assert.equal(JSON.stringify(result).includes(f.key.toString('hex')), false);
@@ -186,4 +189,79 @@ test('B4-B real process interruption leaves a discoverable CREATING record and s
   const reports = await inspectEncryptedBackupResidues(f.staging);
   assert.equal(reports[0].phase, 'CREATING'); assert.equal(reports[0].plaintext, 'REMAINS'); assert.equal(reports[0].incomplete, true);
   assert.deepEqual(await readdir(f.published), []); assert.equal(stderr, '');
+}));
+
+// Fault only this test process's FileHandle operations; always restore the native methods.
+async function withRecordSyncHook(f, beforeSync, work) {
+  const probe = await open(join(f.root, 'record-handle-probe'), 'wx');
+  const prototype = Object.getPrototypeOf(probe), originalWrite = prototype.writeFile, originalSync = prototype.sync;
+  await probe.close(); const records = new WeakMap();
+  prototype.writeFile = async function (bytes, ...args) {
+    try { const state = JSON.parse(bytes.toString()); if (state.requestId && state.phase) records.set(this, state); } catch {}
+    return Reflect.apply(originalWrite, this, [bytes, ...args]);
+  };
+  prototype.sync = async function (...args) {
+    const state = records.get(this); if (state) await beforeSync(state);
+    return Reflect.apply(originalSync, this, args);
+  };
+  try { return await work(); }
+  finally { prototype.writeFile = originalWrite; prototype.sync = originalSync; }
+}
+
+test('B4-B P2: COMPLETE sync EIO leaves detectable uncertainty and blocks the next run', async () => withPipelineFixture(async f => {
+  let injected = false;
+  const result = await withRecordSyncHook(f, async state => {
+    if (state.phase === 'COMPLETE') { injected = true; throw Object.assign(Error('SYNTHETIC_SYNC_FAILURE'), { code: 'EIO' }); }
+  }, () => run(f));
+  assert.equal(injected, true); failed(result); assert.equal(result.code, 'BACKUP_ENCRYPTION_RECORD_FAILED');
+  assert.equal(result.resultRecorded, false); assert.equal(result.ciphertext, 'PUBLISHED'); assert.equal(result.plaintext, 'ABSENT');
+  const report = (await inspectEncryptedBackupResidues(f.staging))[0];
+  assert.equal(report.incomplete, true); assert.notEqual(report.phase, 'COMPLETE');
+  const job = join(f.staging, 'b4-run-' + result.requestId), names = await readdir(job);
+  const pending = names.filter(name => name.endsWith('.json.pending'));
+  assert.equal(pending.length, 1);
+  assert.equal(JSON.parse(await readFile(join(job, pending[0]), 'utf8')).phase, 'COMPLETE');
+  await assert.rejects(stat(join(job, pending[0].slice(0, -8))), { code: 'ENOENT' });
+  assert.deepEqual(await readdir(result.directory), ['backup.b4']);
+  await assert.rejects(run(f), { code: 'BACKUP_ENCRYPTION_RESIDUE_REQUIRES_REVIEW' });
+}));
+
+test('B4-B P2: record publication collision preserves existing legal record bytes', async () => withPipelineFixture(async f => {
+  let target, existing;
+  const result = await withRecordSyncHook(f, async state => {
+    if (state.phase !== 'CREATING' || target) return;
+    target = join(f.staging, 'b4-run-' + state.requestId, 'state-0000.json');
+    existing = canonical({ ...state, code: 'BACKUP_EXISTING_RECORD' });
+    await durableWrite(target, existing);
+  }, () => run(f));
+  failed(result); assert.equal(result.resultRecorded, false);
+  assert.equal(await readFile(target, 'utf8'), existing);
+  assert.equal((await inspectEncryptedBackupResidues(f.staging))[0].incomplete, true);
+  await assert.rejects(run(f), { code: 'BACKUP_ENCRYPTION_RESIDUE_REQUIRES_REVIEW' });
+  assert.equal(await readFile(target, 'utf8'), existing);
+}));
+
+test('B4-B P2: interrupted record publication retains pending evidence even beside COMPLETE', async () => withPipelineFixture(async f => {
+  const result = await run(f); assert.equal(result.complete, true);
+  const job = join(f.staging, 'b4-run-' + result.requestId), records = (await readdir(job)).filter(name => name.endsWith('.json')).sort();
+  const complete = join(job, records.at(-1)), bytes = await readFile(complete);
+  await link(complete, complete + '.pending');
+  const report = (await inspectEncryptedBackupResidues(f.staging))[0];
+  assert.equal(report.incomplete, true); assert.notEqual(report.phase, 'COMPLETE');
+  await assert.rejects(run(f), { code: 'BACKUP_ENCRYPTION_RESIDUE_REQUIRES_REVIEW' });
+  assert.deepEqual(await readFile(complete), bytes); assert.deepEqual(await readdir(result.directory), ['backup.b4']);
+}));
+
+test('B4-B P2: legacy COMPLETE remains preserved but cannot prove successful sync', async () => withPipelineFixture(async f => {
+  const result = await run(f); assert.equal(result.complete, true);
+  const artifact = await readFile(join(result.directory, 'backup.b4')), job = join(f.staging, 'b4-run-' + result.requestId);
+  const records = (await readdir(job)).filter(name => name.endsWith('.json')), before = new Map();
+  // Model the unchanged pre-fix writer's records only inside this owned synthetic fixture.
+  for (const name of records) { const path = join(job, name), state = JSON.parse(await readFile(path, 'utf8')); state.version = 1;
+    const bytes = canonical(state); await writeFile(path, bytes); before.set(path, bytes); }
+  const report = (await inspectEncryptedBackupResidues(f.staging))[0];
+  assert.equal(report.incomplete, true); assert.notEqual(report.phase, 'COMPLETE');
+  await assert.rejects(run(f), { code: 'BACKUP_ENCRYPTION_RESIDUE_REQUIRES_REVIEW' });
+  for (const [path, bytes] of before) assert.equal(await readFile(path, 'utf8'), bytes);
+  assert.deepEqual(await readFile(join(result.directory, 'backup.b4')), artifact);
 }));
