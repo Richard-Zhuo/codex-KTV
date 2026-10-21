@@ -1,3 +1,21 @@
+## B4-C1 focused synthetic verification (2026-10-21)
+
+Use Node24.19.0, disposable synthetic files and protected Windows test directories. No SQL
+server connection, production credentials, cloud resources or source security changes.
+
+~~~text
+node --test backup/key-session.test.js
+node --test --test-name-pattern="policy is default off|omitted/disabled|denies production|existing legal backup|authentication failure after writing|real process interruption|B4-B P2:" backup/encrypted-pipeline.test.js
+~~~
+
+The first command includes a clean child process with separately retained recovery material
+via stdin after the original fixture and service are destroyed; no keys in argv/env/logs.
+The second selects only directly relevant default-off/publication/pending/residue regressions.
+Current author results: C1 23/23; selected B4-B 10/10, exit0 (33/33 total).
+No independent C1 acceptance is claimed. Historical B4-B acceptance remains separate evidence.
+The required npm test was attempted but npm is absent; no npm/full-project pass is claimed.
+No C0/S4/B2 suites or full project regression were run. [Boundaries](B4C1_KEY_SESSION.md).
+
 ## B4-B P2 targeted verification (2026-10-21)
 
 Only the directly changed record writer/inspector and B4-B pipeline tests are rerun.

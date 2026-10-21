@@ -1,3 +1,8 @@
+## B4-C1 synthetic key sessions
+
+[Minimal replaceable key interfaces and independent synthetic recovery](B4C1_KEY_SESSION.md).
+No production adapter or enablement; current author evidence is in [Current stage](CURRENT_STAGE.md).
+
 ## B4-B synthetic encrypted backup pipeline
 
 [Controlled staging, authenticated validation and ciphertext publication](B4B_ENCRYPTED_BACKUP_PIPELINE.md).

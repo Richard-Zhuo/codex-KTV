@@ -1,3 +1,12 @@
+## B4-C1 synthetic key sessions
+
+- backup/key-session.js: registered current-session and authorized historical keyProvider
+  callbacks; runSyntheticKeyBackup composes the unchanged B4-B encryption boundary.
+- test-support/synthetic-key-service.js: local test-only key service and immutable file registry.
+- test-support/synthetic-key-recovery-child.js: clean-process synthetic recovery consumer.
+- backup/key-session.test.js: binding, unique DEKs, authorization, uncertain outcomes and
+  source-independent synthetic recovery. [Interface and limits](B4C1_KEY_SESSION.md).
+
 ## B4-B P2 record publication fix
 
 backup/encrypted-pipeline.js keeps pending record files until sync/close and exclusive

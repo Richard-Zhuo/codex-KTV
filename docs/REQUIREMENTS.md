@@ -1,3 +1,11 @@
+## B4-C1 synthetic key-source boundary (2026-10-21)
+
+Each synthetic backup uses a fresh random DEK and unique keyId; exact backup/store/ledger
+binding must be registered create-only before encrypted publication. Missing/denied/unknown
+key or registration outcomes fail closed. Separately retained synthetic recovery materials
+must work in a new process after source resources are gone. No real KMS/IAM/remote registry
+or production enablement. [Contract](B4C1_KEY_SESSION.md).
+
 ## B4-B synthetic encrypted pipeline (2026-10-21)
 
 Owner-authorized minimal composition of existing format1 creation/validation and accepted

@@ -1,3 +1,19 @@
+## B4-C1 synthetic key session candidate (2026-10-21)
+
+Owner confirms B4-A/B4-B independently accepted and Git-closed. Verified clean main,
+HEAD/main/origin/main=db5d0e25415c09a6e8da6a8d9cd9b5d6658f4f18 before creating
+codex/b4-c1-key-session. Older headings below retain their historical evidence/status.
+
+C1 adds replaceable generation/registration/recovery interfaces and test-only simulations.
+Unique per-backup DEKs/keyIds, manifest/store/ledger binding, confirmed create-only registration,
+separate simulated recovery permission and clean-process recovery are author-tested.
+B4-A/B4-B/S4/B2/format1 implementations are unchanged. [Contract](B4C1_KEY_SESSION.md).
+Author focused results and commands are recorded in [Development environment](DEVELOPMENT_ENVIRONMENT.md).
+Independent C1 acceptance remains pending Owner authorization. No merge/push/deployment.
+REAL KMS / REAL REMOTE REGISTRY = NOT IMPLEMENTED; REAL CLOUD IAM and REAL CROSS-SERVER
+RECOVERY = NOT VERIFIED. PRODUCTION ENCRYPTION ENABLED / PRODUCTION RESTORE ENABLED /
+PRODUCTION READY = NO. No B4-C2/B5/B3/B6 work.
+
 ## B4-B P2 minimal record fix candidate (2026-10-21)
 
 Owner-authorized fix starts at dfe43752e09d343eb74c990ead97803f309d387d on
