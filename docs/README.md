@@ -1,3 +1,8 @@
+## B4-C2 synthetic offline public-key envelope candidate
+
+[Trusted release public-key policy and offline RSA adapters](B4C2_OFFLINE_ENVELOPE.md).
+Default empty approval policy; no production enablement. [Status](CURRENT_STAGE.md).
+
 ## B4-C1 synthetic key sessions
 
 [Minimal replaceable key interfaces and independent synthetic recovery](B4C1_KEY_SESSION.md).

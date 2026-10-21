@@ -15,7 +15,7 @@ function checkedBinding(binding) {
 }
 function checkedRecord(record) {
   if (!record || Object.keys(record).sort().join(',') !== 'binding,version,wrappedKey,wrappingKeyId' || record.version !== 1 ||
-      !validId(record.wrappingKeyId) || typeof record.wrappedKey !== 'string' || !/^[A-Za-z0-9+/]{80}$/.test(record.wrappedKey)) throw fail();
+      !validId(record.wrappingKeyId) || typeof record.wrappedKey !== 'string' || !record.wrappedKey.length || record.wrappedKey.length > 8192) throw fail();
   checkedBinding(record.binding);
 }
 // Issuer state stays server-side; clients receive only an opaque, immutable identity token.
@@ -62,6 +62,7 @@ export function createSyntheticKeyService({ masterKey, wrappingKeyId = 'syntheti
     }, async recover(record) {
       authorize(role, 'recovery');
       record = JSON.parse(canonical(record)); checkedRecord(record);
+      if (!/^[A-Za-z0-9+/]{80}$/.test(record.wrappedKey)) throw fail();
       checkRecovery(authorization, record.binding.keyId);
       if (record.wrappingKeyId !== wrappingKeyId) throw fail();
       const bytes = Buffer.from(record.wrappedKey, 'base64'); let pending, key, returned = false;
@@ -93,6 +94,7 @@ export async function createSyntheticKeyRegistry(directory, { recoveryAuthority 
       checkedRecord(input);
       // Capture before awaits: caller mutations cannot change the acknowledged binding.
       const bytes = canonical(input), record = JSON.parse(bytes);
+      if (Buffer.byteLength(bytes) > 12000) throw fail();
       await checkRoot();
       const pending = join(root, record.binding.keyId + '.json.pending'), final = join(root, record.binding.keyId + '.json');
       await durableWrite(pending, bytes);

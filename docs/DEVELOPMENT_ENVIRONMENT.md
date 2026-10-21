@@ -1,3 +1,21 @@
+## B4-C2 synthetic public-key adapter verification (2026-10-21)
+
+~~~text
+node --experimental-test-module-mocks --test backup/offline-key-service.test.js
+node --test backup/key-session-authorization.test.js backup/key-session.test.js
+~~~
+
+Pinned Node24.19.0 author focused results: C2 23/23; directly affected C1 registry/
+authorization/recovery 37/37, both exit0 (60/60 total). No full project or C0/S4/B2 suites.
+C2's S4 unit seam uses Node test-process-only module mocking, never a product identity port;
+real artifact digest/policy checks, OAEP and format1 validation remain active. Native SCM /
+SID / ACL pin installation is NOT VERIFIED. Runtime-generated synthetic RSA private PEMs
+only cross child stdin, never Git/argv/env/files. Original backup roots are removed before
+fresh-process historical v1/v2 recovery. A targeted pipeline rerun checks the DEK generator
+receives the actual returned manifest checksum, store/ledger and unique keyId.
+Scoped npm test was attempted but npm is absent; no npm/full-project pass is claimed.
+Independent C2 acceptance remains separately Owner-gated. [Contract](B4C2_OFFLINE_ENVELOPE.md).
+
 ## B4-C1 P2 focused repair verification (2026-10-21)
 
 ~~~text

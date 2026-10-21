@@ -1,3 +1,20 @@
+## B4-C2 synthetic offline envelope candidate (2026-10-21)
+
+Owner confirms B4-A/B4-B/C1 independently accepted and Git-closed. Verified clean
+main=origin/main=18b454a994c2f58e06efe2994720aef633b86e29 before creating
+codex/b4-c2-offline-envelope. Historical candidate headings below remain evidence history.
+C2 adds synthetic-only RSA-OAEP/SHA256 generation/recovery adapters and an empty approved
+public-key policy loaded only through the unchanged S4 identity/artifact boundary.
+Original manifest checksum is available before DEK generation; original publication and
+C1 authorization/registration are reused. Generic registry codec validation is separated
+from the AES mock's 80-character assumption; existing limits/gates are retained.
+[Contract](B4C2_OFFLINE_ENVELOPE.md); author [focused evidence](DEVELOPMENT_ENVIRONMENT.md).
+Independent C2 acceptance is pending Owner authorization. Positive S4 adapter tests use a
+unit identity seam; real SCM/ACL public-key installation is NOT VERIFIED. Real private-key
+custody/offsite registry are NOT IMPLEMENTED; real cross-server recovery is NOT VERIFIED.
+PRODUCTION ENCRYPTION ENABLED / PRODUCTION RESTORE ENABLED / PRODUCTION READY = NO.
+No B5/B3/B6, merge/push/deployment or next-phase work.
+
 ## B4-C1 P2 scoped recovery authorization fix candidate (2026-10-21)
 
 Starting candidate a7ebcec7eeaac213223d289b56dc4b0953906ac8 was clean on

@@ -1,3 +1,12 @@
+## B4-C2 synthetic offline envelope contract (2026-10-21)
+
+Reuse C1 adapters/registration and B4-A/B format1/publication. Fresh per-backup DEK;
+explicit RSA-OAEP/SHA256 versioned wrapping binds actual manifest checksum/store/ledger,
+keyId and recovery-key version/fingerprint. Public key/pin come from the S4-verified release,
+not caller self-assertion. Backup never loads the recovery private key; authorized independent
+synthetic recovery and retained old-version private keys must work. Default empty policy,
+existing production gates retained. [Detailed contract](B4C2_OFFLINE_ENVELOPE.md).
+
 ## B4-C1 P2 recovery authorization clarification (2026-10-21)
 
 Only the mock authorization issuer chooses permitted keyIds and expiry. Registry reads

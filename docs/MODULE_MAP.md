@@ -1,3 +1,13 @@
+## B4-C2 synthetic offline envelope
+
+- backup/offline-key-service.js: S4-bound public generator, fixed OAEP/context and isolated
+  recovery through C1-authorized registry reads; no production wiring.
+- backup/offline-public-key-policy.js: empty-by-default controlled release policy data.
+- backup/offline-key-service.test.js / test-support/offline-key-recovery-child.js: runtime
+  RSA fixtures, S4 unit seam, rejection paths and fresh-process historical format1 recovery.
+- test-support/synthetic-key-service.js: generic capped registry metadata; original AES mock
+  keeps its own codec check. [Contract](B4C2_OFFLINE_ENVELOPE.md).
+
 ## B4-C1 P2 scoped recovery authorization
 
 - test-support/synthetic-key-service.js: private mock grant issuer, keyId scope/expiry
