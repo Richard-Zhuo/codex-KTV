@@ -1,6 +1,6 @@
 // Spawned by synthetic tests only. Recovery secrets arrive over stdin, never argv/env/logs.
 import { readFile } from 'node:fs/promises';
-import { createSyntheticKeyRegistry, createSyntheticKeyService } from './synthetic-key-service.js';
+import { createSyntheticKeyRegistry, createSyntheticKeyService, createSyntheticRecoveryAuthority } from './synthetic-key-service.js';
 import { withHistoricalBackupKey } from '../backup/key-session.js';
 import { withDecryptedArtifact } from '../backup/encryption.js';
 import { verifyArtifact } from '../backup/format.js';
@@ -9,10 +9,13 @@ try {
   const chunks = []; for await (const chunk of process.stdin) chunks.push(chunk);
   const bytes = Buffer.concat(chunks), input = JSON.parse(bytes.toString('utf8')); bytes.fill(0);
   master = Buffer.from(input.recoveryMaterial, 'base64'); delete input.recoveryMaterial;
-  service = createSyntheticKeyService({ masterKey: master }); master.fill(0);
-  const registry = await createSyntheticKeyRegistry(input.registryDirectory);
+  // This trusted synthetic recovery fixture owns issuance; no grant is accepted from stdin.
+  const authority = createSyntheticRecoveryAuthority();
+  const grant = authority.issue({ keyIds: [input.keyId], expiresAt: Date.now() + 60000 });
+  service = createSyntheticKeyService({ masterKey: master, recoveryAuthority: authority }); master.fill(0);
+  const registry = await createSyntheticKeyRegistry(input.registryDirectory, { recoveryAuthority: authority });
   await withHistoricalBackupKey(input.args, { keyId: input.keyId, checksum: input.checksum,
-    keyService: service.client('recovery'), registry: registry.client('recovery') }, async ({ keyProvider }) => {
+    keyService: service.client('recovery', grant), registry: registry.client('recovery', grant) }, async ({ keyProvider }) => {
     await withDecryptedArtifact({ envelope: await readFile(input.envelopePath), expectedKeyId: input.keyId,
       keyProvider, temporaryParent: input.temporaryParent, expectedChecksum: input.checksum,
       storeId: input.args.storeId, ledgerId: input.args.ledgerId }, async ({ directory }) => {

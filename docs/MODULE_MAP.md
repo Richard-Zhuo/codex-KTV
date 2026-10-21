@@ -1,3 +1,10 @@
+## B4-C1 P2 scoped recovery authorization
+
+- test-support/synthetic-key-service.js: private mock grant issuer, keyId scope/expiry
+  checks at registry read and DEK unwrap; no production identity or algorithm changes.
+- backup/key-session-authorization.test.js: original A-to-B regression, controlled-clock
+  expiry, forgery/expansion and denied daily identity. [Contract](B4C1_KEY_SESSION.md).
+
 ## B4-C1 synthetic key sessions
 
 - backup/key-session.js: registered current-session and authorized historical keyProvider

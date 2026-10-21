@@ -72,10 +72,19 @@ and real recovery procedures still require production deployment acceptance.
 ## Test-only implementation and evidence boundary
 
 `test-support/synthetic-key-service.js` is deliberately a local simulation. The fixture is
-its authorization authority and creates distinct backup/recovery/denied clients. Backup can
-generate/register, but cannot read or unwrap historical records; recovery can read/unwrap,
-but cannot generate/register. Role names/client constructors are not real authentication or
-cloud IAM. Never wire this simulation to production.
+its authorization authority and creates distinct backup/recovery/denied clients.
+`createSyntheticRecoveryAuthority({now})` keeps grants in a private WeakMap; only its trusted
+fixture-held issuer can issue a frozen opaque token for a copied keyId set and an absolute
+expiry. Services bind that issuer at construction and accept tokens through client(role,token).
+A static recovery role, forged/copied token, foreign issuer, missing grant, invalid clock,
+out-of-scope keyId or time >= expiry rejects. Scope/expiry cannot be changed on the token.
+Registry reads and DEK unwraps check before work and again before returning; failed unwrap
+output buffers are zeroed. Once an authorized DEK has already been transferred, this is not
+a mechanism to recall arbitrary caller memory. Backup can generate/register but cannot read
+or unwrap history even with a recovery token; recovery cannot generate/register. No client
+receives an issuer or a clock-setting API. The trusted synthetic recovery child bootstraps
+its issuer from fixture-held recovery material and grants only the selected keyId briefly;
+it does not accept grants from stdin. This is not real cloud IAM. Never wire it to production.
 
 The mock uses random AES-256-GCM-wrapped DEKs authenticated against the entire binding and
 wrapping-key version. This does not modify/re-audit B4-A. Registry files contain encrypted

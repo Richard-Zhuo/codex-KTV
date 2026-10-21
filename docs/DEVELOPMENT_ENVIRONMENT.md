@@ -1,3 +1,17 @@
+## B4-C1 P2 focused repair verification (2026-10-21)
+
+~~~text
+node --test backup/key-session-authorization.test.js backup/key-session.test.js
+~~~
+
+Node24.19.0, isolated synthetic files only: 37/37 author focused tests, exit0.
+Includes original A-to-B unauthorized recovery regression, opaque-grant forgery/expansion,
+controlled-clock expiration at read/unwrap and response boundaries, daily identity denial,
+and original clean-process format1 recovery. The scoped npm test was attempted; npm is
+absent, so no npm/full-project pass is claimed. No C0/S4/B2 or unrelated B4-B suite rerun.
+Earlier independent 33/33 plus 0/1 scope probe remain historical evidence; this fix awaits
+Owner-authorized targeted independent reacceptance.
+
 ## B4-C1 focused synthetic verification (2026-10-21)
 
 Use Node24.19.0, disposable synthetic files and protected Windows test directories. No SQL

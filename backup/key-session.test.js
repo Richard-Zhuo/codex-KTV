@@ -9,7 +9,7 @@ import { withRegisteredBackupKey, withHistoricalBackupKey, runSyntheticKeyBackup
 import { inspectEncryptedBackupResidues } from './encrypted-pipeline.js';
 import { digest, durableWrite } from './format.js';
 import { withPipelineFixture, protectPipelineTestDirectory } from '../test-support/encrypted-pipeline-fixture.js';
-import { createSyntheticKeyService, createSyntheticKeyRegistry } from '../test-support/synthetic-key-service.js';
+import { createSyntheticKeyService, createSyntheticKeyRegistry, createSyntheticRecoveryAuthority } from '../test-support/synthetic-key-service.js';
 
 const checksum = digest('SYNTHETIC-KEY-SESSION');
 const request = keyId => ({ keyId, algorithm: 'aes-256-gcm', usage: 'encrypt' });
@@ -18,9 +18,13 @@ const options = (service, registry) => ({ keyId: 'b4c1-' + randomUUID(), checksu
 async function setup(f) {
   const registryDirectory = join(f.root, 'independent-registry');
   await mkdir(registryDirectory, { mode: 0o700 }); await protectPipelineTestDirectory(registryDirectory);
-  const master = randomBytes(32), service = createSyntheticKeyService({ masterKey: master });
-  const registry = await createSyntheticKeyRegistry(registryDirectory);
-  return { registryDirectory, master, service, registry };
+  const authority = createSyntheticRecoveryAuthority();
+  const master = randomBytes(32), service = createSyntheticKeyService({ masterKey: master, recoveryAuthority: authority });
+  const registry = await createSyntheticKeyRegistry(registryDirectory, { recoveryAuthority: authority });
+  return { registryDirectory, master, service, registry, recovery(keyId) {
+    const grant = authority.issue({ keyIds: [keyId], expiresAt: Date.now() + 60000 });
+    return { keyService: service.client('recovery', grant), registry: registry.client('recovery', grant) };
+  } };
 }
 async function recoverInChild(input) {
   return new Promise((resolve, reject) => {
@@ -51,7 +55,7 @@ test('C1 key session: generation, immutable binding, authorization and uncertain
         });
       });
       await t.test('authorized historical recovery obtains original DEK without generation cache', async () => {
-        await withHistoricalBackupKey(f.args, { ...first, keyService: service.client('recovery'), registry: registry.client('recovery') },
+        await withHistoricalBackupKey(f.args, { ...first, ...s.recovery(first.keyId) },
           async ({ keyProvider }) => {
             assert.equal(digest(keyProvider.resolve({ ...request(first.keyId), usage: 'decrypt' }).key), firstFingerprint);
             assert.throws(() => keyProvider.resolve(request(first.keyId)));
@@ -59,7 +63,7 @@ test('C1 key session: generation, immutable binding, authorization and uncertain
       });
       await t.test('daily identity cannot read history at registry or key service', async () => {
         const binding = { keyId: first.keyId, storeId: f.args.storeId, ledgerId: f.args.ledgerId, checksum };
-        const record = await registry.client('recovery').get(binding);
+        const record = await s.recovery(first.keyId).registry.get(binding);
         await assert.rejects(registry.client('backup').get(binding));
         await assert.rejects(service.client('backup').recover(record));
         await assert.rejects(withHistoricalBackupKey(f.args, first, () => assert.fail('not authorized')));
@@ -73,25 +77,26 @@ test('C1 key session: generation, immutable binding, authorization and uncertain
         await t.test('historical binding rejects changed ' + field, async () => {
           const args = { ...f.args, ...(field !== 'checksum' ? { [field]: 'another-synthetic-ledger' } : {}) };
           await assert.rejects(withHistoricalBackupKey(args, { ...first, ...(field === 'checksum' ? { checksum: digest('different') } : {}),
-            keyService: service.client('recovery'), registry: registry.client('recovery') }, () => assert.fail('binding bypass')));
+            ...s.recovery(first.keyId) }, () => assert.fail('binding bypass')));
         });
       }
       await t.test('wrapped DEK and binding tampering fail authentication', async () => {
         const binding = { keyId: first.keyId, storeId: f.args.storeId, ledgerId: f.args.ledgerId, checksum };
-        const record = await registry.client('recovery').get(binding);
+        const record = await s.recovery(first.keyId).registry.get(binding);
         const bytes = Buffer.from(record.wrappedKey, 'base64'); bytes[13] ^= 1;
-        await assert.rejects(service.client('recovery').recover({ ...record, wrappedKey: bytes.toString('base64') }));
-        await assert.rejects(service.client('recovery').recover({ ...record, binding: { ...binding, checksum: digest('different') } }));
+        await assert.rejects(s.recovery(first.keyId).keyService.recover({ ...record, wrappedKey: bytes.toString('base64') }));
+        await assert.rejects(s.recovery(first.keyId).keyService.recover({ ...record, binding: { ...binding, checksum: digest('different') } }));
       });
       await t.test('duplicate registration never overwrites valid history and leaves uncertainty visible', async () => {
         const path = join(s.registryDirectory, first.keyId + '.json'), before = await readFile(path);
         await assert.rejects(withRegisteredBackupKey(f.args, first, () => assert.fail('duplicate confirmed')));
         assert.deepEqual(await readFile(path), before);
         assert.ok((await readdir(s.registryDirectory)).includes(first.keyId + '.json.pending'));
-        await assert.rejects(withHistoricalBackupKey(f.args, { ...first, keyService: service.client('recovery'), registry: registry.client('recovery') }, () => assert.fail('pending accepted')));
+        await assert.rejects(withHistoricalBackupKey(f.args, { ...first, ...s.recovery(first.keyId) }, () => assert.fail('pending accepted')));
       });
       await t.test('missing history rejects and exposes no upstream secret', async () => {
-        await assert.rejects(withHistoricalBackupKey(f.args, { ...options(service, registry), keyService: service.client('recovery'), registry: registry.client('recovery') },
+        const missing = options(service, registry);
+        await assert.rejects(withHistoricalBackupKey(f.args, { ...missing, ...s.recovery(missing.keyId) },
           () => assert.fail('missing accepted')), error => error.message === 'BACKUP_KEY_OPERATION_UNCONFIRMED');
       });
       for (const [name, replacement] of [
@@ -133,7 +138,7 @@ test('C1 key session: generation, immutable binding, authorization and uncertain
       await t.test('historical missing/invalid key and recovery timeout reject and zero late key', async () => {
         const selected = options(service, registry);
         await withRegisteredBackupKey(f.args, selected, async () => {});
-        const recovery = { ...selected, registry: registry.client('recovery') };
+        const recovery = { ...selected, registry: s.recovery(selected.keyId).registry };
         for (const recover of [async () => null, async () => ({ keyId: 'wrong', key: Buffer.alloc(32) }),
           async () => { throw Error('PRIVATE-CREDENTIAL'); }]) {
           await assert.rejects(withHistoricalBackupKey(f.args, { ...recovery, keyService: { recover } }, () => assert.fail('bad recovery')),
@@ -142,7 +147,7 @@ test('C1 key session: generation, immutable binding, authorization and uncertain
         let finish, transferred;
         const recovering = withHistoricalBackupKey(f.args, { ...recovery, timeoutMs: 20,
           keyService: { recover: record => new Promise(resolve => { finish = async () => {
-            const value = await service.client('recovery').recover(record); transferred = value.key; resolve(value);
+            const value = await s.recovery(selected.keyId).keyService.recover(record); transferred = value.key; resolve(value);
           }; }) } }, () => assert.fail('late recovery'));
         await assert.rejects(recovering); await finish(); await new Promise(resolve => setImmediate(resolve));
         assert.ok(transferred.equals(Buffer.alloc(32)));

@@ -1,5 +1,5 @@
 // TEST SUPPORT ONLY: local simulation of separate key-service and create-only registry capabilities.
-// Possessing the mock recovery material is simulation authority; this is not cloud IAM or production custody.
+// Only the trusted fixture owns issuance/bootstrap capabilities. This is not cloud IAM or production custody.
 import { createCipheriv, createDecipheriv, randomBytes } from 'node:crypto';
 import { lstat, realpath, readFile, link, unlink } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
@@ -18,11 +18,37 @@ function checkedRecord(record) {
       !validId(record.wrappingKeyId) || typeof record.wrappedKey !== 'string' || !/^[A-Za-z0-9+/]{80}$/.test(record.wrappedKey)) throw fail();
   checkedBinding(record.binding);
 }
-export function createSyntheticKeyService({ masterKey, wrappingKeyId = 'synthetic-master-v1' }) {
+// Issuer state stays server-side; clients receive only an opaque, immutable identity token.
+const recoveryAuthorities = new WeakMap();
+export function createSyntheticRecoveryAuthority({ now = Date.now } = {}) {
+  if (typeof now !== 'function') throw fail();
+  const grants = new WeakMap();
+  function time() {
+    let value; try { value = now(); } catch { throw fail(); }
+    if (!Number.isSafeInteger(value) || value < 0) throw fail();
+    return value;
+  }
+  const authority = Object.freeze({ issue({ keyIds, expiresAt } = {}) {
+    if (!Array.isArray(keyIds) || keyIds.length < 1 || keyIds.length > 128 || keyIds.some(id => !validId(id)) ||
+        !Number.isSafeInteger(expiresAt) || expiresAt <= time()) throw fail();
+    const token = Object.freeze(Object.create(null));
+    grants.set(token, { keyIds: new Set(keyIds), expiresAt });
+    return token;
+  } });
+  recoveryAuthorities.set(authority, (token, keyId) => {
+    const grant = grants.get(token);
+    if (!grant || !grant.keyIds.has(keyId) || time() >= grant.expiresAt) throw fail();
+  });
+  return authority;
+}
+function recoveryCheck(authority) {
+  return recoveryAuthorities.get(authority) ?? (() => { throw fail(); });
+}
+export function createSyntheticKeyService({ masterKey, wrappingKeyId = 'synthetic-master-v1', recoveryAuthority }) {
   if (!Buffer.isBuffer(masterKey) || masterKey.length !== 32 || !validId(wrappingKeyId)) throw fail();
-  const master = Buffer.from(masterKey); let active = true;
+  const master = Buffer.from(masterKey), checkRecovery = recoveryCheck(recoveryAuthority); let active = true;
   const authorize = (role, expected) => { if (!active || role !== expected) throw fail(); };
-  return Object.freeze({ dispose() { active = false; master.fill(0); }, client(role) {
+  return Object.freeze({ dispose() { active = false; master.fill(0); }, client(role, authorization) {
     if (!roles(role)) throw fail();
     return Object.freeze({ async generate(binding) {
       authorize(role, 'backup'); checkedBinding(binding);
@@ -34,29 +60,33 @@ export function createSyntheticKeyService({ masterKey, wrappingKeyId = 'syntheti
         return { keyId: binding.keyId, key, wrappingKeyId, wrappedKey };
       } catch { key.fill(0); throw fail(); }
     }, async recover(record) {
-      authorize(role, 'recovery'); checkedRecord(record);
+      authorize(role, 'recovery');
+      record = JSON.parse(canonical(record)); checkedRecord(record);
+      checkRecovery(authorization, record.binding.keyId);
       if (record.wrappingKeyId !== wrappingKeyId) throw fail();
-      const bytes = Buffer.from(record.wrappedKey, 'base64'); let pending;
+      const bytes = Buffer.from(record.wrappedKey, 'base64'); let pending, key, returned = false;
       try {
         const decipher = createDecipheriv('aes-256-gcm', master, bytes.subarray(0, 12), { authTagLength: 16 });
         decipher.setAAD(Buffer.from(canonical({ version: 1, binding: record.binding, wrappingKeyId })));
         decipher.setAuthTag(bytes.subarray(-16)); pending = decipher.update(bytes.subarray(12, -16));
-        return { keyId: record.binding.keyId, key: Buffer.concat([pending, decipher.final()]) };
+        key = Buffer.concat([pending, decipher.final()]);
+        checkRecovery(authorization, record.binding.keyId);
+        returned = true; return { keyId: record.binding.keyId, key };
       } catch { throw fail(); }
-      finally { pending?.fill(0); }
+      finally { pending?.fill(0); if (!returned) key?.fill(0); }
     } });
   } });
 }
 
 // The fixture owns/protects this external directory. No arbitrary names, replacement, recursive removal or retries.
-export async function createSyntheticKeyRegistry(directory) {
-  const root = resolve(directory);
+export async function createSyntheticKeyRegistry(directory, { recoveryAuthority } = {}) {
+  const root = resolve(directory), checkRecovery = recoveryCheck(recoveryAuthority);
   async function checkRoot() {
     const info = await lstat(root);
     if (!info.isDirectory() || info.isSymbolicLink() || await realpath(root) !== root) throw fail();
   }
   await checkRoot();
-  return Object.freeze({ client(role) {
+  return Object.freeze({ client(role, authorization) {
     if (!roles(role)) throw fail();
     return Object.freeze({ async register(input) {
       if (role !== 'backup') throw fail();
@@ -72,7 +102,8 @@ export async function createSyntheticKeyRegistry(directory) {
       return { status: 'CONFIRMED', keyId: record.binding.keyId, registrationDigest: digest(bytes) };
     }, async get(binding) {
       if (role !== 'recovery') throw fail();
-      checkedBinding(binding); await checkRoot();
+      binding = Object.freeze({ ...binding }); checkedBinding(binding);
+      checkRecovery(authorization, binding.keyId); await checkRoot();
       const pending = join(root, binding.keyId + '.json.pending'), final = join(root, binding.keyId + '.json');
       try { await lstat(pending); throw fail(); } catch (error) { if (error.code !== 'ENOENT') throw fail(); }
       const info = await lstat(final);
@@ -81,6 +112,7 @@ export async function createSyntheticKeyRegistry(directory) {
       if (Buffer.byteLength(bytes) > 12000) throw fail();
       const record = JSON.parse(bytes); checkedRecord(record);
       if (canonical(record.binding) !== canonical(binding)) throw fail();
+      checkRecovery(authorization, binding.keyId);
       return record;
     } });
   } });

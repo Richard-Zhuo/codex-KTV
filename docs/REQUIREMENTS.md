@@ -1,3 +1,9 @@
+## B4-C1 P2 recovery authorization clarification (2026-10-21)
+
+Only the mock authorization issuer chooses permitted keyIds and expiry. Registry reads
+and DEK unwraps require its unforgeable server-held grant state and trusted clock checks;
+static roles, missing/forged/expanded/expired grants reject. [Contract](B4C1_KEY_SESSION.md).
+
 ## B4-C1 synthetic key-source boundary (2026-10-21)
 
 Each synthetic backup uses a fresh random DEK and unique keyId; exact backup/store/ledger

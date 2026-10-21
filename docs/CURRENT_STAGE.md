@@ -1,3 +1,15 @@
+## B4-C1 P2 scoped recovery authorization fix candidate (2026-10-21)
+
+Starting candidate a7ebcec7eeaac213223d289b56dc4b0953906ac8 was clean on
+codex/b4-c1-key-session; main/origin/main remain db5d0e25415c09a6e8da6a8d9cd9b5d6658f4f18.
+Prior independent acceptance remains historical 33/33 plus scope probe 0/1 (one P2).
+This author fix adds server-held opaque grants for explicit keyIds/expiry, checked by both
+mock registry and unwrap service. Original failure is formally covered; controlled-clock,
+forgery/expansion rejection and clean-process format1 recovery are author-tested.
+[Contract](B4C1_KEY_SESSION.md); [focused evidence](DEVELOPMENT_ENVIRONMENT.md).
+Independent targeted reacceptance remains pending Owner authorization. No merge/push/deploy.
+Real IAM is NOT VERIFIED; production encryption/restore/readiness remain NO.
+
 ## B4-C1 synthetic key session candidate (2026-10-21)
 
 Owner confirms B4-A/B4-B independently accepted and Git-closed. Verified clean main,
