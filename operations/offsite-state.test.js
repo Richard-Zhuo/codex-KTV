@@ -7,6 +7,17 @@ const make = () => {
 };
 const fact = (unitId, snapshotNotBefore, at, status = 'OFFSITE_VERIFIED') =>
   ({ unitId, backupId: unitId, snapshotNotBefore, at, status, locator: { unitId } });
+
+test('B3A2 durable intent and released receipt reject every late B5 fact without mutation', async () => {
+  const store = make(); await recordOffsiteFact(store, fact('a', 1000, 2000));
+  for (const phase of ['INTENT', 'RELEASED']) {
+    await store.update(s => { s.observations.offsite.handoffs = { a: { phase } }; });
+    const before = store.read();
+    for (const status of ['LOCAL_VERIFIED', 'UPLOAD_UNCONFIRMED', 'OFFSITE_UNCONFIRMED', 'OFFSITE_VERIFIED'])
+      await assert.rejects(recordOffsiteFact(store, fact('a', 1000, 3000, status)), { code: 'OFFSITE_HANDOFF_FENCED' });
+    assert.deepEqual(store.read(), before);
+  }
+});
 test('B5 RPO: older completion and reverify never refresh data time', async () => {
   const store = make();
   await recordOffsiteFact(store, fact('newer', 2000, 3000));

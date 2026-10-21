@@ -1,3 +1,12 @@
+## B3-A2 synthetic safe handoff (2026-10-22)
+
+Only a dedicated, privately branded protected synthetic operational-store fixture may
+conditionally release an active reference after stable B5 verification, durable intent,
+immutable A0 archive and independently confirmed cumulative A1 checkpoint coverage. Keep
+permanent handoff evidence/fences,128 active cap, original recovery point/RPO and B5 gates.
+Unknown writes block admission pending reconciliation. No production store injection,
+production release, physical material deletion or cloud operation. [Contract](B3A2_SAFE_HANDOFF.md).
+
 ## B3-A1 synthetic trusted checkpoint (2026-10-22)
 
 Only model an independent, persistent scoped custodian with authorized latest/CAS, cumulative

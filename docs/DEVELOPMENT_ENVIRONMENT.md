@@ -1,3 +1,32 @@
+## B3-A2 focused synthetic handoff evidence (2026-10-22)
+
+Use Node24.19.x, original protected owned synthetic fixtures and runtime-only keys/tokens.
+No production selectors/data, real cloud, DB backup/restore or installed service. Full
+project regression is excluded. Necessary cases may run in independent groups:
+
+```powershell
+node --experimental-test-module-mocks --test --test-reporter=tap --test-name-pattern="B3A2 normal trusted|B3A2 128 full|B3A2 concurrent retries|B3A2 production selectors|B3A2 public store|B3A2 retained update|B3A2 reconciliation is" backup/safe-handoff.test.js
+node --experimental-test-module-mocks --test --test-reporter=tap --test-name-pattern="B3A2 interrupted|B3A2 unknown local" backup/safe-handoff.test.js
+node --experimental-test-module-mocks --test --test-reporter=tap --test-name-pattern="B3A2 historical verifiedLocator|B3A2 fail closed|B3A2 checkpoint rollback|B3A2 durable intent|B5 RPO:|B5 state preserves" backup/safe-handoff.test.js operations/offsite-state.test.js
+node --experimental-test-module-mocks --test --test-reporter=tap --test-name-pattern="B3A2 concurrent different" backup/safe-handoff.test.js
+node --experimental-test-module-mocks --test --test-reporter=tap --test-name-pattern="B3A2 genuine unit|B5 normal immutable|B5 P2 capacity: full|B3A1 lost CAS|B3A1 concurrent|B3A1 CAS rejects omit" backup/offsite-unit.test.js backup/archive-checkpoint.test.js
+```
+
+Node24.19.0 author results:31/31 distinct necessary cases PASS,exit0; final groups7/7,
+5/5,12/12,1/1 and6/6. Count21 handoff cases,4 direct state cases,1 genuine integration,
+5 direct A1/B5 regressions. Preliminary/repeated normal-path and pre-strengthening runs are
+not added again. No full project or independent acceptance run was performed.
+
+Genuine integration uses the original C1/B4/B5
+synthetic producer, a protected separate operational-store scope, abrupt child exit before
+release, restart/resume, then fresh checkpoint discovery with producer AND local state
+directories unavailable. No recovery private key/old cache/locatorFile is passed for discovery.
+The original local fixture state and full encrypted recovery materials remain unchanged.
+
+Scoped npm test was attempted after JavaScript edits but npm is absent; the process did
+not start. Direct Node evidence is separate from npm, independent acceptance, power-loss
+durability, real OS/cloud isolation and production readiness. [Contract](B3A2_SAFE_HANDOFF.md).
+
 ## B3-A1 focused synthetic checkpoint evidence (2026-10-22)
 
 ```powershell

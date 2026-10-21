@@ -503,6 +503,83 @@ test('B3A1 genuine unit checkpoint survives original server loss and independent
   }
 }));
 
+test('B3A2 genuine unit handoff, abrupt crash/restart and state-free historical discovery', async () => fixture(async f => {
+  const { createSyntheticArchiveIssuer, writeSyntheticArchiveTrust } = await import('../test-support/synthetic-archive-directory.js');
+  const { loadSyntheticArchiveBootstrap } = await import('./archive-discovery.js');
+  const { initializeSyntheticCheckpointAnchor, openSyntheticCheckpointAnchor } = await import('../test-support/synthetic-checkpoint-anchor.js');
+  const { createSyntheticHandoffStore, openSyntheticHandoffStore, handoffSyntheticUnit } = await import('../test-support/synthetic-safe-handoff.js');
+  const offlineRoot = await mkdtemp(join(tmpdir(), 'ktv-b3a2-offline-'));
+  let session, movedState = false, movedProducer = false, descriptor;
+  const unavailableProducer = f.root + '-unavailable';
+  try {
+    await protectPipelineTestDirectory(offlineRoot);
+    const anchorDirectory = join(offlineRoot, 'anchor'); await mkdir(anchorDirectory); await protectPipelineTestDirectory(anchorDirectory);
+    const issuer = createSyntheticArchiveIssuer(f.args, { directoryId: 'handoff-real', storeId: f.args.storeId, ledgerId: f.args.ledgerId });
+    const offlineTrust = await writeSyntheticArchiveTrust(f.args, offlineRoot, issuer);
+    const bootstrap = await loadSyntheticArchiveBootstrap(f.args, offlineTrust);
+    const access = await initializeSyntheticCheckpointAnchor(f.args, { directory: anchorDirectory, bootstrap });
+    const anchor = await openSyntheticCheckpointAnchor(f.args, { directory: anchorDirectory, bootstrap, reader: f.independentReader,
+      anchorId: access.anchorId, credential: access.custodianCredential });
+    const context = { bootstrap, reader: f.independentReader, writer: f.remote.writer, anchor, issuer };
+    let interrupt = true;
+    session = await createSyntheticHandoffStore(f.args, context, { fault: async phase => {
+      if (interrupt && phase === 'afterCheckpoint') throw Error('SYNTHETIC_INTERRUPTION');
+    } });
+    descriptor = session.descriptor;
+    const localState = f.store.read();
+    const published = await f.publish({ store: session.store });
+    assert.equal(published.code, 'OFFSITE_VERIFIED');
+    const before = session.store.read(), beforeRpo = offsiteRpo(before.observations, { utcMs: at + 100000, uncertaintyMs: 10 });
+    const original = await retrieveSyntheticOffsiteUnit(f.args, { reader: f.independentReader, locator: published.locator });
+    assert.equal((await handoffSyntheticUnit(session.capability, published.unitId)).code, 'SYNTHETIC_HANDOFF_UNCONFIRMED');
+    assert.ok(session.store.read().observations.offsite.attempts[published.unitId]);
+    interrupt = false; await session.close(); session = null;
+    const recoveryArgs = { environment: 'test', databaseUrl: f.args.databaseUrl, env: f.args.env,
+      storeId: f.args.storeId, ledgerId: f.args.ledgerId };
+    const run = (file, input) => new Promise((resolve, reject) => {
+      const p = spawn(process.execPath, [fileURLToPath(new URL('../test-support/' + file, import.meta.url))], {
+        windowsHide: true, env: { SystemRoot: process.env.SystemRoot ?? '', PATH: process.env.PATH ?? '', TEMP: process.env.TEMP ?? '' },
+        stdio: ['pipe', 'pipe', 'pipe'] });
+      let stdout = '', stderr = '';
+      p.on('error', reject); p.stdout.on('data', b => { stdout += b; }); p.stderr.on('data', b => { stderr += b; });
+      p.on('close', code => resolve({ code, stdout, stderr })); p.stdin.end(JSON.stringify(input));
+    });
+    const handoffInput = { args: recoveryArgs, offlineTrust, remoteRoot: f.remoteRoot, descriptor, unitId: published.unitId,
+      anchor: { directory: anchorDirectory, anchorId: access.anchorId, credential: access.readerCredential } };
+    const crashed = await run('handoff-resume-child.js', { ...handoffInput, action: 'crash-before-release' });
+    assert.equal(crashed.code, 78, crashed.stderr);
+    const resumed = await run('handoff-resume-child.js', handoffInput);
+    assert.equal(resumed.code, 0, resumed.stderr);
+    assert.equal(JSON.parse(resumed.stdout).activeCount, 0);
+    session = await openSyntheticHandoffStore(f.args, descriptor, context);
+    assert.equal(session.store.read().observations.offsite.handoffs[published.unitId].phase, 'RELEASED');
+    assert.deepEqual(session.store.read().observations.offsite.latestRecoveryPoint, before.observations.offsite.latestRecoveryPoint);
+    assert.deepEqual(offsiteRpo(session.store.read().observations, { utcMs: at + 100000, uncertaintyMs: 10 }), beforeRpo);
+    const beforeObjects = (await readdir(f.remoteRoot)).sort();
+    assert.equal(digest((await retrieveSyntheticOffsiteUnit(f.args, { reader: f.independentReader, locator: published.locator })).ciphertext), digest(original.ciphertext));
+    await session.close(); session = null; await f.stopWriter();
+    for (const path of [descriptor.root, f.root]) {
+      assert.equal(dirname(resolve(path)), resolve(tmpdir())); assert.ok(basename(path).startsWith('ktv-b'));
+    }
+    await rename(descriptor.root, descriptor.root + '-unavailable'); movedState = true;
+    await rename(f.root, unavailableProducer); movedProducer = true;
+    const recovered = await run('checkpoint-recovery-child.js', { args: recoveryArgs, offlineTrust, remoteRoot: f.remoteRoot,
+      anchor: { directory: anchorDirectory, anchorId: access.anchorId, credential: access.readerCredential } });
+    assert.equal(recovered.code, 0, recovered.stderr);
+    assert.deepEqual(JSON.parse(recovered.stdout).units, [published.unitId]);
+    assert.deepEqual((await readdir(f.remoteRoot)).sort(), beforeObjects);
+    assert.deepEqual(f.store.read(), localState);
+  } finally {
+    await session?.close();
+    if (movedProducer) await rename(unavailableProducer, f.root);
+    if (movedState) await rename(descriptor.root + '-unavailable', descriptor.root);
+    for (const path of [descriptor?.root, offlineRoot].filter(Boolean)) {
+      assert.equal(dirname(resolve(path)), resolve(tmpdir())); assert.ok(basename(path).startsWith('ktv-b3a2-'));
+      await rm(path, { recursive: true, force: true });
+    }
+  }
+}));
+
 test('B3A0 signed archive still rejects missing or tampered actual recovery materials', async () => fixture(async f => {
   const { createSyntheticArchiveIssuer, createSyntheticArchiveDirectory, writeSyntheticArchiveTrust } =
     await import('../test-support/synthetic-archive-directory.js');

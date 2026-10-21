@@ -1,3 +1,24 @@
+## B3-A2 synthetic safe handoff author candidate (2026-10-22)
+
+Owner confirms B3-A0/A1 accepted, merged and closed. Verified clean main=origin/main=
+9c59faceb8f9cc5654f9f71769ce34ee5b1587b2 before creating codex/b3-a2-safe-handoff.
+Added only a dedicated protected synthetic operational-store capability, durable handoff
+intent/receipts, A0/A1/B5-backed conditional active-reference release and late-fact fencing.
+No B4/S4 algorithm, B5 completion gate,128-cap, RPO or production entry/enablement change.
+The original operations store/writer mechanism is reused. [Contract](B3A2_SAFE_HANDOFF.md).
+
+Author Node24.19.0 focused evidence:31/31 distinct necessary cases PASS,exit0:21 synthetic
+handoff/isolation/failure/concurrency cases,4 direct operational fence/capacity/RPO cases,
+1 real-material/crash/restart/state-loss integration and5 direct A1/B5 regressions. Final
+groups passed7/7,5/5,12/12,1/1 and6/6; preliminary/repeated cases are not added to the total.
+During implementation, reconciliation serialization, stable original capacity/fence reason
+codes, trust-bound fixture markers and retained-callback-object isolation were strengthened;
+the final affected cases passed. npm test was attempted but npm is unavailable. Author
+self-check P0/P1/P2=0/0/0. Independent acceptance has not been performed. Real
+Owner custody/anchor anti-rollback, OSS WORM/IAM and production release/readiness remain
+unimplemented/unverified. No recovery-material deletion, auto retention, merge/push/deploy
+or automatic next phase. READY FOR PRODUCTION SLOT RELEASE=NO.
+
 ## B3-A1 synthetic trusted checkpoint author candidate (2026-10-22)
 
 Owner confirms B3-A0 accepted, merged and closed. Verified clean main=origin/main=

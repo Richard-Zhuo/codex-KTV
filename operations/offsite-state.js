@@ -5,6 +5,10 @@ export async function recordOffsiteFact(store, fact) {
   if (!['LOCAL_VERIFIED', 'UPLOAD_UNCONFIRMED', 'OFFSITE_UNCONFIRMED', 'OFFSITE_VERIFIED'].includes(fact.status)) throw fail();
   await store.update(s => {
     const state = s.observations.offsite ??= { attempts: {}, latestRecoveryPoint: null };
+    // Durable handoff intent/receipt fences even an already-running publisher's late result.
+    if (Object.hasOwn(state.handoffs ?? {}, fact.unitId)) {
+      throw Object.assign(Error('OFFSITE_HANDOFF_FENCED'), { code: 'OFFSITE_HANDOFF_FENCED' });
+    }
     const previous = state.attempts[fact.unitId];
     if (!previous && Object.keys(state.attempts).length >= 128) {
       throw Object.assign(Error('OFFSITE_REFERENCE_LIMIT'), { code: 'OFFSITE_REFERENCE_LIMIT' });

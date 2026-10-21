@@ -1,3 +1,8 @@
+## B3-A2 synthetic safe handoff candidate
+
+[Branded isolated store, durable handoff receipts and conditional slot release](B3A2_SAFE_HANDOFF.md).
+Synthetic fixture only; production release and recovery-material deletion remain unavailable.
+
 ## B3-A1 synthetic trusted checkpoint candidate
 
 [Independent synthetic custodian and cumulative checkpoint](B3A1_TRUSTED_CHECKPOINT.md).

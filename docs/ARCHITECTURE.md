@@ -1,3 +1,12 @@
+## B3-A2 synthetic reference handoff boundary
+
+Release authority exists only for a protected newly created synthetic instance of the original
+operational store, branded in a private map and bound to independent archive trust. Durable
+intent/receipt lives in observations.offsite.handoffs; the existing B5 fact boundary rejects
+late writes for those units. A0/A1/B5 verification precedes conditional active-slot removal.
+No production importer/flag, second state implementation, material deletion or RPO change.
+[Contract](B3A2_SAFE_HANDOFF.md).
+
 ## B3-A1 synthetic independent checkpoint boundary
 
 Separate protected custodian-root state pins the latest cumulative signed checkpoint through

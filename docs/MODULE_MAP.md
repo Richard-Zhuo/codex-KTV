@@ -1,3 +1,13 @@
+## B3-A2 synthetic safe handoff
+
+- test-support/synthetic-safe-handoff.js: exclusively created/reopened isolated store capability,
+  persistent handoff evidence, conditional release and uncertainty reconciliation.
+- operations/offsite-state.js: durable handoff fence on the original fact-write boundary.
+- test-support/handoff-resume-child.js: controlled crash and fresh-process resume evidence.
+- backup/safe-handoff.test.js / backup/offsite-unit.test.js / operations/offsite-state.test.js:
+  focused failures, real-material/state-loss integration and direct publication/RPO regression.
+- [Contract](B3A2_SAFE_HANDOFF.md); [commands](DEVELOPMENT_ENVIRONMENT.md). No production release.
+
 ## B3-A1 synthetic trusted checkpoint
 
 - backup/archive-checkpoint.js: cumulative publication, exact verification/recovery and extension checks.
