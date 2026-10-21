@@ -1,3 +1,11 @@
+## B3-A0 independent archive discovery (2026-10-22)
+
+Synthetic-only, separate discovery boundary. An offline pretrusted public bootstrap and
+independently delivered pin authenticate signed archive entries; remote lists/hashes are
+untrusted hints. Exact B5 unit verification remains mandatory. Completeness/freshness are
+NOT VERIFIED and slot-release readiness is always false. No activity-slot release,
+128-limit change, material deletion or production route. [Contract](B3A0_ARCHIVE_DISCOVERY.md).
+
 ## B5-B1 OSS adapter scope (2026-10-22)
 
 Owner selected OSS for adapter development only. Preserve B5-A's SHA256 version and

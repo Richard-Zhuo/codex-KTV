@@ -1,3 +1,29 @@
+## B3-A0 focused synthetic discovery evidence (2026-10-22)
+
+~~~text
+node --experimental-test-module-mocks --test --test-name-pattern="B3A0|OSS normal create|OSS identical retry|OSS conflicting content|OSS concurrent|OSS unknown submission|B5 normal immutable|B5 P2 capacity: full|B5 RPO:" backup/archive-discovery.test.js backup/offsite-unit.test.js backup/oss-adapter.test.js operations/offsite-state.test.js
+node --experimental-test-module-mocks --test --test-name-pattern="B3A0|B5 normal immutable|B5 P2 capacity: full" backup/offsite-unit.test.js
+node --experimental-test-module-mocks --test --test-name-pattern="B3A0 replacement trust file" backup/archive-discovery.test.js
+~~~
+
+Node24.19.0.43 distinct necessary cases:29 A0 unit/transport +2 real-unit/new-process
+integrations +8 OSS call-contract cases +2 B5 publication/capacity +2 RPO regressions.
+Initial combined result42/43,exit1: Windows EPERM moving an original fixture directory
+before closing its operational writer; child discovery had not run. A first attempted
+fixture edit had a shell replacement error and did not add the close call; its one-case
+run repeated that same EPERM. After the close call was applied and verified, clean-process
+discovery passed1/1; the4 directly affected fixture cases then passed4/4,exit0. A Windows
+path probe was made explicit with fileURLToPath and passed1/1,exit0. Final evidence is
+43/43 distinct cases with those reruns substituted, not one final43-case invocation.
+No repeated count is added and no safety setting, ACL or success assertion was relaxed.
+
+The original directory is temporarily moved/restored with checked owned temporary paths;
+only disposable fixtures are reclaimed afterward. Product discovery performs no deletion
+or operational writes. Unit tests mock the B5 retrieval seam; integrations/child use the
+actual B5 verifier and independent public offline bootstrap without per-backup locatorFile.
+npm test was attempted but unavailable (npm not installed); no npm/full-project PASS.
+No production data/keys, OSS or cloud resources. [Contract](B3A0_ARCHIVE_DISCOVERY.md).
+
 ## B5-B1 OSS adapter focused author evidence (2026-10-22)
 
 ~~~text

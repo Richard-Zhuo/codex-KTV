@@ -1,3 +1,8 @@
+## B3-A0 archive entry discovery candidate
+
+[Offline trusted bootstrap and signed synthetic archive discovery](B3A0_ARCHIVE_DISCOVERY.md).
+Directory completeness/rollback protection remain unverified; no slot release or deletion.
+
 ## B5-B1 OSS adapter candidate
 
 [Injected OSS create-only/exact-read adapter](B5B1_OSS_ADAPTER.md).

@@ -1,3 +1,26 @@
+## B3-A0 synthetic discovery author candidate (2026-10-22)
+
+Owner confirms B5-A/B5-B1 accepted, merged and closed. Verified clean main=origin/main=
+5f1e29041c70ebd2d9afa38332c01848449c4c4d before creating codex/b3-safe-archive.
+Added only a separate synthetic archive discovery boundary: offline public trust/pin,
+authenticated immutable entry references, bounded untrusted enumeration and real B5 unit
+verification. No B5/B4/S4 runtime contract, operational state or128-limit change.
+[Contract and trust assumptions](B3A0_ARCHIVE_DISCOVERY.md).
+
+Focused author evidence:43/43 distinct necessary cases have passing evidence (29 discovery
+unit/transport,2 genuine-unit integrations,12 direct OSS/B5/RPO regressions). The initial
+combined run was42/43, failing before child discovery because its original directory still
+held the operational writer. Test fixture now closes its writer before moving the original
+owned directory; the4 affected cases passed again,exit0. The valid-Windows-repository-path
+probe also passed1/1; repeats are included, not added. No ACL or assertion was weakened.
+npm test could not start because npm is absent. [Commands](DEVELOPMENT_ENVIRONMENT.md).
+
+DIRECTORY COMPLETENESS / ROLLBACK PROTECTION = NOT VERIFIED.
+READY FOR B3-A SLOT RELEASE = NO; ACTIVITY SLOTS RELEASED =0; PHYSICAL DELETION = NO.
+No unresolved author finding; independent acceptance awaits Owner authorization.
+Real OSS discovery/WORM/IAM and production trust custody remain unverified.
+Production offsite backup/encryption/restore/readiness remain NO. No merge/push/deploy.
+
 ## B5-B1 OSS adapter author candidate (2026-10-22)
 
 Owner confirms B5-A ACCEPTED / MERGED / CLOSED. Verified clean main=origin/main=

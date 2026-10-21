@@ -3,7 +3,7 @@ import { mockOss } from '../test-support/mock-oss-client.js';
 import test, { mock } from 'node:test';
 import assert from 'node:assert/strict';
 import { generateKeyPairSync, createPublicKey, randomUUID } from 'node:crypto';
-import { mkdtemp, mkdir, readFile, writeFile, rm, readdir, symlink, link } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, writeFile, rm, readdir, symlink, link, rename } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, dirname, resolve, basename } from 'node:path';
 import { spawn } from 'node:child_process';
@@ -75,10 +75,10 @@ async function fixture(work, { create, time = at, clockUnknown = false, registry
       const remote = await createSyntheticOffsiteRemote(f.args, remoteRoot);
       const independentReader = (await createSyntheticOffsiteRemote(f.args, remoteRoot)).reader;
       await work({ ...f, remoteRoot, remote, independentReader, store, produced, creates,
-        clock, advance: ms => { now = ms; }, publish: overrides => publishSyntheticOffsiteUnit(f.args, {
+        clock, stopWriter: async () => { await releaseWriter?.(); releaseWriter = null; }, advance: ms => { now = ms; }, publish: overrides => publishSyntheticOffsiteUnit(f.args, {
           unit: produced.unit, writer: remote.writer, reader: independentReader, store, clock, ...overrides
         }) });
-      } finally { await releaseWriter(); releaseWriter = null; approvals.delete(configFile); }
+      } finally { await releaseWriter?.(); releaseWriter = null; approvals.delete(configFile); }
     });
   } finally {
     await releaseWriter?.();
@@ -356,3 +356,90 @@ for (const fault of ['denied', 'unknown-unconfirmed', 'conflicting-marker', 'tam
     else assert.equal(remote.objects.has(remote.prefix + f.produced.unit.unitId + '.complete'), false);
   }));
 }
+
+
+test('B3A0 clean process discovers signed archive after original server directory is unavailable', async () => fixture(async f => {
+  const { createSyntheticArchiveIssuer, createSyntheticArchiveDirectory, writeSyntheticArchiveTrust } =
+    await import('../test-support/synthetic-archive-directory.js');
+  const result = await f.publish(); assert.equal(result.code, 'OFFSITE_VERIFIED');
+  const original = await retrieveSyntheticOffsiteUnit(f.args, { reader: f.independentReader, locator: result.locator });
+  const issuer = createSyntheticArchiveIssuer(f.args, {
+    directoryId: 'offline-recovery', storeId: f.args.storeId, ledgerId: f.args.ledgerId });
+  const directory = await createSyntheticArchiveDirectory(f.args, f.remoteRoot);
+  const entry = issuer.issue({ locator: result.locator, completion: original.completion });
+  const ack = await directory.writer.putIfAbsent(entry);
+  assert.equal(ack.version, digest(entry.bytes));
+  const beforeState = f.store.read();
+  const beforeObjects = (await readdir(f.remoteRoot)).sort();
+  const offlineRoot = await mkdtemp(join(tmpdir(), 'ktv-b3-offline-'));
+  let moved = false;
+  const unavailable = f.root + '-offline';
+  try {
+    await protectPipelineTestDirectory(offlineRoot);
+    const offlineTrust = await writeSyntheticArchiveTrust(f.args, offlineRoot, issuer);
+    // Move only this owned temporary fixture; keep all recovery materials physically intact.
+    assert.equal(dirname(resolve(f.root)), resolve(tmpdir()));
+    assert.equal(dirname(resolve(unavailable)), resolve(tmpdir()));
+    assert.ok(basename(f.root).startsWith('ktv-b4b-unit-'));
+    await f.stopWriter();
+    await rename(f.root, unavailable); moved = true;
+    const recoveryArgs = { environment: f.args.environment, databaseUrl: f.args.databaseUrl,
+      storeId: f.args.storeId, ledgerId: f.args.ledgerId, env: f.args.env };
+    const restored = await new Promise((resolve, reject) => {
+      const processChild = spawn(process.execPath, [fileURLToPath(new URL('../test-support/archive-discovery-child.js', import.meta.url))],
+        { windowsHide: true, env: { SystemRoot: process.env.SystemRoot ?? '', PATH: process.env.PATH ?? '', TEMP: process.env.TEMP ?? '' },
+          stdio: ['pipe', 'pipe', 'pipe'] });
+      let stdout = '', stderr = '';
+      processChild.on('error', reject); processChild.stdout.on('data', b => { stdout += b; });
+      processChild.stderr.on('data', b => { stderr += b; });
+      processChild.on('close', code => resolve({ code, stdout, stderr }));
+      processChild.stdin.end(JSON.stringify({ args: recoveryArgs, remoteRoot: f.remoteRoot, offlineTrust }));
+    });
+    assert.equal(restored.code, 0, restored.stderr);
+    const found = JSON.parse(restored.stdout);
+    assert.equal(found.code, 'ARCHIVE_ENTRIES_VERIFIED'); assert.equal(found.entries.length, 1);
+    assert.equal(found.entries[0].unitId, result.unitId);
+    assert.equal(found.entries[0].checksum, original.completion.binding.checksum);
+    assert.equal(found.directoryCompleteness, 'NOT_VERIFIED');
+    assert.equal(found.rollbackProtection, 'NOT_VERIFIED'); assert.equal(found.readyForSlotRelease, false);
+    assert.deepEqual((await readdir(f.remoteRoot)).sort(), beforeObjects);
+    assert.deepEqual(f.store.read(), beforeState);
+  } finally {
+    if (moved) await rename(unavailable, f.root);
+    assert.equal(dirname(resolve(offlineRoot)), resolve(tmpdir())); assert.ok(basename(offlineRoot).startsWith('ktv-b3-offline-'));
+    await rm(offlineRoot, { recursive: true, force: true });
+  }
+}));
+
+test('B3A0 signed archive still rejects missing or tampered actual recovery materials', async () => fixture(async f => {
+  const { createSyntheticArchiveIssuer, createSyntheticArchiveDirectory, writeSyntheticArchiveTrust } =
+    await import('../test-support/synthetic-archive-directory.js');
+  const { loadSyntheticArchiveBootstrap, discoverSyntheticArchives } = await import('./archive-discovery.js');
+  const result = await f.publish(), original = await retrieveSyntheticOffsiteUnit(f.args, { reader: f.independentReader, locator: result.locator });
+  const issuer = createSyntheticArchiveIssuer(f.args, {
+    directoryId: 'isolated-failures', storeId: f.args.storeId, ledgerId: f.args.ledgerId });
+  const directory = await createSyntheticArchiveDirectory(f.args, f.remoteRoot);
+  await directory.writer.putIfAbsent(issuer.issue({ locator: result.locator, completion: original.completion }));
+  const offlineRoot = await mkdtemp(join(tmpdir(), 'ktv-b3-offline-'));
+  try {
+    await protectPipelineTestDirectory(offlineRoot);
+    const bootstrap = await loadSyntheticArchiveBootstrap(f.args, await writeSyntheticArchiveTrust(f.args, offlineRoot, issuer));
+    const before = f.store.read(), objects = (await readdir(f.remoteRoot)).sort();
+    for (const mode of ['missing', 'tampered', 'exception']) {
+      const reader = { getExact: async input => {
+        if (input.objectId.endsWith('.manifest')) {
+          if (mode !== 'tampered') throw Error('SYNTHETIC_PRIVATE_REMOTE_ERROR');
+          const response = await directory.reader.getExact(input); response.bytes[0] ^= 1; return response;
+        }
+        return directory.reader.getExact(input);
+      } };
+      await assert.rejects(discoverSyntheticArchives(f.args, { bootstrap, reader, enumerator: directory.enumerator }),
+        { code: 'ARCHIVE_DISCOVERY_REJECTED' });
+    }
+    assert.deepEqual(f.store.read(), before);
+    assert.deepEqual((await readdir(f.remoteRoot)).sort(), objects);
+  } finally {
+    assert.equal(dirname(resolve(offlineRoot)), resolve(tmpdir())); assert.ok(basename(offlineRoot).startsWith('ktv-b3-offline-'));
+    await rm(offlineRoot, { recursive: true, force: true });
+  }
+}));

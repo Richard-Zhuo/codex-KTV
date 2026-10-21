@@ -1,3 +1,12 @@
+## B3-A0 synthetic discovery trust boundary
+
+The offline test custodian, separate from remote storage and producer state, supplies a
+protected public directory bootstrap and its independently retained digest. Remote enumeration
+only proposes candidates; pinned-key signatures and original B5 exact recovery-unit checks
+authenticate each returned entry. No operational store write, B5 provider interface change
+or production identity route exists. Signatures alone do not establish a complete/current
+directory; result flags prohibit B3-A slot release. [Contract](B3A0_ARCHIVE_DISCOVERY.md).
+
 ## S4 installed release identity boundary
 
 Fixed JbhhKtv SCM registration determines the runtime path and service SID. Its adjacent administrator-owned, service-read-only backup.json pins the retained artifact path/digest; caller-selected configuration cannot select deployment authority. The retained artifact is compared with that digest and the existing runtime applicationCommit. A shared read-only artifact validator also verifies exact installed files before backup admission. Runtime config-only reading preserves the existing service SID/ACL rules and avoids loading runtime secrets. No receipt or second version authority is added. [Trust boundary](S4_GIT_FREE_BACKUP_IDENTITY.md).

@@ -1,3 +1,13 @@
+## B3-A0 synthetic archive discovery
+
+- backup/archive-discovery.js: loadSyntheticArchiveBootstrap / discoverSyntheticArchives;
+  pinned offline public trust, signed candidates, bounded pagination and original B5 retrieval.
+- test-support/synthetic-archive-directory.js: isolated issuer, public trust handoff and
+  filesystem enumerator; existing create-only/exact reader reused.
+- test-support/archive-discovery-child.js: new-process discovery without old state/locatorFile.
+- backup/archive-discovery.test.js / backup/offsite-unit.test.js: focused seam and real-unit
+  integration. [Contract](B3A0_ARCHIVE_DISCOVERY.md); [commands](DEVELOPMENT_ENVIRONMENT.md).
+
 ## B5-B1 injected OSS adapter
 
 - backup/oss-adapter.js: createOssOffsiteAdapter, optional create-only writer and independent
