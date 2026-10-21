@@ -1,3 +1,12 @@
+## B3-A1 synthetic trusted checkpoint
+
+- backup/archive-checkpoint.js: cumulative publication, exact verification/recovery and extension checks.
+- backup/archive-discovery.js: existing branded public trust/signature/entry verification reused.
+- test-support/synthetic-checkpoint-anchor.js: independent scoped persistent read/CAS authority model.
+- test-support/checkpoint-recovery-child.js: separate-process recovery and controlled crash evidence.
+- backup/archive-checkpoint.test.js / backup/offsite-unit.test.js: focused faults and genuine-unit integration.
+- [Contract](B3A1_TRUSTED_CHECKPOINT.md); [commands](DEVELOPMENT_ENVIRONMENT.md). No slot release.
+
 ## B3-A0 synthetic archive discovery
 
 - backup/archive-discovery.js: loadSyntheticArchiveBootstrap / discoverSyntheticArchives;

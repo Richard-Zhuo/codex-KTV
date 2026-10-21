@@ -1,3 +1,8 @@
+## B3-A1 synthetic trusted checkpoint candidate
+
+[Independent synthetic custodian and cumulative checkpoint](B3A1_TRUSTED_CHECKPOINT.md).
+No activity-slot release, physical deletion, real trust service or production enablement.
+
 ## B3-A0 archive entry discovery candidate
 
 [Offline trusted bootstrap and signed synthetic archive discovery](B3A0_ARCHIVE_DISCOVERY.md).

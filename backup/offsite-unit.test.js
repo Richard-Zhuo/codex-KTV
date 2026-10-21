@@ -411,6 +411,98 @@ test('B3A0 clean process discovers signed archive after original server director
   }
 }));
 
+test('B3A1 genuine unit checkpoint survives original server loss and independent child recovery', async () => fixture(async f => {
+  const { createSyntheticArchiveIssuer, createSyntheticArchiveDirectory, writeSyntheticArchiveTrust } =
+    await import('../test-support/synthetic-archive-directory.js');
+  const { loadSyntheticArchiveBootstrap } = await import('./archive-discovery.js');
+  const { publishSyntheticCheckpoint, recoverSyntheticCheckpoint } = await import('./archive-checkpoint.js');
+  const { initializeSyntheticCheckpointAnchor, openSyntheticCheckpointAnchor } = await import('../test-support/synthetic-checkpoint-anchor.js');
+  const offlineRoot = await mkdtemp(join(tmpdir(), 'ktv-b3a1-offline-'));
+  const unavailable = f.root + '-unavailable'; let moved = false;
+  try {
+    await protectPipelineTestDirectory(offlineRoot);
+    const anchorDirectory = join(offlineRoot, 'anchor'); await mkdir(anchorDirectory); await protectPipelineTestDirectory(anchorDirectory);
+    const result = await f.publish();
+    const original = await retrieveSyntheticOffsiteUnit(f.args, { reader: f.independentReader, locator: result.locator });
+    const directory = await createSyntheticArchiveDirectory(f.args, f.remoteRoot);
+    const issuer = createSyntheticArchiveIssuer(f.args, { directoryId: 'checkpoint-integration', storeId: f.args.storeId, ledgerId: f.args.ledgerId });
+    const signed = issuer.issue({ locator: result.locator, completion: original.completion });
+    const ack = await directory.writer.putIfAbsent(signed);
+    const offlineTrust = await writeSyntheticArchiveTrust(f.args, offlineRoot, issuer);
+    const bootstrap = await loadSyntheticArchiveBootstrap(f.args, offlineTrust);
+    const access = await initializeSyntheticCheckpointAnchor(f.args, { directory: anchorDirectory, bootstrap });
+    const anchor = await openSyntheticCheckpointAnchor(f.args, { directory: anchorDirectory, bootstrap, reader: f.independentReader,
+      anchorId: access.anchorId, credential: access.custodianCredential });
+    const before = f.store.read();
+    const options = { bootstrap, reader: f.independentReader, writer: directory.writer, issuer, anchor,
+      entries: [{ unitId: result.unitId, ...ack, size: signed.bytes.length }] };
+    const checkpoint = await publishSyntheticCheckpoint(f.args, options);
+    assert.equal(checkpoint.code, 'SYNTHETIC_CHECKPOINT_VERIFIED');
+    assert.equal(checkpoint.entries[0].completion.snapshotNotBefore, original.completion.snapshotNotBefore);
+    assert.deepEqual(f.store.read(), before); // no activity release/RPO/local-success writes
+    for (const mode of ['missing', 'tamper']) {
+      const reader = { getExact: async input => {
+        if (input.objectId.endsWith('.manifest') && mode === 'missing') throw Error('MISSING');
+        const response = await f.independentReader.getExact(input);
+        if (input.objectId.endsWith('.manifest')) response.bytes[0] ^= 1;
+        return response;
+      } };
+      await assert.rejects(recoverSyntheticCheckpoint(f.args, { ...options, reader }), { code: 'ARCHIVE_CHECKPOINT_REJECTED' });
+    }
+    const objects = (await readdir(f.remoteRoot)).sort();
+    await f.stopWriter();
+    assert.equal(dirname(resolve(unavailable)), resolve(tmpdir()));
+    assert.ok(basename(f.root).startsWith('ktv-b4b-unit-'));
+    await rename(f.root, unavailable); moved = true;
+    const recoveryArgs = { environment: f.args.environment, databaseUrl: f.args.databaseUrl, env: f.args.env };
+    const restored = await new Promise((resolve, reject) => {
+      const processChild = spawn(process.execPath, [fileURLToPath(new URL('../test-support/checkpoint-recovery-child.js', import.meta.url))],
+        { windowsHide: true, env: { SystemRoot: process.env.SystemRoot ?? '', PATH: process.env.PATH ?? '', TEMP: process.env.TEMP ?? '' }, stdio: ['pipe', 'pipe', 'pipe'] });
+      let stdout = '', stderr = '';
+      processChild.on('error', reject); processChild.stdout.on('data', b => { stdout += b; });
+      processChild.stderr.on('data', b => { stderr += b; });
+      processChild.on('close', code => resolve({ code, stdout, stderr }));
+      processChild.stdin.end(JSON.stringify({ args: recoveryArgs, remoteRoot: f.remoteRoot, offlineTrust,
+        anchor: { directory: anchorDirectory, anchorId: access.anchorId, credential: access.readerCredential } }));
+    });
+    assert.equal(restored.code, 0, restored.stderr);
+    const found = JSON.parse(restored.stdout);
+    assert.equal(found.code, 'SYNTHETIC_CHECKPOINT_VERIFIED'); assert.deepEqual(found.units, [result.unitId]);
+    assert.equal(found.sequence, 1); assert.equal(found.readyForSlotRelease, false);
+    assert.equal(found.activitySlotsReleased, 0); assert.equal(found.physicalDeletion, false);
+    assert.equal(found.directoryCompleteness, 'NOT_VERIFIED');
+    assert.equal(found.rollbackProtection, 'EXTERNAL_SYNTHETIC_ANCHOR_ASSUMPTION');
+    assert.deepEqual((await readdir(f.remoteRoot)).sort(), objects);
+    // A real isolated child dies after synced pending bytes and before exclusive publication.
+    const oldCheckpoint = JSON.parse((await f.independentReader.getExact(checkpoint.point.locator)).bytes);
+    const payload = { ...oldCheckpoint.payload, sequence: 2, previous: checkpoint.point.locator.version };
+    const bytes = issuer.issueCheckpoint(payload), version = digest(bytes);
+    const next = { sequence: 2, previous: checkpoint.point.locator.version,
+      locator: { objectId: 'checkpoint.checkpoint-integration.' + version, version, size: bytes.length } };
+    await directory.writer.putIfAbsent({ objectId: next.locator.objectId, bytes });
+    const crashed = await new Promise((resolve, reject) => {
+      const processChild = spawn(process.execPath, [fileURLToPath(new URL('../test-support/checkpoint-recovery-child.js', import.meta.url))],
+        { windowsHide: true, env: { SystemRoot: process.env.SystemRoot ?? '', PATH: process.env.PATH ?? '', TEMP: process.env.TEMP ?? '' }, stdio: ['pipe', 'pipe', 'pipe'] });
+      processChild.on('error', reject); processChild.stdout.resume(); processChild.stderr.resume();
+      processChild.on('close', code => resolve(code));
+      processChild.stdin.end(JSON.stringify({ action: 'crash-beforeCommit', args: recoveryArgs,
+        remoteRoot: f.remoteRoot, offlineTrust, expected: checkpoint.point, next,
+        anchor: { directory: anchorDirectory, anchorId: access.anchorId, credential: access.custodianCredential } }));
+    });
+    assert.equal(crashed, 77);
+    assert.ok((await readdir(anchorDirectory)).some(name => name.startsWith('pending-')));
+    const reopened = await openSyntheticCheckpointAnchor(recoveryArgs, { directory: anchorDirectory, bootstrap,
+      reader: f.independentReader, anchorId: access.anchorId, credential: access.readerCredential });
+    const { syntheticArchiveScope } = await import('./archive-discovery.js');
+    await assert.rejects(reopened.getLatest(syntheticArchiveScope(bootstrap)), { code: 'SYNTHETIC_ANCHOR_REJECTED' });
+    assert.deepEqual(f.store.read(), before);
+  } finally {
+    if (moved) await rename(unavailable, f.root);
+    assert.equal(dirname(resolve(offlineRoot)), resolve(tmpdir())); assert.ok(basename(offlineRoot).startsWith('ktv-b3a1-offline-'));
+    await rm(offlineRoot, { recursive: true, force: true });
+  }
+}));
+
 test('B3A0 signed archive still rejects missing or tampered actual recovery materials', async () => fixture(async f => {
   const { createSyntheticArchiveIssuer, createSyntheticArchiveDirectory, writeSyntheticArchiveTrust } =
     await import('../test-support/synthetic-archive-directory.js');

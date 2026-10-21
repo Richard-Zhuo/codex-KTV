@@ -1,3 +1,11 @@
+## B3-A1 synthetic independent checkpoint boundary
+
+Separate protected custodian-root state pins the latest cumulative signed checkpoint through
+authorized conditional append. Existing B3-A0 trust/entry verification and B5 full retrieval
+remain mandatory. The anchor's own integrity/freshness is externally assumed in this model;
+there is no real Owner service, OSS protection or production route. No operational-state/RPO
+write or activity-slot release. [Contract](B3A1_TRUSTED_CHECKPOINT.md).
+
 ## B3-A0 synthetic discovery trust boundary
 
 The offline test custodian, separate from remote storage and producer state, supplies a

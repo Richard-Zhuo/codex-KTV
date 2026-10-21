@@ -1,3 +1,25 @@
+## B3-A1 synthetic trusted checkpoint author candidate (2026-10-22)
+
+Owner confirms B3-A0 accepted, merged and closed. Verified clean main=origin/main=
+171c2051adf43ebecd04a8f76782e4bbc245347e before creating codex/b3-a1-trusted-checkpoint.
+Added only a separately persisted scoped synthetic custodian, authorized conditional latest
+append, cumulative signed checkpoints and exact independent recovery. Original B3-A0 entry
+verification/B5 full material retrieval are reused. No operational-state,128-cap, RPO,
+production bootstrap or B4/S4 algorithm/security changes. [Contract](B3A1_TRUSTED_CHECKPOINT.md).
+
+Author Node24.19.0 focused evidence:42/42 distinct necessary cases PASS,exit0 (30 checkpoint
+cases,1 genuine-unit/new-process/abrupt-crash integration,11 direct A0/B5/OSS/RPO regressions).
+The first author run failed on the new comparator's incorrect use of object-only canonical
+encoding for scalar/null comparisons. Corrected within this candidate; the28 affected core
+cases passed, and added/final modified cases passed in focused follow-ups; repeats are not
+added to the42 total. The final injected-reader pointer guard and genuine integration passed
+again3/3. npm test was attempted but npm is absent. Author self-check P0/P1/P2=0/0/0;
+independent acceptance has not been performed and requires Owner authorization.
+The anchor's own anti-rollback is an external simulation assumption. Global historical
+directory completeness, real independent custody/OSS/WORM/IAM and production readiness
+remain unverified. READY FOR B3-A SLOT RELEASE=NO; activity slots released=0;
+physical recovery-material deletion=NO. No merge/push/deploy or automatic next phase.
+
 ## B3-A0 synthetic discovery author candidate (2026-10-22)
 
 Owner confirms B5-A/B5-B1 accepted, merged and closed. Verified clean main=origin/main=

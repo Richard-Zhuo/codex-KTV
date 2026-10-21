@@ -12,6 +12,25 @@ const fail = () => Object.assign(Error('ARCHIVE_DISCOVERY_REJECTED'), { code: 'A
 const hash = v => typeof v === 'string' && /^[a-f0-9]{64}$/.test(v);
 const fields = (v, names) => v && typeof v === 'object' && !Array.isArray(v) && Object.keys(v).sort().join(',') === names;
 const id = v => typeof v === 'string' && /^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$/.test(v);
+// Public scope only; the private bootstrap brand remains required by every verifier.
+export function syntheticArchiveScope(bootstrap) {
+  const trust = anchors.get(bootstrap);
+  if (!trust) throw fail();
+  return { directoryId: trust.directoryId, storeId: trust.storeId, ledgerId: trust.ledgerId };
+}
+export function syntheticArchiveTrustId(bootstrap) {
+  const trust = anchors.get(bootstrap);
+  if (!trust) throw fail();
+  return digest(canonical({ scope: syntheticArchiveScope(bootstrap), algorithm: 'Ed25519',
+    publicKey: trust.publicKey.export({ type: 'spki', format: 'der' }).toString('base64') }));
+}
+export function verifySyntheticArchiveSignature(bootstrap, payload, signature) {
+  const trust = anchors.get(bootstrap);
+  if (!trust || typeof signature !== 'string') throw fail();
+  const bytes = Buffer.from(signature, 'base64');
+  if (bytes.length !== 64 || bytes.toString('base64') !== signature ||
+      !verify(null, Buffer.from(canonical(payload)), trust.publicKey, bytes)) throw fail();
+}
 async function deadline(work, ms) {
   let timer;
   try { return await Promise.race([Promise.resolve().then(work), new Promise((_, reject) => { timer = setTimeout(() => reject(fail()), ms); })]); }

@@ -1,3 +1,11 @@
+## B3-A1 synthetic trusted checkpoint (2026-10-22)
+
+Only model an independent, persistent scoped custodian with authorized latest/CAS, cumulative
+signed checkpoints and exact new-process verification. Preserve all historical members;
+failure/unknown results require independent confirmation or rejection. Anchor anti-rollback
+is an external synthetic assumption, not production evidence. No slot release,128-cap change,
+material deletion, real OSS/Owner service or production enablement. [Contract](B3A1_TRUSTED_CHECKPOINT.md).
+
 ## B3-A0 independent archive discovery (2026-10-22)
 
 Synthetic-only, separate discovery boundary. An offline pretrusted public bootstrap and

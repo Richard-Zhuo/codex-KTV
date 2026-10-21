@@ -1,3 +1,29 @@
+## B3-A1 focused synthetic checkpoint evidence (2026-10-22)
+
+```powershell
+node --experimental-test-module-mocks --test --test-reporter=tap backup/archive-checkpoint.test.js
+node --experimental-test-module-mocks --test --test-reporter=tap --test-name-pattern="B3A1 publication faults|B3A1 authorization/pin rejection: scope" backup/archive-checkpoint.test.js
+node --experimental-test-module-mocks --test --test-reporter=tap --test-name-pattern="B3A1 normal cumulative|B3A1 signed invalid checkpoint" backup/archive-checkpoint.test.js
+node --experimental-test-module-mocks --test --test-reporter=tap --test-name-pattern="B3A1 genuine unit|B3A0 trusted independent|B3A0 remote self-reported|B5 normal immutable|B5 P2 capacity: full|B5 RPO:|OSS normal create" backup/archive-discovery.test.js backup/offsite-unit.test.js backup/oss-adapter.test.js operations/offsite-state.test.js
+node --experimental-test-module-mocks --test --test-reporter=tap --test-name-pattern="B3A1 an injected reader|B3A1 normal cumulative|B3A1 genuine unit" backup/archive-checkpoint.test.js backup/offsite-unit.test.js
+```
+
+Use Node24.19.x, protected owned synthetic temp roots and runtime-only synthetic credentials.
+Tests must not use production selectors/data, real OSS or installed services. New-process
+recovery receives public offline trust and read-only anchor access over stdin, no producer
+directory/cache/locatorFile/private key. A controlled crash child exits before anchor record
+publication; pending state must block subsequent latest reads. No slot release or recovery
+material deletion is implemented. Node24.19.0 author evidence:42/42 distinct cases PASS,
+exit0. The corrected core run passed28/28; targeted follow-ups passed2/2,2/2 and3/3;
+the direct regression run passed12/12. Count repeats once:30 checkpoint cases plus1 real-unit
+integration plus11 direct regressions. The final3/3 follows the input-pointer snapshot/copy
+guard. Earlier comparator failures are superseded by passing affected-case reruns, not
+reported as passing executions. No full project or independent acceptance run was performed.
+
+Scoped npm test was attempted after JavaScript edits; npm is absent, so that process did
+not start. Direct Node focused results are separate evidence, never npm/full-regression
+or production anti-rollback evidence. [Contract](B3A1_TRUSTED_CHECKPOINT.md).
+
 ## B3-A0 focused synthetic discovery evidence (2026-10-22)
 
 ~~~text

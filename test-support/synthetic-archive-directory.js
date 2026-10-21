@@ -20,6 +20,13 @@ export function createSyntheticArchiveIssuer(args, { directoryId, storeId, ledge
   return Object.freeze({
     trustBytes: () => Buffer.from(bytes),
     expectedSha256: digest(bytes),
+    issueCheckpoint(payload) {
+      assertSyntheticBackupEncryption(args);
+      if (payload?.domain !== 'ktv-synthetic-archive-checkpoint' ||
+          canonical(payload.scope) !== canonical({ directoryId, storeId, ledgerId })) throw fail();
+      return Buffer.from(canonical({ payload: structuredClone(payload),
+        signature: sign(null, Buffer.from(canonical(payload)), privateKey).toString('base64') }));
+    },
     // The test controller approves B5 producer references; discovery never obtains this private key.
     issue({ locator, completion }) {
       const payload = { domain: 'ktv-synthetic-archive-entry', version: 1, algorithm: 'Ed25519',
