@@ -1,3 +1,33 @@
+## B5-A two-P2 repair focused evidence (2026-10-22)
+
+~~~text
+node --experimental-test-module-mocks --test --test-name-pattern="B5 P2|B5 RPO:|B5 state preserves|B5 normal immutable|B5 fail closed:|B5 duplicate submission|B5 conflicting object|B5 operational record failure|B5 synthetic adapter after-write|B5 release trust rejects|B5 C1 registration|B5 original resources/cache absent" backup/offsite-unit-parameters.test.js backup/offsite-unit.test.js operations/offsite-state.test.js
+node --experimental-test-module-mocks --test backup/offsite-unit-parameters.test.js
+~~~
+
+Node24.19.0 author evidence:24/24 distinct necessary focused cases, exit0. The parameter
+file was rechecked3/3 after a diagnostic-only boolean assertion adjustment; those are
+included in24, not added again. Explicit identityEnv reaches S4's env field; undefined
+preserves the existing real-interface default, and missing required field still rejects.
+These unit probes stop at the S4 call boundary, use no installed deployment resources and
+do not claim real SCM/ACL acceptance. Test diagnostics never serialize process.env.
+
+The exact128-reference integration records zero upload calls, original state/references/
+latest recovery point and RPO unchanged, overall OFFSITE_UNCONFIRMED plus stable
+reason=OFFSITE_REFERENCE_LIMIT. A remote exception bearing that code cannot impersonate
+the local state reason. Normal, duplicate/conflicting, timeout/unknown marker, state-record
+failure, registration failure, independent process retrieval and snapshot-age paths pass.
+No B2/B4/S4 implementation change or unrelated C0/full-project test rerun.
+
+Before repair, the new focused reproductions yielded2/5 (explicit env and both capacity
+reporting assertions failed); after repair the same minimal selection passed5/5. Those
+runs are evidence of the two original issues, not additional distinct cases.
+Owner's prior independent acceptance remains37/39 with two P2s; targeted independent
+reacceptance of this author repair awaits Owner authorization.
+npm test was attempted after JavaScript edits but npm is unavailable. No npm/full-project
+pass is claimed. No production resources, keys, enablement, merge, push or deployment.
+[Correction contract](B5A_SYNTHETIC_OFFSITE.md).
+
 ## B5-A focused synthetic offsite evidence (2026-10-21)
 
 ~~~text

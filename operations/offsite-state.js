@@ -6,7 +6,9 @@ export async function recordOffsiteFact(store, fact) {
   await store.update(s => {
     const state = s.observations.offsite ??= { attempts: {}, latestRecoveryPoint: null };
     const previous = state.attempts[fact.unitId];
-    if (!previous && Object.keys(state.attempts).length >= 128) throw fail();
+    if (!previous && Object.keys(state.attempts).length >= 128) {
+      throw Object.assign(Error('OFFSITE_REFERENCE_LIMIT'), { code: 'OFFSITE_REFERENCE_LIMIT' });
+    }
     // A repeat attempt cannot erase independently verified history or refresh its data time.
     if (previous && (previous.backupId !== fact.backupId || previous.snapshotNotBefore !== fact.snapshotNotBefore)) throw fail();
     const failures = (previous?.failures ?? 0) + (fact.status === 'OFFSITE_UNCONFIRMED' ? 1 : 0);

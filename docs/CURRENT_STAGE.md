@@ -1,3 +1,18 @@
+## B5-A two-P2 repair candidate (2026-10-22)
+
+Verified clean codex/b5-offsite-synthetic at b43adc6da43d624f68c561d5da07bee4e6fcb6b3;
+main/origin/main remain d845611a582e0b6f0135d153c6dc560e0b4e1f90.
+Owner-reported independent acceptance was FAIL,37/39 with two P2s; that evidence remains.
+This repair maps identityEnv to the unchanged S4 env parameter and preserves a stable
+OFFSITE_REFERENCE_LIMIT reason within OFFSITE_UNCONFIRMED. Capacity still stops before
+uploads, preserves all128 references and never changes the latest valid recovery point.
+No B2/B4/S4 implementation, automatic cleanup or production route changes.
+[Correction contract](B5A_SYNTHETIC_OFFSITE.md); author evidence in
+[Development environment](DEVELOPMENT_ENVIRONMENT.md):24/24 focused author cases passed. Targeted independent reacceptance
+awaits Owner authorization. No merge/push/deployment or B5-B.
+REAL OFFSITE STORAGE = NOT IMPLEMENTED; REAL CROSS-SERVER RESTORE = NOT VERIFIED;
+PRODUCTION OFFSITE BACKUP ENABLED / PRODUCTION READY = NO.
+
 ## B5-A synthetic offsite candidate (2026-10-21)
 
 Owner confirms B4-A/B/C1/C2 accepted and Git-closed. Verified clean main=origin/main=

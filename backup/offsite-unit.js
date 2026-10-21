@@ -108,7 +108,9 @@ export async function produceSyntheticOffsiteUnit(args, { keyBackup, releaseIden
   assertSyntheticBackupEncryption(args);
   try {
     if (!releaseIdentity || Object.keys(releaseIdentity).sort().join(',') !== 'config,configFile,identityEnv') throw fail();
-    const identity = copy(releaseIdentity), commit = await readBackupIdentity(identity);
+    const identity = copy(releaseIdentity), commit = await readBackupIdentity({
+      configFile: identity.configFile, config: identity.config, env: identity.identityEnv
+    });
     if (commit !== args.applicationCommit) throw fail();
     const artifact = await readAcceptedArtifact({ artifact: identity.config.releaseArtifactFile,
       expectedChecksum: identity.config.releaseArtifactChecksum, commit });
@@ -161,10 +163,18 @@ export async function publishSyntheticOffsiteUnit(args, { unit, writer, reader, 
   const completeBytes = Buffer.from(canonical(c)), completeDescriptor = descriptor('complete', c.unitId, completeBytes);
   const candidateLocator = { unitId: c.unitId, objectId: completeDescriptor.objectId, version: completeDescriptor.version,
     sha256: completeDescriptor.sha256, size: completeDescriptor.size };
-  let phase = 'LOCAL_VERIFIED', locator = null;
-  const save = async (status, point = null) => recordOffsiteFact(store, { unitId: c.unitId, backupId: c.backupId,
-    status, at: clockValue(clock)?.utcMs ?? null, snapshotNotBefore: c.snapshotNotBefore, locator: point,
-    objects: copy(c.objects), candidateLocator: copy(candidateLocator) });
+  let phase = 'LOCAL_VERIFIED', locator = null, referenceLimit = false;
+  const save = async (status, point = null) => {
+    try {
+      await recordOffsiteFact(store, { unitId: c.unitId, backupId: c.backupId,
+        status, at: clockValue(clock)?.utcMs ?? null, snapshotNotBefore: c.snapshotNotBefore, locator: point,
+        objects: copy(c.objects), candidateLocator: copy(candidateLocator) });
+    } catch (error) {
+      // Only the local state boundary can supply this nonsecret, stable reason.
+      if (error?.code === 'OFFSITE_REFERENCE_LIMIT') referenceLimit = true;
+      throw error;
+    }
+  };
   try {
     await save(phase);
     phase = 'UPLOAD_UNCONFIRMED'; await save(phase);
@@ -183,6 +193,7 @@ export async function publishSyntheticOffsiteUnit(args, { unit, writer, reader, 
   } catch {
     try { await save('OFFSITE_UNCONFIRMED'); } catch {}
     // A late remote commit is possible. Keep the stable unitId and all immutable objects for reconciliation.
-    return Object.freeze({ code: 'OFFSITE_UNCONFIRMED', unitId: c.unitId });
+    return Object.freeze({ code: 'OFFSITE_UNCONFIRMED', unitId: c.unitId,
+      ...(referenceLimit ? { reason: 'OFFSITE_REFERENCE_LIMIT' } : {}) });
   }
 }

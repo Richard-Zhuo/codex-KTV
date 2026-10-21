@@ -139,3 +139,26 @@ risks and B4 residue requirements remain; no secure-erasure guarantee is introdu
 
 Production offsite backup, encryption, scheduling and restore remain disabled. Stop after
 the author candidate; no automatic independent acceptance, merge, push, deploy or B5-B.
+
+## P2 parameter and capacity correction (2026-10-22)
+
+Owner-reported independent acceptance of b43adc6 found two P2s (37/39 tests passed).
+The repair stays on the same feature branch; it does not supersede those historical
+failures with a new independent acceptance claim.
+
+The producer maps releaseIdentity.identityEnv explicitly to readBackupIdentity's env
+parameter. An explicit environment is preserved independently of process.env. Supplying
+identityEnv: undefined retains S4's existing default behavior; the existing required
+identity field shape is unchanged. No S4 deployment, trust, ACL or authorization rule changes.
+
+The local state boundary throws the stable code OFFSITE_REFERENCE_LIMIT for a new unit at
+128 references. The publisher preserves code OFFSITE_UNCONFIRMED and adds only
+reason: OFFSITE_REFERENCE_LIMIT when that local boundary reports capacity. Remote errors
+cannot supply this reason. Capacity stops before any upload; no historical reference,
+latest recovery point, local-success result, retention limit or deletion policy is changed.
+No cleanup or expansion is introduced. Other failures keep their original sanitized result.
+
+Formal regression covers explicit/default/missing identity environment, exact capacity
+reason, zero uploads, unchanged128 references/RPO and remote reason impersonation.
+Author focused evidence is recorded in DEVELOPMENT_ENVIRONMENT.md; targeted independent
+reacceptance is pending Owner authorization. Production offsite backup/readiness remain NO.

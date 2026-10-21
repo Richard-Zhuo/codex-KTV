@@ -12,7 +12,7 @@ import { createSyntheticKeyRegistry, createSyntheticRecoveryAuthority } from '..
 import { createSyntheticOffsiteRemote } from '../test-support/synthetic-offsite-remote.js';
 import { createOperationalStore } from '../operations/store.js';
 import { acquireOperationalWriter } from '../operations/writer-lock.js';
-import { offsiteRpo } from '../operations/offsite-state.js';
+import { offsiteRpo, recordOffsiteFact } from '../operations/offsite-state.js';
 
 const approvals = new Map();
 mock.module('../production/backup-identity.js', { exports: { readBackupIdentity: async ({ configFile, config }) => {
@@ -284,4 +284,34 @@ test('B5 rejects hash-consistent but wrongly bound completion and unknown versio
     await assert.rejects(retrieveSyntheticOffsiteUnit(f.args, { reader: remote.reader,
       locator: { unitId: c.unitId, objectId, version: ack.version, sha256: digest(bytes), size: bytes.length } }));
   }
+}));
+
+test('B5 P2 capacity: full references return a stable reason with zero uploads and unchanged recovery point', async () => fixture(async f => {
+  for (let n = 0; n < 128; n++) await recordOffsiteFact(f.store, {
+    unitId: 'synthetic-retained-' + n, backupId: randomUUID(), at,
+    snapshotNotBefore: n === 0 ? at - 1000 : null,
+    status: n === 0 ? 'OFFSITE_VERIFIED' : 'UPLOAD_UNCONFIRMED',
+    locator: n === 0 ? { unitId: 'synthetic-retained-0' } : null
+  });
+  const before = f.store.read(), beforeRpo = offsiteRpo(before.observations, { utcMs: at, uncertaintyMs: 0 });
+  let uploads = 0;
+  const result = await f.publish({ writer: { putIfAbsent: input => {
+    uploads++; return f.remote.writer.putIfAbsent(input);
+  } } });
+  assert.equal(uploads, 0);
+  assert.equal(result.code, 'OFFSITE_UNCONFIRMED');
+  assert.equal(result.reason, 'OFFSITE_REFERENCE_LIMIT');
+  assert.equal(Object.keys(f.store.read().observations.offsite.attempts).length, 128);
+  assert.deepEqual(f.store.read(), before);
+  assert.deepEqual(offsiteRpo(f.store.read().observations, { utcMs: at, uncertaintyMs: 0 }), beforeRpo);
+  assert.deepEqual(await readdir(f.remoteRoot), []);
+  assert.equal(f.produced.localResult.complete, true);
+}));
+
+test('B5 P2 capacity: remote errors cannot impersonate the local reference limit', async () => fixture(async f => {
+  const result = await f.publish({ writer: { putIfAbsent: async () => {
+    throw Object.assign(Error('SYNTHETIC_REMOTE_PRIVATE_DETAIL'), { code: 'OFFSITE_REFERENCE_LIMIT' });
+  } } });
+  assert.deepEqual(result, { code: 'OFFSITE_UNCONFIRMED', unitId: f.produced.unit.unitId });
+  assert.equal(f.store.read().observations.offsite.latestRecoveryPoint, null);
 }));

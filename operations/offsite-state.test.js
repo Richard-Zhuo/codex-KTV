@@ -33,6 +33,8 @@ test('B5 state preserves references, rejects changed snapshot and bounds retaine
   await recordOffsiteFact(store, fact('a', 1000, 2000));
   await assert.rejects(recordOffsiteFact(store, fact('a', 999, 4000)));
   for (let n = 1; n < 128; n++) await recordOffsiteFact(store, fact('u' + n, null, 4000, 'UPLOAD_UNCONFIRMED'));
-  await assert.rejects(recordOffsiteFact(store, fact('overflow', null, 4000)));
+  const before = store.read();
+  await assert.rejects(recordOffsiteFact(store, fact('overflow', null, 4000)), { code: 'OFFSITE_REFERENCE_LIMIT' });
+  assert.deepEqual(store.read(), before);
   assert.equal(store.read().observations.offsite.latestRecoveryPoint.unitId, 'a');
 });

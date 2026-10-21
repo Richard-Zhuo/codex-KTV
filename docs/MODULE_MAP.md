@@ -9,6 +9,7 @@
 - test-support/synthetic-offsite-remote.js / offsite-retrieval-child.js: filesystem simulation,
   injected failures and clean-process retrieval plus existing authorized synthetic decryption.
 - backup/offsite-unit.test.js / operations/offsite-state.test.js: focused evidence.
+- backup/offsite-unit-parameters.test.js: explicit/default S4 environment handoff regression.
 [Contract](B5A_SYNTHETIC_OFFSITE.md). No production entry point.
 
 ## B4-C2 synthetic offline envelope
