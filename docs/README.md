@@ -1,3 +1,8 @@
+## B5-B1 OSS adapter candidate
+
+[Injected OSS create-only/exact-read adapter](B5B1_OSS_ADAPTER.md).
+Code and synthetic evidence only; no real OSS connection or production enablement.
+
 ## B5-A synthetic offsite candidate
 
 [Complete recovery unit, exact remote retrieval and RPO state](B5A_SYNTHETIC_OFFSITE.md).

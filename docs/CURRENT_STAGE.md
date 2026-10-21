@@ -1,3 +1,20 @@
+## B5-B1 OSS adapter author candidate (2026-10-22)
+
+Owner confirms B5-A ACCEPTED / MERGED / CLOSED. Verified clean main=origin/main=
+02adc3d9e8dba109f3f59a176b804fd06d2ec452 before creating codex/b5b-oss-adapter.
+The injected ali-oss-compatible adapter preserves B5-A SHA256 versions and publication,
+adds service-side forbid-overwrite, pre-write unversioned-Bucket check and independent
+readback/reconciliation. No B5-A/B4/S4/B2 runtime implementation or production entry changed.
+No new dependency or SDK installation. [Contract and evidence limits](B5B1_OSS_ADAPTER.md).
+
+Node24.19.0 focused author tests:59/59 PASS,exit0 (33 adapter,5 integration,21 direct
+regressions; the earlier33-case run is not added again). npm test was attempted but npm
+is unavailable; no npm/full-project evidence is claimed. No unresolved issue found in
+author checks; independent acceptance awaits Owner authorization.
+REAL OSS CONNECTION = NOT TESTED; REAL OSS ATOMICITY / WORM / IAM = NOT VERIFIED.
+B3 CAPACITY BLOCKER = YES; PRODUCTION OFFSITE BACKUP ENABLED / PRODUCTION READY = NO.
+No merge/push/deploy, real cloud resources, production credentials, B5-B2/B3/B6 work.
+
 ## B5-A two-P2 repair candidate (2026-10-22)
 
 Verified clean codex/b5-offsite-synthetic at b43adc6da43d624f68c561d5da07bee4e6fcb6b3;

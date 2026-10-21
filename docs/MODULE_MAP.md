@@ -1,3 +1,12 @@
+## B5-B1 injected OSS adapter
+
+- backup/oss-adapter.js: createOssOffsiteAdapter, optional create-only writer and independent
+  exact reader; existing synthetic admission, no production bootstrap.
+- backup/oss-adapter.test.js / test-support/mock-oss-client.js: isolated SDK parameter,
+  concurrency, conflict, timeout, checksum and secret-error tests.
+- backup/offsite-unit.test.js: direct OSS model integration with unchanged B5-A publication.
+- [Contract and SDK evidence](B5B1_OSS_ADAPTER.md); [focused command](DEVELOPMENT_ENVIRONMENT.md).
+
 ## B5-A synthetic offsite unit
 
 - backup/offsite-unit.js: trusted one-snapshot producer, S4 release retention, immutable unit

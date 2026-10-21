@@ -1,3 +1,11 @@
+## B5-B1 OSS adapter scope (2026-10-22)
+
+Owner selected OSS for adapter development only. Preserve B5-A's SHA256 version and
+completion/RPO contracts. Use service-side forbid-overwrite on a never-versioned Bucket,
+independent exact readback, restricted keys and sanitized failures. Synthetic-only injected
+clients; no new production dependency, credentials, cloud resources or enablement.
+[Minimal contract](B5B1_OSS_ADAPTER.md).
+
 ## B5-A synthetic complete recovery unit (2026-10-21)
 
 A genuine complete encrypted C1/B4 result must supply its exact confirmed encrypted-DEK

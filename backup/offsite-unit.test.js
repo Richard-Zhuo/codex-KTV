@@ -1,3 +1,5 @@
+import { createOssOffsiteAdapter } from './oss-adapter.js';
+import { mockOss } from '../test-support/mock-oss-client.js';
 import test, { mock } from 'node:test';
 import assert from 'node:assert/strict';
 import { generateKeyPairSync, createPublicKey, randomUUID } from 'node:crypto';
@@ -315,3 +317,42 @@ test('B5 P2 capacity: remote errors cannot impersonate the local reference limit
   assert.deepEqual(result, { code: 'OFFSITE_UNCONFIRMED', unitId: f.produced.unit.unitId });
   assert.equal(f.store.read().observations.offsite.latestRecoveryPoint, null);
 }));
+
+
+test('B5 OSS adapter integration: verified last marker and fresh exact retrieval', async () => fixture(async f => {
+  const remote = mockOss();
+  const adapter = createOssOffsiteAdapter(f.args, remote);
+  const result = await f.publish(adapter);
+  assert.equal(result.code, 'OFFSITE_VERIFIED');
+  assert.equal(f.produced.localResult.complete, true);
+  const puts = remote.events.filter(e => e.method === 'PUT');
+  assert.equal(puts.length, 5);
+  assert.ok(puts.at(-1).name.endsWith('.complete'));
+  assert.equal(remote.events.filter(e => e.method === 'GET').length, 14); // 5 writer reconciliations + original 9 independent reads.
+  const fresh = createOssOffsiteAdapter(f.args, { ...remote, writeClient: undefined });
+  const restored = await retrieveSyntheticOffsiteUnit(f.args, { reader: fresh.reader, locator: result.locator });
+  assert.equal(restored.completion.backupId, f.produced.unit.backupId);
+  assert.equal(remote.objects.size, 5);
+  assert.equal((await f.publish(adapter)).code, 'OFFSITE_VERIFIED');
+  assert.equal(remote.objects.size, 5);
+}));
+
+for (const fault of ['denied', 'unknown-unconfirmed', 'conflicting-marker', 'tampered-read']) {
+  test('B5 OSS adapter integration fails closed: ' + fault, async () => fixture(async f => {
+    const remote = mockOss({
+      beforePut: async () => {
+        if (fault === 'denied') throw Object.assign(Error('SYNTHETIC_PRIVATE_DETAIL'), { status: 403, code: 'AccessDenied' });
+        if (fault === 'unknown-unconfirmed') return new Promise(() => {});
+      },
+      changeGet: r => { if (fault === 'tampered-read') r.content[0] ^= 1; return r; }
+    });
+    if (fault === 'conflicting-marker') remote.objects.set(remote.prefix + f.produced.unit.unitId + '.complete', Buffer.from('SYNTHETIC-CONFLICT'));
+    const adapter = createOssOffsiteAdapter(f.args, { ...remote, timeoutMs: 15 });
+    const result = await f.publish(adapter);
+    assert.equal(result.code, 'OFFSITE_UNCONFIRMED');
+    assert.equal(f.produced.localResult.complete, true);
+    assert.equal(f.store.read().observations.offsite.latestRecoveryPoint, null);
+    if (fault === 'conflicting-marker') assert.equal(remote.objects.get(remote.prefix + f.produced.unit.unitId + '.complete').toString(), 'SYNTHETIC-CONFLICT');
+    else assert.equal(remote.objects.has(remote.prefix + f.produced.unit.unitId + '.complete'), false);
+  }));
+}

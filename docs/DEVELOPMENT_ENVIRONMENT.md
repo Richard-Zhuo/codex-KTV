@@ -1,3 +1,18 @@
+## B5-B1 OSS adapter focused author evidence (2026-10-22)
+
+~~~text
+node --experimental-test-module-mocks --test --test-name-pattern="OSS|B5 normal immutable|B5 fail closed:|B5 duplicate submission|B5 conflicting object|B5 operational record failure|B5 C1 registration|B5 P2|B5 RPO:|B5 state preserves" backup/oss-adapter.test.js backup/offsite-unit.test.js backup/offsite-unit-parameters.test.js operations/offsite-state.test.js
+~~~
+
+Node24.19.0:59/59 PASS,exit0.33 adapter cases +5 OSS-model/B5-A integrations +21 direct
+B5-A identity, publication, registration, capacity and RPO regressions. All resources are
+synthetic. The initial node --test child spawn was blocked by sandbox EPERM; the33-case
+in-process run passed, and the above authorized isolated run then passed all59. No security
+setting or assertion was relaxed. npm test was attempted and could not start because npm
+is not installed; this is direct Node focused evidence, not npm or a full-project run.
+Official ali-oss v6.23.0 source was inspected, not installed/executed against OSS.
+[SDK/header evidence and real acceptance gaps](B5B1_OSS_ADAPTER.md).
+
 ## B5-A two-P2 repair focused evidence (2026-10-22)
 
 ~~~text
