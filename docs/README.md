@@ -1,3 +1,8 @@
+## B5-A synthetic offsite candidate
+
+[Complete recovery unit, exact remote retrieval and RPO state](B5A_SYNTHETIC_OFFSITE.md).
+Synthetic only; no production/offsite-provider enablement. [Status](CURRENT_STAGE.md).
+
 ## B4-C2 synthetic offline public-key envelope candidate
 
 [Trusted release public-key policy and offline RSA adapters](B4C2_OFFLINE_ENVELOPE.md).

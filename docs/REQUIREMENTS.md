@@ -1,3 +1,14 @@
+## B5-A synthetic complete recovery unit (2026-10-21)
+
+A genuine complete encrypted C1/B4 result must supply its exact confirmed encrypted-DEK
+record, original manifest/checksum, S4-accepted release and conservative snapshot time.
+Create-only remote writes plus independent exact reads/hash/binding verification precede a
+last-published/read-back completion manifest; only then OFFSITE_VERIFIED. Unknown/partial/
+timeout/conflict fails closed without altering local success or overwriting valid objects.
+Newest verified snapshot lower bound controls RPO; revalidation/old completion cannot refresh
+its age. Synthetic only; no real cloud/IAM/delete protection or production enablement.
+[Contract and evidence limits](B5A_SYNTHETIC_OFFSITE.md).
+
 ## B4-C2 synthetic offline envelope contract (2026-10-21)
 
 Reuse C1 adapters/registration and B4-A/B format1/publication. Fresh per-backup DEK;

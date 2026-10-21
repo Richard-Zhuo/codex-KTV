@@ -1,10 +1,19 @@
 // B4-C1 composition only. No production entry point, cloud adapter or machine-bound secret.
 import { randomUUID } from 'node:crypto';
+import { readFile } from 'node:fs/promises';
+import { join } from 'node:path';
 import { encryptArtifact } from './encryption.js';
 import { runEncryptedBackup } from './encrypted-pipeline.js';
 import { assertSyntheticBackupEncryption } from './encryption-policy.js';
 import { canonical, digest } from './format.js';
 
+const recoveryMaterials = new WeakMap();
+// Nonsecret handoff only; arbitrary caller success objects cannot manufacture producer evidence.
+export function syntheticRecoveryMaterial(result) {
+  const value = recoveryMaterials.get(result);
+  if (!value) throw fail('BACKUP_KEY_MATERIAL_UNAVAILABLE');
+  return JSON.parse(canonical(value));
+}
 const fail = code => Object.assign(new Error(code), { code });
 const id = value => typeof value === 'string' && /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/.test(value);
 const wipe = value => { if (Buffer.isBuffer(value?.key)) value.key.fill(0); };
@@ -70,7 +79,7 @@ async function registeredSession(args, { keyId, checksum, keyService, registry, 
     if (!ack || ack.status !== 'CONFIRMED' || ack.keyId !== keyId || ack.registrationDigest !== registrationDigest) {
       throw fail('BACKUP_KEY_REGISTRATION_UNCONFIRMED');
     }
-    return { ...providerFor(binding, generated.key), registrationDigest };
+    return { ...providerFor(binding, generated.key), registrationDigest, record };
   } catch (error) { wipe(generated); throw error; }
 }
 
@@ -107,7 +116,7 @@ export async function runSyntheticKeyBackup(args, { stagingDirectory, keyService
   // This adapter deliberately accepts only the original snapshot creator as a test port.
   // Publication, authentication, record durability and cleanup remain B4-B's real implementations.
   if (Object.keys(ports).some(name => name !== 'create')) throw fail('BACKUP_KEY_CONFIGURATION_INVALID');
-  let registration = 'NOT_ATTEMPTED', session;
+  let registration = 'NOT_ATTEMPTED', session, manifestBytes;
   try {
     const result = await runEncryptedBackup(args, {
       encryption: { enabled: true, keyId, stagingDirectory },
@@ -120,8 +129,14 @@ export async function runSyntheticKeyBackup(args, { stagingDirectory, keyService
       if (session) throw fail('BACKUP_KEY_ACCESS_DENIED');
       session = await registeredSession(args, { keyId, checksum: input.expectedChecksum, keyService, registry, timeoutMs: limit });
       registration = 'CONFIRMED';
+      manifestBytes = await readFile(join(input.directory, 'manifest.json'), 'utf8');
+      if (Buffer.byteLength(manifestBytes) > 1024 * 1024 || digest(manifestBytes) !== input.expectedChecksum) throw fail('BACKUP_KEY_BINDING_INVALID');
       return encryptArtifact(input);
     } });
-    return Object.freeze({ ...result, keyId, keyRegistration: registration });
+    const delivered = Object.freeze({ ...result, keyId, keyRegistration: registration });
+    if (result.complete && result.resultRecorded && result.ciphertext === 'PUBLISHED' && result.plaintext === 'ABSENT' && registration === 'CONFIRMED') {
+      recoveryMaterials.set(delivered, { record: session.record, manifestBytes, manifest: JSON.parse(manifestBytes) });
+    }
+    return delivered;
   } finally { session?.close(); }
 }

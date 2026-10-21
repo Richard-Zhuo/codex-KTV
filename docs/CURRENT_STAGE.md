@@ -1,3 +1,18 @@
+## B5-A synthetic offsite candidate (2026-10-21)
+
+Owner confirms B4-A/B/C1/C2 accepted and Git-closed. Verified clean main=origin/main=
+d845611a582e0b6f0135d153c6dc560e0b4e1f90 before creating codex/b5-offsite-synthetic.
+B5-A composes the existing C1/B4 creator once, captures nonsecret confirmed envelope/manifest,
+retains the S4-pinned release, and independently verifies a create-only synthetic remote unit
+before its final completion marker and OFFSITE_VERIFIED operational fact. Local backup state
+is unchanged. Conservative snapshot-based RPO is separate; unknown clock remains UNKNOWN.
+[Contract and remaining risks](B5A_SYNTHETIC_OFFSITE.md). Author focused evidence is 43/43 distinct applicable cases in
+[Development environment](DEVELOPMENT_ENVIRONMENT.md); independent acceptance awaits Owner.
+REAL OFFSITE STORAGE is NOT IMPLEMENTED; real deletion protection and cross-server restore
+are NOT VERIFIED. PRODUCTION OFFSITE BACKUP ENABLED / PRODUCTION READY = NO.
+No provider, B5-B/B3/B6, merge/push/deployment or next-stage work. Older headings retain
+historical evidence and do not supersede this task or Owner acceptance decisions.
+
 ## B4-C2 synthetic offline envelope candidate (2026-10-21)
 
 Owner confirms B4-A/B4-B/C1 independently accepted and Git-closed. Verified clean

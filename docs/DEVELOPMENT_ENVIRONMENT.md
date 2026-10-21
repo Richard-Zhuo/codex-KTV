@@ -1,3 +1,31 @@
+## B5-A focused synthetic offsite evidence (2026-10-21)
+
+~~~text
+node --experimental-test-module-mocks --test backup/offsite-unit.test.js operations/offsite-state.test.js
+node --experimental-test-module-mocks --test --test-name-pattern="B5 remote getExact rejects|B5 original resources/cache absent|B5 rejects hash-consistent" backup/offsite-unit.test.js
+node --experimental-test-module-mocks --test --test-name-pattern="C1 real B4-B|C1 registration failure|C2 B4-B/C1 full publication|C2 unknown/failed registration|B4-B P2:" backup/key-session.test.js backup/offline-key-service.test.js backup/encrypted-pipeline.test.js
+~~~
+
+Node24.19.0, owned protected synthetic files only, ephemeral RSA keys, no database/cloud
+connection: final applicable evidence is 35/35 distinct B5 cases plus8/8 directly related
+C1/C2/B4-B cases =43/43. This is a combined targeted result, not a single full-suite run.
+The initial34-case B5 run had33 assertion passes and1 Windows EPERM while creating a
+privileged file symlink. The fixture now uses an unprivileged directory junction plus
+hard link to exercise the unchanged rejection contract; that case, strengthened fresh-process
+retrieval (independently persisted Owner locator) and one added hash-consistent semantic
+binding/version case passed3/3, exit0. Unaffected prior passes were retained. Selected
+C1/C2 publication/registration and B4-B pending/sync regressions passed8/8, exit0.
+
+No source security settings or system link privileges were changed. Real file-symlink
+creation privileges are not claimed. Test support cleanup removed only identified owned
+interrupted fixtures after checking exact paths, synthetic policy and dead process IDs.
+The new process independently reads all remote payloads and retained locator, then uses
+existing C1/C2 authorization/unwrap and original format1 validation. It does not install
+the retained release or perform a real database/server restore. Positive S4 tests use the
+existing Node test-only identity seam; real S4 implementation/production wiring is unchanged.
+The required npm test was attempted; npm is absent. No npm/full-project pass is claimed.
+[Contract and production limits](B5A_SYNTHETIC_OFFSITE.md). Independent acceptance is pending.
+
 ## B4-C2 synthetic public-key adapter verification (2026-10-21)
 
 ~~~text

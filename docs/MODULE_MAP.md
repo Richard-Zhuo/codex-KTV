@@ -1,3 +1,16 @@
+## B5-A synthetic offsite unit
+
+- backup/offsite-unit.js: trusted one-snapshot producer, S4 release retention, immutable unit
+  publication and independently retrievable pinned completion/materials.
+- backup/key-session.js: private successful-result nonsecret record/manifest handoff; original
+  provider/disposal/registration and B4 publication unchanged.
+- operations/offsite-state.js: existing-store offsite facts/references and conservative RPO;
+  no local backup/scheduler/incident behavior changes.
+- test-support/synthetic-offsite-remote.js / offsite-retrieval-child.js: filesystem simulation,
+  injected failures and clean-process retrieval plus existing authorized synthetic decryption.
+- backup/offsite-unit.test.js / operations/offsite-state.test.js: focused evidence.
+[Contract](B5A_SYNTHETIC_OFFSITE.md). No production entry point.
+
 ## B4-C2 synthetic offline envelope
 
 - backup/offline-key-service.js: S4-bound public generator, fixed OAEP/context and isolated
