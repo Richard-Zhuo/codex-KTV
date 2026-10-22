@@ -30,11 +30,21 @@ export function ossAcceptanceScope(value){
 export function ossAcceptancePayloads(runId){
   return ['A','B'].map(suffix=>Buffer.from('KTV_OSS_ACCEPTANCE_V1 '+runId+' '+suffix));
 }
+export async function confirmOssAcceptanceLocalRead(){
+  assertOssAcceptanceHost();
+  if(resolve(process.argv[1]??'')!==entry||process.argv.length!==3||process.argv[2]!=='--run-nonproduction'||
+    process.stdin.isTTY!==true||process.stdout.isTTY!==true)throw fail();
+  const phrase='READ PROTECTED LOCAL OSS CONFIG';
+  const terminal=createInterface({input:process.stdin,output:process.stdout});
+  let answer;try{answer=await terminal.question('Trusted administrator session required. No OSS authorization yet.\nType exactly: '+phrase+'\n> ');}
+  finally{terminal.close();}
+  assertOssAcceptanceHost();if(answer!==phrase)throw fail();
+}
 export async function authorizeOssAcceptance(scope){
   const config=ossAcceptanceScope(scope);
   // This is an explicit manual invocation, not a service/environment enablement flag.
-  if(resolve(process.argv[1]??'')!==entry||process.argv.length!==5||
-    process.argv[2]!=='--run-nonproduction'||process.argv[3]!=='--config-file'||
+  if(resolve(process.argv[1]??'')!==entry||process.argv.length!==3||
+    process.argv[2]!=='--run-nonproduction'||
     process.stdin.isTTY!==true||process.stdout.isTTY!==true)throw fail();
   const phrase='AUTHORIZE NONPRODUCTION OSS '+config.region+' '+config.bucket+' '+config.prefix;
   const terminal=createInterface({input:process.stdin,output:process.stdout});

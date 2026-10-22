@@ -1,55 +1,29 @@
 // Dedicated manual non-production probe; importing this file never executes it.
-import {open,lstat} from 'node:fs/promises';
-import {basename,dirname,isAbsolute,join,resolve,parse,relative,sep} from 'node:path';
+import {open} from 'node:fs/promises';
+import {join,resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
-import {readExternalSecret} from '../production/secret-file.js';
-import {windowsFileAcl} from '../production/runtime-config.js';
-import {validateSmokeAcl,windowsDirectoryAcl} from '../production/wecom-smoke-config.js';
-import {externalDirectory,digest} from './format.js';
-import {isOssAcceptanceLocalPath as localPath,guardOssAcceptanceFixedRoot} from './oss-acceptance-path.js';
+import {digest} from './format.js';
+import {OSS_ACCEPTANCE_ROOT,OSS_ACCEPTANCE_FILES,readOssAcceptanceFixed} from './oss-acceptance-path.js';
 import {createOssSdkAcceptanceBridge,validateOssSdkBridgeConfig} from './oss-sdk-bridge.js';
-import {authorizeOssAcceptance,assertOssAcceptanceHost,ossAcceptanceScope,ossAcceptancePayloads,OSS_ACCEPTANCE_LIMITS} from './oss-acceptance-authorization.js';
+import {authorizeOssAcceptance,confirmOssAcceptanceLocalRead,assertOssAcceptanceHost,ossAcceptanceScope,ossAcceptancePayloads,OSS_ACCEPTANCE_LIMITS} from './oss-acceptance-authorization.js';
 
 const fail=()=>Object.assign(Error('OSS_ACCEPTANCE_UNCONFIRMED'),{code:'OSS_ACCEPTANCE_UNCONFIRMED'});
 const keys=['configVersion','purpose','region','bucket','endpoint','prefix','readCredentialsFile','writeCredentialsFile','evidenceFile'];
-async function localDirectory(path){
-  if(!localPath(path))throw fail();
-  const guard=await guardOssAcceptanceFixedRoot(path); // No target FS access before DRIVE_FIXED.
-  const full=resolve(path),root=parse(full).root;let current=root;
-  await guard.checkComponent(root);
-  for(const part of relative(root,full).split(sep).filter(Boolean)){
-    current=join(current,part);await guard.checkComponent(current);
-    if((await lstat(current)).isSymbolicLink())throw fail();
-  }
-  return {directory:await externalDirectory(full),guard};
-}
-async function protectedJson(path){
-  if(!localPath(path))throw fail();
-  // Existing external/Git exclusion and Owner-only Windows ACL checks, no new secret store.
-  const {directory:parent,guard}=await localDirectory(dirname(path));
-  validateSmokeAcl(await windowsDirectoryAcl(parent),{directory:true});
-  const file=join(parent,basename(path));await guard.checkComponent(file);
-  const info=await lstat(file);
-  if(!info.isFile()||info.isSymbolicLink())throw fail();
-  validateSmokeAcl(await windowsFileAcl(file));
-  return readExternalSecret(file);
-}
 function acceptanceConfig(value){
   if(!value||typeof value!=='object'||Array.isArray(value)||Object.keys(value).length!==keys.length||
     keys.some(k=>!Object.hasOwn(value,k))||value.configVersion!==1||value.purpose!=='nonproduction-oss-acceptance'||
-    ['readCredentialsFile','writeCredentialsFile','evidenceFile'].some(k=>!localPath(value[k]))||
-    resolve(value.readCredentialsFile)===resolve(value.writeCredentialsFile))throw fail();
+    value.readCredentialsFile!==OSS_ACCEPTANCE_FILES.READ||value.writeCredentialsFile!==OSS_ACCEPTANCE_FILES.WRITE)throw fail();
   const scope=ossAcceptanceScope(Object.fromEntries(['region','bucket','endpoint','prefix'].map(k=>[k,value[k]])));
   validateOssSdkBridgeConfig(scope);
   const runId=scope.prefix.split('/')[1];
-  if(basename(value.evidenceFile)!=='oss-acceptance-'+runId+'.jsonl')throw fail();
+  if(value.evidenceFile!==join(OSS_ACCEPTANCE_ROOT,'oss-acceptance-'+runId+'.jsonl'))throw fail();
   return Object.freeze({...value,scope,runId});
 }
 async function openEvidence(config){
-  const {directory:parent}=await localDirectory(dirname(config.evidenceFile));
-  validateSmokeAcl(await windowsDirectoryAcl(parent),{directory:true});
-  // Exclusive create, canonical parent, fixed basename: never overwrite or clean up an old file.
-  return open(join(parent,basename(config.evidenceFile)),'wx',0o600);
+  await readOssAcceptanceFixed('ROOT');
+  // The root's validated ACL denies non-trusted replacement throughout the session.
+  // Exclusive creation cannot overwrite/follow an existing evidence entry.
+  return open(config.evidenceFile,'wx',0o600);
 }
 async function probes(adapter,runId,record){
   const [a,b]=ossAcceptancePayloads(runId);
@@ -92,9 +66,12 @@ export async function runOssAcceptance(argv=process.argv.slice(2)){
 }
 async function executeOssAcceptance(argv){
   assertOssAcceptanceHost();
-  if(argv.length!==3||argv[0]!=='--run-nonproduction'||argv[1]!=='--config-file'||!isAbsolute(argv[2]))throw fail();
-  const config=acceptanceConfig(await protectedJson(argv[2]));
+  if(argv.length!==1||argv[0]!=='--run-nonproduction')throw fail();
+  await confirmOssAcceptanceLocalRead(); // No supplied path or local target IO precedes this confirmation.
+  const config=acceptanceConfig(await readOssAcceptanceFixed('CONFIG'));
   const permit=await authorizeOssAcceptance(config.scope); // No cloud credentials loaded before consent.
+  const confirmed=acceptanceConfig(await readOssAcceptanceFixed('CONFIG'));
+  if(keys.some(key=>confirmed[key]!==config[key]))throw fail(); // Actual fixed config still matches the approved scope.
   const evidence=await openEvidence(config);
   let stage='CREDENTIALS';
   const record=async (next,outcome,extra={})=>{
@@ -105,8 +82,9 @@ async function executeOssAcceptance(argv){
   try{
     await record('SESSION','AUTHORIZED',{scope:config.scope,limits:OSS_ACCEPTANCE_LIMITS,sdkVersion:'6.23.0'});
     await record('CREDENTIALS','STARTED');
-    const readCredentials=await protectedJson(config.readCredentialsFile);
-    const writeCredentials=await protectedJson(config.writeCredentialsFile);
+    const readCredentials=await readOssAcceptanceFixed('READ');
+    const writeCredentials=await readOssAcceptanceFixed('WRITE');
+    if(JSON.stringify(ossAcceptanceScope(config.scope))!==JSON.stringify(config.scope))throw fail();
     const adapter=createOssSdkAcceptanceBridge(permit,{readCredentials,writeCredentials});
     const references=await probes(adapter,config.runId,record);
     await record('RESULT','PROBES_PASSED',{references,requests:adapter.observations()});

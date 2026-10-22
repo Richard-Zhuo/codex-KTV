@@ -12,7 +12,7 @@ import * as format from './format.js';
 import * as runtime from '../production/runtime-config.js';
 import * as smoke from '../production/wecom-smoke-config.js';
 
-const root=resolve('C:/SYNTHETIC-OSS-ACCEPTANCE'),runId='e7dd29ba-5a7a-4cb8-9625-f18d659e42ce';
+const root=resolve('C:/ProgramData/JbhhKtv/private/oss-acceptance'),runId='e7dd29ba-5a7a-4cb8-9625-f18d659e42ce';
 const configFile=join(root,'config.json'), readFile=join(root,'read.json'),writeFile=join(root,'write.json');
 const entry=fileURLToPath(new URL('./oss-acceptance.js',import.meta.url));
 const scope={region:'oss-cn-hangzhou',bucket:'ktv-oss-acceptance-synthetic',endpoint:'https://oss-cn-hangzhou.aliyuncs.com',prefix:'oss-acceptance/'+runId+'/'};
@@ -21,29 +21,33 @@ const credentials=role=>({accessKeyId:'SYNTHETIC_'+role,accessKeySecret:'SYNTHET
 const acl={current:'S-1-5-21-111-222-333-1001',owner:'S-1-5-21-111-222-333-1001',protected:true,rules:[{sid:'S-1-5-21-111-222-333-1001',type:'Allow',rights:197055,inheritance:'ObjectInherit'}]};
 let state={calls:[],reads:[],lines:[],pathEvents:[],nativeQueries:[]},network=0;
 for(const [owner,name] of [[dns,'lookup'],[http,'request'],[https,'request'],[net.Socket.prototype,'connect']])mock.method(owner,name,()=>{network++;throw Error('REAL_NETWORK_FORBIDDEN');});
-// Simulate only fixed native metadata queries; never query a real mapped drive.
+// Model the fixed native boundary; native policy/bindings have separate offline tests.
 const nativeExec=()=>{throw Error('UNEXPECTED_CALLBACK_EXEC');};
 nativeExec[promisify.custom]=async(executable,args,options)=>{
  assert.equal(executable,'C:/Windows/System32/WindowsPowerShell/v1.0/powershell.exe');
  assert.deepEqual(args.slice(0,3),['-NoProfile','-NonInteractive','-EncodedCommand']);
- assert.equal(options.windowsHide,true);assert.equal(options.timeout,5000);
+ assert.equal(options.windowsHide,true);assert.equal(options.timeout,10000);
  const script=Buffer.from(args[3],'base64').toString('utf16le');
- const encoded=script.match(/FromBase64String\('([A-Za-z0-9+/=]+)'\)/);
- assert.ok(encoded);const path=Buffer.from(encoded[1],'base64').toString('utf8');
- if(script.includes('# OSS_ACCEPTANCE_DRIVE')){
-  state.nativeQueries.push(path);assert.match(path,/^[A-Z]:\\$/);
-  assert.equal(script.includes("GetFileAttributesW').Invoke"),false);
-  if(state.driveFailure)throw Error('SYNTHETIC_PRIVATE_OS_ERROR');
-  if(state.driveOutput!==undefined)return {stdout:state.driveOutput,stderr:''};
-  return {stdout:'DRIVE:'+String(state.driveType??3)+':'+Buffer.from(state.device??'\\Device\\HarddiskVolume1','utf16le').toString('base64'),stderr:''};
+ const op=script.match(/Invoke-OssFixedRead '(CONFIG|READ|WRITE|ROOT)'$/)?.[1];assert.ok(op);
+ state.operations??=[];state.operations.push(op);state.nativeQueries.push('C:\\');
+ if(state.driveFailure||state.rootDenied||(state.driveType??3)!==3||state.device!==undefined||state.mode==='acl-denied')throw Error('SYNTHETIC_PRIVATE_ROOT_DENIED');
+ if(state.driveOutput!==undefined)return {stdout:state.driveOutput,stderr:''};
+ for(const path of ['C:\\','C:\\ProgramData','C:\\ProgramData\\JbhhKtv','C:\\ProgramData\\JbhhKtv\\private',root]){
+  state.pathEvents.push({op:'GetFileAttributesW',path});
+  if(state.reparseAt===path||state.componentFailure===path||state.attributes!==undefined||state.mode==='symlink')throw Error('SYNTHETIC_PRIVATE_REPARSE_DENIED');
+  state.pathEvents.push({op:'pinnedAcl',path});
  }
- assert.ok(script.includes('# OSS_ACCEPTANCE_COMPONENT'));
+ if(op==='ROOT')return {stdout:'ROOT_OK',stderr:''};
+ const path={CONFIG:configFile,READ:readFile,WRITE:writeFile}[op];
  state.pathEvents.push({op:'GetFileAttributesW',path});
- if(state.componentFailure===path)throw Error('SYNTHETIC_PRIVATE_ATTRIBUTE_ERROR');
- return {stdout:'ATTR:'+String(state.reparseAt===path?0x410:state.attributes??16),stderr:''};
+ if(state.reparseAt===path)throw Error('SYNTHETIC_PRIVATE_REPARSE_DENIED');
+ state.pathEvents.push({op:'pinnedFileRead',path});state.reads.push(path);
+ if(state.mode==='expired'&&op==='READ')state.clock+=300001;
+ const data=op==='CONFIG'?state.config:credentials(state.mode==='same-identity'?'SAME':op);
+ return {stdout:'DATA:'+Buffer.from(JSON.stringify(data)).toString('base64'),stderr:''};
 };
 mock.module('node:child_process',{exports:{...childProcess,execFile:nativeExec}});
-mock.module('node:readline/promises',{exports:{createInterface(){return {async question(prompt){state.prompts.push(prompt);return state.answer;},close(){}};}}});
+mock.module('node:readline/promises',{exports:{createInterface(){return {async question(prompt){state.prompts.push(prompt);if(state.mode==='scope-changed'&&prompt.includes('AUTHORIZE NONPRODUCTION OSS'))state.config.bucket='ktv-oss-acceptance-other';return prompt.includes('READ PROTECTED LOCAL OSS CONFIG')?state.localAnswer:state.answer;},close(){}};}}});
 mock.module('../production/secret-file.js',{exports:{async readExternalSecret(path){
  state.reads.push(path);
  if(path===configFile||path===state.alternateConfig)return structuredClone(state.config);
@@ -104,7 +108,7 @@ const auth=await import('./oss-acceptance-authorization.js');
 const bridge=await import('./oss-sdk-bridge.js');
 const cli=await import('./oss-acceptance.js');
 const importEvidence={calls:state.calls.length,reads:state.reads.length,target:state.pathEvents.length,native:state.nativeQueries.length,network};
-const command=['--run-nonproduction','--config-file',configFile];
+const command=['--run-nonproduction'];
 const envKeys=['NODE_ENV','KTV_HTTP_ENV','KTV_DEPLOYMENT_ENV','NODE_OPTIONS','NODE_DEBUG','NODE_DEBUG_NATIVE','DEBUG','NODE_TLS_REJECT_UNAUTHORIZED'];
 let previousEnv,previousArgv,inTTY,outTTY;
 beforeEach(()=>{
@@ -112,7 +116,7 @@ beforeEach(()=>{
  previousArgv=process.argv;process.argv=[process.execPath,entry,...command];
  inTTY=Object.getOwnPropertyDescriptor(process.stdin,'isTTY');outTTY=Object.getOwnPropertyDescriptor(process.stdout,'isTTY');
  Object.defineProperty(process.stdin,'isTTY',{value:true,configurable:true});Object.defineProperty(process.stdout,'isTTY',{value:true,configurable:true});
- state={config:config(),pathEvents:[],nativeQueries:[],calls:[],reads:[],lines:[],prompts:[],objects:new Map(),opened:0,closed:0,clock:Date.now(),answer:'AUTHORIZE NONPRODUCTION OSS '+scope.region+' '+scope.bucket+' '+scope.prefix};
+ state={config:config(),pathEvents:[],nativeQueries:[],calls:[],reads:[],lines:[],prompts:[],objects:new Map(),opened:0,closed:0,clock:Date.now(),localAnswer:'READ PROTECTED LOCAL OSS CONFIG',answer:'AUTHORIZE NONPRODUCTION OSS '+scope.region+' '+scope.bucket+' '+scope.prefix};
 });
 afterEach(()=>{
  process.argv=previousArgv;
@@ -129,7 +133,7 @@ test('B2B normal bounded manual session reuses real SDK, five conditional PUTs a
  assert.equal(result.code,'OSS_ACCEPTANCE_PROBES_PASSED');assert.equal(result.objectCount,2);
  assert.equal(state.objects.size,2);assert.equal(state.calls.length,18);
  assert.equal(state.calls.filter(c=>c.method==='PUT').length,5);
- assert.deepEqual(state.reads,[configFile,readFile,writeFile]);assert.equal(state.closed,1);
+ assert.deepEqual(state.reads,[configFile,configFile,readFile,writeFile]);assert.equal(state.closed,1);
  assert.equal(state.lines.at(-1).outcome,'PROBES_PASSED');
  assert.equal(state.calls.some(c=>c.method==='HEAD'),false);
 });
@@ -145,7 +149,7 @@ test('B2B wrong manual consent does not load credentials or send',async()=>{
  state.answer='yes';await rejected();assert.deepEqual(state.reads,[configFile]);assert.equal(state.opened,0);assert.equal(state.calls.length,0);
 });
 test('B2B noninteractive service cannot authorize even with flags and test env',async()=>{
- Object.defineProperty(process.stdin,'isTTY',{value:false,configurable:true});await rejected();assert.deepEqual(state.reads,[configFile]);assert.equal(state.calls.length,0);
+ Object.defineProperty(process.stdin,'isTTY',{value:false,configurable:true});await rejected();assert.deepEqual(state.reads,[]);assert.equal(state.calls.length,0);
 });
 test('B2B ordinary business import cannot mint authorization',async()=>{
  process.argv=[process.execPath,resolve('server.js'),...command];await assert.rejects(auth.authorizeOssAcceptance(scope));assert.equal(state.prompts.length,0);
@@ -225,7 +229,7 @@ test('B2B unreadable definite permission response cannot become unknown-write su
  state.mode='denied-body-error';await rejected();assert.deepEqual(state.calls.map(c=>c.method),['GET','PUT']);
 });
 test('B2B unknown config enablement flag is rejected before authorization or credentials',async()=>{
- state.config.allowNetwork=true;await rejected();assert.equal(state.prompts.length,0);assert.deepEqual(state.reads,[configFile]);assert.equal(state.calls.length,0);
+ state.config.allowNetwork=true;await rejected();assert.equal(state.prompts.length,1);assert.deepEqual(state.reads,[configFile]);assert.equal(state.calls.length,0);
 });
 
 for(const mode of ['conflict-denied','overwrite-race-only'])test('B2B expected conflict needs actual HTTP conflict evidence: '+mode,async()=>{
@@ -235,7 +239,7 @@ for(const mode of ['conflict-denied','overwrite-race-only'])test('B2B expected c
 
 test('B2B network/device paths are rejected before secret loading and consent',async()=>{
  state.config.readCredentialsFile='\\SYNTHETIC-SHARE\keys\read.json';await rejected();
- assert.deepEqual(state.reads,[configFile]);assert.equal(state.prompts.length,0);assert.equal(state.calls.length,0);
+ assert.deepEqual(state.reads,[configFile]);assert.equal(state.prompts.length,1);assert.equal(state.calls.length,0);
  state.reads=[];
  await assert.rejects(cli.runOssAcceptance(['--run-nonproduction','--config-file','\\SYNTHETIC-SHARE\config.json']));
  assert.equal(state.reads.length,0);
@@ -245,18 +249,18 @@ test('B2B path P2 REMOTE root rejects before target filesystem access',async()=>
  state.driveType=4;state.alternateConfig=String.raw`Z:\OwnerOssAcceptance\config.json`;state.answer='DENY';
  const args=['--run-nonproduction','--config-file',state.alternateConfig];process.argv=[process.execPath,entry,...args];
  await assert.rejects(cli.runOssAcceptance(args));
- assert.deepEqual(state.nativeQueries,['Z:\\']);assert.equal(state.pathEvents.length,0);assert.equal(state.reads.length,0);assert.equal(state.prompts.length,0);
+ assert.deepEqual(state.nativeQueries,[]);assert.equal(state.pathEvents.length,0);assert.equal(state.reads.length,0);assert.equal(state.prompts.length,0);
 });
 
 for(const driveType of [0,1,2,4,5,6,'UNKNOWN'])test('B2B path P2 non-fixed root has no target access: '+driveType,async()=>{
  state.driveType=driveType;await rejected();
  assert.deepEqual(state.nativeQueries,['C:\\']);assert.equal(state.pathEvents.length,0);
- assert.equal(state.reads.length,0);assert.equal(state.prompts.length,0);
+ assert.equal(state.reads.length,0);assert.equal(state.prompts.length,1);
 });
 for(const patch of [{driveFailure:true},{driveOutput:''},{driveOutput:'{}'},
  {driveOutput:'DRIVE:3:AAAA\nUNEXPECTED'},
  {device:'\\??\\C:\\alias'},{device:'\\Device\\Mup\\server'}])test('B2B path P2 uncertain native root fails before target access: '+JSON.stringify(patch),async()=>{
- Object.assign(state,patch);await rejected();assert.equal(state.pathEvents.length,0);assert.equal(state.reads.length,0);assert.equal(state.prompts.length,0);
+ Object.assign(state,patch);await rejected();assert.equal(state.pathEvents.length,0);assert.equal(state.reads.length,0);assert.equal(state.prompts.length,1);
 });
 for(const path of ['\\\\server\\share\\config.json','\\\\?\\C:\\config.json','\\\\.\\C:\\config.json',
  'C:config.json','\\config.json','config.json','C:\\..\\config.json','C:\\test\\config.json:secret',
@@ -267,21 +271,48 @@ for(const path of ['\\\\server\\share\\config.json','\\\\?\\C:\\config.json','\\
 for(const path of ['C:\\',root,configFile])test('B2B path P2 rejects native reparse before following component: '+path,async()=>{
  state.reparseAt=path;await rejected();
  assert.equal(state.pathEvents.at(-1).op,'GetFileAttributesW');assert.equal(state.pathEvents.at(-1).path,path);
- assert.equal(state.reads.length,0);assert.equal(state.prompts.length,0);assert.equal(state.calls.length,0);
+ assert.equal(state.reads.length,0);assert.equal(state.prompts.length,1);assert.equal(state.calls.length,0);
 });
 for(const attributes of [0xffffffff,-1,'UNKNOWN',null])test('B2B path P2 invalid component metadata rejects: '+attributes,async()=>{
  if(attributes===null)state.componentFailure='C:\\';else state.attributes=attributes;
- await rejected();assert.equal(state.reads.length,0);assert.equal(state.prompts.length,0);
+ await rejected();assert.equal(state.reads.length,0);assert.equal(state.prompts.length,1);
 });
 
 test('B2B path P2 fixed drive checks every component before local file access and retains ACL',async()=>{
  await cli.runOssAcceptance(command);
  assert.ok(state.nativeQueries.length>0);assert.ok(state.nativeQueries.every(p=>p==='C:\\'));
- for(const path of [root,configFile,readFile,writeFile]){
+ for(const path of [configFile,readFile,writeFile]){
   const attrs=state.pathEvents.findIndex(e=>e.op==='GetFileAttributesW'&&e.path===path);
-  const access=state.pathEvents.findIndex(e=>e.op==='lstat'&&e.path===path);
+  const access=state.pathEvents.findIndex(e=>e.op==='pinnedFileRead'&&e.path===path);
   assert.ok(attrs>=0&&access>attrs);
  }
- assert.ok(state.pathEvents.some(e=>e.op==='fileAcl'&&e.path===configFile));
- assert.ok(state.pathEvents.some(e=>e.op==='directoryAcl'&&e.path===root));
+ assert.ok(state.pathEvents.some(e=>e.op==='pinnedAcl'&&e.path===root));
+ assert.equal(state.pathEvents.some(e=>e.op==='lstat'||e.op==='externalDirectory'||e.op==='fileAcl'),false);
+});
+
+test('fixed-root local consent denial has zero target accesses',async()=>{
+ state.localAnswer='DENY';await rejected();assert.equal(state.nativeQueries.length,0);assert.equal(state.reads.length,0);assert.equal(state.calls.length,0);
+});
+test('fixed-root missing/untrusted bootstrap denies before data and network consent',async()=>{
+ state.rootDenied=true;await rejected();assert.deepEqual(state.operations,['CONFIG']);assert.equal(state.reads.length,0);assert.equal(state.pathEvents.length,0);assert.equal(state.prompts.length,1);
+});
+for(const field of ['readCredentialsFile','writeCredentialsFile','evidenceFile'])test('fixed-root config cannot redirect '+field,async()=>{
+ state.config[field]='Z:\\untrusted\\file.json';await rejected();assert.deepEqual(state.reads,[configFile]);assert.deepEqual(state.operations,['CONFIG']);assert.equal(state.calls.length,0);
+});
+test('fixed-root original ancestor replacement path is refused before any target lookup',async()=>{
+ const args=['--run-nonproduction','--config-file','C:\\UNTRUSTED\\OwnerOssAcceptance\\config.json'];process.argv=[process.execPath,entry,...args];
+ await assert.rejects(cli.runOssAcceptance(args));assert.equal(state.nativeQueries.length,0);assert.equal(state.pathEvents.length,0);assert.equal(state.prompts.length,0);
+});
+test('fixed-root successful session binds fixed files and two independent confirmations',async()=>{
+ assert.equal((await cli.runOssAcceptance(command)).code,'OSS_ACCEPTANCE_PROBES_PASSED');
+ assert.deepEqual(state.operations,['CONFIG','CONFIG','ROOT','READ','WRITE']);assert.equal(state.prompts.length,2);
+ assert.ok(state.prompts[0].includes('READ PROTECTED LOCAL OSS CONFIG'));assert.ok(state.prompts[1].includes(scope.bucket));
+});
+
+for(const output of ['ROOT_OK','DATA:!!!!','DATA:'+Buffer.from([0xff]).toString('base64'),'DATA:'+Buffer.alloc(65537).toString('base64')])test('fixed-root invalid native data response denies without secret logging '+output.slice(0,12),async()=>{
+ state.driveOutput=output;await rejected();assert.equal(state.calls.length,0);assert.equal(state.prompts.length,1);assert.equal(state.reads.length,0);
+});
+
+test('fixed-root actual config changed after scope consent is refused before evidence, credentials or OSS',async()=>{
+ state.mode='scope-changed';await rejected();assert.deepEqual(state.operations,['CONFIG','CONFIG']);assert.equal(state.calls.length,0);assert.equal(state.opened,0);assert.equal(state.prompts.length,2);
 });
