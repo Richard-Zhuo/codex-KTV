@@ -9,6 +9,9 @@ import { offlineOssTransport } from './oss-sdk-offline-transport.js';
 const require = createRequire(import.meta.url);
 const sdkRequire = createRequire(require.resolve('ali-oss'));
 const sdkDebug = sdkRequire('debug');
+// Reuse the locked SDK's own XML lexer; no new parser dependency or vendor patch.
+const sdkXmlRequire = createRequire(sdkRequire.resolve('xml2js'));
+const sdkXml = sdkXmlRequire('sax');
 export const OSS_SDK_VERSION = '6.23.0';
 const rejected = () => Object.assign(Error('OSS_SDK_BRIDGE_REJECTED'), { code: 'OSS_SDK_BRIDGE_REJECTED' });
 const fields = (v, required, optional = []) => v && typeof v === 'object' && !Array.isArray(v) &&
@@ -33,6 +36,34 @@ function credential(value) {
         typeof value[k] !== 'string' || !value[k].length || value[k].length > 4096 || value[k].trim() !== value[k] || /[\r\n]/.test(value[k]))) throw rejected();
   return { ...value };
 }
+// Preserve schema evidence BEFORE ali-oss parseXML discards the root element.
+function versionResponseEvidence(raw) {
+  if (!Buffer.isBuffer(raw) || raw.length < 1 || raw.length > 8192) throw rejected();
+  const bytes = Buffer.from(raw), text = bytes.toString('utf8');
+  if (!Buffer.from(text, 'utf8').equals(bytes)) throw rejected();
+  let depth = 0, roots = 0, statusSeen = false, status = '';
+  const parser = sdkXml.parser(true, { strictEntities: true });
+  parser.onopentag = node => {
+    depth++;
+    if (depth === 1) {
+      if (++roots !== 1 || node.name !== 'VersioningConfiguration' ||
+          Object.entries(node.attributes).some(([k,v]) => k !== 'xmlns' || v !== 'http://doc.oss-cn-hangzhou.aliyuncs.com')) throw rejected();
+    } else if (depth === 2) {
+      if (node.name !== 'Status' || statusSeen || Object.keys(node.attributes).length) throw rejected();
+      statusSeen = true;
+    } else { throw rejected(); }
+  };
+  parser.onclosetag = () => { depth--; };
+  parser.ontext = parser.oncdata = value => {
+    if (depth === 2) status += value;
+    else if (value.trim()) throw rejected();
+  };
+  parser.ondoctype = parser.onerror = () => { throw rejected(); };
+  parser.onprocessinginstruction = value => { if (value.name !== 'xml' || roots) throw rejected(); };
+  parser.write(text).close();
+  if (roots !== 1 || depth !== 0 || statusSeen && !['Enabled','Suspended'].includes(status)) throw rejected();
+  return { bytes, status: statusSeen ? status : undefined }; // Absence requires a validated empty root.
+}
 function client(config, supplied) {
   hostCheck();
   const sdk = new OSS({ ...credential(supplied), region: config.region, endpoint: config.endpoint,
@@ -43,6 +74,19 @@ function client(config, supplied) {
       sdk.options.region !== config.region || sdk.options.bucket !== config.bucket ||
       sdk.options.endpoint.protocol !== 'https:' || sdk.options.endpoint.hostname !== config.region + '.aliyuncs.com' ||
       sdk.urllib !== offlineOssTransport) throw rejected();
+  const request = sdk.request.bind(sdk);
+  sdk.request = async params => {
+    if (params.subres !== 'versioning') return request(params);
+    if (params.method !== 'GET' || params.bucket !== config.bucket || params.xmlResponse !== true || params.object !== undefined) throw rejected();
+    // Keep the actual SDK signing, transport, HTTP-status/error handling and final parser.
+    // Disable only its lossy eager XML conversion for this private GET, never other calls.
+    const result = await request({ ...params, xmlResponse: false });
+    if (result.status !== 200) throw rejected();
+    const evidence = versionResponseEvidence(result.data);
+    const data = await sdk.parseXML(evidence.bytes);
+    if (data?.Status !== evidence.status) throw rejected();
+    return { ...result, data };
+  };
   return sdk;
 }
 // Non-sensitive format/client-contract check only. Does NOT load supplied/environment credentials,

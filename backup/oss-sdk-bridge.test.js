@@ -15,6 +15,7 @@ const sink = { async request(url, p) {
   if (parsed.searchParams.has('versioning')) {
     if (state.mode === 'query-denied') return xmlError(403, 'AccessDenied');
     if (state.mode === 'query-malformed') return response(200, '<invalid');
+    if (state.versionXml !== undefined) return response(200, state.versionXml);
     return response(200, '<VersioningConfiguration>' + (state.versionStatus === undefined ? '' : '<Status>' + state.versionStatus + '</Status>') + '</VersioningConfiguration>');
   }
   const key = parsed.pathname;
@@ -159,4 +160,37 @@ test('B2A committed unknown write with denied verification stays unconfirmed', a
   await assert.rejects(adapter.writer.putIfAbsent(input()), safe);
   assert.equal(state.objects.size, 1);
   assert.deepEqual(state.events.map(e => e.method), ['GET','PUT','GET']);
+});
+
+// P2: exercise raw HTTP XML through the actual locked SDK, not a pre-normalized status stub.
+for (const [label, xml] of [
+  ['bare empty', '<VersioningConfiguration/>'],
+  ['namespace empty', '<?xml version="1.0" encoding="UTF-8"?><VersioningConfiguration xmlns="http://doc.oss-cn-hangzhou.aliyuncs.com"/>'],
+  ['whitespace empty', '<VersioningConfiguration> \n </VersioningConfiguration>']
+]) test('B2A P2 proven unversioned response permits conditional PUT: ' + label, async () => {
+  const {adapter}=setup(); state.versionXml=xml; const data=input();
+  assert.equal((await adapter.writer.putIfAbsent(data)).version,digest(data.bytes));
+  assert.deepEqual(state.events.map(e=>e.method),['GET','PUT','GET']);
+  assert.equal(state.events[1].headers['x-oss-forbid-overwrite'],'true');
+});
+for (const [label, xml] of [
+  ['original unknown root','<UnexpectedResponse/>'],
+  ['wrong root with known status','<UnexpectedResponse><Status>Enabled</Status></UnexpectedResponse>'],
+  ['empty response',''], ['whitespace response',' \n '], ['not XML','not xml'],
+  ['truncated XML','<VersioningConfiguration'],
+  ['extra member','<VersioningConfiguration><Unexpected/></VersioningConfiguration>'],
+  ['root text','<VersioningConfiguration>unexpected</VersioningConfiguration>'],
+  ['empty Status','<VersioningConfiguration><Status/></VersioningConfiguration>'],
+  ['nested Status','<VersioningConfiguration><Status><Unexpected/></Status></VersioningConfiguration>'],
+  ['duplicate Status','<VersioningConfiguration><Status>Enabled</Status><Status>Suspended</Status></VersioningConfiguration>'],
+  ['unknown attribute','<VersioningConfiguration unexpected="true"/>'],
+  ['wrong namespace','<VersioningConfiguration xmlns="urn:unexpected"/>'],
+  ['multiple roots','<VersioningConfiguration/><UnexpectedResponse/>'],
+  ['unknown status','<VersioningConfiguration><Status>Unknown</Status></VersioningConfiguration>'],
+  ['doctype','<!DOCTYPE VersioningConfiguration><VersioningConfiguration/>']
+]) test('B2A P2 unproven version response rejects with PUT=0: ' + label, async () => {
+  const {adapter}=setup(); state.versionXml=xml;
+  await assert.rejects(adapter.writer.putIfAbsent(input()),safe);
+  assert.equal(state.events.filter(e=>e.method==='PUT').length,0); assert.equal(state.objects.size,0);
+  assert.deepEqual(state.events.map(e=>e.method),['GET']);
 });
