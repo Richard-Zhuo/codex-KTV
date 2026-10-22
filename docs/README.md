@@ -1,3 +1,8 @@
+## B5-B2A offline official OSS SDK bridge candidate
+
+[Locked official SDK, non-sensitive validate-only and fixed disabled transport](B5B2A_OSS_SDK_BRIDGE.md).
+No real OSS test, credential loading or production enablement. [Current evidence](CURRENT_STAGE.md).
+
 ## B3-A2 synthetic safe handoff candidate
 
 [Branded isolated store, durable handoff receipts and conditional slot release](B3A2_SAFE_HANDOFF.md).

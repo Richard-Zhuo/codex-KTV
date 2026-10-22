@@ -1,3 +1,11 @@
+## B5-B2A SDK bridge boundary (2026-10-22)
+
+Use the locked official ali-oss SDK behind the unchanged B1 adapter. Explicit HTTPS/V4,
+separate clients, zero SDK retries and B1 versioning/forbid-overwrite/SHA256/readback contracts.
+Provide non-sensitive offline validation; keep live transport unconditionally disabled,
+synthetic admission/production rejection and secret-free results. No B3/B4/B5 semantic,
+128-cap, physical deletion, IAM/WORM or production change. [Contract](B5B2A_OSS_SDK_BRIDGE.md).
+
 ## B3-A2 synthetic safe handoff (2026-10-22)
 
 Only a dedicated, privately branded protected synthetic operational-store fixture may

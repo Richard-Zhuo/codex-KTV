@@ -1,3 +1,11 @@
+## B5-B2A official SDK bridge (offline)
+
+- backup/oss-sdk-bridge.js: locked SDK construction/config validation and original B1 reuse.
+- backup/oss-sdk-offline-transport.js: unconditional network rejection, no enablement option.
+- backup/oss-sdk-validate.js: non-sensitive stdin validate-only CLI, never sends SDK requests.
+- backup/oss-sdk-bridge.test.js / backup/oss-sdk-offline.test.js: real SDK to mock transport,
+  headers/signature/errors and default network/CLI isolation. [Contract](B5B2A_OSS_SDK_BRIDGE.md).
+
 ## B3-A2 synthetic safe handoff
 
 - test-support/synthetic-safe-handoff.js: exclusively created/reopened isolated store capability,

@@ -1,3 +1,11 @@
+## B5-B2A SDK boundary
+
+The pinned official SDK constructs/signs requests for B1; existing adapter semantics and B5
+success gates remain unchanged. A fixed disabled transport prevents actual networking;
+only explicit test-module replacement connects the SDK to an in-memory model. There is no
+runtime credential loader, transport override, live CLI or production wiring. Independent
+read/write clients and actual-host guards remain mandatory. [Contract](B5B2A_OSS_SDK_BRIDGE.md).
+
 ## B3-A2 synthetic reference handoff boundary
 
 Release authority exists only for a protected newly created synthetic instance of the original

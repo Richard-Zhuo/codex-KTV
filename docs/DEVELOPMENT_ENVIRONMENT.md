@@ -1,3 +1,30 @@
+## B5-B2A offline SDK bridge focused evidence (2026-10-22)
+
+Use the repository's pnpm and pnpm-lock.yaml; ali-oss is an exact6.23.0 dependency. Owner
+explicitly authorized this SDK dependency. Installation used pnpm add --save-exact
+ali-oss@6.23.0 --ignore-scripts; no package-manager upgrade or package install script ran.
+Node24.19.0 evidence, no true credentials/network/production resources:
+
+~~~powershell
+node --experimental-test-module-mocks --test backup/oss-sdk-bridge.test.js backup/oss-sdk-offline.test.js backup/oss-adapter.test.js
+node --experimental-test-module-mocks --test --test-name-pattern='B5 OSS adapter integration|B5 P2 capacity: full|B5 RPO:' backup/offsite-unit.test.js operations/offsite-state.test.js
+~~~
+
+Final groups64/64 and8/8,exit0:72 distinct necessary cases. No full project regression or
+independent acceptance. The new tests pass actual ali-oss constructors/signers/request/error
+parsers through an in-memory transport MODULE mock; the original adapter remains unchanged.
+Separate tests use the real disabled transport and trap socket/DNS APIs, plus stdin-only
+validate CLI children. These cannot prove real OSS atomicity, TLS, IAM or protection.
+Current preliminary/final evidence and the corrected SDK-null assertion: CURRENT_STAGE.md.
+
+Scoped npm test was attempted with only those bridge/B1 files, but npm is not installed
+(The term 'npm' is not recognized); it did not start. Do not report npm test/full-regression
+success. pnpm audit --prod returned no known vulnerabilities, a time-specific metadata result.
+
+For the no-network, non-sensitive validation command and config schema see
+[B5-B2A contract](B5B2A_OSS_SDK_BRIDGE.md). No connect/upload/download/delete CLI exists.
+No production/cloud acceptance or enablement follows from this evidence.
+
 ## B3-A2 focused synthetic handoff evidence (2026-10-22)
 
 Use Node24.19.x, original protected owned synthetic fixtures and runtime-only keys/tokens.

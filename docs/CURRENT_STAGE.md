@@ -1,3 +1,30 @@
+## B5-B2A offline OSS SDK bridge author candidate (2026-10-22)
+
+Owner confirms B3-A0/A1/A2 accepted/merged/closed. Verified clean HEAD=main=origin/main=
+8bd4542cf97a2df1a26ffd4347946d71a12b3252 before creating codex/b5-b2-real-oss-bridge.
+Locked official ali-oss6.23.0 with existing pnpm/lockfile (installation scripts disabled).
+Added only explicit HTTPS/V4 separate SDK clients, original B1 adapter reuse, fixed disabled
+transport and non-sensitive validate-only CLI. No original B3/B4/B5/S4 implementation or
+128-cap, success/RPO, production bootstrap, cloud configuration or deletion change.
+[Contract and limits](B5B2A_OSS_SDK_BRIDGE.md).
+
+Author Node24.19.0 focused evidence:72/72 distinct cases PASS,exit0. Final groups64/64
+(31 new bridge/offline cases +33 existing B1 cases) and8/8 direct B5 publication/failure,
+capacity/RPO regressions. A preliminary63-case run had one new-test assertion mismatch:
+the real SDK uses null for an absent GET output stream, while the new assertion expected
+undefined. Corrected the nullable absence assertion; the final affected group passed64/64,
+including one extra failed-verification case. Repeat cases are not added to the total.
+The default compiled transport's DNS/socket trap observed0 calls. Mock SDK transport events
+are in memory only; no real OSS request or real credential was used. pnpm audit --prod
+reported no known vulnerabilities at this time; that is not a security/production guarantee.
+Scoped npm test was attempted but npm is absent; direct Node evidence is separate.
+Author self-check P0/P1/P2=0/0/0. Independent acceptance awaits new Owner authorization.
+
+Real OSS server atomicity/TLS/IAM/WORM and independent trust custody remain unverified/
+unimplemented. Live transport/test mode, production encryption/backup/restore/slot release
+and readiness remain disabled. No automatic independent acceptance, merge/push/deploy or
+next phase. READY FOR REAL-OSS TEST=NO; PRODUCTION READY=NO.
+
 ## B3-A2 synthetic safe handoff author candidate (2026-10-22)
 
 Owner confirms B3-A0/A1 accepted, merged and closed. Verified clean main=origin/main=
