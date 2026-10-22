@@ -1,3 +1,12 @@
+## B5-B2B manual non-production OSS probe (2026-10-23)
+
+Reuse B1/B2A behind a dedicated interactive Owner-authorized session. Default/offline and
+validate-only stay credential-free/offline. Pin the non-production Bucket/Region/prefix,
+separate identities, fixed synthetic bodies, two objects/1KiB/five PUTs/24 requests, no
+DELETE/protection API, strict SDK contract, exact readback and sanitized durable evidence.
+No production state/128-cap/RPO change; real execution awaits independent review and fresh
+Owner authorization. [Contract](B5B2B_OSS_ACCEPTANCE.md).
+
 ## B5-B2A SDK bridge boundary (2026-10-22)
 
 Use the locked official ali-oss SDK behind the unchanged B1 adapter. Explicit HTTPS/V4,

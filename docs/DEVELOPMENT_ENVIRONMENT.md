@@ -1,3 +1,26 @@
+## B5-B2B offline acceptance entry evidence (2026-10-23)
+
+Use Node24.19.0 and the already locked ali-oss6.23.0. No install/new dependency or real
+credentials, filesystem credential reads, OSS requests or cloud resources are involved.
+The new test uses actual SDK/B1 code with mock operator files/ACL/terminal/evidence and
+bounded in-memory HTTP streams; the original offline suite also traps DNS/socket APIs.
+
+~~~powershell
+node --experimental-test-module-mocks --test --test-name-pattern='B2B|B2A real SDK|B2A read-only|B2A configuration|B2A validate-only|B2A production|B2A committed|B2A P2 proven|original unknown root|original invalid declaration|B2A XML same-bytes|B2A XML parser|B2A default compiled' backup/oss-acceptance.test.js backup/oss-sdk-bridge.test.js backup/oss-sdk-offline.test.js
+~~~
+
+Final72/72 PASS,exit0:34 new entry cases and38 directly affected bridge/offline regressions;
+repeat runs are counted once. Covers manual authority, non-production scope, dual identities,
+fixed bodies/keys/request limits, permission and unknown results, same-bytes version admission,
+conflicts/concurrency, exact read, evidence sanitization/failure and original default禁网.
+Early query/stream-metadata integration failures are superseded by passing final runs.
+No full project or independent acceptance run was performed.
+
+Scoped npm test was attempted after JavaScript edits but npm is not installed, so it did
+not start. Direct Node focused evidence is not npm/full-regression or true OSS acceptance.
+[Future-only manual entry/config/stop gates](B5B2B_OSS_ACCEPTANCE.md). Do not run the network
+entry without independent acceptance and a new Owner real-OSS authorization.
+
 ## B5-B2A offline SDK bridge focused evidence (2026-10-22)
 
 Use the repository's pnpm and pnpm-lock.yaml; ali-oss is an exact6.23.0 dependency. Owner

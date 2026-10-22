@@ -1,3 +1,11 @@
+## B5-B2B manual OSS acceptance seam
+
+- backup/oss-acceptance.js: protected operator files, fixed probe sequence and exclusive evidence.
+- backup/oss-acceptance-authorization.js: terminal consent, one-use scoped permit and bounded transport.
+- backup/oss-sdk-bridge.js: shared private SDK construction; original offline factory stays offline.
+- backup/oss-acceptance.test.js: mock operator/files/HTTP stream and actual SDK offline evidence.
+- [Contract and future-only command](B5B2B_OSS_ACCEPTANCE.md). No real-OSS authorization yet.
+
 ## B5-B2A official SDK bridge (offline)
 
 - backup/oss-sdk-bridge.js: locked SDK construction/config validation and original B1 reuse.

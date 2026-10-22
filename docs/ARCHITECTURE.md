@@ -1,3 +1,11 @@
+## B5-B2B operator-only OSS probe boundary
+
+Dedicated interactive non-production entry -> opaque scoped one-use permit -> original
+B2A SDK initialization -> unchanged B1 create-only/exact-read adapter. A restricted SDK
+transport permits only fixed synthetic keys/bodies, bounded requests and exact readback;
+it cannot update backup operational state or production activation. Original offline factory
+and validate-only never select this transport. [Contract](B5B2B_OSS_ACCEPTANCE.md).
+
 ## B5-B2A SDK boundary
 
 The pinned official SDK constructs/signs requests for B1; existing adapter semantics and B5

@@ -1,3 +1,8 @@
+## B5-B2B manual non-production OSS acceptance candidate
+
+[Bounded manual approval, existing SDK reuse and sanitized evidence](B5B2B_OSS_ACCEPTANCE.md).
+Offline author verification only; independent security acceptance and real-OSS authorization pending.
+
 ## B5-B2A offline official OSS SDK bridge candidate
 
 [Locked official SDK, non-sensitive validate-only and fixed disabled transport](B5B2A_OSS_SDK_BRIDGE.md).

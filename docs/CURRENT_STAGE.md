@@ -1,3 +1,31 @@
+## B5-B2B manual non-production OSS acceptance candidate (2026-10-23)
+
+Verified clean main=origin/main=427c8bdd9ca6335cd78a41f49121e1ae7a263f2d before creating
+codex/b5-b2-real-oss-harness. B2A already supplied fixed offline SDK construction, dual
+identities, versioning/conditional PUT/exact read and unknown-result checks; it had no
+manual real-network authority or bounded acceptance session. Added only that entry,
+one-use scope permit, protected external operator files and exclusive sanitized evidence,
+reusing the original B1 adapter and private B2A constructor. No second backup/state system.
+[Contract, scope and future-only invocation](B5B2B_OSS_ACCEPTANCE.md).
+
+Author Node24.19.0 focused gate:72/72 distinct cases PASS,exit0 (34 new entry cases plus
+38 directly affected existing SDK/offline cases). Actual ali-oss6.23.0 signing, parsing and
+B1 behavior run with mocked terminal, credential files/ACL/evidence and in-memory HTTP streams;
+DNS/socket traps observed0 real requests. This is offline author verification, not independent
+acceptance, real Windows ACL/terminal acceptance, OSS atomicity or real IAM/WORM evidence.
+An early run exposed integration mismatches in SDK query serialization (?versioning=) and
+streamed response metadata (statusCode vs SDK res.status). Both are corrected in the final
+boundary; final affected cases passed. The focused npm test attempt did not start because
+npm is unavailable; direct Node evidence is separate. No full project regression was run.
+
+Author remaining P0/P1/P2=0/0/0. The default offline factory and validate-only still cannot
+select live transport or load cloud secrets. The dedicated entry requires a real terminal,
+explicit scope phrase and non-production/test host; fixed2 objects,1KiB bodies,5 PUTs and24
+requests, no DELETE/protection API. No genuine credential, Bucket or cloud resource was read
+or created. No real PUT/GET/DELETE occurred. No production backup/encryption/restore/slot
+release,128-cap/RPO/OFFSITE_VERIFIED change, physical deletion, merge/push/deploy or next phase.
+READY FOR INDEPENDENT ACCEPTANCE=YES; READY FOR REAL-OSS TEST=NO; PRODUCTION READY=NO.
+
 ## B5-B2A offline OSS SDK bridge author candidate (2026-10-22)
 
 Owner confirms B3-A0/A1/A2 accepted/merged/closed. Verified clean HEAD=main=origin/main=

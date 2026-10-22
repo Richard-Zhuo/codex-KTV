@@ -5,6 +5,7 @@ import { createOssOffsiteAdapter } from './oss-adapter.js';
 import { assertSyntheticBackupEncryption } from './encryption-policy.js';
 import { isProductionEnvironment } from '../shared/deployment-environment.js';
 import { offlineOssTransport } from './oss-sdk-offline-transport.js';
+import { consumeOssAcceptancePermit } from './oss-acceptance-authorization.js';
 
 const require = createRequire(import.meta.url);
 const sdkRequire = createRequire(require.resolve('ali-oss'));
@@ -79,16 +80,16 @@ function versionResponseEvidence(raw) {
   if (roots !== 1 || depth !== 0 || statusSeen && !['Enabled','Suspended'].includes(status)) throw rejected();
   return { bytes, status: statusSeen ? status : undefined }; // Absence requires a validated empty root.
 }
-function client(config, supplied) {
+function client(config, supplied, transport = offlineOssTransport) {
   hostCheck();
   const sdk = new OSS({ ...credential(supplied), region: config.region, endpoint: config.endpoint,
     bucket: config.bucket, secure: true, authorizationV4: true, retryMax: 0,
     timeout: config.timeoutMs, enableProxy: false, cname: false, internal: false,
-    urllib: offlineOssTransport, refreshSTSTokenInterval: 300000 });
+    urllib: transport, refreshSTSTokenInterval: 300000 });
   if (sdk.options.secure !== true || sdk.options.authorizationV4 !== true || sdk.options.retryMax !== 0 ||
       sdk.options.region !== config.region || sdk.options.bucket !== config.bucket ||
       sdk.options.endpoint.protocol !== 'https:' || sdk.options.endpoint.hostname !== config.region + '.aliyuncs.com' ||
-      sdk.urllib !== offlineOssTransport) throw rejected();
+      sdk.urllib !== transport) throw rejected();
   const request = sdk.request.bind(sdk);
   sdk.request = async params => {
     if (params.subres !== 'versioning') return request(params);
@@ -117,8 +118,11 @@ export function validateOssSdkBridgeConfig(value) {
   } catch { throw rejected(); }
 }
 // In-memory credentials are a future bootstrap seam; this entry NEVER reads environment secrets.
-// B2A still pins an unconditionally disabled transport. No live CLI or transport-injection option.
+// This existing factory still pins disabled transport; B2B uses a separate one-use manual permit.
 export function createOfflineOssSdkBridge(args, options) {
+  return createBridge(args, options, () => offlineOssTransport);
+}
+function createBridge(args, options, transportFor) {
   try {
     hostCheck(); assertSyntheticBackupEncryption(args);
     if (!fields(options, ['config', 'readCredentials'], ['writeCredentials'])) throw rejected();
@@ -126,7 +130,7 @@ export function createOfflineOssSdkBridge(args, options) {
     const read = credential(options.readCredentials), write = options.writeCredentials === undefined ? null : credential(options.writeCredentials);
     if (write && read.accessKeyId === write.accessKeyId) throw rejected();
     const make = (secret, writable) => {
-      const sdk = client(config, secret);
+      const sdk = client(config, secret, transportFor(writable));
       const guard = work => { hostCheck(); assertSyntheticBackupEncryption(safeArgs); return work(); };
       // Only B1's necessary SDK calls and non-secret options cross this seam; SDK/private options stay hidden.
       return Object.freeze({ options: Object.freeze({ bucket: config.bucket, secure: true, retryMax: 0 }),
@@ -136,5 +140,19 @@ export function createOfflineOssSdkBridge(args, options) {
     };
     return createOssOffsiteAdapter(safeArgs, { ...config, readClient: make(read, false),
       ...(write ? { writeClient: make(write, true) } : {}) });
+  } catch { throw rejected(); }
+}
+
+// Only a one-use permit minted by the dedicated interactive operator entry can select
+// this scope-limited transport. No transport/client/allowNetwork configuration crosses it.
+export function createOssSdkAcceptanceBridge(permit, credentials) {
+  try {
+    hostCheck();
+    const {config, transportFor, observations} = consumeOssAcceptancePermit(permit);
+    const databaseUrl = 'mysql://synthetic@127.0.0.1:33313/jbhh_ktv_test';
+    const args = {environment:'test', databaseUrl, env:{NODE_ENV:'test',
+      STAGE5E_RUN:'synthetic-only', LEDGER_MYSQL_TEST_URL:databaseUrl}};
+    if (!fields(credentials, ['readCredentials','writeCredentials'])) throw rejected();
+    return Object.freeze({...createBridge(args, {config, ...credentials}, transportFor), observations});
   } catch { throw rejected(); }
 }
