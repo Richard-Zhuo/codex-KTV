@@ -36,11 +36,27 @@ function credential(value) {
         typeof value[k] !== 'string' || !value[k].length || value[k].length > 4096 || value[k].trim() !== value[k] || /[\r\n]/.test(value[k]))) throw rejected();
   return { ...value };
 }
+// Complete whitelist for this bounded response language, not a general XML parser.
+// SAX strict mode does not validate XML declarations. Validate the entire document,
+// including XML 1.0 declaration order and exact EOF, before either parser sees it.
+const xmlSpace = '[\\x20\\x09\\x0A\\x0D]';
+const xmlEquals = xmlSpace + '*=' + xmlSpace + '*';
+const xmlQuoted = pattern => '(?:"' + pattern + '"|\'' + pattern + '\')';
+const xmlDeclaration = '<\\?xml' + xmlSpace + '+version' + xmlEquals + xmlQuoted('1\\.0') +
+  '(?:' + xmlSpace + '+encoding' + xmlEquals + xmlQuoted('[Uu][Tt][Ff]-8') + ')?' +
+  '(?:' + xmlSpace + '+standalone' + xmlEquals + xmlQuoted('(?:yes|no)') + ')?' + xmlSpace + '*\\?>';
+const xmlNamespace = xmlSpace + '+xmlns' + xmlEquals + xmlQuoted('http://doc\\.oss-cn-hangzhou\\.aliyuncs\\.com');
+const xmlStatus = '<Status' + xmlSpace + '*>(?:Enabled|Suspended)</Status' + xmlSpace + '*>';
+const versionDocument = new RegExp('^(?:\\uFEFF)?(?:' + xmlDeclaration + ')?' + xmlSpace + '*' +
+  '<VersioningConfiguration(?:' + xmlNamespace + ')?' + xmlSpace + '*' +
+  '(?:/>|>' + xmlSpace + '*(?:' + xmlStatus + xmlSpace + '*)?</VersioningConfiguration' + xmlSpace + '*>)' +
+  xmlSpace + '*(?![\\s\\S])');
+
 // Preserve schema evidence BEFORE ali-oss parseXML discards the root element.
 function versionResponseEvidence(raw) {
   if (!Buffer.isBuffer(raw) || raw.length < 1 || raw.length > 8192) throw rejected();
   const bytes = Buffer.from(raw), text = bytes.toString('utf8');
-  if (!Buffer.from(text, 'utf8').equals(bytes)) throw rejected();
+  if (!Buffer.from(text, 'utf8').equals(bytes) || !versionDocument.test(text)) throw rejected();
   let depth = 0, roots = 0, statusSeen = false, status = '';
   const parser = sdkXml.parser(true, { strictEntities: true });
   parser.onopentag = node => {
@@ -59,7 +75,6 @@ function versionResponseEvidence(raw) {
     else if (value.trim()) throw rejected();
   };
   parser.ondoctype = parser.onerror = () => { throw rejected(); };
-  parser.onprocessinginstruction = value => { if (value.name !== 'xml' || roots) throw rejected(); };
   parser.write(text).close();
   if (roots !== 1 || depth !== 0 || statusSeen && !['Enabled','Suspended'].includes(status)) throw rejected();
   return { bytes, status: statusSeen ? status : undefined }; // Absence requires a validated empty root.
