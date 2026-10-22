@@ -6,28 +6,30 @@ import {readExternalSecret} from '../production/secret-file.js';
 import {windowsFileAcl} from '../production/runtime-config.js';
 import {validateSmokeAcl,windowsDirectoryAcl} from '../production/wecom-smoke-config.js';
 import {externalDirectory,digest} from './format.js';
+import {isOssAcceptanceLocalPath as localPath,guardOssAcceptanceFixedRoot} from './oss-acceptance-path.js';
 import {createOssSdkAcceptanceBridge,validateOssSdkBridgeConfig} from './oss-sdk-bridge.js';
 import {authorizeOssAcceptance,assertOssAcceptanceHost,ossAcceptanceScope,ossAcceptancePayloads,OSS_ACCEPTANCE_LIMITS} from './oss-acceptance-authorization.js';
 
 const fail=()=>Object.assign(Error('OSS_ACCEPTANCE_UNCONFIRMED'),{code:'OSS_ACCEPTANCE_UNCONFIRMED'});
 const keys=['configVersion','purpose','region','bucket','endpoint','prefix','readCredentialsFile','writeCredentialsFile','evidenceFile'];
-const localPath=path=>typeof path==='string'&&/^[A-Za-z]:[\\/]/.test(path);
 async function localDirectory(path){
   if(!localPath(path))throw fail();
+  const guard=await guardOssAcceptanceFixedRoot(path); // No target FS access before DRIVE_FIXED.
   const full=resolve(path),root=parse(full).root;let current=root;
-  // Inspect each parent before descending, so an input cannot redirect pre-consent
-  // configuration reads to a UNC share through a junction or symlink.
+  await guard.checkComponent(root);
   for(const part of relative(root,full).split(sep).filter(Boolean)){
-    current=join(current,part);if((await lstat(current)).isSymbolicLink())throw fail();
+    current=join(current,part);await guard.checkComponent(current);
+    if((await lstat(current)).isSymbolicLink())throw fail();
   }
-  return externalDirectory(full);
+  return {directory:await externalDirectory(full),guard};
 }
 async function protectedJson(path){
   if(!localPath(path))throw fail();
   // Existing external/Git exclusion and Owner-only Windows ACL checks, no new secret store.
-  const parent=await localDirectory(dirname(path));
+  const {directory:parent,guard}=await localDirectory(dirname(path));
   validateSmokeAcl(await windowsDirectoryAcl(parent),{directory:true});
-  const file=join(parent,basename(path)), info=await lstat(file);
+  const file=join(parent,basename(path));await guard.checkComponent(file);
+  const info=await lstat(file);
   if(!info.isFile()||info.isSymbolicLink())throw fail();
   validateSmokeAcl(await windowsFileAcl(file));
   return readExternalSecret(file);
@@ -44,7 +46,7 @@ function acceptanceConfig(value){
   return Object.freeze({...value,scope,runId});
 }
 async function openEvidence(config){
-  const parent=await localDirectory(dirname(config.evidenceFile));
+  const {directory:parent}=await localDirectory(dirname(config.evidenceFile));
   validateSmokeAcl(await windowsDirectoryAcl(parent),{directory:true});
   // Exclusive create, canonical parent, fixed basename: never overwrite or clean up an old file.
   return open(join(parent,basename(config.evidenceFile)),'wx',0o600);

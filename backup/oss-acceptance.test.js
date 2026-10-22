@@ -5,6 +5,8 @@ import {Readable} from 'node:stream';
 import {resolve,join} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import * as fs from 'node:fs/promises';
+import * as childProcess from 'node:child_process';
+import {promisify} from 'node:util';
 import dns from 'node:dns';import http from 'node:http';import https from 'node:https';import net from 'node:net';
 import * as format from './format.js';
 import * as runtime from '../production/runtime-config.js';
@@ -17,22 +19,45 @@ const scope={region:'oss-cn-hangzhou',bucket:'ktv-oss-acceptance-synthetic',endp
 const config=()=>({configVersion:1,purpose:'nonproduction-oss-acceptance',...scope,readCredentialsFile:readFile,writeCredentialsFile:writeFile,evidenceFile:join(root,'oss-acceptance-'+runId+'.jsonl')});
 const credentials=role=>({accessKeyId:'SYNTHETIC_'+role,accessKeySecret:'SYNTHETIC_PRIVATE_SECRET_'+role,stsToken:'SYNTHETIC_PRIVATE_TOKEN_'+role});
 const acl={current:'S-1-5-21-111-222-333-1001',owner:'S-1-5-21-111-222-333-1001',protected:true,rules:[{sid:'S-1-5-21-111-222-333-1001',type:'Allow',rights:197055,inheritance:'ObjectInherit'}]};
-let state={calls:[],reads:[],lines:[]},network=0;
+let state={calls:[],reads:[],lines:[],pathEvents:[],nativeQueries:[]},network=0;
 for(const [owner,name] of [[dns,'lookup'],[http,'request'],[https,'request'],[net.Socket.prototype,'connect']])mock.method(owner,name,()=>{network++;throw Error('REAL_NETWORK_FORBIDDEN');});
+// Simulate only fixed native metadata queries; never query a real mapped drive.
+const nativeExec=()=>{throw Error('UNEXPECTED_CALLBACK_EXEC');};
+nativeExec[promisify.custom]=async(executable,args,options)=>{
+ assert.equal(executable,'C:/Windows/System32/WindowsPowerShell/v1.0/powershell.exe');
+ assert.deepEqual(args.slice(0,3),['-NoProfile','-NonInteractive','-EncodedCommand']);
+ assert.equal(options.windowsHide,true);assert.equal(options.timeout,5000);
+ const script=Buffer.from(args[3],'base64').toString('utf16le');
+ const encoded=script.match(/FromBase64String\('([A-Za-z0-9+/=]+)'\)/);
+ assert.ok(encoded);const path=Buffer.from(encoded[1],'base64').toString('utf8');
+ if(script.includes('# OSS_ACCEPTANCE_DRIVE')){
+  state.nativeQueries.push(path);assert.match(path,/^[A-Z]:\\$/);
+  assert.equal(script.includes("GetFileAttributesW').Invoke"),false);
+  if(state.driveFailure)throw Error('SYNTHETIC_PRIVATE_OS_ERROR');
+  if(state.driveOutput!==undefined)return {stdout:state.driveOutput,stderr:''};
+  return {stdout:'DRIVE:'+String(state.driveType??3)+':'+Buffer.from(state.device??'\\Device\\HarddiskVolume1','utf16le').toString('base64'),stderr:''};
+ }
+ assert.ok(script.includes('# OSS_ACCEPTANCE_COMPONENT'));
+ state.pathEvents.push({op:'GetFileAttributesW',path});
+ if(state.componentFailure===path)throw Error('SYNTHETIC_PRIVATE_ATTRIBUTE_ERROR');
+ return {stdout:'ATTR:'+String(state.reparseAt===path?0x410:state.attributes??16),stderr:''};
+};
+mock.module('node:child_process',{exports:{...childProcess,execFile:nativeExec}});
 mock.module('node:readline/promises',{exports:{createInterface(){return {async question(prompt){state.prompts.push(prompt);return state.answer;},close(){}};}}});
 mock.module('../production/secret-file.js',{exports:{async readExternalSecret(path){
  state.reads.push(path);
- if(path===configFile)return structuredClone(state.config);
+ if(path===configFile||path===state.alternateConfig)return structuredClone(state.config);
  if(![readFile,writeFile].includes(path))throw Error('SYNTHETIC_PRIVATE_PATH');
  if(state.mode==='expired')state.clock+=300001;
  return credentials(state.mode==='same-identity'?'SAME':path===readFile?'READ':'WRITE');
 }}});
-mock.module('../production/runtime-config.js',{exports:{...runtime,windowsFileAcl:async()=>state.mode==='acl-denied'?{...acl,protected:false}:acl}});
-mock.module('../production/wecom-smoke-config.js',{exports:{...smoke,windowsDirectoryAcl:async()=>acl}});
-mock.module('./format.js',{exports:{...format,externalDirectory:async p=>p}});
+mock.module('../production/runtime-config.js',{exports:{...runtime,windowsFileAcl:async path=>{state.pathEvents.push({op:'fileAcl',path});return state.mode==='acl-denied'?{...acl,protected:false}:acl;}}});
+mock.module('../production/wecom-smoke-config.js',{exports:{...smoke,windowsDirectoryAcl:async path=>{state.pathEvents.push({op:'directoryAcl',path});return acl;}}});
+mock.module('./format.js',{exports:{...format,externalDirectory:async path=>{state.pathEvents.push({op:'externalDirectory',path});return path;}}});
 mock.module('node:fs/promises',{exports:{...fs,
- lstat:async()=>({isFile:()=>true,isSymbolicLink:()=>state.mode==='symlink'}),
+ lstat:async path=>{state.pathEvents.push({op:'lstat',path});return {isFile:()=>true,isSymbolicLink:()=>state.mode==='symlink'};},
  async open(path,flags){
+  state.pathEvents.push({op:'open',path});
   assert.equal(path,state.config.evidenceFile);assert.equal(flags,'wx');
   if(state.mode==='evidence-exists')throw Object.assign(Error(),{code:'EEXIST'});
   state.opened++;
@@ -78,7 +103,7 @@ mock.method(urllib,'request',async(url,options)=>{
 const auth=await import('./oss-acceptance-authorization.js');
 const bridge=await import('./oss-sdk-bridge.js');
 const cli=await import('./oss-acceptance.js');
-const importEvidence={calls:state.calls.length,reads:state.reads.length,network};
+const importEvidence={calls:state.calls.length,reads:state.reads.length,target:state.pathEvents.length,native:state.nativeQueries.length,network};
 const command=['--run-nonproduction','--config-file',configFile];
 const envKeys=['NODE_ENV','KTV_HTTP_ENV','KTV_DEPLOYMENT_ENV','NODE_OPTIONS','NODE_DEBUG','NODE_DEBUG_NATIVE','DEBUG','NODE_TLS_REJECT_UNAUTHORIZED'];
 let previousEnv,previousArgv,inTTY,outTTY;
@@ -87,7 +112,7 @@ beforeEach(()=>{
  previousArgv=process.argv;process.argv=[process.execPath,entry,...command];
  inTTY=Object.getOwnPropertyDescriptor(process.stdin,'isTTY');outTTY=Object.getOwnPropertyDescriptor(process.stdout,'isTTY');
  Object.defineProperty(process.stdin,'isTTY',{value:true,configurable:true});Object.defineProperty(process.stdout,'isTTY',{value:true,configurable:true});
- state={config:config(),calls:[],reads:[],lines:[],prompts:[],objects:new Map(),opened:0,closed:0,clock:Date.now(),answer:'AUTHORIZE NONPRODUCTION OSS '+scope.region+' '+scope.bucket+' '+scope.prefix};
+ state={config:config(),pathEvents:[],nativeQueries:[],calls:[],reads:[],lines:[],prompts:[],objects:new Map(),opened:0,closed:0,clock:Date.now(),answer:'AUTHORIZE NONPRODUCTION OSS '+scope.region+' '+scope.bucket+' '+scope.prefix};
 });
 afterEach(()=>{
  process.argv=previousArgv;
@@ -113,6 +138,7 @@ test('B2B default no arguments rejects without config, credentials or network',a
 });
 test('B2B validate-only remains credential-free and offline after new entry import',()=>{
  assert.equal(bridge.validateOssSdkBridgeConfig(scope).networkEnabled,false);
+ assert.equal(state.pathEvents.length,0);assert.equal(state.nativeQueries.length,0);
  assert.equal(state.reads.length,0);assert.equal(state.calls.length,0);
 });
 test('B2B wrong manual consent does not load credentials or send',async()=>{
@@ -173,7 +199,7 @@ test('B2B actual production selectors, debug and unsafe runtime cannot authorize
 });
 
 test('B2B import has no credential/config reads or network side effects',()=>{
- assert.deepEqual(importEvidence,{calls:0,reads:0,network:0});
+ assert.deepEqual(importEvidence,{calls:0,reads:0,target:0,native:0,network:0});
 });
 test('B2B PUT quota rejects sixth attempt without another HTTP request',async()=>{
  const permit=await auth.authorizeOssAcceptance(scope),{transportFor}=auth.consumeOssAcceptancePermit(permit),writer=transportFor(true);
@@ -213,4 +239,49 @@ test('B2B network/device paths are rejected before secret loading and consent',a
  state.reads=[];
  await assert.rejects(cli.runOssAcceptance(['--run-nonproduction','--config-file','\\SYNTHETIC-SHARE\config.json']));
  assert.equal(state.reads.length,0);
+});
+
+test('B2B path P2 REMOTE root rejects before target filesystem access',async()=>{
+ state.driveType=4;state.alternateConfig=String.raw`Z:\OwnerOssAcceptance\config.json`;state.answer='DENY';
+ const args=['--run-nonproduction','--config-file',state.alternateConfig];process.argv=[process.execPath,entry,...args];
+ await assert.rejects(cli.runOssAcceptance(args));
+ assert.deepEqual(state.nativeQueries,['Z:\\']);assert.equal(state.pathEvents.length,0);assert.equal(state.reads.length,0);assert.equal(state.prompts.length,0);
+});
+
+for(const driveType of [0,1,2,4,5,6,'UNKNOWN'])test('B2B path P2 non-fixed root has no target access: '+driveType,async()=>{
+ state.driveType=driveType;await rejected();
+ assert.deepEqual(state.nativeQueries,['C:\\']);assert.equal(state.pathEvents.length,0);
+ assert.equal(state.reads.length,0);assert.equal(state.prompts.length,0);
+});
+for(const patch of [{driveFailure:true},{driveOutput:''},{driveOutput:'{}'},
+ {driveOutput:'DRIVE:3:AAAA\nUNEXPECTED'},
+ {device:'\\??\\C:\\alias'},{device:'\\Device\\Mup\\server'}])test('B2B path P2 uncertain native root fails before target access: '+JSON.stringify(patch),async()=>{
+ Object.assign(state,patch);await rejected();assert.equal(state.pathEvents.length,0);assert.equal(state.reads.length,0);assert.equal(state.prompts.length,0);
+});
+for(const path of ['\\\\server\\share\\config.json','\\\\?\\C:\\config.json','\\\\.\\C:\\config.json',
+ 'C:config.json','\\config.json','config.json','C:\\..\\config.json','C:\\test\\config.json:secret',
+ 'C:\\test.\\config.json','C:\\NUL\\config.json','C:\\test\\\\config.json'])test('B2B path P2 unsupported syntax has zero OS and target queries: '+path,async()=>{
+ const args=['--run-nonproduction','--config-file',path];process.argv=[process.execPath,entry,...args];
+ await assert.rejects(cli.runOssAcceptance(args));assert.equal(state.nativeQueries.length,0);assert.equal(state.pathEvents.length,0);assert.equal(state.reads.length,0);
+});
+for(const path of ['C:\\',root,configFile])test('B2B path P2 rejects native reparse before following component: '+path,async()=>{
+ state.reparseAt=path;await rejected();
+ assert.equal(state.pathEvents.at(-1).op,'GetFileAttributesW');assert.equal(state.pathEvents.at(-1).path,path);
+ assert.equal(state.reads.length,0);assert.equal(state.prompts.length,0);assert.equal(state.calls.length,0);
+});
+for(const attributes of [0xffffffff,-1,'UNKNOWN',null])test('B2B path P2 invalid component metadata rejects: '+attributes,async()=>{
+ if(attributes===null)state.componentFailure='C:\\';else state.attributes=attributes;
+ await rejected();assert.equal(state.reads.length,0);assert.equal(state.prompts.length,0);
+});
+
+test('B2B path P2 fixed drive checks every component before local file access and retains ACL',async()=>{
+ await cli.runOssAcceptance(command);
+ assert.ok(state.nativeQueries.length>0);assert.ok(state.nativeQueries.every(p=>p==='C:\\'));
+ for(const path of [root,configFile,readFile,writeFile]){
+  const attrs=state.pathEvents.findIndex(e=>e.op==='GetFileAttributesW'&&e.path===path);
+  const access=state.pathEvents.findIndex(e=>e.op==='lstat'&&e.path===path);
+  assert.ok(attrs>=0&&access>attrs);
+ }
+ assert.ok(state.pathEvents.some(e=>e.op==='fileAcl'&&e.path===configFile));
+ assert.ok(state.pathEvents.some(e=>e.op==='directoryAcl'&&e.path===root));
 });
