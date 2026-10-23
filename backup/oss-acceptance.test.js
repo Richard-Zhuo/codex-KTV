@@ -12,7 +12,7 @@ import * as format from './format.js';
 import * as runtime from '../production/runtime-config.js';
 import * as smoke from '../production/wecom-smoke-config.js';
 
-const root=resolve('C:/ProgramData/JbhhKtv/private/oss-acceptance'),runId='e7dd29ba-5a7a-4cb8-9625-f18d659e42ce';
+const root=resolve('C:/JbhhKtvSecure/oss-acceptance'),runId='e7dd29ba-5a7a-4cb8-9625-f18d659e42ce';
 const configFile=join(root,'config.json'), readFile=join(root,'read.json'),writeFile=join(root,'write.json');
 const entry=fileURLToPath(new URL('./oss-acceptance.js',import.meta.url));
 const scope={region:'oss-cn-hangzhou',bucket:'ktv-oss-acceptance-synthetic',endpoint:'https://oss-cn-hangzhou.aliyuncs.com',prefix:'oss-acceptance/'+runId+'/'};
@@ -32,7 +32,7 @@ nativeExec[promisify.custom]=async(executable,args,options)=>{
  state.operations??=[];state.operations.push(op);state.nativeQueries.push('C:\\');
  if(state.driveFailure||state.rootDenied||(state.driveType??3)!==3||state.device!==undefined||state.mode==='acl-denied')throw Error('SYNTHETIC_PRIVATE_ROOT_DENIED');
  if(state.driveOutput!==undefined)return {stdout:state.driveOutput,stderr:''};
- for(const path of ['C:\\','C:\\ProgramData','C:\\ProgramData\\JbhhKtv','C:\\ProgramData\\JbhhKtv\\private',root]){
+ for(const path of ['C:\\',resolve('C:/JbhhKtvSecure'),root]){
   state.pathEvents.push({op:'GetFileAttributesW',path});
   if(state.reparseAt===path||state.componentFailure===path||state.attributes!==undefined||state.mode==='symlink')throw Error('SYNTHETIC_PRIVATE_REPARSE_DENIED');
   state.pathEvents.push({op:'pinnedAcl',path});
@@ -40,7 +40,7 @@ nativeExec[promisify.custom]=async(executable,args,options)=>{
  if(op==='ROOT')return {stdout:'ROOT_OK',stderr:''};
  const path={CONFIG:configFile,READ:readFile,WRITE:writeFile}[op];
  state.pathEvents.push({op:'GetFileAttributesW',path});
- if(state.reparseAt===path)throw Error('SYNTHETIC_PRIVATE_REPARSE_DENIED');
+ if(state.reparseAt===path||op==='CONFIG'&&state.configMissing)throw Error('SYNTHETIC_PRIVATE_REPARSE_DENIED');
  state.pathEvents.push({op:'pinnedFileRead',path});state.reads.push(path);
  if(state.mode==='expired'&&op==='READ')state.clock+=300001;
  const data=op==='CONFIG'?state.config:credentials(state.mode==='same-identity'?'SAME':op);
@@ -315,4 +315,22 @@ for(const output of ['ROOT_OK','DATA:!!!!','DATA:'+Buffer.from([0xff]).toString(
 
 test('fixed-root actual config changed after scope consent is refused before evidence, credentials or OSS',async()=>{
  state.mode='scope-changed';await rejected();assert.deepEqual(state.operations,['CONFIG','CONFIG']);assert.equal(state.calls.length,0);assert.equal(state.opened,0);assert.equal(state.prompts.length,2);
+});
+
+
+test('migration exports only the new fixed config and credential locations',async()=>{
+ const {OSS_ACCEPTANCE_ROOT,OSS_ACCEPTANCE_FILES}=await import('./oss-acceptance-path.js');
+ assert.equal(OSS_ACCEPTANCE_ROOT,'C:\\JbhhKtvSecure\\oss-acceptance');
+ assert.deepEqual(OSS_ACCEPTANCE_FILES,{CONFIG:join(root,'config.json'),READ:join(root,'read.json'),WRITE:join(root,'write.json')});
+});
+for(const field of ['readCredentialsFile','writeCredentialsFile','evidenceFile'])test('migration never falls back to old ProgramData '+field,async()=>{
+ state.config[field]=join('C:\\ProgramData\\JbhhKtv\\private\\oss-acceptance',field==='evidenceFile'?'oss-acceptance-'+runId+'.jsonl':field==='readCredentialsFile'?'read.json':'write.json');
+ await rejected();assert.deepEqual(state.reads,[configFile]);assert.equal(state.prompts.length,1);assert.equal(state.opened,0);assert.equal(state.calls.length,0);
+});
+for(const path of [resolve('C:/JbhhKtvSecure'),root])for(const failure of ['componentFailure','reparseAt'])test('migration refuses uninitialized or redirected private ancestor '+failure+' '+path,async()=>{
+ state[failure]=path;await rejected();assert.equal(state.reads.length,0);assert.equal(state.prompts.length,1);assert.equal(state.opened,0);assert.equal(state.calls.length,0);
+ assert.equal(state.pathEvents.some(e=>e.op==='pinnedFileRead'),false);
+});
+test('migration missing config refuses before credentials and network authorization',async()=>{
+ state.configMissing=true;await rejected();assert.equal(state.reads.length,0);assert.equal(state.prompts.length,1);assert.equal(state.opened,0);assert.equal(state.calls.length,0);
 });

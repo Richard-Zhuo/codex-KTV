@@ -1,3 +1,21 @@
+## B5-B2B secure-root migration focused gate (2026-10-24)
+
+Node 24.19.0, Windows PowerShell 5.1 and already installed offline ali-oss 6.23.0.
+No install, cloud credential read, real OSS request or VM provisioning is involved.
+
+~~~powershell
+node --experimental-test-module-mocks --test --test-concurrency=1 backup/oss-acceptance-root.test.js backup/oss-acceptance.test.js
+~~~
+
+Author focused result:154/154 PASS, exit0. The bundled runtime had moved to24.22.1;
+its initial session run was correctly refused. Final evidence uses the standalone
+24.19.0 runtime with the fixed SHA-256. Scoped npm test could not start (npm unavailable).
+No full-project or Windows 11 acceptance was run.
+
+Native cases use in-memory synthetic descriptors and read-only C:\/test-source handles;
+entry cases use mock fixed files/terminal/HTTP and network traps.
+[Manual initialization and Windows 11 retest are separate](B5B2B_FIXED_ROOT_LAB.md).
+
 ## B5-B2B offline acceptance entry evidence (2026-10-23)
 
 Use Node24.19.0 and the already locked ali-oss6.23.0. No install/new dependency or real

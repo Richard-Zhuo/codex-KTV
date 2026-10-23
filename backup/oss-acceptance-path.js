@@ -4,7 +4,7 @@ import {promisify} from 'node:util';
 import {readFile} from 'node:fs/promises';
 const exec=promisify(execFile);
 const fail=()=>Object.assign(Error('OSS_ACCEPTANCE_ROOT_DENIED'),{code:'OSS_ACCEPTANCE_ROOT_DENIED'});
-export const OSS_ACCEPTANCE_ROOT='C:\\ProgramData\\JbhhKtv\\private\\oss-acceptance';
+export const OSS_ACCEPTANCE_ROOT='C:\\JbhhKtvSecure\\oss-acceptance';
 export const OSS_ACCEPTANCE_FILES=Object.freeze({CONFIG:OSS_ACCEPTANCE_ROOT+'\\config.json',READ:OSS_ACCEPTANCE_ROOT+'\\read.json',WRITE:OSS_ACCEPTANCE_ROOT+'\\write.json'});
 export async function readOssAcceptanceFixed(operation){
  try{

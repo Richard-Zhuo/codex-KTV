@@ -98,11 +98,11 @@ function Invoke-OssFixedRead([string]$operation){
   if($script:Native.GetMethod('QueryDosDeviceW').Invoke($null,@('C:',$device,[uint32]8192)) -eq 0){Refuse}
   $mapping=$device.ToString().Split([char]0)[0]
   Check-Drive 3 $mapping
-  $chain=@('C:\','C:\ProgramData','C:\ProgramData\JbhhKtv','C:\ProgramData\JbhhKtv\private','C:\ProgramData\JbhhKtv\private\oss-acceptance')
+  $chain=@('C:\','C:\JbhhKtvSecure','C:\JbhhKtvSecure\oss-acceptance')
   for($i=0;$i -lt $chain.Length;$i++){
    $p=$chain[$i];$parent=Pin $p $true
    # Parent is pinned before child lookup; ACL lookup cannot be redirected by renaming that parent.
-   Check-Acl (Read-PinnedDirectoryAcl $parent) ($i -ge 2) $p
+   Check-Acl (Read-PinnedDirectoryAcl $parent) ($i -ge 1) $p
    try{[void][IO.File]::GetAttributes([IO.Path]::Combine($p,'.git'));Refuse}
    catch [IO.FileNotFoundException]{} catch [IO.DirectoryNotFoundException]{}
   }

@@ -1,3 +1,10 @@
+## B5-B2B fixed local root boundary
+
+- backup/oss-acceptance-path.js: single root and fixed config/read/write file mapping.
+- backup/oss-acceptance-root.ps1: ancestor handles, strict private ACLs, same-handle reads.
+- backup/oss-acceptance-root.test.js / backup/oss-acceptance.test.js: focused regressions.
+- [Owner-only secure initialization and Windows 11 retest](B5B2B_FIXED_ROOT_LAB.md).
+
 ## B5-B2B manual OSS acceptance seam
 
 - backup/oss-acceptance.js: protected operator files, fixed probe sequence and exclusive evidence.

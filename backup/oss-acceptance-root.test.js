@@ -104,3 +104,24 @@ test('TrustedInstaller owner exception does not add its SID to trusted DACL prin
 test('private trusted owner still rejects untrusted dangerous write',()=>ps(
  "$a=New-SyntheticAcl;Add-Untrusted $a ([Security.AccessControl.FileSystemRights]::FullControl);$denied=$false;try{Check-Acl $a $true 'C:\\ProgramData\\JbhhKtv'}catch{$denied=$true};if(!$denied){throw 'PRIVATE_WRITE_ACCEPTED'};[Console]::WriteLine('PASS')"
 ));
+
+
+test('migration pins only volume root and the two strict private ancestors',()=>{
+ assert.equal(source.match(/\$chain=([^\r\n]+)/)?.[1],String.raw`@('C:\','C:\JbhhKtvSecure','C:\JbhhKtvSecure\oss-acceptance')`);
+ assert.match(source,/Check-Acl \(Read-PinnedDirectoryAcl \$parent\) \(\$i -ge 1\) \$p/);
+});
+for(const path of ['C:\\JbhhKtvSecure','C:\\JbhhKtvSecure\\oss-acceptance']){
+ test('migration strict private root accepts protected administrator '+path,()=>ps(
+  "Check-Acl (New-SyntheticAcl) $true '"+path+"';[Console]::WriteLine('PASS')"));
+ for(const [name,descriptor] of [
+  ['precreated untrusted owner',"New-SyntheticAcl 'S-1-5-21-111-222-333-1999'"],
+  ['incomplete inherited ACL',"New-SyntheticAcl 'S-1-5-32-544' $false"],
+  ['TrustedInstaller private owner',"New-SyntheticAcl '"+trustedInstaller+"'"]
+ ])test('migration rejects '+name+' '+path,()=>ps(
+  "$denied=$false;try{Check-Acl ("+descriptor+") $true '"+path+"'}catch{$denied=$true};if(!$denied){throw 'PRIVATE_ROOT_ACCEPTED'};[Console]::WriteLine('PASS')"));
+ for(const rights of ['WriteData','CreateDirectories','WriteAttributes','WriteExtendedAttributes','Delete','DeleteSubdirectoriesAndFiles','ChangePermissions','TakeOwnership'])
+  test('migration private root rejects untrusted '+rights+' '+path,()=>ps(
+   "$a=New-SyntheticAcl;Add-Untrusted $a ([Security.AccessControl.FileSystemRights]::"+rights+");$denied=$false;try{Check-Acl $a $true '"+path+"'}catch{$denied=$true};if(!$denied){throw 'PRIVATE_RIGHTS_ACCEPTED'};[Console]::WriteLine('PASS')"));
+}
+test('migration retains refusal of observed ProgramData public mutation ACE',()=>ps(
+ "$a=New-SyntheticAcl;Add-Untrusted $a ([Security.AccessControl.FileSystemRights]::Write);$denied=$false;try{Check-Acl $a $false 'C:\\ProgramData'}catch{$denied=$true};if(!$denied){throw 'PROGRAMDATA_RULE_WEAKENED'};[Console]::WriteLine('PASS')"));

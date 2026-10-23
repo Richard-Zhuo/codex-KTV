@@ -1,3 +1,16 @@
+## B5-B2B secure-root migration candidate (2026-10-24)
+
+Owner authorized migration of only the manual OSS acceptance root to
+C:\JbhhKtvSecure\oss-acceptance on codex/b5-b2b-root-owner-compat, based on 44a724a.
+The ProgramData mutation-ACE refusal, private owner/DACL policy, parent handles,
+reparse rejection and narrow TrustedInstaller exception are unchanged. No old fallback.
+[Manual first-create safety conditions and Windows 11 retest](B5B2B_FIXED_ROOT_LAB.md).
+Node 24.19.0 focused regression: 154/154 PASS, exit0 (synthetic ACL/native read-only
+handles and mocked manual SDK session). Scoped npm test was attempted but npm is unavailable.
+Real Windows 11 provisioning/ROOT and application integration retest remains REQUIRED.
+No actual protected directories/ACLs, VM copy, credentials or cloud resources changed.
+No production enablement, slot release, physical deletion, merge, push or deployment.
+
 ## B5-B2B manual non-production OSS acceptance candidate (2026-10-23)
 
 Verified clean main=origin/main=427c8bdd9ca6335cd78a41f49121e1ae7a263f2d before creating

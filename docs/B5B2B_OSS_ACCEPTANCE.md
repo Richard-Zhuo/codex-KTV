@@ -13,7 +13,7 @@ publication path is added. B3/B4/B5 state, OFFSITE_VERIFIED, RPO and128-cap are 
 
 The original createOfflineOssSdkBridge and oss-sdk-validate.js stay unconditionally offline.
 Importing the new entry performs no request/config/credential read. Only the dedicated
-oss-acceptance.js --run-nonproduction --config-file entry, Node24.19.0 and actual NODE_ENV=test
+oss-acceptance.js --run-nonproduction entry, Node24.19.0 and actual NODE_ENV=test
 may request approval. Production selectors, unsafe TLS overrides, NODE_OPTIONS and debug
 logging are rejected, including at each network operation. No environment flag or config
 allowNetwork field enables this entry. Noninteractive service/redirected stdin is rejected.
@@ -50,12 +50,16 @@ non-production configuration and a fresh explicit real-OSS run authorization are
 
 ## Future operator files and command (not authorized to run now)
 
-Use protected LOCAL Windows drive paths outside every Git repository. No UNC/device path,
-symlink/junction traversal or inherited public access is accepted. Reuse the existing
-external-secret reader and protected current-operator/SYSTEM/Administrators ACL validation
-for config and the two separate credential files plus their containing directories.
-The evidence directory has the corresponding protected writer ACL. No ACL is changed by
-this entry. Real Windows ACL setup is a later non-production prerequisite, not mock evidence.
+The sole root is C:\JbhhKtvSecure\oss-acceptance. Caller paths, environment
+overrides and old ProgramData fallback are rejected. Before target access the operator
+must confirm READ PROTECTED LOCAL OSS CONFIG. The native reader verifies the drive,
+pins each ancestor and checks owner/DACL/reparse identity by handle; fixed files are read
+through the verified file handle. No ACL is changed. Both new private ancestors require
+protected DACLs and the original strict trusted principals. Root ACL rules and the narrow
+TrustedInstaller OS-owner exception remain unchanged. CONFIG is reread and matched after
+scope consent, before evidence and credential use.
+[Owner-only atomic protected initialization and Windows 11 retest](B5B2B_FIXED_ROOT_LAB.md).
+Missing, untrusted-precreated or incomplete roots fail closed; never create then repair.
 
 Non-sensitive config schema (all fields required, extra fields rejected):
 
@@ -67,9 +71,9 @@ Non-sensitive config schema (all fields required, extra fields rejected):
   "bucket": "ktv-oss-acceptance-owner-test",
   "endpoint": "https://oss-cn-hangzhou.aliyuncs.com",
   "prefix": "oss-acceptance/e7dd29ba-5a7a-4cb8-9625-f18d659e42ce/",
-  "readCredentialsFile": "C:/OwnerOssAcceptance/read.json",
-  "writeCredentialsFile": "C:/OwnerOssAcceptance/write.json",
-  "evidenceFile": "C:/OwnerOssAcceptance/oss-acceptance-e7dd29ba-5a7a-4cb8-9625-f18d659e42ce.jsonl"
+  "readCredentialsFile": "C:\\JbhhKtvSecure\\oss-acceptance\\read.json",
+  "writeCredentialsFile": "C:\\JbhhKtvSecure\\oss-acceptance\\write.json",
+  "evidenceFile": "C:\\JbhhKtvSecure\\oss-acceptance\\oss-acceptance-e7dd29ba-5a7a-4cb8-9625-f18d659e42ce.jsonl"
 }
 ~~~
 
@@ -82,7 +86,7 @@ After all future gates, the manual invocation is:
 
 ~~~powershell
 $env:NODE_ENV='test'
-node backup/oss-acceptance.js --run-nonproduction --config-file C:/OwnerOssAcceptance/config.json
+node backup/oss-acceptance.js --run-nonproduction
 ~~~
 
 The original credential-free offline validation remains:
@@ -109,8 +113,7 @@ exist and requires manual review. Evidence write/sync/close failure cannot produ
 CLI exit. PROBES_PASSED records observed probe facts, not OFFSITE_VERIFIED or production readiness.
 
 Rerun requires another explicit Owner/operator approval. Preserve the same UUID/prefix and
-bodies for unknown-result inspection; use another protected evidence directory (fixed basename)
-to retain prior evidence. No automatic cleanup, new object naming or DELETE is performed.
+bodies for unknown-result inspection; preserve fixed-root evidence and STOP for Owner review. No automatic cleanup, new object naming or DELETE is performed.
 
 ## Evidence limits and stop point
 
