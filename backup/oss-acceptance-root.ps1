@@ -6,9 +6,13 @@ $ErrorActionPreference='Stop'
 $PSModuleAutoLoadingPreference='None'
 $ProgressPreference='SilentlyContinue'
 function Refuse { throw 'OSS_ACCEPTANCE_ROOT_DENIED' }
-function Check-Acl($acl,[bool]$private){
+function Check-Acl($acl,[bool]$private,[string]$systemAncestor=''){
  $trusted=@('S-1-5-18','S-1-5-32-544',$script:Operator)
- if($acl.GetOwner([Security.Principal.SecurityIdentifier]).Value -notin $trusted){Refuse}
+ $owner=$acl.GetOwner([Security.Principal.SecurityIdentifier]).Value
+ # Owner-only compatibility for the two pinned OS ancestors; never a private owner or trusted DACL principal.
+ $systemOwner=(!$private -and $systemAncestor -cin @('C:\','C:\ProgramData') -and
+  $owner -ceq 'S-1-5-80-956008885-3418522649-1831038044-1853292631-2271478464')
+ if($owner -notin $trusted -and !$systemOwner){Refuse}
  if($private -and !$acl.AreAccessRulesProtected){Refuse}
  $rules=$acl.GetAccessRules($true,$true,[Security.Principal.SecurityIdentifier])
  if($rules.Count -eq 0){Refuse}
@@ -98,7 +102,7 @@ function Invoke-OssFixedRead([string]$operation){
   for($i=0;$i -lt $chain.Length;$i++){
    $p=$chain[$i];$parent=Pin $p $true
    # Parent is pinned before child lookup; ACL lookup cannot be redirected by renaming that parent.
-   Check-Acl (Read-PinnedDirectoryAcl $parent) ($i -ge 2)
+   Check-Acl (Read-PinnedDirectoryAcl $parent) ($i -ge 2) $p
    try{[void][IO.File]::GetAttributes([IO.Path]::Combine($p,'.git'));Refuse}
    catch [IO.FileNotFoundException]{} catch [IO.DirectoryNotFoundException]{}
   }

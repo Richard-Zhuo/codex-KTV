@@ -76,3 +76,31 @@ try{
 `));
 
 test('fixed native ancestor creating other subdirectories alone does not permit replacing protected chain',()=>ps("$a=New-SyntheticAcl;Add-Untrusted $a ([Security.AccessControl.FileSystemRights]::CreateDirectories);Check-Acl $a $false;[Console]::WriteLine('PASS')"));
+
+const trustedInstaller='S-1-5-80-956008885-3418522649-1831038044-1853292631-2271478464';
+for(const ancestor of ['C:\\','C:\\ProgramData'])test('TrustedInstaller owner is allowed only on fixed OS ancestor '+ancestor,()=>ps(
+ "Check-Acl (New-SyntheticAcl '"+trustedInstaller+"') $false '"+ancestor+"';[Console]::WriteLine('PASS')"
+));
+for(const [name,owner,privateAcl,ancestor] of [
+ ['unknown system owner','S-1-5-21-111-222-333-1999',false,'C:\\'],
+ ['unrelated service SID','S-1-5-80-1-2-3-4-5',false,'C:\\'],
+ ['near-match service SID','S-1-5-80-956008885-3418522649-1831038044-1853292631-2271478465',false,'C:\\ProgramData'],
+ ['missing ancestor context',trustedInstaller,false,''],
+ ['other system directory',trustedInstaller,false,'C:\\Windows'],
+ ['private KTV root',trustedInstaller,true,'C:\\ProgramData\\JbhhKtv'],
+ ['private KTV directory',trustedInstaller,true,'C:\\ProgramData\\JbhhKtv\\private'],
+ ['private OSS directory',trustedInstaller,true,'C:\\ProgramData\\JbhhKtv\\private\\oss-acceptance'],
+ ['private flag with spoofed ancestor context',trustedInstaller,true,'C:\\'],
+ ['nonprivate flag cannot widen fixed ancestor scope',trustedInstaller,false,'C:\\ProgramData\\JbhhKtv']
+])test('TrustedInstaller owner exception rejects '+name,()=>ps(
+ "$denied=$false;try{Check-Acl (New-SyntheticAcl '"+owner+"') $"+privateAcl+" '"+ancestor+"'}catch{$denied=$true};if(!$denied){throw 'OWNER_SCOPE_ACCEPTED'};[Console]::WriteLine('PASS')"
+));
+test('TrustedInstaller ancestor ownership still rejects untrusted dangerous DACL write',()=>ps(
+ "$a=New-SyntheticAcl '"+trustedInstaller+"';Add-Untrusted $a ([Security.AccessControl.FileSystemRights]::WriteData);$denied=$false;try{Check-Acl $a $false 'C:\\'}catch{$denied=$true};if(!$denied){throw 'DACL_BYPASSED'};[Console]::WriteLine('PASS')"
+));
+test('TrustedInstaller owner exception does not add its SID to trusted DACL principals',()=>ps(
+ "$a=New-SyntheticAcl '"+trustedInstaller+"';$a.AddAccessRule([Security.AccessControl.FileSystemAccessRule]::new([Security.Principal.SecurityIdentifier]::new('"+trustedInstaller+"'),[Security.AccessControl.FileSystemRights]::FullControl,[Security.AccessControl.AccessControlType]::Allow));$denied=$false;try{Check-Acl $a $false 'C:\\'}catch{$denied=$true};if(!$denied){throw 'DACL_TRUST_EXPANDED'};[Console]::WriteLine('PASS')"
+));
+test('private trusted owner still rejects untrusted dangerous write',()=>ps(
+ "$a=New-SyntheticAcl;Add-Untrusted $a ([Security.AccessControl.FileSystemRights]::FullControl);$denied=$false;try{Check-Acl $a $true 'C:\\ProgramData\\JbhhKtv'}catch{$denied=$true};if(!$denied){throw 'PRIVATE_WRITE_ACCEPTED'};[Console]::WriteLine('PASS')"
+));
