@@ -30,6 +30,73 @@ Owner 已报告在 Windows 11 断网虚拟机完成以下操作。本轮仅整�
 真实 OSS 凭据未提供，虚拟机持续断网，没有执行经授权的真实 OSS 验收。
 下文保留既有操作说明作追溯，不要求重复初始化或重复已通过测试。
 
+## 第二道 Owner 授权拒绝：新增实机证据与下一步
+
+WINDOWS 11 SECOND AUTHORIZATION DENIAL = PASS
+TESTED CODE COMMIT = ecb0382f15effc5507f30636eb4caf9ac2488d8a
+FULL B5-B2B OSS ACCEPTANCE = NOT COMPLETED
+
+以下为 Owner 补充的 Windows 11 断网实验室实际执行结果，不是 Codex 独立复验：
+
+- 固定根内纯合成 config.json 的 CONFIG HASH = PASS；SHA-256 为
+  7B6D7981F3EBCAFF54C0BBF6EE3CA45DFA1ACC3BDAF74F3039C0652B716CC6AE。
+- Run ID：1cdba5bc-86ba-4690-bfce-843698023a5f。
+- CREDENTIAL FILES = ABSENT；read.json 和 write.json 均未创建。
+- 首次本地读取确认成功，固定合成配置通过当前读取和校验流程，进入第二道 Owner 授权。
+- 第二道确认输入 DENY，返回 OSS_ACCEPTANCE_UNCONFIRMED，ENTRY_EXIT_CODE = 1，符合预期。
+- 虚拟机保持断网，没有执行获授权的真实 OSS 验收。
+
+未另行提供或虚构截图、日志文件或独立执行记录。此结果不证明第二道授权成功后的路径已实测。
+后续 docs-only 提交不属于上述 Windows 11 实测代码版本。
+
+### 针对当前冻结源码的只读核对
+
+仅核对 executeOssAcceptance/openEvidence、readOssAcceptanceFixed/Invoke-OssFixedRead 和直接相关测试：
+
+1. authorizeOssAcceptance 成功返回后，立即再次调用固定 CONFIG 读取并执行 acceptanceConfig；
+   二次读取/校验失败直接停止，不能继续创建证据或读取凭据。
+2. 每次 CONFIG/ROOT/READ/WRITE 都重新进入原生固定入口。驱动器、父链 Pin、所有者/DACL、
+   重解析点/路径一致性检查保持有效；配置内容通过同一已验证 FileStream 句柄读取，先检查文件 ACL。
+   这些句柄只覆盖各自子进程操作，不宣称跨两次读取持有同一个文件句柄。
+3. 二次配置对九个受控字段逐项严格比较；字段值变化或结构非法，在证据文件和凭据访问前拒绝。
+   比较的是合法解析后的字段值，不是配置文件字节摘要；仅空白或字段顺序变化且值相同不视为变化。
+   上述 Owner 配置 SHA-256 是本次测试材料标识，不是程序新增的运行时摘要绑定。
+4. 配置一致后 openEvidence 先执行 ROOT 检查，再以 wx 排他创建同根
+   oss-acceptance-1cdba5bc-86ba-4690-bfce-843698023a5f.jsonl。已有同名文件拒绝，不覆盖、不自动清理。
+   先写入并 sync SESSION/AUTHORIZED 与 CREDENTIALS/STARTED，再读取 READ，然后 WRITE。
+   授权许可仅保存在当前进程内存；本路径不写备份 operational store，也不执行备份/恢复/删除。
+5. 两凭据文件均缺失时，首先 READ 打开失败；WRITE 尚未读取，实际联网桥接构造和 probes 尚未到达。
+   正常证据 I/O 下会尝试记录 RESULT/UNCONFIRMED、failedStage=CREDENTIALS 并关闭文件，入口 exit1。
+   证据写入/sync/关闭失败仍拒绝，可能留下部分 JSONL；不得把其存在或 SESSION/AUTHORIZED 当成功。
+   通用 remoteMayContainObjects=true 是保守错误字段，不能在此路径中当作发生 OSS 请求的证据。
+6. 源码顺序允许在严格受控的缺失凭据条件下做离线拒绝验证；缺失 WRITE 的验证另需安全的 synthetic
+   READ 材料，不能用“两文件均缺失”声称 WRITE 缺失分支已实测。本轮不创建任何凭据。
+
+### 已有自动化覆盖与实机缺口（本轮只读，未重跑）
+
+backup/oss-acceptance.test.js 的既有用例覆盖：第二道错误确认不读凭据/不开证据/不请求；
+成功 mock 会话的 CONFIG、CONFIG、ROOT、READ、WRITE 顺序；确认后配置字段改变时在证据/凭据前拒绝；
+固定文件不可重定向；证据已存在、sync 失败、ACL/链接拒绝时不联网；默认禁网、许可单次使用和请求预算。
+backup/oss-acceptance-root.test.js 覆盖合成所有者/DACL、重解析点、驱动器与只读受保护句柄。
+历史开发回归为 154/154 PASS，来源见当前阶段，不作为本轮新执行或 Windows 11 竞争场景证据。
+这两份现有测试未见专门模拟 READ/WRITE 凭据文件缺失的入口用例；不能把相邻失败用例当作该项已测。
+第二道成功后的 Windows 原生重读、证据落盘、缺失 READ/WRITE 拒绝及持续 ACL/竞态行为仍需实机证据。
+
+### 下一项最小测试的批准边界（本轮不执行）
+
+建议 Owner 另行批准一次“第二道成功 → 配置重读 → 缺失 READ 拒绝”的断网实机测试。
+批准必须明确允许内存许可及上述固定 JSONL 的排他创建、写入和保留，不能称为无本地副作用。
+执行前须确认代码与合成配置未变、read.json/write.json 均不存在、预期证据文件不存在、
+受保护父链保持有效、没有其他受信管理员并发创建凭据或修改配置/目录。现有同名证据只报告并停止。
+
+预期只到缺失 READ 拒绝：OSS_ACCEPTANCE_UNCONFIRMED、exit1，允许保留不完整/拒绝证据；
+不得出现探针阶段或 PROBES_PASSED。若任何凭据文件意外存在、配置摘要不符、范围不符或提前异常，
+立即停止，不为推进测试补建凭据、不重试授权、不清理证据。本轮不提供或输入完整成功授权短语。
+
+离线保证基于受控缺失 READ 在实际网络桥接/探针前使控制流停止；虚拟机仍需保持断网。
+这不是操作系统级零 DNS/socket 尝试证明。若不能确保凭据持续缺失及受信账户条件，则不批准此入口测试。
+后续配置变化、WRITE 缺失、凭据完整生命周期和竞争场景另行限定范围，不在本轮执行。
+
 ## 安全前提
 
 - 干净的 Windows PowerShell 5.1 提升管理员、已核验代码和 Node 24.19.0。
@@ -168,8 +235,8 @@ Owner 报告的基础检查已通过，完整 B5-B2B OSS 验收仍未完成。�
 - 尚无实机证据的 TOCTOU、目录替换竞争、既有危险句柄、运行期间有效权限与证据目录持续保护。
 - 生产部署验收。
 
-下一项最小工作是在另获 Owner 授权后，用 synthetic 受保护配置验证读取及第二次确认 DENY，
-保持断网、无真实凭据、无 OSS 操作；本次文档收尾不实施该测试。
+第二道确认 DENY 已由 Owner 报告通过，不再列作待测。下一项是上文明确限定的授权成功后缺失 READ
+拒绝测试，必须先批准本地副作用及停止条件；本次文档收尾不执行。
 合成 ACL、重解析点/句柄与 mock 回归不能代替上述实机证据。基础检查 PASS 不证明完整 TOCTOU
 或持续保护已验收；断网不等于操作系统级零网络尝试。固定字符串也不是 TOCTOU 证明。
 原冻结提交不变；未 merge/push/deploy，无生产备份/恢复/槽位释放或物理删除。
