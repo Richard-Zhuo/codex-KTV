@@ -1,15 +1,33 @@
-## B5-B2B secure-root migration candidate (2026-10-24)
+## B5-B2B Windows 11 基础安全验收（Owner 报告，记录于 2026-10-24）
 
-Owner authorized migration of only the manual OSS acceptance root to
-C:\JbhhKtvSecure\oss-acceptance on codex/b5-b2b-root-owner-compat, based on 44a724a.
-The ProgramData mutation-ACE refusal, private owner/DACL policy, parent handles,
-reparse rejection and narrow TrustedInstaller exception are unchanged. No old fallback.
-[Manual first-create safety conditions and Windows 11 retest](B5B2B_FIXED_ROOT_LAB.md).
-Node 24.19.0 focused regression: 154/154 PASS, exit0 (synthetic ACL/native read-only
-handles and mocked manual SDK session). Scoped npm test was attempted but npm is unavailable.
-Real Windows 11 provisioning/ROOT and application integration retest remains REQUIRED.
-No actual protected directories/ACLs, VM copy, credentials or cloud resources changed.
-No production enablement, slot release, physical deletion, merge, push or deployment.
+WINDOWS 11 BASIC SECURITY ACCEPTANCE = PASS
+FULL B5-B2B OSS ACCEPTANCE = NOT COMPLETED
+TESTED CODE COMMIT = ecb0382f15effc5507f30636eb4caf9ac2488d8a
+
+本节记录 Owner 提供的 Windows 11 断网虚拟机实机执行结果，不是本轮 Codex 独立实测。
+实际经过实机复验的是上述代码提交；后续 docs-only 提交不属于实机测试版本。
+分支 codex/b5-b2b-root-owner-compat；固定根 C:\JbhhKtvSecure\oss-acceptance。
+原冻结提交 449179e4b0677d6449a300d9ec476da15bffd72e 未修改。
+
+Owner 报告的通过范围：
+
+- 原离线包 2554/2554 文件完整性 PASS；两个补丁文件 Git Blob 来源及 SHA-256 PASS。
+- 专用安全目录首次原子创建、所有者、受保护 ACL 和固定句柄检查 PASS。
+- 管理员 ROOT-only 返回 ROOT_OK；缺失配置 MISSING_CONFIG_REJECTION = PASS。
+- JBHH-Lab-User 为非管理员且程序可读，应用 ROOT 拒绝 PASS。
+- 人工入口输入 DENY，返回 OSS_ACCEPTANCE_UNCONFIRMED、exit1，符合首次本地读取确认拒绝预期。
+
+此前开发环境 Node 24.19.0 定向回归 154/154 PASS、exit0，来源为上一轮 Codex 测试报告；
+本轮未重跑，不能作为 Windows 攻击/竞态场景的实机证据。
+本轮未提供真实 OSS 凭据，虚拟机保持断网，没有执行经授权的真实 OSS 验收。
+未另行声称存在证据文件或新增独立验证记录。
+
+尚未完成：受保护配置和凭据的完整实机生命周期、后续授权及配置重读集成、真实 OSS 请求与结果、
+尚无实机证据的 TOCTOU/竞争/持续保护场景，以及生产部署验收。
+下一项最小验收工作：在另获 Owner 授权后，以 synthetic 受保护配置验证配置读取与第二次联网范围
+确认输入 DENY 的断网实机流程；不使用真实凭据、不执行 OSS 请求。此处只记录下一步，不执行。
+[已报告范围、既有操作说明和剩余证据边界](B5B2B_FIXED_ROOT_LAB.md)。
+生产备份、恢复、槽位释放未启用；未物理删除、merge、push 或部署。
 
 ## B5-B2B manual non-production OSS acceptance candidate (2026-10-23)
 

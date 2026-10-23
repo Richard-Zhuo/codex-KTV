@@ -4,6 +4,32 @@
 固定根 C:\JbhhKtvSecure\oss-acceptance；没有旧 ProgramData 路径回退。
 不放宽 ProgramData 的 WA/WEA 检查，不迁移凭据，不批准 OSS 联网。
 
+## 已取得的基础验收结果（Owner 提供）
+
+WINDOWS 11 BASIC SECURITY ACCEPTANCE = PASS
+FULL B5-B2B OSS ACCEPTANCE = NOT COMPLETED
+TESTED CODE COMMIT = ecb0382f15effc5507f30636eb4caf9ac2488d8a
+
+Owner 已报告在 Windows 11 断网虚拟机完成以下操作。本轮仅整理文档，未操作虚拟机、
+未重复测试，也未进行新增独立实测。此处不虚构证据文件、日志路径或未提供的执行日期。
+后续文档提交不能替代上述实际实测代码提交；原冻结 449179e4 不变。
+
+| Owner 报告项目 | 结果 |
+| --- | --- |
+| 原始离线包完整性 | 2554/2554 PASS |
+| 两个补丁文件 Git Blob 来源及 SHA-256 | PASS |
+| 新根首次原子创建、所有者、受保护 ACL、固定句柄检查 | PASS |
+| 管理员 ROOT-only | ROOT_OK，PASS |
+| 缺失配置 | MISSING_CONFIG_REJECTION = PASS |
+| JBHH-Lab-User：非管理员、程序可读 | 应用 ROOT 拒绝 PASS |
+| 首次本地读取人工确认输入 DENY | OSS_ACCEPTANCE_UNCONFIRMED，exit1，符合预期 |
+
+这些结果仅覆盖安全根初始化、ROOT 检查、缺失配置拒绝、标准用户拒绝与首次人工确认拒绝。
+开发环境 154/154 PASS 来自上一轮 Codex 的 Node 24.19.0 定向回归报告，本轮未重跑；
+不能把合成 ACL/mock 结果当作 Windows 实机攻击或竞态验收。
+真实 OSS 凭据未提供，虚拟机持续断网，没有执行经授权的真实 OSS 验收。
+下文保留既有操作说明作追溯，不要求重复初始化或重复已通过测试。
+
 ## 安全前提
 
 - 干净的 Windows PowerShell 5.1 提升管理员、已核验代码和 Node 24.19.0。
@@ -101,7 +127,7 @@ try {
 
 预期：两目录无重解析点，所有者 BUILTIN\Administrators，DACL=P、继承关闭，
 只有 SYSTEM:(OI)(CI)(F) 和 Administrators:(OI)(CI)(F)，无其他 ACE。
-不是只要计划设置严格 ACL 就算完成；以上首次创建结果及后续 ROOT 检查均须实机通过。
+Owner 已报告首次创建与 ROOT 检查通过；该结论不扩展到尚未实测的配置/凭据或竞争场景。
 将来 config.json/read.json/write.json 也须受保护文件 DACL、可信所有者；不能只依赖继承。
 文件首次创建使用 CreateNew 并同时指定 FileSecurity，失败不覆盖已有文件。
 证据固定为本根的 oss-acceptance-<UUID>.jsonl，排他创建并依赖持续受保护的父链。
@@ -134,8 +160,16 @@ if($LASTEXITCODE -ne 0){throw 'MISSING_CONFIG_DID_NOT_FAIL_CLOSED'}
 
 ## 未验证事项
 
-合成 ACL、重解析点/句柄和 mock 授权回归只证明代码路径与拒绝合同。
-Windows 11 首次创建、完整根 ACL/有效权限、危险句柄、运行期间可信账户、证据目录持续保护及
-应用集成仍须 Owner 实机验收。语法通过不等于初始化成功，断网不等于操作系统级零网络尝试。
-固定字符串不是 TOCTOU 证明；完整保护依赖上述父链、首次创建、句柄与持续信任条件。
+Owner 报告的基础检查已通过，完整 B5-B2B OSS 验收仍未完成。剩余必要范围：
+
+- 受保护配置及只读/写入凭据的完整实机创建、读取、修改/替换及拒绝生命周期。
+- 第二次联网范围确认、配置重读及实际使用配置/凭据之间的完整授权绑定集成。
+- 真实 OSS 请求、异常/未知结果、独立回读及结果验证；本轮未获联网授权。
+- 尚无实机证据的 TOCTOU、目录替换竞争、既有危险句柄、运行期间有效权限与证据目录持续保护。
+- 生产部署验收。
+
+下一项最小工作是在另获 Owner 授权后，用 synthetic 受保护配置验证读取及第二次确认 DENY，
+保持断网、无真实凭据、无 OSS 操作；本次文档收尾不实施该测试。
+合成 ACL、重解析点/句柄与 mock 回归不能代替上述实机证据。基础检查 PASS 不证明完整 TOCTOU
+或持续保护已验收；断网不等于操作系统级零网络尝试。固定字符串也不是 TOCTOU 证明。
 原冻结提交不变；未 merge/push/deploy，无生产备份/恢复/槽位释放或物理删除。
