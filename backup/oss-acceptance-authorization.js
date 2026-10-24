@@ -86,6 +86,9 @@ export function consumeOssAcceptancePermit(permit){
           options.headers?.['x-oss-forbid-overwrite']!=='true')throw fail();
       }
       sequence=requests;operation=query?'VERSIONING':options.method;attempted=true;
+      // Preserve the strict SDK-input gate above; only this admitted valueless subresource
+      // is normalized to the same query representation used by the SDK V4 signer.
+      if(query)url.search='?versioning';
       const result=await urllib.request(url.href,{method:options.method,headers:{...options.headers},
         content:options.content?Buffer.from(options.content):undefined,streaming:true,writeStream:null,
         followRedirect:false,maxRedirects:0,enableProxy:false,rejectUnauthorized:true,
