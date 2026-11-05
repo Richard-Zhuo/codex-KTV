@@ -1,3 +1,46 @@
+## C0 单笔真实前端增量验收（Owner 已接受，2026-10-31）
+
+```text
+C0_BROWSER_DELTA=PASS
+OWNER_ACCEPTANCE=ACCEPTED
+C0_INCREMENTAL_SCOPE=CLOSED
+R2_OVERALL_ACCEPTANCE=BLOCKED
+G1_A_L1_ROUTE=PAUSED_NO_GO
+PRODUCTION_RPO=NOT_VERIFIED
+PRODUCTION_RTO=NOT_VERIFIED
+14_DAY_OFFSITE_MVP_GO=NOT_GRANTED
+```
+
+本节仅记录 2026-10-31 已完成并获 Owner 接受的历史运行证据；本次 Git 收尾未重新执行业务测试。
+受验源码为 9f3164b1f7105a1f3eae2a1f0f3d3c9abab12ac2；接受范围仅限一笔新的合成 V01 订单
+`e6e150a2-a8eb-4dce-b34e-1b417d8bcfe1`，不拼接此前其他订单的付款结果。
+
+Owner 在真实 Edge 员工页面依次完成收余款、结账和清洁；同一订单的可信 MySQL 证据确认：
+原付款 ¥168 不变，新增 ¥2 恰好一笔，已收 ¥170、待收 ¥0，revision 连续 43 → 44 → 45 → 46；
+订单结账后 V01 转待清洁，清洁后恢复空闲。结账和清洁没有新增付款或重复扣库；
+操作键、服务端员工身份及有效权限、营业日、付款发生时间和提交审计一致可关联。
+owned 应用、MySQL、监听、临时目录和合成口令已清理，清理回执及独立残留检查均通过。
+
+必须保留的证据限制：
+
+- 收款前后未分别保存独立截图。该步 UI 操作依据 Owner 现场确认、已有页面证据及可独立核验的
+  服务端账本与审计；Owner 确认不等于服务端事实，待清洁和空闲截图不冒充付款成功截图。
+- 结账辅助断言错误地要求待清洁房间仍保留 `room.order`；正式 `rooms.js:release` 会清空该字段。
+  原始误报及停止快照保留，实际结账、清洁结果由正式规则和可信账本独立核对。
+  辅助脚本并非全部检查通过；本次接受未通过修复该断言或重放业务操作获得。
+
+原始材料保留在本机外部验收档案，未随 Git 发布；以下文件名和摘要仅用于材料身份核对，不是 GitHub 可访问链接：
+
+- 接受记录：`OWNER-ACCEPTANCE-20261031-C0-INCREMENTAL.md`；
+  SHA-256：`0D00A279AF218E92CA050B99869B43DA6D895E4959D992C4F126D33E4C3F9183`。
+- 证据索引：`EVIDENCE-INDEX.md`；既有清单：`evidence-sha256.json`，覆盖 30 项原始证据；
+  清单 SHA-256：`8AAAB1D6F3B283FC2289E0E93236D975388981419D5048CD3C1A02F4495AC9C6`。
+  独立接受记录覆盖索引中此前的 `OWNER_ACCEPTANCE=PENDING` 状态，不改写历史材料。
+
+本次不重新打开既有 C0、S3、S4 或 Stage 5E 接受范围，也不构成整个 C0/C1 资金域、生产系统或
+14 天离岗 MVP 的无条件验收。R2 未提交候选及 G1-A 暂停边界保持原状；生产部署、正式密钥保管、
+真实异地备份和异机恢复尚未完成验收。云端主生产方向及 RPO ≤ 1 小时、RTO ≤ 4 小时目标不变。
+
 ## B5-B2B Windows 11 基础安全验收（Owner 报告，记录于 2026-10-24）
 
 WINDOWS 11 BASIC SECURITY ACCEPTANCE = PASS
